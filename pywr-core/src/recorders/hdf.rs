@@ -1,11 +1,10 @@
 use super::{
-    MetricSetState, OutputMetric, Recorder, RecorderFinalResult, RecorderFinaliseError, RecorderInternalState,
-    RecorderMeta, RecorderSaveError, RecorderSetupError, Timestep, downcast_internal_state,
-    downcast_internal_state_mut,
+    MetricSetState, OutputMetric, Recorder, RecorderBuilder, RecorderBuilderError, RecorderFinalResult,
+    RecorderFinaliseError, RecorderInternalState, RecorderMeta, RecorderSaveError, RecorderSetupError, Timestep,
+    downcast_internal_state, downcast_internal_state_mut,
 };
 use crate::models::ModelDomain;
-use crate::network::Network;
-use crate::recorders::MetricSetIndex;
+use crate::network::{MetricSetIndex, Network, ResolutionMaps};
 use crate::scenario::{ScenarioDomain, ScenarioIndex};
 use crate::state::State;
 use chrono::{Datelike, Timelike};
@@ -84,16 +83,6 @@ impl DateTime {
             hour: ts.date.time().hour() as u8,
             minute: ts.date.time().minute() as u8,
             second: ts.date.time().second() as u8,
-        }
-    }
-}
-
-impl HDF5Recorder {
-    pub fn new<P: Into<PathBuf>>(name: &str, filename: P, metric_set_idx: MetricSetIndex) -> Self {
-        Self {
-            meta: RecorderMeta::new(name),
-            filename: filename.into(),
-            metric_set_idx,
         }
     }
 }
@@ -386,4 +375,44 @@ fn write_scenarios_metadata(file: &hdf5_metno::File, domain: &ScenarioDomain) ->
         })?;
 
     Ok(())
+}
+
+#[derive(Clone, Debug)]
+pub struct HDF5RecorderBuilder {
+    meta: RecorderMeta,
+    filename: PathBuf,
+    // TODO this could support saving multiple metric sets in different groups
+    metric_set: String,
+}
+
+impl HDF5RecorderBuilder {
+    pub fn new<P: Into<PathBuf>>(name: &str, filename: P, metric_set: &str) -> Self {
+        Self {
+            meta: RecorderMeta::new(name),
+            filename: filename.into(),
+            metric_set: metric_set.into(),
+        }
+    }
+}
+
+impl RecorderBuilder for HDF5RecorderBuilder {
+    fn name(&self) -> &str {
+        &self.meta.name
+    }
+
+    fn build(self: Box<Self>, resolution_maps: &ResolutionMaps) -> Result<Box<dyn Recorder>, RecorderBuilderError> {
+        let metric_set_idx = resolution_maps.metric_sets.get(&self.metric_set).ok_or_else(|| {
+            RecorderBuilderError::MetricSetNotFound {
+                name: self.metric_set.clone(),
+            }
+        })?;
+
+        let r = HDF5Recorder {
+            meta: self.meta,
+            filename: self.filename,
+            metric_set_idx: *metric_set_idx,
+        };
+
+        Ok(Box::new(r))
+    }
 }

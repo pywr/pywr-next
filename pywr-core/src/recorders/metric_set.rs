@@ -1,12 +1,9 @@
-use crate::metric::{MetricF64, MetricF64Error};
-use crate::network::Network;
+use crate::metric::{MetricF64, MetricF64Error, MetricF64ResolutionError, UnresolvedMetricF64};
+use crate::network::{Network, ResolutionMaps};
 use crate::recorders::aggregator::{Aggregator, AggregatorState, PeriodValue};
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
 use crate::timestep::Timestep;
-use std::fmt;
-use std::fmt::{Display, Formatter};
-use std::ops::Deref;
 use thiserror::Error;
 
 /// A container for a [`MetricF64`] that retains additional information from the schema.
@@ -25,16 +22,6 @@ pub struct OutputMetric {
 }
 
 impl OutputMetric {
-    pub fn new(name: &str, attribute: &str, ty: &str, sub_type: Option<&str>, metric: MetricF64) -> Self {
-        Self {
-            name: name.to_string(),
-            attribute: attribute.to_string(),
-            ty: ty.to_string(),
-            sub_type: sub_type.map(|s| s.to_string()),
-            metric,
-        }
-    }
-
     pub fn get_value(&self, model: &Network, state: &State) -> Result<f64, MetricF64Error> {
         self.metric.get_value(model, state)
     }
@@ -55,26 +42,37 @@ impl OutputMetric {
     }
 }
 
-#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Debug)]
-pub struct MetricSetIndex(usize);
-
-impl MetricSetIndex {
-    pub fn new(idx: usize) -> Self {
-        Self(idx)
-    }
+#[derive(Clone, PartialEq)]
+pub struct UnresolvedOutputMetric {
+    name: String,
+    attribute: String,
+    // The originating type of the metric (e.g. node, parameter, etc.)
+    ty: String,
+    // The originating subtype of the metric (e.g. node type, parameter type, etc.)
+    sub_type: Option<String>,
+    metric: UnresolvedMetricF64,
 }
 
-impl Deref for MetricSetIndex {
-    type Target = usize;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
+impl UnresolvedOutputMetric {
+    pub fn new(name: &str, attribute: &str, ty: &str, sub_type: Option<&str>, metric: UnresolvedMetricF64) -> Self {
+        Self {
+            name: name.to_string(),
+            attribute: attribute.to_string(),
+            ty: ty.to_string(),
+            sub_type: sub_type.map(|s| s.to_string()),
+            metric,
+        }
     }
-}
 
-impl Display for MetricSetIndex {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
+    pub fn resolve(self, resolution_maps: &ResolutionMaps) -> Result<OutputMetric, MetricF64ResolutionError> {
+        let metric = self.metric.resolve(resolution_maps)?;
+        Ok(OutputMetric {
+            name: self.name,
+            attribute: self.attribute,
+            ty: self.ty,
+            sub_type: self.sub_type,
+            metric,
+        })
     }
 }
 
@@ -107,14 +105,6 @@ pub struct MetricSet {
 }
 
 impl MetricSet {
-    pub fn new(name: &str, aggregator: Option<Aggregator>, metrics: Vec<OutputMetric>) -> Self {
-        Self {
-            name: name.to_string(),
-            aggregator,
-            metrics,
-        }
-    }
-
     /// The name of the [`MetricSet`].
     pub fn name(&self) -> &str {
         &self.name
@@ -207,5 +197,64 @@ impl MetricSet {
         } else {
             internal_state.current_values = None;
         }
+    }
+}
+
+#[derive(Error, Debug)]
+pub enum MetricSetBuilderError {
+    #[error("Could not resolve output f64 metric `{name}`: {source}")]
+    ResolveMetricF64Error {
+        name: String,
+        #[source]
+        source: MetricF64ResolutionError,
+    },
+}
+
+pub struct MetricSetBuilder {
+    name: String,
+    aggregator: Option<Aggregator>,
+    metrics: Vec<UnresolvedOutputMetric>,
+}
+
+impl MetricSetBuilder {
+    pub fn new(name: &str) -> Self {
+        Self {
+            name: name.to_string(),
+            aggregator: None,
+            metrics: Vec::new(),
+        }
+    }
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn aggregator(&mut self, aggregator: Aggregator) -> &mut Self {
+        self.aggregator = Some(aggregator);
+        self
+    }
+
+    pub fn metric(&mut self, metric: UnresolvedOutputMetric) -> &mut Self {
+        self.metrics.push(metric);
+        self
+    }
+
+    pub fn build(self, resolution_maps: &ResolutionMaps) -> Result<MetricSet, MetricSetBuilderError> {
+        let metrics = self
+            .metrics
+            .into_iter()
+            .map(|m| {
+                let name = m.name.clone();
+                m.resolve(resolution_maps)
+                    .map_err(|source| MetricSetBuilderError::ResolveMetricF64Error { name, source })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let ms = MetricSet {
+            name: self.name,
+            aggregator: self.aggregator,
+            metrics,
+        };
+
+        Ok(ms)
     }
 }

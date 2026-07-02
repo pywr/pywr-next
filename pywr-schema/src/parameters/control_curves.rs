@@ -9,7 +9,7 @@ use crate::parameters::{ConversionData, ParameterMeta};
 use crate::v1::{TryFromV1, TryIntoV2, try_convert_control_curves, try_convert_parameter_attr};
 
 #[cfg(feature = "core")]
-use pywr_core::parameters::{ParameterIndex, ParameterName};
+use pywr_core::parameters::{ParameterName, PiecewiseInterpolatedParameterBuilder};
 use pywr_schema_macros::{PywrVisitAll, skip_serializing_none};
 use pywr_v1_schema::parameters::{
     ControlCurveIndexParameter as ControlCurveIndexParameterV1,
@@ -30,33 +30,42 @@ pub struct ControlCurveInterpolatedParameter {
 
 #[cfg(feature = "core")]
 impl ControlCurveInterpolatedParameter {
-    pub fn add_to_model(
+    pub fn add_to_network(
         &self,
-        network: &mut pywr_core::network::Network,
+        network: &mut pywr_core::network::NetworkBuilder,
         args: &LoadArgs,
         parent: Option<&str>,
-    ) -> Result<ParameterIndex<f64>, SchemaError> {
+    ) -> Result<(), SchemaError> {
         let metric = self.storage_metric.load(network, args, None)?;
 
         let control_curves = self
             .control_curves
             .iter()
             .map(|cc| cc.load(network, args, None))
-            .collect::<Result<_, _>>()?;
+            .collect::<Result<Vec<_>, _>>()?;
 
         let values = self
             .values
             .iter()
             .map(|val| val.load(network, args, None))
-            .collect::<Result<_, _>>()?;
+            .collect::<Result<Vec<_>, _>>()?;
 
-        let p = pywr_core::parameters::ControlCurveInterpolatedParameter::new(
+        let mut p = pywr_core::parameters::ControlCurveInterpolatedParameterBuilder::new(
             ParameterName::new(&self.meta.name, parent),
             metric,
-            control_curves,
-            values,
         );
-        Ok(network.add_parameter(Box::new(p))?)
+
+        for cc in control_curves {
+            p.control_curve(cc);
+        }
+
+        for v in values {
+            p.value(v);
+        }
+
+        network.parameters().f64(Box::new(p));
+
+        Ok(())
     }
 }
 
@@ -140,26 +149,25 @@ pub struct ControlCurveIndexParameter {
 
 #[cfg(feature = "core")]
 impl ControlCurveIndexParameter {
-    pub fn add_to_model(
+    pub fn add_to_network(
         &self,
-        network: &mut pywr_core::network::Network,
+        network: &mut pywr_core::network::NetworkBuilder,
         args: &LoadArgs,
         parent: Option<&str>,
-    ) -> Result<ParameterIndex<u64>, SchemaError> {
-        let metric = self.storage_metric.load(network, args, None)?;
-
-        let control_curves = self
-            .control_curves
-            .iter()
-            .map(|cc| cc.load(network, args, None))
-            .collect::<Result<_, _>>()?;
-
-        let p = pywr_core::parameters::ControlCurveIndexParameter::new(
+    ) -> Result<(), SchemaError> {
+        let metric = self.storage_metric.load(network, args, parent)?;
+        let mut builder = pywr_core::parameters::ControlCurveIndexParameterBuilder::new(
             ParameterName::new(&self.meta.name, parent),
             metric,
-            control_curves,
         );
-        Ok(network.add_index_parameter(Box::new(p))?)
+
+        for cc in self.control_curves.iter() {
+            builder.control_curve(cc.load(network, args, parent)?);
+        }
+
+        network.parameters().u64(Box::new(builder));
+
+        Ok(())
     }
 }
 
@@ -259,33 +267,30 @@ pub struct ControlCurveParameter {
 
 #[cfg(feature = "core")]
 impl ControlCurveParameter {
-    pub fn add_to_model(
+    pub fn add_to_network(
         &self,
-        network: &mut pywr_core::network::Network,
+        network: &mut pywr_core::network::NetworkBuilder,
         args: &LoadArgs,
         parent: Option<&str>,
-    ) -> Result<ParameterIndex<f64>, SchemaError> {
+    ) -> Result<(), SchemaError> {
         let metric = self.storage_metric.load(network, args, None)?;
 
-        let control_curves = self
-            .control_curves
-            .iter()
-            .map(|cc| cc.load(network, args, None))
-            .collect::<Result<_, _>>()?;
-
-        let values = self
-            .values
-            .iter()
-            .map(|val| val.load(network, args, None))
-            .collect::<Result<_, _>>()?;
-
-        let p = pywr_core::parameters::ControlCurveParameter::new(
+        let mut builder = pywr_core::parameters::ControlCurveParameterBuilder::new(
             ParameterName::new(&self.meta.name, parent),
             metric,
-            control_curves,
-            values,
         );
-        Ok(network.add_parameter(Box::new(p))?)
+
+        for cc in self.control_curves.iter() {
+            builder.control_curve(cc.load(network, args, parent)?);
+        }
+
+        for v in self.values.iter() {
+            builder.value(v.load(network, args, parent)?);
+        }
+
+        network.parameters().f64(Box::new(builder));
+
+        Ok(())
     }
 }
 
@@ -363,34 +368,33 @@ pub struct ControlCurvePiecewiseInterpolatedParameter {
 
 #[cfg(feature = "core")]
 impl ControlCurvePiecewiseInterpolatedParameter {
-    pub fn add_to_model(
+    pub fn add_to_network(
         &self,
-        network: &mut pywr_core::network::Network,
+        network: &mut pywr_core::network::NetworkBuilder,
         args: &LoadArgs,
         parent: Option<&str>,
-    ) -> Result<ParameterIndex<f64>, SchemaError> {
-        let metric = self.storage_metric.load(network, args, None)?;
+    ) -> Result<(), SchemaError> {
+        let metric = self.storage_metric.load(network, args, parent)?;
 
-        let control_curves = self
-            .control_curves
-            .iter()
-            .map(|cc| cc.load(network, args, None))
-            .collect::<Result<_, _>>()?;
-
-        let values = match &self.values {
-            None => Vec::new(),
-            Some(values) => values.clone(),
-        };
-
-        let p = pywr_core::parameters::PiecewiseInterpolatedParameter::new(
+        let mut builder = PiecewiseInterpolatedParameterBuilder::new(
             ParameterName::new(&self.meta.name, parent),
             metric,
-            control_curves,
-            values,
             self.maximum.unwrap_or(1.0),
             self.minimum.unwrap_or(0.0),
         );
-        Ok(network.add_parameter(Box::new(p))?)
+
+        for cc in &self.control_curves {
+            builder.control_curve(cc.load(network, args, parent)?);
+        }
+
+        if let Some(values) = &self.values {
+            for value in values {
+                builder.value(*value);
+            }
+        }
+
+        network.parameters().f64(Box::new(builder));
+        Ok(())
     }
 }
 

@@ -7,9 +7,8 @@ use crate::network::LoadArgs;
 use crate::nodes::NodeAttribute;
 use crate::parameters::{ConversionData, ParameterMeta};
 use crate::v1::{TryFromV1, TryIntoV2};
-
 #[cfg(feature = "core")]
-use pywr_core::parameters::{ParameterIndex, ParameterName};
+use pywr_core::parameters::ParameterName;
 use pywr_schema_macros::{PywrVisitAll, skip_serializing_none};
 use pywr_v1_schema::parameters::Polynomial1DParameter as Polynomial1DParameterV1;
 use schemars::JsonSchema;
@@ -27,22 +26,27 @@ pub struct Polynomial1DParameter {
 
 #[cfg(feature = "core")]
 impl Polynomial1DParameter {
-    pub fn add_to_model(
+    pub fn add_to_network(
         &self,
-        network: &mut pywr_core::network::Network,
+        network: &mut pywr_core::network::NetworkBuilder,
         args: &LoadArgs,
         parent: Option<&str>,
-    ) -> Result<ParameterIndex<f64>, SchemaError> {
+    ) -> Result<(), SchemaError> {
         let metric = self.metric.load(network, args, None)?;
 
-        let p = pywr_core::parameters::Polynomial1DParameter::new(
+        let mut builder = pywr_core::parameters::Polynomial1DParameterBuilder::new(
             ParameterName::new(&self.meta.name, parent),
             metric,
             self.coefficients.clone(),
-            self.scale.unwrap_or(1.0),
-            self.offset.unwrap_or(0.0),
         );
-        Ok(network.add_parameter(Box::new(p))?)
+
+        builder
+            .scale(self.scale.unwrap_or(1.0))
+            .offset(self.offset.unwrap_or(0.0));
+
+        network.parameters().f64(Box::new(builder));
+
+        Ok(())
     }
 }
 

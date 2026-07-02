@@ -8,7 +8,7 @@ use crate::network::LoadArgs;
 use crate::parameters::{ConversionData, ParameterMeta};
 use crate::v1::{TryFromV1, TryIntoV2, try_convert_parameter_attr};
 #[cfg(feature = "core")]
-use pywr_core::parameters::{ParameterName, ParameterType};
+use pywr_core::{metric::UnresolvedMetricU64, parameters::ParameterName};
 use pywr_schema_macros::{PywrVisitAll, skip_serializing_none};
 use pywr_v1_schema::parameters::{
     MultipleThresholdIndexParameter as MultiThresholdIndexParameterV1,
@@ -105,12 +105,12 @@ pub struct ThresholdParameter {
 
 #[cfg(feature = "core")]
 impl ThresholdParameter {
-    pub fn add_to_model(
+    pub fn add_to_network(
         &self,
-        network: &mut pywr_core::network::Network,
+        network: &mut pywr_core::network::NetworkBuilder,
         args: &LoadArgs,
         parent: Option<&str>,
-    ) -> Result<ParameterType, SchemaError> {
+    ) -> Result<(), SchemaError> {
         let metric = self.metric.load(network, args, None)?;
         let threshold = self.threshold.load(network, args, None)?;
 
@@ -124,32 +124,32 @@ impl ThresholdParameter {
             ParameterName::new(&self.meta.name, parent)
         };
 
-        let p = pywr_core::parameters::ThresholdParameter::new(
-            name,
+        let mut builder = pywr_core::parameters::ThresholdParameterBuilder::new(
+            name.clone(),
             metric,
             threshold,
             self.predicate.into(),
-            self.ratchet,
         );
 
-        let p_idx = network.add_index_parameter(Box::new(p))?;
-
-        match self.returned_metrics {
-            Some(ref values) => {
-                let metrics = values
-                    .iter()
-                    .map(|v| v.load(network, args, None))
-                    .collect::<Result<Vec<_>, _>>()?;
-
-                let values_param = pywr_core::parameters::IndexedArrayParameter::new(
-                    ParameterName::new(&self.meta.name, parent),
-                    p_idx.into_metric_u64_before(),
-                    &metrics,
-                );
-                Ok(network.add_parameter(Box::new(values_param))?.into())
-            }
-            None => Ok(p_idx.into()),
+        if self.ratchet {
+            builder.ratchet();
         }
+
+        network.parameters().u64(Box::new(builder));
+
+        if let Some(values) = &self.returned_metrics {
+            let mut values_builder = pywr_core::parameters::IndexedArrayParameterBuilder::new(
+                ParameterName::new(&self.meta.name, parent),
+                UnresolvedMetricU64::new_parameter_before(name),
+            );
+
+            for v in values {
+                values_builder.metric(v.load(network, args, None)?);
+            }
+            network.parameters().f64(Box::new(values_builder));
+        }
+
+        Ok(())
     }
 }
 
@@ -329,18 +329,13 @@ pub struct MultiThresholdParameter {
 
 #[cfg(feature = "core")]
 impl MultiThresholdParameter {
-    pub fn add_to_model(
+    pub fn add_to_network(
         &self,
-        network: &mut pywr_core::network::Network,
+        network: &mut pywr_core::network::NetworkBuilder,
         args: &LoadArgs,
         parent: Option<&str>,
-    ) -> Result<ParameterType, SchemaError> {
+    ) -> Result<(), SchemaError> {
         let metric = self.metric.load(network, args, None)?;
-        let thresholds = self
-            .thresholds
-            .iter()
-            .map(|v| v.load(network, args, None))
-            .collect::<Result<Vec<_>, _>>()?;
 
         let name = if self.returned_metrics.is_some() {
             ParameterName::new_with_subname(&self.meta.name, Some("threshold"), Some(&self.meta.name))
@@ -348,31 +343,33 @@ impl MultiThresholdParameter {
             self.meta.name.as_str().into()
         };
 
-        let p = pywr_core::parameters::MultiThresholdParameter::new(
-            name,
-            metric,
-            &thresholds,
-            self.predicate.into(),
-            self.ratchet,
-        );
+        let mut builder =
+            pywr_core::parameters::MultiThresholdParameterBuilder::new(name.clone(), metric, self.predicate.into());
 
-        let p_idx = network.add_index_parameter(Box::new(p))?;
-
-        match self.returned_metrics {
-            Some(ref values) => {
-                let metrics = values
-                    .iter()
-                    .map(|v| v.load(network, args, None))
-                    .collect::<Result<Vec<_>, _>>()?;
-                let values_param = pywr_core::parameters::IndexedArrayParameter::new(
-                    ParameterName::new(&self.meta.name, parent),
-                    p_idx.into_metric_u64_before(),
-                    &metrics,
-                );
-                Ok(network.add_parameter(Box::new(values_param))?.into())
-            }
-            None => Ok(p_idx.into()),
+        for t in &self.thresholds {
+            builder.threshold(t.load(network, args, parent)?);
         }
+
+        if self.ratchet {
+            builder.ratchet();
+        }
+
+        network.parameters().u64(Box::new(builder));
+
+        if let Some(values) = &self.returned_metrics {
+            let mut values_builder = pywr_core::parameters::IndexedArrayParameterBuilder::new(
+                ParameterName::new(&self.meta.name, parent),
+                UnresolvedMetricU64::new_parameter_before(name),
+            );
+
+            for v in values {
+                values_builder.metric(v.load(network, args, None)?);
+            }
+
+            network.parameters().f64(Box::new(values_builder));
+        }
+
+        Ok(())
     }
 }
 

@@ -263,7 +263,7 @@ impl Add<PywrDuration> for Timestep {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum TimestepDuration {
     Hours(NonZeroU64),
     Days(NonZeroU64),
@@ -271,7 +271,7 @@ pub enum TimestepDuration {
 }
 
 #[derive(Debug, Error)]
-pub enum TimestepError {
+pub enum TimeDomainBuilderError {
     #[error("Could not create timestep range: {source}")]
     RangeGenerationError {
         #[source]
@@ -281,22 +281,24 @@ pub enum TimestepError {
     GenerationError(String),
     #[error("Pywr does not currently support timesteps of varying duration")]
     DurationMismatch,
+    #[error("The time domain defined no timesteps.")]
+    NoTimesteps,
 }
 
-#[derive(Debug)]
-pub struct Timestepper {
+#[derive(Debug, Clone)]
+pub struct TimeDomainBuilder {
     start: NaiveDateTime,
     end: NaiveDateTime,
     timestep: TimestepDuration,
 }
 
-impl Timestepper {
+impl TimeDomainBuilder {
     pub fn new(start: NaiveDateTime, end: NaiveDateTime, timestep: TimestepDuration) -> Self {
         Self { start, end, timestep }
     }
 
     /// Create a vector of `Timestep`s between the start and end dates at the given duration.
-    fn timesteps(&self) -> Result<Vec<Timestep>, TimestepError> {
+    fn timesteps(&self) -> Result<Vec<Timestep>, TimeDomainBuilderError> {
         match &self.timestep {
             TimestepDuration::Hours(hours) => {
                 Ok(self.generate_timesteps_from_fixed_duration(PywrDuration::from_hours(hours.get() as i64)))
@@ -324,7 +326,7 @@ impl Timestepper {
     /// Creates a vector of `Timestep`s between the start and end dates for a given frequency `&str`.
     ///
     /// Valid frequency strings are those that can be parsed by `polars::time::Duration::parse`. See: [https://docs.rs/polars-time/latest/polars_time/struct.Duration.html#method.parse]
-    fn generate_timesteps_from_frequency(&self, frequency: &str) -> Result<Vec<Timestep>, TimestepError> {
+    fn generate_timesteps_from_frequency(&self, frequency: &str) -> Result<Vec<Timestep>, TimeDomainBuilderError> {
         let duration = polars::time::Duration::parse(frequency);
 
         // Need to add an extra day to the end date so that the duration of the last timestep can be calculated.
@@ -353,10 +355,10 @@ impl Timestepper {
             TimeUnit::Milliseconds,
             None,
         )
-        .map_err(|source| TimestepError::RangeGenerationError { source })?
+        .map_err(|source| TimeDomainBuilderError::RangeGenerationError { source })?
         .as_datetime_iter()
-        .map(|x| x.ok_or(TimestepError::GenerationError(frequency.to_string())))
-        .collect::<Result<Vec<NaiveDateTime>, TimestepError>>()?;
+        .map(|x| x.ok_or(TimeDomainBuilderError::GenerationError(frequency.to_string())))
+        .collect::<Result<Vec<NaiveDateTime>, TimeDomainBuilderError>>()?;
 
         let timesteps = dates
             .windows(2)
@@ -368,6 +370,18 @@ impl Timestepper {
             .collect::<Vec<Timestep>>();
 
         Ok(timesteps)
+    }
+
+    pub fn build(&self) -> Result<TimeDomain, TimeDomainBuilderError> {
+        let timesteps = self.timesteps()?;
+        let duration = timesteps
+            .first()
+            .ok_or_else(|| TimeDomainBuilderError::NoTimesteps)?
+            .duration;
+        match timesteps.iter().all(|t| t.duration == duration) {
+            true => Ok(TimeDomain { timesteps, duration }),
+            false => Err(TimeDomainBuilderError::DurationMismatch),
+        }
     }
 }
 
@@ -406,19 +420,6 @@ impl TimeDomain {
     }
 }
 
-impl TryFrom<Timestepper> for TimeDomain {
-    type Error = TimestepError;
-
-    fn try_from(value: Timestepper) -> Result<Self, Self::Error> {
-        let timesteps = value.timesteps()?;
-        let duration = timesteps.first().expect("No time-steps defined.").duration;
-        match timesteps.iter().all(|t| t.duration == duration) {
-            true => Ok(Self { timesteps, duration }),
-            false => Err(TimestepError::DurationMismatch),
-        }
-    }
-}
-
 #[cfg(test)]
 mod test {
     use chrono::{NaiveDateTime, TimeDelta};
@@ -426,7 +427,7 @@ mod test {
 
     use crate::timestep::{PywrDuration, SECS_IN_DAY, is_leap_year};
 
-    use super::{TimestepDuration, Timestepper};
+    use super::{TimeDomainBuilder, TimestepDuration};
 
     #[test]
     fn test_days() {
@@ -434,7 +435,7 @@ mod test {
         let end = NaiveDateTime::parse_from_str("2021-01-10 00:00:00", "%Y-%m-%d %H:%M:%S").unwrap();
         let timestep = TimestepDuration::Days(NonZeroU64::new(1).unwrap());
 
-        let timestepper = Timestepper::new(start, end, timestep);
+        let timestepper = TimeDomainBuilder::new(start, end, timestep);
         let timesteps = timestepper.timesteps().unwrap();
         assert!(timesteps.len() == 10);
         assert_eq!(timesteps.first().unwrap().duration, TimeDelta::days(1));
@@ -442,7 +443,7 @@ mod test {
 
         let timestep = TimestepDuration::Frequency(String::from("1d"));
 
-        let timestepper = Timestepper::new(start, end, timestep);
+        let timestepper = TimeDomainBuilder::new(start, end, timestep);
         let timesteps = timestepper.timesteps().unwrap();
         assert!(timesteps.len() == 10);
         assert_eq!(timesteps.first().unwrap().duration, TimeDelta::days(1));
@@ -455,7 +456,7 @@ mod test {
         let end = NaiveDateTime::parse_from_str("2021-01-22 00:00:00", "%Y-%m-%d %H:%M:%S").unwrap();
         let timestep = TimestepDuration::Frequency(String::from("1w"));
 
-        let timestepper = Timestepper::new(start, end, timestep);
+        let timestepper = TimeDomainBuilder::new(start, end, timestep);
         let timesteps = timestepper.timesteps().unwrap();
 
         assert!(timesteps.len() == 4);
@@ -469,7 +470,7 @@ mod test {
         let end = NaiveDateTime::parse_from_str("2021-04-01 00:00:00", "%Y-%m-%d %H:%M:%S").unwrap();
         let timestep = TimestepDuration::Frequency(String::from("1mo"));
 
-        let timestepper = Timestepper::new(start, end, timestep);
+        let timestepper = TimeDomainBuilder::new(start, end, timestep);
         let timesteps = timestepper.timesteps().unwrap();
         assert!(timesteps.len() == 4);
         assert_eq!(timesteps[0].duration, TimeDelta::days(31));
@@ -484,7 +485,7 @@ mod test {
         let end = NaiveDateTime::parse_from_str("2021-01-01 16:00:00", "%Y-%m-%d %H:%M:%S").unwrap();
         let timestep = TimestepDuration::Frequency(String::from("1h"));
 
-        let timestepper = Timestepper::new(start, end, timestep);
+        let timestepper = TimeDomainBuilder::new(start, end, timestep);
         let timesteps = timestepper.timesteps().unwrap();
         assert!(timesteps.len() == 5);
         assert_eq!(timesteps.first().unwrap().duration, TimeDelta::hours(1));

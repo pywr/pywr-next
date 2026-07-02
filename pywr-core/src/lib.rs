@@ -1,7 +1,4 @@
-use crate::node::NodeIndex;
-use crate::recorders::RecorderIndex;
-pub use network::NetworkError;
-
+pub use network::{NetworkError, NodeIndex};
 pub mod agg_funcs;
 pub mod aggregated_node;
 mod aggregated_storage_node;
@@ -19,3 +16,9 @@ pub mod test_utils;
 pub mod timestep;
 pub mod utils;
 pub mod virtual_storage;
+
+pub use aggregated_node::{AggregatedNode, AggregatedNodeBuilder, AggregatedNodeBuilderError};
+pub use aggregated_storage_node::{
+    AggregatedStorageNode, AggregatedStorageNodeBuilder, AggregatedStorageNodeBuilderError,
+};
+pub use node::NodeBuilder;

@@ -8,6 +8,8 @@ use crate::metric::{EdgeReference, VirtualNodeAttrReference};
 use crate::network::LoadArgs;
 #[cfg(feature = "core")]
 use crate::parameters::{Parameter, PythonReturnType};
+#[cfg(feature = "core")]
+use pywr_core::recorders::UnresolvedOutputMetric;
 use pywr_schema_macros::skip_serializing_none;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -158,9 +160,11 @@ pub struct MetricSet {
 
 impl MetricSet {
     #[cfg(feature = "core")]
-    pub fn add_to_model(&self, network: &mut pywr_core::network::Network, args: &LoadArgs) -> Result<(), SchemaError> {
-        use pywr_core::recorders::OutputMetric;
-
+    pub fn add_to_network(
+        &self,
+        network: &mut pywr_core::network::NetworkBuilder,
+        args: &LoadArgs,
+    ) -> Result<(), SchemaError> {
         // Create metrics from filters and load them as output metrics
         let metrics_from_filters = self
             .filters
@@ -171,7 +175,7 @@ impl MetricSet {
 
         let output_metrics = match &self.metrics {
             Some(metrics) => {
-                let mut output_metrics: Vec<OutputMetric> = metrics
+                let mut output_metrics: Vec<UnresolvedOutputMetric> = metrics
                     .iter()
                     .map(|m| m.load_as_output(network, args, None))
                     .collect::<Result<_, _>>()?;
@@ -191,10 +195,17 @@ impl MetricSet {
             return Err(SchemaError::EmptyMetricSet(self.name.clone()));
         }
 
-        let aggregator = self.aggregator.clone().map(|a| a.load(args.data_path)).transpose()?;
+        let mut metric_set = pywr_core::recorders::MetricSetBuilder::new(&self.name);
 
-        let metric_set = pywr_core::recorders::MetricSet::new(&self.name, aggregator, output_metrics);
-        let _ = network.add_metric_set(metric_set)?;
+        if let Some(aggregator) = &self.aggregator {
+            metric_set.aggregator(aggregator.load(args.data_path)?);
+        }
+
+        for m in output_metrics {
+            metric_set.metric(m);
+        }
+
+        network.metric_set(metric_set);
 
         Ok(())
     }

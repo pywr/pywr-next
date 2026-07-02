@@ -1,7 +1,6 @@
 mod settings;
 
-use crate::edge::EdgeIndex;
-use crate::network::Network;
+use crate::network::{EdgeIndex, Network};
 use crate::node::{Node, NodeBounds, NodeType};
 use crate::solvers::col_edge_map::{ColumnEdgeMap, ColumnEdgeMapBuilder};
 use crate::solvers::{MultiStateSolver, SolverFeatures, SolverSetupError, SolverSolveError, SolverTimings};
@@ -16,7 +15,6 @@ pub use settings::build_ipm_simd_settings_py;
 pub use settings::{SimdIpmSolverSettings, SimdIpmSolverSettingsBuilder};
 use std::collections::BTreeMap;
 use std::num::NonZeroUsize;
-use std::ops::Deref;
 use std::time::Instant;
 use wide::f64x4;
 
@@ -316,7 +314,7 @@ impl BuiltSolver {
     /// Update edge objective coefficients
     fn update_edge_objectives(&mut self, network: &Network, states: &[State]) -> Result<(), SolverSolveError> {
         self.lp.zero_obj_coefficients();
-        for edge in network.edges().deref() {
+        for edge in network.edges() {
             // Collect all of the costs for all states together
             let cost = states
                 .iter()
@@ -362,7 +360,7 @@ impl BuiltSolver {
 
         let dt = timestep.days();
 
-        for node in network.nodes().deref() {
+        for node in network.nodes() {
             match node.node_type() {
                 NodeType::Input | NodeType::Output | NodeType::Link => {
                     if !node.is_max_flow_unconstrained().unwrap() {
@@ -497,7 +495,7 @@ impl SolverBuilder {
 
     /// Create mass balance constraints for each edge
     fn create_mass_balance_constraints(&mut self, network: &Network) {
-        for node in network.nodes().deref() {
+        for node in network.nodes() {
             // Only link nodes create mass-balance constraints
 
             if let NodeType::Link = node.node_type() {
@@ -567,7 +565,7 @@ impl SolverBuilder {
     fn create_node_constraints(&mut self, network: &Network) -> Vec<usize> {
         let mut row_ids = Vec::with_capacity(network.nodes().len());
 
-        for node in network.nodes().deref() {
+        for node in network.nodes() {
             match node.node_type() {
                 NodeType::Input | NodeType::Output | NodeType::Link => {
                     // Only create node constraints for nodes that could become constrained
@@ -690,7 +688,7 @@ impl MultiStateSolver for SimdIpmF64Solver {
                     state.get_mut_network_state().reset();
                 }
 
-                for edge in network.edges().deref() {
+                for edge in network.edges() {
                     let col = built.col_for_edge(&edge.index());
                     let flows = solution[col];
 

@@ -72,7 +72,7 @@ rustdoc-args = ["--html-in-header", "katex-header.html"]
 [profile.dev]
 # Disabling debug info speeds up builds a bunch,
 # and we don't rely on it for debugging that much.
-debug = 0
+# debug = 0
 
 [profile.release]
 opt-level = 3

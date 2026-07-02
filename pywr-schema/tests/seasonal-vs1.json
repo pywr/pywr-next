@@ -4,7 +4,7 @@
     "description": "An example of a seasonal licence that resets to full on 15th Jan and 20th Feb each year.",
     "minimum_version": "0.1"
   },
-  "timestepper": {
+  "time": {
     "start": "2015-01-01",
     "end": "2015-02-28",
     "timestep": {

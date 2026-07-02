@@ -1,11 +1,15 @@
 /// AggregatedIndexParameter
 ///
-use super::{ConstParameter, Parameter, ParameterName, ParameterState, SimpleParameter};
+use super::{
+    BuiltParameter, ConstParameter, MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder,
+    ParameterName, ParameterState, SimpleParameter,
+};
 use crate::agg_funcs::AggFuncU64;
-use crate::metric::{ConstantMetricU64, MetricU64, SimpleMetricU64};
-use crate::network::Network;
-use crate::parameters::errors::{ConstCalculationError, ParameterCalculationError, SimpleCalculationError};
+use crate::metric::{ConstantMetricU64, MetricU64, SimpleMetricU64, UnresolvedMetricU64};
+use crate::network::{Network, ResolutionMaps};
+use crate::parameters::errors::{ConstCalculationError, GeneralCalculationError, SimpleCalculationError};
 use crate::parameters::{GeneralParameter, ParameterMeta};
+use crate::resolve_metric_u64_vec;
 use crate::scenario::ScenarioIndex;
 use crate::state::{ConstParameterValues, SimpleParameterValues, State};
 use crate::timestep::Timestep;
@@ -14,19 +18,6 @@ pub struct AggregatedIndexParameter<M> {
     meta: ParameterMeta,
     metrics: Vec<M>,
     agg_func: AggFuncU64,
-}
-
-impl<M> AggregatedIndexParameter<M>
-where
-    M: Send + Sync + Clone,
-{
-    pub fn new(name: ParameterName, metrics: &[M], agg_func: AggFuncU64) -> Self {
-        Self {
-            meta: ParameterMeta::new(name),
-            metrics: metrics.to_vec(),
-            agg_func,
-        }
-    }
 }
 
 impl<M> Parameter for AggregatedIndexParameter<M>
@@ -46,7 +37,7 @@ impl GeneralParameter<u64> for AggregatedIndexParameter<MetricU64> {
         network: &Network,
         state: &State,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<Option<u64>, ParameterCalculationError> {
+    ) -> Result<Option<u64>, GeneralCalculationError> {
         let values = self
             .metrics
             .iter()
@@ -142,5 +133,48 @@ impl ConstParameter<u64> for AggregatedIndexParameter<ConstantMetricU64> {
         Self: Sized,
     {
         self
+    }
+}
+
+pub struct AggregatedIndexParameterBuilder {
+    meta: ParameterMeta,
+    metrics: Vec<UnresolvedMetricU64>,
+    agg_func: AggFuncU64,
+}
+
+impl AggregatedIndexParameterBuilder {
+    pub fn new(name: ParameterName, agg_func: AggFuncU64) -> Self {
+        Self {
+            meta: ParameterMeta::new(name),
+            metrics: Vec::new(),
+            agg_func,
+        }
+    }
+
+    /// Add a new metric to the builder
+    pub fn metric(&mut self, metric: UnresolvedMetricU64) -> &mut Self {
+        self.metrics.push(metric);
+        self
+    }
+}
+
+impl ParameterBuilder<u64> for AggregatedIndexParameterBuilder {
+    fn name(&self) -> &ParameterName {
+        &self.meta.name
+    }
+    fn build(
+        self: Box<Self>,
+        resolution_maps: &ResolutionMaps,
+    ) -> Result<MaybeBuiltParameter<u64>, ParameterBuildError> {
+        let metrics = resolve_metric_u64_vec!(self, &self.metrics, resolution_maps, "metrics");
+
+        let p = AggregatedIndexParameter {
+            meta: self.meta,
+            metrics,
+            agg_func: self.agg_func,
+        };
+
+        let bp = BuiltParameter::General(Box::new(p));
+        Ok(bp.into())
     }
 }

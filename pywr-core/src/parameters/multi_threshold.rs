@@ -1,12 +1,14 @@
-use crate::metric::MetricF64;
-use crate::network::Network;
-use crate::parameters::errors::{ParameterCalculationError, ParameterSetupError};
+use crate::metric::{MetricF64, UnresolvedMetricF64};
+use crate::network::{Network, ResolutionMaps};
+use crate::parameters::errors::{GeneralCalculationError, ParameterSetupError};
 use crate::parameters::{
-    GeneralParameter, Parameter, ParameterMeta, ParameterName, ParameterState, Predicate, downcast_internal_state_mut,
+    BuiltParameter, GeneralParameter, MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder,
+    ParameterMeta, ParameterName, ParameterState, Predicate, downcast_internal_state_mut,
 };
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
 use crate::timestep::Timestep;
+use crate::{resolve_metric_f64, resolve_metric_f64_vec};
 
 pub struct MultiThresholdParameter {
     meta: ParameterMeta,
@@ -14,24 +16,6 @@ pub struct MultiThresholdParameter {
     thresholds: Vec<MetricF64>,
     predicate: Predicate,
     ratchet: bool,
-}
-
-impl MultiThresholdParameter {
-    pub fn new(
-        name: ParameterName,
-        metric: MetricF64,
-        thresholds: &[MetricF64],
-        predicate: Predicate,
-        ratchet: bool,
-    ) -> Self {
-        Self {
-            meta: ParameterMeta::new(name),
-            metric,
-            thresholds: thresholds.to_vec(),
-            predicate,
-            ratchet,
-        }
-    }
 }
 
 impl Parameter for MultiThresholdParameter {
@@ -58,7 +42,7 @@ impl GeneralParameter<u64> for MultiThresholdParameter {
         model: &Network,
         state: &State,
         internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<Option<u64>, ParameterCalculationError> {
+    ) -> Result<Option<u64>, GeneralCalculationError> {
         // Downcast the internal state to the correct type
         let previous_max = downcast_internal_state_mut::<u64>(internal_state);
 
@@ -96,18 +80,75 @@ impl GeneralParameter<u64> for MultiThresholdParameter {
     }
 }
 
+pub struct MultiThresholdParameterBuilder {
+    meta: ParameterMeta,
+    metric: UnresolvedMetricF64,
+    thresholds: Vec<UnresolvedMetricF64>,
+    predicate: Predicate,
+    ratchet: bool,
+}
+
+impl MultiThresholdParameterBuilder {
+    pub fn new(name: ParameterName, metric: UnresolvedMetricF64, predicate: Predicate) -> Self {
+        Self {
+            meta: ParameterMeta::new(name),
+            metric,
+            thresholds: Vec::new(),
+            predicate,
+            ratchet: false,
+        }
+    }
+
+    /// Enable ratchet
+    pub fn ratchet(&mut self) -> &mut Self {
+        self.ratchet = true;
+        self
+    }
+
+    /// Add a threshold to the builder. The thresholds should be added in order.
+    pub fn threshold(&mut self, threshold: UnresolvedMetricF64) -> &mut Self {
+        self.thresholds.push(threshold);
+        self
+    }
+}
+
+impl ParameterBuilder<u64> for MultiThresholdParameterBuilder {
+    fn name(&self) -> &ParameterName {
+        &self.meta.name
+    }
+
+    fn build(
+        self: Box<Self>,
+        resolution_maps: &ResolutionMaps,
+    ) -> Result<MaybeBuiltParameter<u64>, ParameterBuildError> {
+        let metric = resolve_metric_f64!(self, self.metric, resolution_maps, "metric");
+        let thresholds = resolve_metric_f64_vec!(self, &self.thresholds, resolution_maps, "thresholds");
+
+        let p = MultiThresholdParameter {
+            meta: self.meta,
+            metric,
+            thresholds,
+            predicate: self.predicate,
+            ratchet: self.ratchet,
+        };
+
+        let bp = BuiltParameter::General(Box::new(p));
+        Ok(MaybeBuiltParameter::Built(bp))
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::MultiThresholdParameter;
-    use crate::metric::MetricF64;
-    use crate::parameters::{Array1Parameter, Predicate};
+    use super::MultiThresholdParameterBuilder;
+    use crate::metric::UnresolvedMetricF64;
+    use crate::parameters::{Array1ParameterBuilder, Predicate};
     use crate::test_utils::{run_and_assert_parameter_u64, simple_model};
     use ndarray::{Array1, Array2, Axis, concatenate};
 
     /// Basic functional test of the `MultiThresholdParameter` parameter.
     #[test]
     fn test_multi_threshold() {
-        let mut model = simple_model(1, None);
+        let mut model_builder = simple_model(1, None);
 
         // Create an artificial volume series to use for the delay test
         let v1 = Array1::linspace(1.0, 0.0, 11);
@@ -115,22 +156,17 @@ mod tests {
 
         let volumes = concatenate![Axis(0), v1, v2];
 
-        let volume = Array1Parameter::new("test-x".into(), volumes.clone(), None);
+        let volume = Array1ParameterBuilder::new("test-x".into(), volumes.clone());
 
-        let volume_idx = model.network_mut().add_simple_parameter(Box::new(volume)).unwrap();
+        model_builder.network_builder().parameters().f64(Box::new(volume));
 
-        let t1: MetricF64 = 0.75.into();
-        let t2: MetricF64 = 0.5.into();
-
-        let thresholds = vec![t1, t2];
-
-        let parameter = MultiThresholdParameter::new(
+        let mut parameter = MultiThresholdParameterBuilder::new(
             "test-parameter".into(),
-            volume_idx.into_metric_f64_before(),
-            &thresholds,
+            UnresolvedMetricF64::new_parameter_before("test-x"),
             Predicate::GreaterThan,
-            false,
         );
+
+        parameter.threshold(0.75.into()).threshold(0.5.into());
 
         // The multi-threshold parameter should return the index of the first threshold that is met.
         // In this case, the thresholds are 0.75 and 0.5,
@@ -138,13 +174,13 @@ mod tests {
 
         let expected_values: Array2<u64> = expected_values.insert_axis(Axis(1));
 
-        run_and_assert_parameter_u64(&mut model, Box::new(parameter), expected_values);
+        run_and_assert_parameter_u64(model_builder, Box::new(parameter), expected_values);
     }
 
     /// Basic functional test of the `MultiThresholdParameter` parameter with ratchet enabled.
     #[test]
     fn test_multi_threshold_with_ratchet() {
-        let mut model = simple_model(1, None);
+        let mut model_builder = simple_model(1, None);
 
         // Create an artificial volume series to use for the delay test
         let v1 = Array1::linspace(1.0, 0.0, 11);
@@ -152,22 +188,17 @@ mod tests {
 
         let volumes = concatenate![Axis(0), v1, v2];
 
-        let volume = Array1Parameter::new("test-x".into(), volumes.clone(), None);
+        let volume = Array1ParameterBuilder::new("test-x".into(), volumes.clone());
 
-        let volume_idx = model.network_mut().add_simple_parameter(Box::new(volume)).unwrap();
+        model_builder.network_builder().parameters().f64(Box::new(volume));
 
-        let t1: MetricF64 = 0.75.into();
-        let t2: MetricF64 = 0.5.into();
-
-        let thresholds = vec![t1, t2];
-
-        let parameter = MultiThresholdParameter::new(
+        let mut parameter = MultiThresholdParameterBuilder::new(
             "test-parameter".into(),
-            volume_idx.into_metric_f64_before(),
-            &thresholds,
+            UnresolvedMetricF64::new_parameter_before("test-x"),
             Predicate::GreaterThan,
-            true,
         );
+
+        parameter.threshold(0.75.into()).threshold(0.5.into()).ratchet();
 
         // The multi-threshold parameter should return the index of the first threshold that is met,
         // but with ratchet enabled, it should not decrease the value once it has been set.
@@ -176,6 +207,6 @@ mod tests {
 
         let expected_values: Array2<u64> = expected_values.insert_axis(Axis(1));
 
-        run_and_assert_parameter_u64(&mut model, Box::new(parameter), expected_values);
+        run_and_assert_parameter_u64(model_builder, Box::new(parameter), expected_values);
     }
 }

@@ -4,7 +4,7 @@
     "description": "An example of using custom Python function that returns multiple values.",
     "minimum_version": "0.1"
   },
-  "timestepper": {
+  "time": {
     "start": "2015-01-01",
     "end": "2015-01-15",
     "timestep": {

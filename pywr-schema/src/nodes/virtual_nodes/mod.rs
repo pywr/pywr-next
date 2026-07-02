@@ -11,7 +11,7 @@ pub use aggregated::{
     AggregatedNode, AggregatedNodeAttribute, AggregatedStorageNode, AggregatedStorageNodeAttribute, Relationship,
 };
 #[cfg(feature = "core")]
-use pywr_core::metric::MetricF64;
+use pywr_core::metric::UnresolvedMetricF64;
 use schemars::JsonSchema;
 use std::path::{Path, PathBuf};
 use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumString, IntoStaticStr};
@@ -93,38 +93,25 @@ impl VirtualNode {
 
 #[cfg(feature = "core")]
 impl VirtualNode {
-    pub fn add_to_model(&self, network: &mut pywr_core::network::Network, args: &LoadArgs) -> Result<(), SchemaError> {
-        match self {
-            VirtualNode::Aggregated(n) => n.add_to_model(network, args),
-            VirtualNode::AggregatedStorage(n) => n.add_to_model(network, args),
-            VirtualNode::VirtualStorage(n) => n.add_to_model(network, args),
-            VirtualNode::Placeholder(n) => n.add_to_model(),
-        }
-    }
-
-    pub fn set_constraints(
+    pub fn add_to_network(
         &self,
-        network: &mut pywr_core::network::Network,
+        network: &mut pywr_core::network::NetworkBuilder,
         args: &LoadArgs,
     ) -> Result<(), SchemaError> {
         match self {
-            VirtualNode::Aggregated(n) => n.set_constraints(network, args),
-            VirtualNode::AggregatedStorage(_) => Ok(()), // No constraints on aggregated storage nodes.
-            VirtualNode::VirtualStorage(n) => n.set_constraints(network, args),
-            VirtualNode::Placeholder(n) => n.set_constraints(),
+            VirtualNode::Aggregated(n) => n.add_to_network(network, args),
+            VirtualNode::AggregatedStorage(n) => n.add_to_network(network, args),
+            VirtualNode::VirtualStorage(n) => n.add_to_network(network, args),
+            VirtualNode::Placeholder(n) => n.add_to_network(),
         }
     }
 
     /// Create a metric for the given attribute on this node.
-    pub fn create_metric(
-        &self,
-        network: &mut pywr_core::network::Network,
-        attribute: Option<NodeAttribute>,
-    ) -> Result<MetricF64, SchemaError> {
+    pub fn create_metric(&self, attribute: Option<NodeAttribute>) -> Result<UnresolvedMetricF64, SchemaError> {
         match self {
-            VirtualNode::Aggregated(n) => n.create_metric(network, attribute),
-            VirtualNode::AggregatedStorage(n) => n.create_metric(network, attribute),
-            VirtualNode::VirtualStorage(n) => n.create_metric(network, attribute),
+            VirtualNode::Aggregated(n) => n.create_metric(attribute),
+            VirtualNode::AggregatedStorage(n) => n.create_metric(attribute),
+            VirtualNode::VirtualStorage(n) => n.create_metric(attribute),
             VirtualNode::Placeholder(n) => n.create_metric(),
         }
     }

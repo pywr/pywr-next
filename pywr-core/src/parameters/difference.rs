@@ -1,8 +1,12 @@
-use super::{Parameter, ParameterName, SimpleParameter};
-use crate::metric::{MetricF64, SimpleMetricF64};
-use crate::network::Network;
-use crate::parameters::errors::{ParameterCalculationError, SimpleCalculationError};
+use super::{
+    BuiltParameter, MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder, ParameterName,
+    SimpleParameter,
+};
+use crate::metric::{MetricF64, SimpleMetricF64, UnresolvedMetricF64};
+use crate::network::{Network, ResolutionMaps};
+use crate::parameters::errors::{GeneralCalculationError, SimpleCalculationError};
 use crate::parameters::{GeneralParameter, ParameterMeta, ParameterState};
+use crate::resolve_metric_f64;
 use crate::scenario::ScenarioIndex;
 use crate::state::{SimpleParameterValues, State};
 use crate::timestep::Timestep;
@@ -22,20 +26,6 @@ pub struct DifferenceParameter<M> {
     max: Option<M>,
 }
 
-impl<M> DifferenceParameter<M>
-where
-    M: Send + Sync + Clone,
-{
-    pub fn new(name: ParameterName, a: M, b: M, min: Option<M>, max: Option<M>) -> Self {
-        Self {
-            meta: ParameterMeta::new(name),
-            a,
-            b,
-            min,
-            max,
-        }
-    }
-}
 impl<M> Parameter for DifferenceParameter<M>
 where
     M: Send + Sync,
@@ -52,7 +42,7 @@ impl GeneralParameter<f64> for DifferenceParameter<MetricF64> {
         model: &Network,
         state: &State,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<Option<f64>, ParameterCalculationError> {
+    ) -> Result<Option<f64>, GeneralCalculationError> {
         let a = self.a.get_value(model, state)?;
         let b = self.b.get_value(model, state)?;
         let min = self.min.as_ref().map(|m| m.get_value(model, state)).transpose()?;
@@ -72,8 +62,8 @@ impl GeneralParameter<f64> for DifferenceParameter<MetricF64> {
         // We can make a simple version if all metrics can be simplified
         let a: SimpleMetricF64 = self.a.clone().try_into().ok()?;
         let b: SimpleMetricF64 = self.b.clone().try_into().ok()?;
-        let min: Option<SimpleMetricF64> = self.min.as_ref().map(|m| m.clone().try_into().ok())?;
-        let max: Option<SimpleMetricF64> = self.max.as_ref().map(|m| m.clone().try_into().ok())?;
+        let min: Option<SimpleMetricF64> = self.min.as_ref().map(|m| m.clone().try_into()).transpose().ok()?;
+        let max: Option<SimpleMetricF64> = self.max.as_ref().map(|m| m.clone().try_into()).transpose().ok()?;
 
         Some(Box::new(DifferenceParameter::<SimpleMetricF64> {
             meta: self.meta.clone(),
@@ -124,6 +114,67 @@ fn difference(a: f64, b: f64, min: Option<f64>, max: Option<f64>) -> f64 {
         }
     }
     result
+}
+
+pub struct DifferenceParameterBuilder {
+    meta: ParameterMeta,
+    a: UnresolvedMetricF64,
+    b: UnresolvedMetricF64,
+    min: Option<UnresolvedMetricF64>,
+    max: Option<UnresolvedMetricF64>,
+}
+
+impl DifferenceParameterBuilder {
+    pub fn new(name: ParameterName, a: UnresolvedMetricF64, b: UnresolvedMetricF64) -> Self {
+        Self {
+            meta: ParameterMeta::new(name),
+            a,
+            b,
+            min: None,
+            max: None,
+        }
+    }
+
+    pub fn min(&mut self, min: UnresolvedMetricF64) -> &mut Self {
+        self.min = Some(min);
+        self
+    }
+    pub fn max(&mut self, max: UnresolvedMetricF64) -> &mut Self {
+        self.max = Some(max);
+        self
+    }
+}
+
+impl ParameterBuilder<f64> for DifferenceParameterBuilder {
+    fn name(&self) -> &ParameterName {
+        &self.meta.name
+    }
+
+    fn build(
+        self: Box<Self>,
+        resolution_maps: &ResolutionMaps,
+    ) -> Result<MaybeBuiltParameter<f64>, ParameterBuildError> {
+        let a = resolve_metric_f64!(self, self.a, resolution_maps, "a");
+        let b = resolve_metric_f64!(self, self.b, resolution_maps, "b");
+        let min = match &self.min {
+            Some(min) => Some(resolve_metric_f64!(self, min, resolution_maps, "min")),
+            None => None,
+        };
+        let max = match &self.max {
+            Some(max) => Some(resolve_metric_f64!(self, max, resolution_maps, "max")),
+            None => None,
+        };
+
+        let p = DifferenceParameter {
+            meta: self.meta,
+            a,
+            b,
+            min,
+            max,
+        };
+
+        Ok(MaybeBuiltParameter::Built(BuiltParameter::General(Box::new(p))))
+    }
 }
 
 #[cfg(test)]

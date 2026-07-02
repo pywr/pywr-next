@@ -22,10 +22,9 @@ use crate::v1::{ConversionData, TryFromV1, TryIntoV2};
 use pyo3::{PyResult, exceptions::PyRuntimeError, pyclass, pymethods};
 #[cfg(feature = "core")]
 use pywr_core::{
-    metric::{MetricF64, MetricU64},
-    models::MultiNetworkTransferIndex,
+    metric::{UnresolvedMetricF64, UnresolvedMetricU64},
     parameters::ParameterName,
-    recorders::OutputMetric,
+    recorders::UnresolvedOutputMetric,
 };
 use pywr_schema_macros::{PywrVisitAll, skip_serializing_none};
 use pywr_v1_schema::parameters::ParameterValue as ParameterValueV1;
@@ -96,15 +95,15 @@ impl From<VirtualNodeAttrReference> for Metric {
 impl Metric {
     pub fn load(
         &self,
-        network: &mut pywr_core::network::Network,
+        network: &mut pywr_core::network::NetworkBuilder,
         args: &LoadArgs,
         parent: Option<&str>,
-    ) -> Result<MetricF64, SchemaError> {
+    ) -> Result<UnresolvedMetricF64, SchemaError> {
         match self {
             Self::Node(node_ref) => node_ref.load_f64(network, args),
-            Self::VirtualNode(node_ref) => node_ref.load_f64(network, args),
+            Self::VirtualNode(node_ref) => node_ref.load_f64(args),
             // Global parameter with no parent
-            Self::Parameter(parameter_ref) => parameter_ref.load_f64(network, None),
+            Self::Parameter(parameter_ref) => Ok(parameter_ref.load_f64(None)),
             // Local parameter loaded from parent's namespace
             Self::LocalParameter(parameter_ref) => {
                 if parent.is_none() {
@@ -113,7 +112,7 @@ impl Metric {
                     ));
                 }
 
-                parameter_ref.load_f64(network, parent)
+                Ok(parameter_ref.load_f64(parent))
             }
             Self::Literal { value } => Ok((*value).into()),
             Self::Table(table_ref) => {
@@ -127,10 +126,10 @@ impl Metric {
                 Ok(value.into())
             }
             Self::Timeseries(ts_ref) => {
-                let param_idx = match &ts_ref.columns {
+                let param_name = match &ts_ref.columns {
                     Some(TimeseriesColumns::Scenario { name }) => {
                         args.timeseries
-                            .load_df_f64(network, ts_ref.name.as_ref(), args.domain, name.as_str())?
+                            .load_df_f64(network, ts_ref.name.as_ref(), name.as_str())?
                     }
                     Some(TimeseriesColumns::Column { name }) => {
                         args.timeseries
@@ -138,16 +137,13 @@ impl Metric {
                     }
                     None => args.timeseries.load_single_column_f64(network, ts_ref.name.as_ref())?,
                 };
-                Ok(param_idx.into_metric_f64_before())
+                Ok(UnresolvedMetricF64::new_parameter_before(param_name))
             }
             Self::InterNetworkTransfer { name } => {
                 // Find the matching inter model transfer
-                match args.inter_network_transfers.iter().position(|t| &t.name == name) {
-                    Some(idx) => Ok(MetricF64::InterNetworkTransfer(MultiNetworkTransferIndex(idx))),
-                    None => Err(SchemaError::InterNetworkTransferNotFound(name.to_string())),
-                }
+                Ok(UnresolvedMetricF64::InterNetworkTransfer(name.clone()))
             }
-            Self::Edge(edge_ref) => edge_ref.load(network, args),
+            Self::Edge(edge_ref) => edge_ref.load(args),
         }
     }
 
@@ -205,16 +201,16 @@ impl Metric {
 
     pub fn load_as_output(
         &self,
-        network: &mut pywr_core::network::Network,
+        network: &mut pywr_core::network::NetworkBuilder,
         args: &LoadArgs,
         parent: Option<&str>,
-    ) -> Result<OutputMetric, SchemaError> {
+    ) -> Result<UnresolvedOutputMetric, SchemaError> {
         let metric = self.load(network, args, parent)?;
 
         let ty = self.to_string();
         let sub_type = self.sub_type(args)?;
 
-        Ok(OutputMetric::new(
+        Ok(UnresolvedOutputMetric::new(
             self.name()?.as_str(),
             &self.attribute(args)?,
             &ty,
@@ -303,9 +299,9 @@ impl NodeAttrReference {
     #[cfg(feature = "core")]
     pub fn load_f64(
         &self,
-        network: &mut pywr_core::network::Network,
+        network: &mut pywr_core::network::NetworkBuilder,
         args: &LoadArgs,
-    ) -> Result<MetricF64, SchemaError> {
+    ) -> Result<UnresolvedMetricF64, SchemaError> {
         // This is the associated node in the schema
         let node = args
             .schema
@@ -319,11 +315,7 @@ impl NodeAttrReference {
 
     /// Load a node reference into a [`MetricUsize`].
     #[cfg(feature = "core")]
-    pub fn load_u64(
-        &self,
-        _network: &mut pywr_core::network::Network,
-        args: &LoadArgs,
-    ) -> Result<MetricU64, SchemaError> {
+    pub fn load_u64(&self, args: &LoadArgs) -> Result<UnresolvedMetricU64, SchemaError> {
         // This is the associated node in the schema
         let _node = args
             .schema
@@ -393,11 +385,7 @@ impl VirtualNodeAttrReference {
 
     /// Load a node reference into a [`MetricF64`].
     #[cfg(feature = "core")]
-    pub fn load_f64(
-        &self,
-        network: &mut pywr_core::network::Network,
-        args: &LoadArgs,
-    ) -> Result<MetricF64, SchemaError> {
+    pub fn load_f64(&self, args: &LoadArgs) -> Result<UnresolvedMetricF64, SchemaError> {
         // This is the associated node in the schema
         let node =
             args.schema
@@ -406,7 +394,7 @@ impl VirtualNodeAttrReference {
                     name: self.name.clone(),
                 })?;
 
-        node.create_metric(network, self.attribute)
+        node.create_metric(self.attribute)
     }
 
     /// Load a node reference into a [`MetricUsize`].
@@ -415,7 +403,7 @@ impl VirtualNodeAttrReference {
         &self,
         _network: &mut pywr_core::network::Network,
         args: &LoadArgs,
-    ) -> Result<MetricU64, SchemaError> {
+    ) -> Result<UnresolvedMetricU64, SchemaError> {
         // This is the associated node in the schema
         let _node =
             args.schema
@@ -533,11 +521,7 @@ impl ParameterReference {
     /// from the `network`. If `parent` is the optional parameter name space from which to load
     /// the parameter.
     #[cfg(feature = "core")]
-    pub fn load_f64(
-        &self,
-        network: &mut pywr_core::network::Network,
-        parent: Option<&str>,
-    ) -> Result<MetricF64, SchemaError> {
+    pub fn load_f64(&self, parent: Option<&str>) -> UnresolvedMetricF64 {
         let name = ParameterName::new(&self.name, parent);
         // Determine the return value to use
         let return_value = self.return_value.unwrap_or_default().into();
@@ -545,27 +529,13 @@ impl ParameterReference {
         match &self.key {
             Some(key) => {
                 // Key given; this should be a multi-valued parameter
-                let idx = network.get_multi_valued_parameter_index_by_name(&name).ok_or_else(|| {
-                    SchemaError::CoreParameterNotFound {
-                        name: self.name.to_string(),
-                        key: Some(key.clone()),
-                    }
-                })?;
-
-                Ok(idx.into_metric_f64(key, return_value))
-            }
-            None => {
-                if let Some(idx) = network.get_parameter_index_by_name(&name) {
-                    Ok(idx.into_metric_f64(return_value))
-                } else if let Some(idx) = network.get_index_parameter_index_by_name(&name) {
-                    Ok(idx.into_metric_f64(return_value))
-                } else {
-                    Err(SchemaError::CoreParameterNotFound {
-                        name: self.name.to_string(),
-                        key: None,
-                    })
+                UnresolvedMetricF64::MultiParameterValue {
+                    name,
+                    key: key.to_string(),
+                    return_value,
                 }
             }
+            None => UnresolvedMetricF64::ParameterValue { name, return_value },
         }
     }
 
@@ -573,11 +543,7 @@ impl ParameterReference {
     /// from the `network`. If `parent` is the optional parameter name space from which to load
     /// the parameter.
     #[cfg(feature = "core")]
-    pub fn load_u64(
-        &self,
-        network: &mut pywr_core::network::Network,
-        parent: Option<&str>,
-    ) -> Result<MetricU64, SchemaError> {
+    pub fn load_u64(&self, parent: Option<&str>) -> UnresolvedMetricU64 {
         let name = ParameterName::new(&self.name, parent);
         // Determine the return value to use
         let return_value = self.return_value.unwrap_or_default().into();
@@ -585,27 +551,13 @@ impl ParameterReference {
         match &self.key {
             Some(key) => {
                 // Key given; this should be a multi-valued parameter
-                let idx = network.get_multi_valued_parameter_index_by_name(&name).ok_or_else(|| {
-                    SchemaError::CoreParameterNotFound {
-                        name: self.name.to_string(),
-                        key: Some(key.clone()),
-                    }
-                })?;
-                Ok(idx.into_metric_u64(key, return_value))
-            }
-            None => {
-                if let Some(idx) = network.get_index_parameter_index_by_name(&name) {
-                    Ok(idx.into_metric_u64(return_value))
-                } else if network.get_parameter_index_by_name(&name).is_some() {
-                    // Inform the user we found the parameter, but it was the wrong type
-                    Err(SchemaError::IndexParameterExpected(self.name.to_string()))
-                } else {
-                    Err(SchemaError::CoreParameterNotFound {
-                        name: self.name.to_string(),
-                        key: None,
-                    })
+                UnresolvedMetricU64::MultiParameterValue {
+                    name,
+                    key: key.to_string(),
+                    return_value,
                 }
             }
+            None => UnresolvedMetricU64::ParameterValue { name, return_value },
         }
     }
     #[cfg(feature = "core")]
@@ -640,9 +592,9 @@ pub struct EdgeReference {
 
 #[cfg(feature = "core")]
 impl EdgeReference {
-    pub fn load(&self, network: &mut pywr_core::network::Network, args: &LoadArgs) -> Result<MetricF64, SchemaError> {
+    pub fn load(&self, args: &LoadArgs) -> Result<UnresolvedMetricF64, SchemaError> {
         // This is the associated node in the schema
-        self.edge.create_metric(network, args)
+        self.edge.create_metric(args)
     }
 }
 
@@ -685,14 +637,14 @@ impl From<u64> for IndexMetric {
 impl IndexMetric {
     pub fn load(
         &self,
-        network: &mut pywr_core::network::Network,
+        network: &mut pywr_core::network::NetworkBuilder,
         args: &LoadArgs,
         parent: Option<&str>,
-    ) -> Result<MetricU64, SchemaError> {
+    ) -> Result<UnresolvedMetricU64, SchemaError> {
         match self {
-            Self::Node(node_ref) => node_ref.load_u64(network, args),
+            Self::Node(node_ref) => node_ref.load_u64(args),
             // Global parameter with no parent
-            Self::Parameter(parameter_ref) => parameter_ref.load_u64(network, None),
+            Self::Parameter(parameter_ref) => Ok(parameter_ref.load_u64(None)),
             // Local parameter loaded from parent's namespace
             Self::LocalParameter(parameter_ref) => {
                 if parent.is_none() {
@@ -701,7 +653,7 @@ impl IndexMetric {
                     ));
                 }
 
-                parameter_ref.load_u64(network, parent)
+                Ok(parameter_ref.load_u64(parent))
             }
             Self::Constant { value } => Ok((*value).into()),
             Self::Table(table_ref) => {
@@ -715,10 +667,10 @@ impl IndexMetric {
                 Ok(value.into())
             }
             Self::Timeseries(ts_ref) => {
-                let param_idx = match &ts_ref.columns {
+                let param_name = match &ts_ref.columns {
                     Some(TimeseriesColumns::Scenario { name }) => {
                         args.timeseries
-                            .load_df_usize(network, ts_ref.name.as_ref(), args.domain, name.as_str())?
+                            .load_df_usize(network, ts_ref.name.as_ref(), name.as_str())?
                     }
                     Some(TimeseriesColumns::Column { name }) => {
                         args.timeseries
@@ -728,14 +680,11 @@ impl IndexMetric {
                         .timeseries
                         .load_single_column_usize(network, ts_ref.name.as_ref())?,
                 };
-                Ok(param_idx.into_metric_u64_before())
+                Ok(UnresolvedMetricU64::new_parameter_before(param_name))
             }
             Self::InterNetworkTransfer { name } => {
                 // Find the matching inter model transfer
-                match args.inter_network_transfers.iter().position(|t| &t.name == name) {
-                    Some(idx) => Ok(MetricU64::InterNetworkTransfer(MultiNetworkTransferIndex(idx))),
-                    None => Err(SchemaError::InterNetworkTransferNotFound(name.to_string())),
-                }
+                Ok(UnresolvedMetricU64::InterNetworkTransfer(name.clone()))
             }
         }
     }

@@ -1,19 +1,20 @@
 use crate::error::ComponentConversionError;
-use crate::error::SchemaError;
 use crate::metric::Metric;
-#[cfg(feature = "core")]
-use crate::network::LoadArgs;
-#[cfg(feature = "core")]
-use crate::nodes::{NodeAttribute, NodeComponent};
-use crate::nodes::{NodeMeta, NodeSlot};
+use crate::nodes::NodeMeta;
 use crate::parameters::Parameter;
 use crate::v1::{ConversionData, TryFromV1, try_convert_initial_storage, try_convert_node_attr, try_convert_node_meta};
+#[cfg(feature = "core")]
+use crate::{
+    error::SchemaError,
+    network::LoadArgs,
+    nodes::{NodeAttribute, NodeComponent, NodeSlot},
+};
 use crate::{mermaid, node_attribute_subset_enum, node_component_subset_enum};
 #[cfg(feature = "core")]
 use pywr_core::{
-    metric::MetricF64,
-    node::StorageInitialVolume as CoreStorageInitialVolume,
-    parameters::{DeficitParameter, ParameterName},
+    metric::UnresolvedMetricF64,
+    node::{UnresolvedNode, UnresolvedStorageInitialVolume},
+    parameters::{DeficitParameterBuilder, ParameterName},
 };
 use pywr_schema_macros::PywrVisitAll;
 use pywr_schema_macros::skip_serializing_none;
@@ -71,21 +72,6 @@ impl InputNode {
     pub const DEFAULT_ATTRIBUTE: InputNodeAttribute = InputNodeAttribute::Outflow;
     pub const DEFAULT_COMPONENT: InputNodeComponent = InputNodeComponent::Outflow;
 
-    pub fn input_connectors(&self, slot: Option<&NodeSlot>) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
-        if let Some(slot) = slot {
-            Err(SchemaError::InputNodeSlotNotSupported { slot: slot.clone() })
-        } else {
-            Ok(vec![(self.meta.name.as_str(), None)])
-        }
-    }
-    pub fn output_connectors(&self, slot: Option<&NodeSlot>) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
-        if let Some(slot) = slot {
-            Err(SchemaError::OutputNodeSlotNotSupported { slot: slot.clone() })
-        } else {
-            Ok(vec![(self.meta.name.as_str(), None)])
-        }
-    }
-
     pub fn default_attribute(&self) -> InputNodeAttribute {
         Self::DEFAULT_ATTRIBUTE
     }
@@ -97,76 +83,74 @@ impl InputNode {
 
 #[cfg(feature = "core")]
 impl InputNode {
-    pub fn node_indices_for_flow_constraints(
+    pub fn input_connectors(&self, slot: Option<&NodeSlot>) -> Result<Vec<UnresolvedNode>, SchemaError> {
+        if let Some(slot) = slot {
+            Err(SchemaError::InputNodeSlotNotSupported { slot: slot.clone() })
+        } else {
+            Ok(vec![UnresolvedNode::new(self.meta.name.as_str(), None)])
+        }
+    }
+    pub fn output_connectors(&self, slot: Option<&NodeSlot>) -> Result<Vec<UnresolvedNode>, SchemaError> {
+        if let Some(slot) = slot {
+            Err(SchemaError::OutputNodeSlotNotSupported { slot: slot.clone() })
+        } else {
+            Ok(vec![UnresolvedNode::new(self.meta.name.as_str(), None)])
+        }
+    }
+    pub fn nodes_for_flow_constraints(
         &self,
-        network: &pywr_core::network::Network,
         component: Option<NodeComponent>,
-    ) -> Result<Vec<pywr_core::node::NodeIndex>, SchemaError> {
+    ) -> Result<Vec<UnresolvedNode>, SchemaError> {
         // Use the default component if none is specified
         let attr = match component {
             Some(c) => c.try_into()?,
             None => Self::DEFAULT_COMPONENT,
         };
 
-        let idx = match attr {
-            InputNodeComponent::Outflow => network
-                .get_node_index_by_name(self.meta.name.as_str(), None)
-                .ok_or_else(|| SchemaError::CoreNodeNotFound {
-                    name: self.meta.name.clone(),
-                    sub_name: None,
-                })?,
+        let name = match attr {
+            InputNodeComponent::Outflow => UnresolvedNode::new(self.meta.name.as_str(), None),
         };
 
-        Ok(vec![idx])
+        Ok(vec![name])
     }
-    pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
-        network.add_input_node(self.meta.name.as_str(), None)?;
-        Ok(())
-    }
-
-    pub fn set_constraints(
+    pub fn add_to_network(
         &self,
-        network: &mut pywr_core::network::Network,
+        network: &mut pywr_core::network::NetworkBuilder,
         args: &LoadArgs,
     ) -> Result<(), SchemaError> {
+        let mut builder = pywr_core::node::NodeBuilder::input(self.meta.name.as_str());
+
         if let Some(cost) = &self.cost {
             let value = cost.load(network, args, Some(&self.meta.name))?;
-            network.set_node_cost(self.meta.name.as_str(), None, value.into())?;
+            builder.cost(value);
         }
 
         if let Some(max_flow) = &self.max_flow {
             let value = max_flow.load(network, args, Some(&self.meta.name))?;
-            network.set_node_max_flow(self.meta.name.as_str(), None, value.into())?;
+            builder.max_flow(value);
         }
 
         if let Some(min_flow) = &self.min_flow {
             let value = min_flow.load(network, args, Some(&self.meta.name))?;
-            network.set_node_min_flow(self.meta.name.as_str(), None, value.into())?;
+            builder.min_flow(value);
         }
+
+        network.node(builder);
 
         Ok(())
     }
 
-    pub fn create_metric(
-        &self,
-        network: &pywr_core::network::Network,
-        attribute: Option<NodeAttribute>,
-    ) -> Result<MetricF64, SchemaError> {
+    pub fn create_metric(&self, attribute: Option<NodeAttribute>) -> Result<UnresolvedMetricF64, SchemaError> {
         // Use the default attribute if none is specified
         let attr = match attribute {
             Some(attr) => attr.try_into()?,
             None => Self::DEFAULT_ATTRIBUTE,
         };
 
-        let idx = network
-            .get_node_index_by_name(self.meta.name.as_str(), None)
-            .ok_or_else(|| SchemaError::CoreNodeNotFound {
-                name: self.meta.name.clone(),
-                sub_name: None,
-            })?;
+        let name = UnresolvedNode::new(self.meta.name.as_str(), None);
 
         let metric = match attr {
-            InputNodeAttribute::Outflow => MetricF64::NodeOutFlow(idx),
+            InputNodeAttribute::Outflow => UnresolvedMetricF64::NodeOutFlow(name),
         };
 
         Ok(metric)
@@ -316,56 +300,6 @@ impl LinkNode {
     const DEFAULT_ATTRIBUTE: LinkNodeAttribute = LinkNodeAttribute::Outflow;
     const DEFAULT_COMPONENT: LinkNodeComponent = LinkNodeComponent::Outflow;
 
-    fn soft_min_node_sub_name() -> Option<&'static str> {
-        Some("soft_min")
-    }
-
-    fn soft_max_node_sub_name() -> Option<&'static str> {
-        Some("soft_max")
-    }
-
-    pub fn input_connectors(&self, slot: Option<&NodeSlot>) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
-        if let Some(slot) = slot {
-            return Err(SchemaError::InputNodeSlotNotSupported { slot: slot.clone() });
-        }
-
-        let mut connectors = vec![(self.meta.name.as_str(), None)];
-        if self.soft_min.is_some() {
-            connectors.push((
-                self.meta.name.as_str(),
-                Self::soft_min_node_sub_name().map(|s| s.to_string()),
-            ));
-        }
-        if self.soft_max.is_some() {
-            connectors.push((
-                self.meta.name.as_str(),
-                Self::soft_max_node_sub_name().map(|s| s.to_string()),
-            ));
-        }
-        Ok(connectors)
-    }
-
-    pub fn output_connectors(&self, slot: Option<&NodeSlot>) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
-        if let Some(slot) = slot {
-            return Err(SchemaError::OutputNodeSlotNotSupported { slot: slot.clone() });
-        }
-
-        let mut connectors = vec![(self.meta.name.as_str(), None)];
-        if self.soft_min.is_some() {
-            connectors.push((
-                self.meta.name.as_str(),
-                Self::soft_min_node_sub_name().map(|s| s.to_string()),
-            ));
-        }
-        if self.soft_max.is_some() {
-            connectors.push((
-                self.meta.name.as_str(),
-                Self::soft_max_node_sub_name().map(|s| s.to_string()),
-            ));
-        }
-        Ok(connectors)
-    }
-
     pub fn default_attribute(&self) -> LinkNodeAttribute {
         Self::DEFAULT_ATTRIBUTE
     }
@@ -377,242 +311,268 @@ impl LinkNode {
 
 #[cfg(feature = "core")]
 impl LinkNode {
-    fn aggregated_node_sub_name() -> Option<&'static str> {
-        Some("aggregate_node")
+    fn soft_min_node_sub_name(&self) -> UnresolvedNode {
+        UnresolvedNode::new(&self.meta.name, Some("soft_min"))
+    }
+
+    fn soft_max_node_sub_name(&self) -> UnresolvedNode {
+        UnresolvedNode::new(&self.meta.name, Some("soft_max"))
+    }
+
+    pub fn input_connectors(&self, slot: Option<&NodeSlot>) -> Result<Vec<UnresolvedNode>, SchemaError> {
+        if let Some(slot) = slot {
+            return Err(SchemaError::InputNodeSlotNotSupported { slot: slot.clone() });
+        }
+
+        let mut connectors = vec![UnresolvedNode::new(self.meta.name.as_str(), None)];
+        if self.soft_min.is_some() {
+            connectors.push(self.soft_min_node_sub_name());
+        }
+        if self.soft_max.is_some() {
+            connectors.push(self.soft_max_node_sub_name());
+        }
+        Ok(connectors)
+    }
+
+    pub fn output_connectors(&self, slot: Option<&NodeSlot>) -> Result<Vec<UnresolvedNode>, SchemaError> {
+        if let Some(slot) = slot {
+            return Err(SchemaError::OutputNodeSlotNotSupported { slot: slot.clone() });
+        }
+
+        let mut connectors = vec![UnresolvedNode::new(self.meta.name.as_str(), None)];
+        if self.soft_min.is_some() {
+            connectors.push(self.soft_min_node_sub_name());
+        }
+        if self.soft_max.is_some() {
+            connectors.push(self.soft_max_node_sub_name());
+        }
+        Ok(connectors)
+    }
+
+    fn aggregated_node_sub_name(&self) -> UnresolvedNode {
+        UnresolvedNode::new(&self.meta.name, Some("aggregate_node"))
     }
 
     /// The aggregated node name of `[name]` and `[name].soft_min` when both soft constraints are provided.
-    fn aggregated_node_l_l_min_sub_name() -> Option<&'static str> {
-        Some("aggregate_node_l_l_min")
+    fn aggregated_node_l_l_min_sub_name(&self) -> UnresolvedNode {
+        UnresolvedNode::new(&self.meta.name, Some("aggregate_node_l_l_min"))
     }
 
-    pub fn node_indices_for_flow_constraints(
+    pub fn nodes_for_flow_constraints(
         &self,
-        network: &pywr_core::network::Network,
         component: Option<NodeComponent>,
-    ) -> Result<Vec<pywr_core::node::NodeIndex>, SchemaError> {
+    ) -> Result<Vec<UnresolvedNode>, SchemaError> {
         // Use the default component if none is specified
         let component = match component {
             Some(c) => c.try_into()?,
             None => Self::DEFAULT_COMPONENT,
         };
 
-        let indices = match component {
+        let nodes = match component {
             // The same nodes are returned for inflow and outflow
             LinkNodeComponent::Inflow | LinkNodeComponent::Outflow => {
-                let idx = network
-                    .get_node_index_by_name(self.meta.name.as_str(), None)
-                    .ok_or_else(|| SchemaError::CoreNodeNotFound {
-                        name: self.meta.name.clone(),
-                        sub_name: None,
-                    })?;
+                let name = UnresolvedNode::new(self.meta.name.as_str(), None);
 
-                let mut indices = vec![idx];
+                let mut nodes = vec![name];
 
                 if self.soft_min.is_some() {
-                    let idx = network
-                        .get_node_index_by_name(self.meta.name.as_str(), Self::soft_min_node_sub_name())
-                        .ok_or_else(|| SchemaError::CoreNodeNotFound {
-                            name: self.meta.name.clone(),
-                            sub_name: Self::soft_min_node_sub_name().map(|s| s.to_string()),
-                        })?;
-
-                    indices.push(idx);
+                    nodes.push(self.soft_min_node_sub_name());
                 }
 
                 if self.soft_max.is_some() {
-                    let idx = network
-                        .get_node_index_by_name(self.meta.name.as_str(), Self::soft_max_node_sub_name())
-                        .ok_or_else(|| SchemaError::CoreNodeNotFound {
-                            name: self.meta.name.clone(),
-                            sub_name: Self::soft_max_node_sub_name().map(|s| s.to_string()),
-                        })?;
-
-                    indices.push(idx);
+                    nodes.push(self.soft_max_node_sub_name());
                 }
 
-                indices
+                nodes
             }
         };
 
-        Ok(indices)
+        Ok(nodes)
     }
-    pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
-        let node_name = self.meta.name.as_str();
-        let link = network.add_link_node(node_name, None)?;
-        // add soft constrained nodes and aggregated node
-        match (&self.soft_min, &self.soft_max) {
-            (Some(_), None) => {
-                // add L_min and aggregated node for L and L_min
-                let soft_min_node = network.add_link_node(node_name, Self::soft_min_node_sub_name())?;
-                network.add_aggregated_node(
-                    node_name,
-                    Self::aggregated_node_sub_name(),
-                    &[vec![link], vec![soft_min_node]],
-                    None,
-                )?;
-            }
-            (None, Some(_)) => {
-                // add L_max and aggregated node for L and L_max
-                let soft_max_node = network.add_link_node(node_name, Self::soft_max_node_sub_name())?;
-                network.add_aggregated_node(
-                    node_name,
-                    Self::aggregated_node_sub_name(),
-                    &[vec![link], vec![soft_max_node]],
-                    None,
-                )?;
-            }
-            (Some(_), Some(_)) => {
-                // add L_min and L_max, and aggregated node for L, L_min and L_max
-                let soft_min_node = network.add_link_node(node_name, Self::soft_min_node_sub_name())?;
-                let soft_max_node = network.add_link_node(node_name, Self::soft_max_node_sub_name())?;
-                network.add_aggregated_node(
-                    node_name,
-                    Self::aggregated_node_sub_name(),
-                    &[vec![link], vec![soft_min_node], vec![soft_max_node]],
-                    None,
-                )?;
-                network.add_aggregated_node(
-                    node_name,
-                    Self::aggregated_node_l_l_min_sub_name(),
-                    &[vec![link], vec![soft_min_node]],
-                    None,
-                )?;
-            }
-            (None, None) => {}
-        };
-        Ok(())
-    }
-
-    pub fn set_constraints(
+    pub fn add_to_network(
         &self,
-        network: &mut pywr_core::network::Network,
+        network: &mut pywr_core::network::NetworkBuilder,
         args: &LoadArgs,
     ) -> Result<(), SchemaError> {
         let node_name = self.meta.name.as_str();
+
+        let mut link = pywr_core::node::NodeBuilder::link(self.meta.name.as_str());
+
+        // add soft constrained nodes and aggregated node
         match (&self.soft_min, &self.soft_max) {
-            (None, None) => {
-                // soft constraints not added. Set constraints for L only
-                if let Some(cost) = &self.cost {
-                    let value = cost.load(network, args, Some(&self.meta.name))?;
-                    network.set_node_cost(node_name, None, value.into())?;
-                }
-
-                if let Some(max_flow) = &self.max_flow {
-                    let value = max_flow.load(network, args, Some(&self.meta.name))?;
-                    network.set_node_max_flow(node_name, None, value.into())?;
-                }
-
-                if let Some(min_flow) = &self.min_flow {
-                    let value = min_flow.load(network, args, Some(&self.meta.name))?;
-                    network.set_node_min_flow(node_name, None, value.into())?;
-                }
-            }
             (Some(soft_min), None) => {
+                // add L_min and aggregated node for L and L_min
+                let mut soft_min_node = pywr_core::node::NodeBuilder::link(self.soft_min_node_sub_name());
+
+                let mut agg_node =
+                    pywr_core::aggregated_node::AggregatedNodeBuilder::new(self.aggregated_node_sub_name());
+
+                agg_node.nodes(vec![
+                    UnresolvedNode::new(node_name, None),
+                    self.soft_min_node_sub_name(),
+                ]);
+
                 // add L_min constraints
                 if let Some(soft_min_flow) = &soft_min.flow {
                     let value = soft_min_flow.load(network, args, Some(&self.meta.name))?;
-                    network.set_node_max_flow(node_name, Self::soft_min_node_sub_name(), value.into())?;
+                    soft_min_node.max_flow(value);
                 }
                 if let Some(soft_min_cost) = &soft_min.cost {
                     let value = soft_min_cost.load(network, args, Some(&self.meta.name))?;
-                    network.set_node_cost(node_name, Self::soft_min_node_sub_name(), value.into())?;
+                    soft_min_node.cost(value);
                 }
 
                 // add cost on L
                 if let Some(cost) = &self.cost {
                     let value = cost.load(network, args, Some(&self.meta.name))?;
-                    network.set_node_cost(node_name, None, value.into())?;
+                    link.cost(value);
                 }
 
                 // add constraints on aggregated node
                 if let Some(max_flow) = &self.max_flow {
                     let value = max_flow.load(network, args, Some(&self.meta.name))?;
-                    network.set_aggregated_node_max_flow(node_name, Self::aggregated_node_sub_name(), value.into())?;
+                    agg_node.max_flow(value);
                 }
                 if let Some(min_flow) = &self.min_flow {
                     let value = min_flow.load(network, args, Some(&self.meta.name))?;
-                    network.set_aggregated_node_min_flow(node_name, Self::aggregated_node_sub_name(), value.into())?;
+                    agg_node.min_flow(value);
                 }
+
+                network.node(link);
+                network.node(soft_min_node);
+                network.agg_node(agg_node);
             }
             (None, Some(soft_max)) => {
+                // add L_max and aggregated node for L and L_max
+                let mut soft_max_node = pywr_core::node::NodeBuilder::link(self.soft_max_node_sub_name());
+
+                let mut agg_node =
+                    pywr_core::aggregated_node::AggregatedNodeBuilder::new(self.aggregated_node_sub_name());
+
+                agg_node.nodes(vec![
+                    UnresolvedNode::new(node_name, None),
+                    self.soft_max_node_sub_name(),
+                ]);
+
                 // add L_max constraints
                 if let Some(cost) = &self.cost {
                     let value = cost.load(network, args, Some(&self.meta.name))?;
-                    network.set_node_cost(node_name, Self::soft_max_node_sub_name(), value.into())?;
+                    soft_max_node.cost(value);
                 }
                 if let Some(soft_max_flow) = &soft_max.flow {
                     let value = soft_max_flow.load(network, args, Some(&self.meta.name))?;
-                    network.set_node_max_flow(node_name, Self::soft_max_node_sub_name(), value.into())?;
+                    soft_max_node.max_flow(value);
                 }
 
                 // add constraints on L
                 if let Some(soft_max_cost) = &soft_max.cost {
                     let value = soft_max_cost.load(network, args, Some(&self.meta.name))?;
-                    network.set_node_cost(node_name, None, value.into())?;
+                    link.cost(value);
                 }
 
                 // add constraints on aggregated node
                 if let Some(max_flow) = &self.max_flow {
                     let value = max_flow.load(network, args, Some(&self.meta.name))?;
-                    network.set_aggregated_node_max_flow(node_name, Self::aggregated_node_sub_name(), value.into())?;
+                    agg_node.max_flow(value);
                 }
                 if let Some(min_flow) = &self.min_flow {
                     let value = min_flow.load(network, args, Some(&self.meta.name))?;
-                    network.set_aggregated_node_min_flow(node_name, Self::aggregated_node_sub_name(), value.into())?;
+                    agg_node.min_flow(value);
                 }
+
+                network.node(link);
+                network.node(soft_max_node);
+                network.agg_node(agg_node);
             }
             (Some(soft_min), Some(soft_max)) => {
+                // add L_min and L_max, and aggregated node for L, L_min and L_max
+                let mut soft_min_node = pywr_core::node::NodeBuilder::link(self.soft_min_node_sub_name());
+
+                let mut soft_max_node = pywr_core::node::NodeBuilder::link(self.soft_max_node_sub_name());
+
+                let mut agg_node =
+                    pywr_core::aggregated_node::AggregatedNodeBuilder::new(self.aggregated_node_sub_name());
+
+                agg_node.nodes(vec![
+                    UnresolvedNode::new(node_name, None),
+                    self.soft_min_node_sub_name(),
+                    self.soft_max_node_sub_name(),
+                ]);
+
+                let mut agg_node_l_l =
+                    pywr_core::aggregated_node::AggregatedNodeBuilder::new(self.aggregated_node_l_l_min_sub_name());
+
+                agg_node_l_l.nodes(vec![
+                    UnresolvedNode::new(node_name, None),
+                    self.soft_min_node_sub_name(),
+                ]);
+
                 // set L_max constraint
                 if let Some(soft_max_cost) = &soft_max.cost {
                     let value = soft_max_cost.load(network, args, Some(&self.meta.name))?;
-                    network.set_node_cost(node_name, Self::soft_max_node_sub_name(), value.into())?;
+                    soft_max_node.cost(value);
                 }
                 // set L constraint
                 if let Some(cost) = &self.cost {
                     let value = cost.load(network, args, Some(&self.meta.name))?;
-                    network.set_node_cost(node_name, None, value.into())?;
+                    link.cost(value);
                 }
                 // set L_min constraints
                 if let Some(soft_min_flow) = &soft_min.flow {
                     let value = soft_min_flow.load(network, args, Some(&self.meta.name))?;
-                    network.set_node_max_flow(node_name, Self::soft_min_node_sub_name(), value.into())?;
+                    soft_min_node.max_flow(value);
                 }
                 if let Some(soft_min_cost) = &soft_min.cost {
                     let value = soft_min_cost.load(network, args, Some(&self.meta.name))?;
-                    network.set_node_cost(node_name, Self::soft_min_node_sub_name(), value.into())?;
+                    soft_min_node.cost(value);
                 }
 
                 // add constraints on node aggregating all three nodes
                 if let Some(max_flow) = &self.max_flow {
                     let value = max_flow.load(network, args, Some(&self.meta.name))?;
-                    network.set_aggregated_node_max_flow(node_name, Self::aggregated_node_sub_name(), value.into())?;
+                    agg_node.max_flow(value);
                 }
                 if let Some(min_flow) = &self.min_flow {
                     let value = min_flow.load(network, args, Some(&self.meta.name))?;
-                    network.set_aggregated_node_min_flow(node_name, Self::aggregated_node_sub_name(), value.into())?;
+                    agg_node.min_flow(value);
                 }
 
                 // add constraints on node aggregating `[name]` and `[name].soft_min`
                 if let Some(soft_max_flow) = &soft_max.flow {
                     let value = soft_max_flow.load(network, args, Some(&self.meta.name))?;
-                    network.set_aggregated_node_max_flow(
-                        node_name,
-                        Self::aggregated_node_l_l_min_sub_name(),
-                        value.into(),
-                    )?;
+                    agg_node.max_flow(value);
                 }
+
+                network.node(link);
+                network.node(soft_min_node);
+                network.node(soft_max_node);
+                network.agg_node(agg_node);
+                network.agg_node(agg_node_l_l);
+            }
+            (None, None) => {
+                // soft constraints not added. Set constraints for L only
+                if let Some(cost) = &self.cost {
+                    let value = cost.load(network, args, Some(&self.meta.name))?;
+                    link.cost(value);
+                }
+
+                if let Some(max_flow) = &self.max_flow {
+                    let value = max_flow.load(network, args, Some(&self.meta.name))?;
+                    link.max_flow(value);
+                }
+
+                if let Some(min_flow) = &self.min_flow {
+                    let value = min_flow.load(network, args, Some(&self.meta.name))?;
+                    link.min_flow(value);
+                }
+                network.node(link);
             }
         };
 
         Ok(())
     }
 
-    pub fn create_metric(
-        &self,
-        network: &pywr_core::network::Network,
-        attribute: Option<NodeAttribute>,
-    ) -> Result<MetricF64, SchemaError> {
+    pub fn create_metric(&self, attribute: Option<NodeAttribute>) -> Result<UnresolvedMetricF64, SchemaError> {
         // Use the default attribute if none is specified
         let attr = match attribute {
             Some(attr) => attr.try_into()?,
@@ -620,59 +580,29 @@ impl LinkNode {
         };
 
         let node_name = self.meta.name.as_str();
-        let link_node =
-            network
-                .get_node_index_by_name(node_name, None)
-                .ok_or_else(|| SchemaError::CoreNodeNotFound {
-                    name: node_name.to_string(),
-                    sub_name: None,
-                })?;
+        let link_node = UnresolvedNode::new(node_name, None);
 
         // combine the flow through the nodes
-        let indices = match (&self.soft_min, &self.soft_max) {
+        let nodes = match (&self.soft_min, &self.soft_max) {
             (Some(_), None) => {
-                let soft_min_node = network
-                    .get_node_index_by_name(node_name, Self::soft_min_node_sub_name())
-                    .ok_or_else(|| SchemaError::CoreNodeNotFound {
-                        name: node_name.to_string(),
-                        sub_name: Self::soft_min_node_sub_name().map(String::from),
-                    })?;
-                vec![link_node, soft_min_node]
+                vec![link_node, self.soft_min_node_sub_name()]
             }
             (None, Some(_)) => {
-                let soft_max_node = network
-                    .get_node_index_by_name(node_name, Self::soft_max_node_sub_name())
-                    .ok_or_else(|| SchemaError::CoreNodeNotFound {
-                        name: node_name.to_string(),
-                        sub_name: Self::soft_max_node_sub_name().map(String::from),
-                    })?;
-                vec![link_node, soft_max_node]
+                vec![link_node, self.soft_max_node_sub_name()]
             }
             (Some(_), Some(_)) => {
-                let soft_min_node = network
-                    .get_node_index_by_name(node_name, Self::soft_min_node_sub_name())
-                    .ok_or_else(|| SchemaError::CoreNodeNotFound {
-                        name: node_name.to_string(),
-                        sub_name: Self::soft_min_node_sub_name().map(String::from),
-                    })?;
-                let soft_max_node = network
-                    .get_node_index_by_name(node_name, Self::soft_max_node_sub_name())
-                    .ok_or_else(|| SchemaError::CoreNodeNotFound {
-                        name: node_name.to_string(),
-                        sub_name: Self::soft_max_node_sub_name().map(String::from),
-                    })?;
-                vec![link_node, soft_min_node, soft_max_node]
+                vec![link_node, self.soft_min_node_sub_name(), self.soft_max_node_sub_name()]
             }
             (None, None) => vec![link_node],
         };
 
         let metric = match attr {
-            LinkNodeAttribute::Outflow => MetricF64::MultiNodeInFlow {
-                indices,
+            LinkNodeAttribute::Outflow => UnresolvedMetricF64::MultiNodeInFlow {
+                nodes,
                 name: self.meta.name.to_string(),
             },
-            LinkNodeAttribute::Inflow => MetricF64::MultiNodeOutFlow {
-                indices,
+            LinkNodeAttribute::Inflow => UnresolvedMetricF64::MultiNodeOutFlow {
+                nodes,
                 name: self.meta.name.to_string(),
             },
         };
@@ -782,22 +712,6 @@ impl OutputNode {
     const DEFAULT_ATTRIBUTE: OutputNodeAttribute = OutputNodeAttribute::Inflow;
     const DEFAULT_COMPONENT: OutputNodeComponent = OutputNodeComponent::Inflow;
 
-    pub fn input_connectors(&self, slot: Option<&NodeSlot>) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
-        if let Some(slot) = slot {
-            Err(SchemaError::InputNodeSlotNotSupported { slot: slot.clone() })
-        } else {
-            Ok(vec![(self.meta.name.as_str(), None)])
-        }
-    }
-
-    pub fn output_connectors(&self, slot: Option<&NodeSlot>) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
-        if let Some(slot) = slot {
-            Err(SchemaError::OutputNodeSlotNotSupported { slot: slot.clone() })
-        } else {
-            Ok(vec![(self.meta.name.as_str(), None)])
-        }
-    }
-
     pub fn default_attribute(&self) -> OutputNodeAttribute {
         Self::DEFAULT_ATTRIBUTE
     }
@@ -809,96 +723,94 @@ impl OutputNode {
 
 #[cfg(feature = "core")]
 impl OutputNode {
-    pub fn node_indices_for_flow_constraints(
+    pub fn input_connectors(&self, slot: Option<&NodeSlot>) -> Result<Vec<UnresolvedNode>, SchemaError> {
+        if let Some(slot) = slot {
+            Err(SchemaError::InputNodeSlotNotSupported { slot: slot.clone() })
+        } else {
+            Ok(vec![UnresolvedNode::new(self.meta.name.as_str(), None)])
+        }
+    }
+
+    pub fn output_connectors(&self, slot: Option<&NodeSlot>) -> Result<Vec<UnresolvedNode>, SchemaError> {
+        if let Some(slot) = slot {
+            Err(SchemaError::OutputNodeSlotNotSupported { slot: slot.clone() })
+        } else {
+            Ok(vec![UnresolvedNode::new(self.meta.name.as_str(), None)])
+        }
+    }
+    pub fn nodes_for_flow_constraints(
         &self,
-        network: &pywr_core::network::Network,
         component: Option<NodeComponent>,
-    ) -> Result<Vec<pywr_core::node::NodeIndex>, SchemaError> {
+    ) -> Result<Vec<UnresolvedNode>, SchemaError> {
         // Use the default component if none is specified
         let component = match component {
             Some(c) => c.try_into()?,
             None => Self::DEFAULT_COMPONENT,
         };
 
-        let idx = match component {
-            OutputNodeComponent::Inflow => network
-                .get_node_index_by_name(self.meta.name.as_str(), None)
-                .ok_or_else(|| SchemaError::CoreNodeNotFound {
-                    name: self.meta.name.clone(),
-                    sub_name: None,
-                })?,
+        let node = match component {
+            OutputNodeComponent::Inflow => UnresolvedNode::new(self.meta.name.as_str(), None),
         };
 
-        Ok(vec![idx])
+        Ok(vec![node])
     }
     pub fn create_metric(
         &self,
-        network: &mut pywr_core::network::Network,
+        network: &mut pywr_core::network::NetworkBuilder,
         attribute: Option<NodeAttribute>,
-    ) -> Result<MetricF64, SchemaError> {
+    ) -> Result<UnresolvedMetricF64, SchemaError> {
         // Use the default attribute if none is specified
         let attr = match attribute {
             Some(attr) => attr.try_into()?,
             None => Self::DEFAULT_ATTRIBUTE,
         };
 
-        let idx = network
-            .get_node_index_by_name(self.meta.name.as_str(), None)
-            .ok_or_else(|| SchemaError::CoreNodeNotFound {
-                name: self.meta.name.clone(),
-                sub_name: None,
-            })?;
+        let name = UnresolvedNode::new(self.meta.name.as_str(), None);
 
         let metric = match attr {
-            OutputNodeAttribute::Inflow => MetricF64::NodeInFlow(idx),
+            OutputNodeAttribute::Inflow => UnresolvedMetricF64::NodeInFlow(name),
             OutputNodeAttribute::Deficit => {
                 let deficit_parameter_name = ParameterName::new("deficit", Some(self.meta.name.as_str()));
 
                 // Create a parameter for the deficit metric if it does not already exist
-                let deficit_parameter_idx = match network.get_parameter_index_by_name(&deficit_parameter_name) {
-                    Some(p_idx) => p_idx,
-                    None => {
-                        let deficit_parameter = DeficitParameter::new(
-                            deficit_parameter_name,
-                            MetricF64::NodeInFlow(idx),
-                            MetricF64::NodeMaxFlow(idx),
-                        );
+                if !network.parameters().contains_name(&deficit_parameter_name) {
+                    let flow = UnresolvedMetricF64::NodeInFlow(self.meta.name.as_str().into());
+                    let max_flow = UnresolvedMetricF64::NodeMaxFlow(self.meta.name.as_str().into());
+                    let deficit_builder = DeficitParameterBuilder::new(deficit_parameter_name.clone(), flow, max_flow);
 
-                        network.add_parameter(Box::new(deficit_parameter))?
-                    }
-                };
+                    network.parameters().f64(Box::new(deficit_builder));
+                }
 
-                deficit_parameter_idx.into_metric_f64_after()
+                UnresolvedMetricF64::new_parameter_after(deficit_parameter_name)
             }
         };
 
         Ok(metric)
     }
 
-    pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
-        network.add_output_node(self.meta.name.as_str(), None)?;
-        Ok(())
-    }
-
-    pub fn set_constraints(
+    pub fn add_to_network(
         &self,
-        network: &mut pywr_core::network::Network,
+        network: &mut pywr_core::network::NetworkBuilder,
         args: &LoadArgs,
     ) -> Result<(), SchemaError> {
+        let mut output = pywr_core::node::NodeBuilder::output(self.meta.name.as_str());
+
         if let Some(cost) = &self.cost {
             let value = cost.load(network, args, Some(&self.meta.name))?;
-            network.set_node_cost(self.meta.name.as_str(), None, value.into())?;
+            output.cost(value);
         }
 
         if let Some(max_flow) = &self.max_flow {
             let value = max_flow.load(network, args, Some(&self.meta.name))?;
-            network.set_node_max_flow(self.meta.name.as_str(), None, value.into())?;
+            output.max_flow(value);
         }
 
         if let Some(min_flow) = &self.min_flow {
             let value = min_flow.load(network, args, Some(&self.meta.name))?;
-            network.set_node_min_flow(self.meta.name.as_str(), None, value.into())?;
+            output.min_flow(value);
         }
+
+        network.node(output);
 
         Ok(())
     }
@@ -956,11 +868,13 @@ impl Default for StorageInitialVolume {
 }
 
 #[cfg(feature = "core")]
-impl From<StorageInitialVolume> for CoreStorageInitialVolume {
+impl From<StorageInitialVolume> for UnresolvedStorageInitialVolume {
     fn from(v: StorageInitialVolume) -> Self {
         match v {
-            StorageInitialVolume::Absolute { volume } => CoreStorageInitialVolume::Absolute(volume),
-            StorageInitialVolume::Proportional { proportion } => CoreStorageInitialVolume::Proportional(proportion),
+            StorageInitialVolume::Absolute { volume } => UnresolvedStorageInitialVolume::Absolute(volume),
+            StorageInitialVolume::Proportional { proportion } => {
+                UnresolvedStorageInitialVolume::Proportional(proportion)
+            }
         }
     }
 }
@@ -1006,22 +920,6 @@ pub struct StorageNode {
 impl StorageNode {
     const DEFAULT_ATTRIBUTE: StorageNodeAttribute = StorageNodeAttribute::Volume;
 
-    pub fn input_connectors(&self, slot: Option<&NodeSlot>) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
-        if let Some(slot) = slot {
-            Err(SchemaError::InputNodeSlotNotSupported { slot: slot.clone() })
-        } else {
-            Ok(vec![(self.meta.name.as_str(), None)])
-        }
-    }
-
-    pub fn output_connectors(&self, slot: Option<&NodeSlot>) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
-        if let Some(slot) = slot {
-            Err(SchemaError::OutputNodeSlotNotSupported { slot: slot.clone() })
-        } else {
-            Ok(vec![(self.meta.name.as_str(), None)])
-        }
-    }
-
     pub fn default_attribute(&self) -> StorageNodeAttribute {
         Self::DEFAULT_ATTRIBUTE
     }
@@ -1029,69 +927,77 @@ impl StorageNode {
 
 #[cfg(feature = "core")]
 impl StorageNode {
-    pub fn node_indices_for_storage_constraints(
-        &self,
-        network: &pywr_core::network::Network,
-    ) -> Result<Vec<pywr_core::node::NodeIndex>, SchemaError> {
-        let idx = network
-            .get_node_index_by_name(self.meta.name.as_str(), None)
-            .ok_or_else(|| SchemaError::CoreNodeNotFound {
-                name: self.meta.name.clone(),
-                sub_name: None,
-            })?;
-        Ok(vec![idx])
-    }
-    pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
-        // Add the node with no constraints
-        network.add_storage_node(self.meta.name.as_str(), None, self.initial_volume.into(), None, None)?;
-        Ok(())
+    pub fn input_connectors(&self, slot: Option<&NodeSlot>) -> Result<Vec<UnresolvedNode>, SchemaError> {
+        if let Some(slot) = slot {
+            Err(SchemaError::InputNodeSlotNotSupported { slot: slot.clone() })
+        } else {
+            Ok(vec![UnresolvedNode::new(self.meta.name.as_str(), None)])
+        }
     }
 
-    pub fn set_constraints(
+    pub fn output_connectors(&self, slot: Option<&NodeSlot>) -> Result<Vec<UnresolvedNode>, SchemaError> {
+        if let Some(slot) = slot {
+            Err(SchemaError::OutputNodeSlotNotSupported { slot: slot.clone() })
+        } else {
+            Ok(vec![UnresolvedNode::new(self.meta.name.as_str(), None)])
+        }
+    }
+    pub fn nodes_for_storage_constraints(&self) -> Result<Vec<UnresolvedNode>, SchemaError> {
+        let node = UnresolvedNode::new(self.meta.name.as_str(), None);
+
+        Ok(vec![node])
+    }
+
+    /// Creates a populated node builder.
+    pub(crate) fn make_builder(
         &self,
-        network: &mut pywr_core::network::Network,
+        network: &mut pywr_core::network::NetworkBuilder,
         args: &LoadArgs,
-    ) -> Result<(), SchemaError> {
+    ) -> Result<pywr_core::node::NodeBuilder, SchemaError> {
+        let mut storage = pywr_core::node::NodeBuilder::storage(self.meta.name.as_str());
+
+        storage.initial_volume(self.initial_volume.into());
+
         if let Some(cost) = &self.cost {
             let value = cost.load(network, args, Some(&self.meta.name))?;
-            network.set_node_cost(self.meta.name.as_str(), None, value.into())?;
+            storage.cost(value);
         }
 
         if let Some(min_volume) = &self.min_volume {
             let value = min_volume.load(network, args, Some(&self.meta.name))?;
-            network.set_node_min_volume(self.meta.name.as_str(), None, Some(value.try_into()?))?;
+            storage.min_volume(value);
         }
 
         if let Some(max_volume) = &self.max_volume {
             let value = max_volume.load(network, args, Some(&self.meta.name))?;
-            network.set_node_max_volume(self.meta.name.as_str(), None, Some(value.try_into()?))?;
+            storage.max_volume(value);
         }
 
+        Ok(storage)
+    }
+    pub fn add_to_network(
+        &self,
+        network: &mut pywr_core::network::NetworkBuilder,
+        args: &LoadArgs,
+    ) -> Result<(), SchemaError> {
+        let storage = self.make_builder(network, args)?;
+        network.node(storage);
         Ok(())
     }
 
-    pub fn create_metric(
-        &self,
-        network: &mut pywr_core::network::Network,
-        attribute: Option<NodeAttribute>,
-    ) -> Result<MetricF64, SchemaError> {
+    pub fn create_metric(&self, attribute: Option<NodeAttribute>) -> Result<UnresolvedMetricF64, SchemaError> {
         // Use the default attribute if none is specified
         let attr = match attribute {
             Some(attr) => attr.try_into()?,
             None => Self::DEFAULT_ATTRIBUTE,
         };
 
-        let idx = network
-            .get_node_index_by_name(self.meta.name.as_str(), None)
-            .ok_or_else(|| SchemaError::CoreNodeNotFound {
-                name: self.meta.name.clone(),
-                sub_name: None,
-            })?;
+        let name = UnresolvedNode::new(self.meta.name.as_str(), None);
 
         let metric = match attr {
-            StorageNodeAttribute::Volume => MetricF64::NodeVolume(idx),
-            StorageNodeAttribute::MaxVolume => MetricF64::NodeMaxVolume(idx),
-            StorageNodeAttribute::ProportionalVolume => MetricF64::NodeProportionalVolume(idx),
+            StorageNodeAttribute::Volume => UnresolvedMetricF64::NodeVolume(name),
+            StorageNodeAttribute::MaxVolume => UnresolvedMetricF64::NodeMaxVolume(name),
+            StorageNodeAttribute::ProportionalVolume => UnresolvedMetricF64::NodeProportionalVolume(name),
         };
 
         Ok(metric)
@@ -1197,22 +1103,6 @@ impl CatchmentNode {
     const DEFAULT_ATTRIBUTE: CatchmentNodeAttribute = CatchmentNodeAttribute::Outflow;
     const DEFAULT_COMPONENT: CatchmentNodeComponent = CatchmentNodeComponent::Outflow;
 
-    pub fn input_connectors(&self, slot: Option<&NodeSlot>) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
-        if let Some(slot) = slot {
-            Err(SchemaError::InputNodeSlotNotSupported { slot: slot.clone() })
-        } else {
-            Ok(vec![(self.meta.name.as_str(), None)])
-        }
-    }
-
-    pub fn output_connectors(&self, slot: Option<&NodeSlot>) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
-        if let Some(slot) = slot {
-            Err(SchemaError::OutputNodeSlotNotSupported { slot: slot.clone() })
-        } else {
-            Ok(vec![(self.meta.name.as_str(), None)])
-        }
-    }
-
     pub fn default_attribute(&self) -> CatchmentNodeAttribute {
         Self::DEFAULT_ATTRIBUTE
     }
@@ -1224,71 +1114,70 @@ impl CatchmentNode {
 
 #[cfg(feature = "core")]
 impl CatchmentNode {
-    pub fn node_indices_for_flow_constraints(
+    pub fn input_connectors(&self, slot: Option<&NodeSlot>) -> Result<Vec<UnresolvedNode>, SchemaError> {
+        if let Some(slot) = slot {
+            Err(SchemaError::InputNodeSlotNotSupported { slot: slot.clone() })
+        } else {
+            Ok(vec![UnresolvedNode::new(self.meta.name.as_str(), None)])
+        }
+    }
+
+    pub fn output_connectors(&self, slot: Option<&NodeSlot>) -> Result<Vec<UnresolvedNode>, SchemaError> {
+        if let Some(slot) = slot {
+            Err(SchemaError::OutputNodeSlotNotSupported { slot: slot.clone() })
+        } else {
+            Ok(vec![UnresolvedNode::new(self.meta.name.as_str(), None)])
+        }
+    }
+    pub fn nodes_for_flow_constraints(
         &self,
-        network: &pywr_core::network::Network,
         component: Option<NodeComponent>,
-    ) -> Result<Vec<pywr_core::node::NodeIndex>, SchemaError> {
+    ) -> Result<Vec<UnresolvedNode>, SchemaError> {
         // Use the default component if none is specified
         let component = match component {
             Some(c) => c.try_into()?,
             None => Self::DEFAULT_COMPONENT,
         };
 
-        let idx = match component {
-            CatchmentNodeComponent::Outflow => network
-                .get_node_index_by_name(self.meta.name.as_str(), None)
-                .ok_or_else(|| SchemaError::CoreNodeNotFound {
-                    name: self.meta.name.clone(),
-                    sub_name: None,
-                })?,
+        let node = match component {
+            CatchmentNodeComponent::Outflow => UnresolvedNode::new(self.meta.name.as_str(), None),
         };
-        Ok(vec![idx])
+        Ok(vec![node])
     }
-    pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
-        network.add_input_node(self.meta.name.as_str(), None)?;
-        Ok(())
-    }
-
-    pub fn set_constraints(
+    pub fn add_to_model(
         &self,
-        network: &mut pywr_core::network::Network,
+        network: &mut pywr_core::network::NetworkBuilder,
         args: &LoadArgs,
     ) -> Result<(), SchemaError> {
+        let mut input = pywr_core::node::NodeBuilder::input(self.meta.name.as_str());
+
         if let Some(cost) = &self.cost {
             let value = cost.load(network, args, Some(&self.meta.name))?;
-            network.set_node_cost(self.meta.name.as_str(), None, value.into())?;
+            input.cost(value);
         }
 
         if let Some(flow) = &self.flow {
             let value = flow.load(network, args, Some(&self.meta.name))?;
-            network.set_node_min_flow(self.meta.name.as_str(), None, value.clone().into())?;
-            network.set_node_max_flow(self.meta.name.as_str(), None, value.into())?;
+            input.min_flow(value.clone());
+            input.max_flow(value);
         }
+
+        network.node(input);
 
         Ok(())
     }
 
-    pub fn create_metric(
-        &self,
-        network: &pywr_core::network::Network,
-        attribute: Option<NodeAttribute>,
-    ) -> Result<MetricF64, SchemaError> {
+    pub fn create_metric(&self, attribute: Option<NodeAttribute>) -> Result<UnresolvedMetricF64, SchemaError> {
         // Use the default attribute if none is specified
         let attr = match attribute {
             Some(attr) => attr.try_into()?,
             None => Self::DEFAULT_ATTRIBUTE,
         };
 
-        let idx = network
-            .get_node_index_by_name(self.meta.name.as_str(), None)
-            .ok_or_else(|| SchemaError::CoreNodeNotFound {
-                name: self.meta.name.clone(),
-                sub_name: None,
-            })?;
+        let name = UnresolvedNode::new(self.meta.name.as_str(), None);
 
         let metric = match attr {
-            CatchmentNodeAttribute::Outflow => MetricF64::NodeOutFlow(idx),
+            CatchmentNodeAttribute::Outflow => UnresolvedMetricF64::NodeOutFlow(name),
         };
 
         Ok(metric)

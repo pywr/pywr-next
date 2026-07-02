@@ -1,27 +1,9 @@
 use crate::NodeIndex;
-use crate::network::Network;
-use crate::node::{NodeError, NodeVec};
+use crate::network::{EdgeIndex, Network};
+use crate::node::{Node, NodeError};
 use crate::state::State;
-use std::fmt::{Display, Formatter};
-use std::ops::{Deref, DerefMut};
+use std::ops::Deref;
 use thiserror::Error;
-
-#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Debug, Hash)]
-pub struct EdgeIndex(usize);
-
-impl Deref for EdgeIndex {
-    type Target = usize;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl Display for EdgeIndex {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        self.0.fmt(f)
-    }
-}
 
 #[derive(Debug, Error)]
 pub enum EdgeError {
@@ -61,12 +43,12 @@ impl Edge {
         self.to_node_index
     }
 
-    pub fn cost(&self, nodes: &NodeVec, model: &Network, state: &State) -> Result<f64, EdgeError> {
+    pub fn cost(&self, nodes: &[Node], model: &Network, state: &State) -> Result<f64, EdgeError> {
         let from_node = nodes
-            .get(&self.from_node_index)
+            .get(*self.from_node_index.deref())
             .ok_or(EdgeError::FromNodeIndexNotFound(self.from_node_index))?;
         let to_node = nodes
-            .get(&self.to_node_index)
+            .get(*self.to_node_index.deref())
             .ok_or(EdgeError::ToNodeIndexNotFound(self.from_node_index))?;
 
         let from_cost = from_node
@@ -77,43 +59,5 @@ impl Edge {
             .map_err(|e| EdgeError::NodeError(Box::new(e)))?;
 
         Ok(from_cost + to_cost)
-    }
-}
-
-#[derive(Default)]
-pub struct EdgeVec {
-    edges: Vec<Edge>,
-}
-
-impl Deref for EdgeVec {
-    type Target = Vec<Edge>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.edges
-    }
-}
-
-impl DerefMut for EdgeVec {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.edges
-    }
-}
-
-impl EdgeVec {
-    pub fn get(&self, index: &EdgeIndex) -> Option<&Edge> {
-        self.edges.get(index.0)
-    }
-
-    pub fn get_mut(&mut self, index: &EdgeIndex) -> Option<&mut Edge> {
-        self.edges.get_mut(index.0)
-    }
-
-    pub fn push(&mut self, from_node_index: NodeIndex, to_node_index: NodeIndex) -> EdgeIndex {
-        let index = EdgeIndex(self.edges.len());
-        // TODO check whether an edge between these two nodes already exists.
-
-        let node = Edge::new(index, from_node_index, to_node_index);
-        self.edges.push(node);
-        index
     }
 }

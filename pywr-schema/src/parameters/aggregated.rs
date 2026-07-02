@@ -8,7 +8,7 @@ use crate::network::LoadArgs;
 use crate::parameters::{ConversionData, ParameterMeta};
 use crate::v1::{TryFromV1, TryIntoV2, try_convert_parameter_attr};
 #[cfg(feature = "core")]
-use pywr_core::parameters::{ParameterIndex, ParameterName};
+use pywr_core::parameters::ParameterName;
 use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::parameters::{
     AggregatedIndexParameter as AggregatedIndexParameterV1, AggregatedParameter as AggregatedParameterV1,
@@ -49,25 +49,25 @@ pub struct AggregatedParameter {
 
 #[cfg(feature = "core")]
 impl AggregatedParameter {
-    pub fn add_to_model(
+    pub fn add_to_network(
         &self,
-        network: &mut pywr_core::network::Network,
+        network: &mut pywr_core::network::NetworkBuilder,
         args: &LoadArgs,
         parent: Option<&str>,
-    ) -> Result<ParameterIndex<f64>, SchemaError> {
-        let metrics = self
-            .metrics
-            .iter()
-            .map(|v| v.load(network, args, None))
-            .collect::<Result<Vec<_>, _>>()?;
-
-        let p = pywr_core::parameters::AggregatedParameter::new(
+    ) -> Result<(), SchemaError> {
+        let mut builder = pywr_core::parameters::AggregatedParameterBuilder::new(
             ParameterName::new(&self.meta.name, parent),
-            &metrics,
             self.agg_func.load(args.data_path)?,
         );
 
-        Ok(network.add_parameter(Box::new(p))?)
+        for metric in &self.metrics {
+            let m = metric.load(network, args, parent)?;
+            builder.metric(m);
+        }
+
+        network.parameters().f64(Box::new(builder));
+
+        Ok(())
     }
 }
 
@@ -121,25 +121,25 @@ impl AggregatedIndexParameter {
 
 #[cfg(feature = "core")]
 impl AggregatedIndexParameter {
-    pub fn add_to_model(
+    pub fn add_to_network(
         &self,
-        network: &mut pywr_core::network::Network,
+        network: &mut pywr_core::network::NetworkBuilder,
         args: &LoadArgs,
         parent: Option<&str>,
-    ) -> Result<ParameterIndex<u64>, SchemaError> {
-        let metrics = self
-            .metrics
-            .iter()
-            .map(|v| v.load(network, args, None))
-            .collect::<Result<Vec<_>, _>>()?;
-
-        let p = pywr_core::parameters::AggregatedIndexParameter::new(
+    ) -> Result<(), SchemaError> {
+        let mut builder = pywr_core::parameters::AggregatedIndexParameterBuilder::new(
             ParameterName::new(&self.meta.name, parent),
-            &metrics,
             self.agg_func.load(args.data_path)?,
         );
 
-        Ok(network.add_index_parameter(Box::new(p))?)
+        for metric in &self.metrics {
+            let m = metric.load(network, args, parent)?;
+            builder.metric(m);
+        }
+
+        network.parameters().u64(Box::new(builder));
+
+        Ok(())
     }
 }
 

@@ -1,5 +1,9 @@
+use crate::network::ResolutionMaps;
 use crate::parameters::errors::SimpleCalculationError;
-use crate::parameters::{Parameter, ParameterMeta, ParameterName, ParameterState, SimpleParameter};
+use crate::parameters::{
+    BuiltParameter, MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder, ParameterMeta,
+    ParameterName, ParameterState, SimpleParameter,
+};
 use crate::scenario::ScenarioIndex;
 use crate::state::SimpleParameterValues;
 use crate::timestep::Timestep;
@@ -7,15 +11,6 @@ use crate::timestep::Timestep;
 pub struct DailyProfileParameter {
     meta: ParameterMeta,
     values: [f64; 366],
-}
-
-impl DailyProfileParameter {
-    pub fn new(name: ParameterName, values: [f64; 366]) -> Self {
-        Self {
-            meta: ParameterMeta::new(name),
-            values,
-        }
-    }
 }
 
 impl Parameter for DailyProfileParameter {
@@ -40,5 +35,37 @@ impl SimpleParameter<f64> for DailyProfileParameter {
         Self: Sized,
     {
         self
+    }
+}
+
+pub struct DailyProfileParameterBuilder {
+    meta: ParameterMeta,
+    values: [f64; 366],
+}
+
+impl DailyProfileParameterBuilder {
+    pub fn new(name: ParameterName, values: [f64; 366]) -> Self {
+        Self {
+            meta: ParameterMeta::new(name),
+            values,
+        }
+    }
+}
+
+impl ParameterBuilder<f64> for DailyProfileParameterBuilder {
+    fn name(&self) -> &ParameterName {
+        &self.meta.name
+    }
+
+    fn build(
+        self: Box<Self>,
+        _resolution_maps: &ResolutionMaps,
+    ) -> Result<MaybeBuiltParameter<f64>, ParameterBuildError> {
+        let p = DailyProfileParameter {
+            meta: self.meta,
+            values: self.values,
+        };
+
+        Ok(MaybeBuiltParameter::Built(BuiltParameter::Simple(Box::new(p))))
     }
 }

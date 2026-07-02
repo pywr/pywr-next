@@ -6,9 +6,8 @@ use crate::metric::Metric;
 use crate::network::LoadArgs;
 use crate::parameters::{ConversionData, ParameterMeta};
 use crate::v1::{TryFromV1, TryIntoV2};
-
 #[cfg(feature = "core")]
-use pywr_core::parameters::{ParameterIndex, ParameterName};
+use pywr_core::parameters::ParameterName;
 use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::parameters::DiscountFactorParameter as DiscountFactorParameterV1;
 use schemars::JsonSchema;
@@ -24,19 +23,22 @@ pub struct DiscountFactorParameter {
 
 #[cfg(feature = "core")]
 impl DiscountFactorParameter {
-    pub fn add_to_model(
+    pub fn add_to_network(
         &self,
-        network: &mut pywr_core::network::Network,
+        network: &mut pywr_core::network::NetworkBuilder,
         args: &LoadArgs,
         parent: Option<&str>,
-    ) -> Result<ParameterIndex<f64>, SchemaError> {
+    ) -> Result<(), SchemaError> {
         let discount_rate = self.discount_rate.load(network, args, None)?;
-        let p = pywr_core::parameters::DiscountFactorParameter::new(
+        let p = pywr_core::parameters::DiscountFactorParameterBuilder::new(
             ParameterName::new(&self.meta.name, parent),
             discount_rate,
             self.base_year,
         );
-        Ok(network.add_parameter(Box::new(p))?)
+
+        network.parameters().f64(Box::new(p));
+
+        Ok(())
     }
 }
 

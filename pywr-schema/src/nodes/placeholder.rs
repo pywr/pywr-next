@@ -1,5 +1,8 @@
+#[cfg(feature = "core")]
 use crate::SchemaError;
 use crate::nodes::{NodeAttribute, NodeMeta};
+#[cfg(feature = "core")]
+use pywr_core::{metric::UnresolvedMetricF64, node::UnresolvedNode};
 use pywr_schema_macros::PywrVisitAll;
 use schemars::JsonSchema;
 
@@ -17,14 +20,6 @@ pub struct PlaceholderNode {
 }
 
 impl PlaceholderNode {
-    pub fn input_connectors(&self) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
-        Ok(vec![(self.meta.name.as_str(), None)])
-    }
-
-    pub fn output_connectors(&self) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
-        Ok(vec![(self.meta.name.as_str(), None)])
-    }
-
     pub fn default_attribute(&self) -> NodeAttribute {
         NodeAttribute::Outflow
     }
@@ -32,31 +27,32 @@ impl PlaceholderNode {
 
 #[cfg(feature = "core")]
 impl PlaceholderNode {
-    pub fn add_to_model(&self) -> Result<(), SchemaError> {
+    pub fn input_connectors(&self) -> Result<Vec<UnresolvedNode>, SchemaError> {
+        Ok(vec![self.meta.name.as_str().into()])
+    }
+
+    pub fn output_connectors(&self) -> Result<Vec<UnresolvedNode>, SchemaError> {
+        Ok(vec![self.meta.name.as_str().into()])
+    }
+    pub fn add_to_network(&self) -> Result<(), SchemaError> {
         Err(SchemaError::PlaceholderNodeNotAllowed {
             name: self.meta.name.clone(),
         })
     }
 
-    pub fn node_indices_for_flow_constraints(&self) -> Result<Vec<pywr_core::node::NodeIndex>, SchemaError> {
+    pub fn nodes_for_flow_constraints(&self) -> Result<Vec<UnresolvedNode>, SchemaError> {
         Err(SchemaError::PlaceholderNodeNotAllowed {
             name: self.meta.name.clone(),
         })
     }
 
-    pub fn node_indices_for_storage_constraints(&self) -> Result<Vec<pywr_core::node::NodeIndex>, SchemaError> {
+    pub fn nodes_for_storage_constraints(&self) -> Result<Vec<UnresolvedNode>, SchemaError> {
         Err(SchemaError::PlaceholderNodeNotAllowed {
             name: self.meta.name.clone(),
         })
     }
 
-    pub fn set_constraints(&self) -> Result<(), SchemaError> {
-        Err(SchemaError::PlaceholderNodeNotAllowed {
-            name: self.meta.name.clone(),
-        })
-    }
-
-    pub fn create_metric(&self) -> Result<pywr_core::metric::MetricF64, SchemaError> {
+    pub fn create_metric(&self) -> Result<UnresolvedMetricF64, SchemaError> {
         Err(SchemaError::PlaceholderNodeNotAllowed {
             name: self.meta.name.clone(),
         })
@@ -79,7 +75,7 @@ mod test {
         };
 
         // Attempt to add the placeholder node to a model
-        let result = placeholder.add_to_model();
+        let result = placeholder.add_to_network();
         assert!(result.is_err());
         assert!(matches!(result, Err(SchemaError::PlaceholderNodeNotAllowed { .. })));
     }

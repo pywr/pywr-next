@@ -4,7 +4,7 @@
     "description": "Example of an abstraction with an MRF of form y=mx+c",
     "minimum_version": "0.1"
   },
-  "timestepper": {
+  "time": {
     "start": "2015-01-01",
     "end": "2015-12-31",
     "timestep": {

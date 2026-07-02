@@ -1,14 +1,16 @@
-use crate::aggregated_node::AggregatedNodeIndex;
-use crate::aggregated_storage_node::AggregatedStorageNodeIndex;
-use crate::edge::EdgeIndex;
+use crate::NodeIndex;
 use crate::models::MultiNetworkTransferIndex;
-use crate::network::Network;
-use crate::node::{NodeError, NodeIndex};
-use crate::parameters::{ConstParameterIndex, GeneralParameterIndex, ParameterIndex, SimpleParameterIndex};
+use crate::network::{
+    AggregatedNodeIndex, AggregatedStorageNodeIndex, EdgeIndex, Network, ResolutionMaps, UnresolvedEdge,
+    VirtualStorageIndex,
+};
+use crate::node::{NodeError, UnresolvedNode};
+use crate::parameters::{
+    ConstParameterIndex, GeneralParameterIndex, ParameterIndex, ParameterName, SimpleParameterIndex,
+};
 use crate::state::{
     ConstParameterValues, MultiValue, NetworkStateError, ParameterReturnValue, SimpleParameterValues, State, StateError,
 };
-use crate::virtual_storage::VirtualStorageIndex;
 use num::Zero;
 use thiserror::Error;
 
@@ -176,8 +178,8 @@ pub enum MetricF64 {
     NodeMaxVolume(NodeIndex),
     AggregatedNodeInFlow(AggregatedNodeIndex),
     AggregatedNodeOutFlow(AggregatedNodeIndex),
-    AggregatedNodeVolume(AggregatedStorageNodeIndex),
-    AggregatedNodeProportionalVolume(AggregatedStorageNodeIndex),
+    AggregatedStorageNodeVolume(AggregatedStorageNodeIndex),
+    AggregatedStorageNodeProportionalVolume(AggregatedStorageNodeIndex),
     EdgeFlow(EdgeIndex),
     MultiEdgeFlow {
         indices: Vec<EdgeIndex>,
@@ -270,15 +272,17 @@ impl MetricF64 {
                     .sum::<Result<_, _>>()?;
                 Ok(flow)
             }
-            MetricF64::ParameterValue { index, return_value } => Ok(state.get_parameter_value(*index, *return_value)?),
+            MetricF64::ParameterValue { index, return_value } => {
+                Ok(state.get_general_parameter_value(*index, *return_value)?)
+            }
             MetricF64::IndexParameterValue { index, return_value } => {
-                Ok(state.get_parameter_index(*index, *return_value)? as f64)
+                Ok(state.get_general_parameter_index(*index, *return_value)? as f64)
             }
             MetricF64::MultiParameterValue {
                 index,
                 key,
                 return_value,
-            } => Ok(state.get_multi_parameter_value(*index, key, *return_value)?),
+            } => Ok(state.get_general_multi_parameter_value(*index, key, *return_value)?),
             MetricF64::VirtualStorageVolume(idx) => Ok(state.get_network_state().get_virtual_storage_volume(idx)?),
             MetricF64::VirtualStorageProportionalVolume(idx) => {
                 Ok(state.get_network_state().get_virtual_storage_proportional_volume(idx)?)
@@ -287,7 +291,7 @@ impl MetricF64 {
                 .get_virtual_storage_node(idx)
                 .ok_or(MetricF64Error::VirtualStorageIndexNotFound(*idx))?
                 .get_max_volume(state)?),
-            MetricF64::AggregatedNodeVolume(idx) => {
+            MetricF64::AggregatedStorageNodeVolume(idx) => {
                 let node = network
                     .get_aggregated_storage_node(*idx)
                     .ok_or(MetricF64Error::AggregatedStorageNodeIndexNotFound(*idx))?;
@@ -301,7 +305,7 @@ impl MetricF64 {
 
                 Ok(volume)
             }
-            MetricF64::AggregatedNodeProportionalVolume(idx) => {
+            MetricF64::AggregatedStorageNodeProportionalVolume(idx) => {
                 let node = network
                     .get_aggregated_storage_node(*idx)
                     .ok_or(MetricF64Error::AggregatedStorageNodeIndexNotFound(*idx))?;
@@ -438,6 +442,326 @@ impl TryFrom<ParameterIndex<u64>> for SimpleMetricU64 {
 }
 
 #[derive(Debug, Error)]
+pub enum MetricF64ResolutionError {
+    #[error("Node not found when resolving F64 metric: {node}")]
+    NodeNotFound { node: UnresolvedNode },
+    #[error("Parameter not found when resolving F64 metric: {parameter}")]
+    ParameterNotFound { parameter: ParameterName },
+    #[error("Aggregated node not found when resolving F64 metric: {aggregated_node}")]
+    AggregatedNodeNotFound { aggregated_node: UnresolvedNode },
+    #[error("Aggregated storage node not found when resolving F64 metric: {aggregated_node}")]
+    AggregatedStorageNodeNotFound { aggregated_node: UnresolvedNode },
+    #[error("Edge not found when resolving F64 metric: {edge}")]
+    EdgeNotFound { edge: UnresolvedEdge },
+    #[error("Virtual storage node not found when resolving F64 metric: {node}")]
+    VirtualStorageNodeNotFound { node: UnresolvedNode },
+    #[error("Inter-network transfer not found when resolving F64 metric: {transfer}")]
+    InterNetworkTransferNotFound { transfer: String },
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum UnresolvedMetricF64 {
+    NodeInFlow(UnresolvedNode),
+    NodeOutFlow(UnresolvedNode),
+    NodeVolume(UnresolvedNode),
+    NodeProportionalVolume(UnresolvedNode),
+    NodeMaxVolume(UnresolvedNode),
+    NodeMaxFlow(UnresolvedNode),
+    AggregatedNodeInFlow(UnresolvedNode),
+    AggregatedNodeOutFlow(UnresolvedNode),
+    AggregatedStorageNodeVolume(UnresolvedNode),
+    AggregatedStorageNodeProportionalVolume(UnresolvedNode),
+    EdgeFlow(UnresolvedEdge),
+    MultiEdgeFlow {
+        edges: Vec<UnresolvedEdge>,
+        name: String,
+    },
+    ParameterValue {
+        name: ParameterName,
+        return_value: ParameterReturnValue,
+    },
+    MultiParameterValue {
+        name: ParameterName,
+        key: String,
+        return_value: ParameterReturnValue,
+    },
+    VirtualStorageVolume(UnresolvedNode),
+    VirtualStorageProportionalVolume(UnresolvedNode),
+    MultiNodeInFlow {
+        nodes: Vec<UnresolvedNode>,
+        name: String,
+    },
+    MultiNodeOutFlow {
+        nodes: Vec<UnresolvedNode>,
+        name: String,
+    },
+
+    InterNetworkTransfer(String),
+    Constant(f64),
+}
+
+impl UnresolvedMetricF64 {
+    /// Create a new [`Self::ParameterValue`] variant with the given parameter name and a return
+    /// value of [`ParameterReturnValue::Before`].
+    pub fn new_parameter_before<N: Into<ParameterName>>(name: N) -> Self {
+        Self::ParameterValue {
+            name: name.into(),
+            return_value: ParameterReturnValue::Before,
+        }
+    }
+
+    /// Create a new [`Self::MultiParameterValue`] variant with the given parameter name and a return
+    /// value of [`ParameterReturnValue::Before`].
+    pub fn new_parameter_before_key<N: Into<ParameterName>>(name: N, key: &str) -> Self {
+        Self::MultiParameterValue {
+            name: name.into(),
+            key: key.to_string(),
+            return_value: ParameterReturnValue::Before,
+        }
+    }
+
+    /// Create a new [`Self::ParameterValue`] variant with the given parameter name and a return
+    /// value of [`ParameterReturnValue::After`].
+    pub fn new_parameter_after<N: Into<ParameterName>>(name: N) -> Self {
+        Self::ParameterValue {
+            name: name.into(),
+            return_value: ParameterReturnValue::After,
+        }
+    }
+
+    /// Create a new [`Self::MultiParameterValue`] variant with the given parameter name and a return
+    /// value of [`ParameterReturnValue::After`].
+    pub fn new_parameter_after_key<N: Into<ParameterName>>(name: N, key: &str) -> Self {
+        Self::MultiParameterValue {
+            name: name.into(),
+            key: key.to_string(),
+            return_value: ParameterReturnValue::After,
+        }
+    }
+
+    /// Returns true if the constant value is a [`UnresolvedMetricF64::Constant`].
+    pub fn is_constant(&self) -> bool {
+        matches!(self, UnresolvedMetricF64::Constant(_))
+    }
+
+    /// Returns true if the constant value is a [`UnresolvedMetricF64::Constant`] with a value of zero.
+    pub fn is_constant_zero(&self) -> bool {
+        matches!(self, UnresolvedMetricF64::Constant(v) if *v == 0.0)
+    }
+
+    pub fn resolve(&self, resolution_maps: &ResolutionMaps) -> Result<MetricF64, MetricF64ResolutionError> {
+        let m =
+            match self {
+                UnresolvedMetricF64::NodeInFlow(unresolved) => {
+                    let idx = resolution_maps.nodes.get(unresolved).ok_or_else(|| {
+                        MetricF64ResolutionError::NodeNotFound {
+                            node: unresolved.clone(),
+                        }
+                    })?;
+                    MetricF64::NodeInFlow(*idx)
+                }
+                UnresolvedMetricF64::NodeOutFlow(unresolved) => {
+                    let idx = resolution_maps.nodes.get(unresolved).ok_or_else(|| {
+                        MetricF64ResolutionError::NodeNotFound {
+                            node: unresolved.clone(),
+                        }
+                    })?;
+                    MetricF64::NodeOutFlow(*idx)
+                }
+                UnresolvedMetricF64::NodeVolume(unresolved) => {
+                    let idx = resolution_maps.nodes.get(unresolved).ok_or_else(|| {
+                        MetricF64ResolutionError::NodeNotFound {
+                            node: unresolved.clone(),
+                        }
+                    })?;
+                    MetricF64::NodeVolume(*idx)
+                }
+                UnresolvedMetricF64::NodeProportionalVolume(unresolved) => {
+                    let idx = resolution_maps.nodes.get(unresolved).ok_or_else(|| {
+                        MetricF64ResolutionError::NodeNotFound {
+                            node: unresolved.clone(),
+                        }
+                    })?;
+
+                    MetricF64::NodeProportionalVolume(*idx)
+                }
+                UnresolvedMetricF64::NodeMaxVolume(unresolved) => {
+                    let idx = resolution_maps.nodes.get(unresolved).ok_or_else(|| {
+                        MetricF64ResolutionError::NodeNotFound {
+                            node: unresolved.clone(),
+                        }
+                    })?;
+                    MetricF64::NodeMaxVolume(*idx)
+                }
+                UnresolvedMetricF64::NodeMaxFlow(unresolved) => {
+                    let idx = resolution_maps.nodes.get(unresolved).ok_or_else(|| {
+                        MetricF64ResolutionError::NodeNotFound {
+                            node: unresolved.clone(),
+                        }
+                    })?;
+                    MetricF64::NodeMaxFlow(*idx)
+                }
+                UnresolvedMetricF64::AggregatedNodeInFlow(unresolved) => {
+                    let idx = resolution_maps.aggregated_nodes.get(unresolved).ok_or_else(|| {
+                        MetricF64ResolutionError::AggregatedNodeNotFound {
+                            aggregated_node: unresolved.clone(),
+                        }
+                    })?;
+                    MetricF64::AggregatedNodeInFlow(*idx)
+                }
+                UnresolvedMetricF64::AggregatedNodeOutFlow(unresolved) => {
+                    let idx = resolution_maps.aggregated_nodes.get(unresolved).ok_or_else(|| {
+                        MetricF64ResolutionError::AggregatedNodeNotFound {
+                            aggregated_node: unresolved.clone(),
+                        }
+                    })?;
+                    MetricF64::AggregatedNodeOutFlow(*idx)
+                }
+                UnresolvedMetricF64::AggregatedStorageNodeVolume(unresolved) => {
+                    let idx = resolution_maps
+                        .aggregated_storage_nodes
+                        .get(unresolved)
+                        .ok_or_else(|| MetricF64ResolutionError::AggregatedNodeNotFound {
+                            aggregated_node: unresolved.clone(),
+                        })?;
+                    MetricF64::AggregatedStorageNodeVolume(*idx)
+                }
+                UnresolvedMetricF64::AggregatedStorageNodeProportionalVolume(unresolved) => {
+                    let idx = resolution_maps
+                        .aggregated_storage_nodes
+                        .get(unresolved)
+                        .ok_or_else(|| MetricF64ResolutionError::AggregatedNodeNotFound {
+                            aggregated_node: unresolved.clone(),
+                        })?;
+                    MetricF64::AggregatedStorageNodeProportionalVolume(*idx)
+                }
+                UnresolvedMetricF64::EdgeFlow(unresolved) => {
+                    let idx = resolution_maps.edges.get(unresolved).ok_or_else(|| {
+                        MetricF64ResolutionError::EdgeNotFound {
+                            edge: unresolved.clone(),
+                        }
+                    })?;
+                    MetricF64::EdgeFlow(*idx)
+                }
+                UnresolvedMetricF64::MultiEdgeFlow { edges, name } => {
+                    let resolved = edges
+                        .iter()
+                        .map(|unresolved| {
+                            resolution_maps.edges.get(unresolved).copied().ok_or_else(|| {
+                                MetricF64ResolutionError::EdgeNotFound {
+                                    edge: unresolved.clone(),
+                                }
+                            })
+                        })
+                        .collect::<Result<Vec<_>, _>>()?;
+                    MetricF64::MultiEdgeFlow {
+                        indices: resolved,
+                        name: name.clone(),
+                    }
+                }
+                UnresolvedMetricF64::ParameterValue { name, return_value } => {
+                    match resolution_maps.parameters_f64.get(name) {
+                        Some(idx) => idx.into_metric_f64(*return_value),
+                        None => {
+                            // Not found as a F64 parameter; try index parameter instead.
+                            let idx = resolution_maps.parameters_u64.get(name).ok_or_else(|| {
+                                MetricF64ResolutionError::ParameterNotFound {
+                                    parameter: name.clone(),
+                                }
+                            })?;
+
+                            idx.into_metric_f64(*return_value)
+                        }
+                    }
+                }
+                UnresolvedMetricF64::MultiParameterValue {
+                    name,
+                    key,
+                    return_value,
+                } => {
+                    let idx = resolution_maps.parameters_multi.get(name).ok_or_else(|| {
+                        MetricF64ResolutionError::ParameterNotFound {
+                            parameter: name.clone(),
+                        }
+                    })?;
+
+                    idx.clone().into_metric_f64(key, *return_value)
+                }
+                UnresolvedMetricF64::VirtualStorageVolume(unresolved) => {
+                    let idx = resolution_maps.virtual_storage_node.get(unresolved).ok_or_else(|| {
+                        MetricF64ResolutionError::VirtualStorageNodeNotFound {
+                            node: unresolved.clone(),
+                        }
+                    })?;
+
+                    MetricF64::VirtualStorageVolume(*idx)
+                }
+                UnresolvedMetricF64::VirtualStorageProportionalVolume(unresolved) => {
+                    let idx = resolution_maps.virtual_storage_node.get(unresolved).ok_or_else(|| {
+                        MetricF64ResolutionError::VirtualStorageNodeNotFound {
+                            node: unresolved.clone(),
+                        }
+                    })?;
+
+                    MetricF64::VirtualStorageProportionalVolume(*idx)
+                }
+                UnresolvedMetricF64::MultiNodeInFlow { name, nodes: indices } => {
+                    let resolved = indices
+                        .iter()
+                        .map(|unresolved| {
+                            resolution_maps.nodes.get(unresolved).copied().ok_or_else(|| {
+                                MetricF64ResolutionError::NodeNotFound {
+                                    node: unresolved.clone(),
+                                }
+                            })
+                        })
+                        .collect::<Result<Vec<_>, _>>()?;
+
+                    MetricF64::MultiNodeInFlow {
+                        indices: resolved,
+                        name: name.clone(),
+                    }
+                }
+                UnresolvedMetricF64::MultiNodeOutFlow { name, nodes: indices } => {
+                    let resolved = indices
+                        .iter()
+                        .map(|unresolved| {
+                            resolution_maps.nodes.get(unresolved).copied().ok_or_else(|| {
+                                MetricF64ResolutionError::NodeNotFound {
+                                    node: unresolved.clone(),
+                                }
+                            })
+                        })
+                        .collect::<Result<Vec<_>, _>>()?;
+
+                    MetricF64::MultiNodeOutFlow {
+                        indices: resolved,
+                        name: name.clone(),
+                    }
+                }
+                UnresolvedMetricF64::InterNetworkTransfer(unresolved) => {
+                    let idx = resolution_maps.inter_network_transfers.get(unresolved).ok_or_else(|| {
+                        MetricF64ResolutionError::InterNetworkTransferNotFound {
+                            transfer: unresolved.clone(),
+                        }
+                    })?;
+
+                    MetricF64::InterNetworkTransfer(*idx)
+                }
+                UnresolvedMetricF64::Constant(value) => (*value).into(),
+            };
+
+        Ok(m)
+    }
+}
+
+impl From<f64> for UnresolvedMetricF64 {
+    fn from(v: f64) -> Self {
+        Self::Constant(v)
+    }
+}
+
+#[derive(Debug, Error)]
 pub enum ConstantMetricU64Error {
     #[error("Index parameter not found: {index}")]
     IndexParameterNotFound { index: ConstParameterIndex<u64> },
@@ -552,12 +876,14 @@ pub enum MetricU64 {
 impl MetricU64 {
     pub fn get_value(&self, _network: &Network, state: &State) -> Result<u64, MetricU64Error> {
         match self {
-            Self::IndexParameterValue { index, return_value } => Ok(state.get_parameter_index(*index, *return_value)?),
+            Self::IndexParameterValue { index, return_value } => {
+                Ok(state.get_general_parameter_index(*index, *return_value)?)
+            }
             Self::MultiParameterValue {
                 index,
                 key,
                 return_value,
-            } => Ok(state.get_multi_parameter_index(*index, key, *return_value)?),
+            } => Ok(state.get_general_multi_parameter_index(*index, key, *return_value)?),
             Self::Simple(s) => Ok(s.get_value(&state.get_simple_parameter_values())?),
             Self::InterNetworkTransfer(_idx) => todo!("Support usize for inter-network transfers"),
         }
@@ -607,5 +933,82 @@ impl TryFrom<SimpleMetricU64> for ConstantMetricU64 {
             SimpleMetricU64::Constant(c) => Ok(c),
             _ => Err(SimpleMetricU64Error::CannotSimplifyMetric),
         }
+    }
+}
+
+#[derive(Debug, Error)]
+pub enum MetricU64ResolutionError {
+    #[error("Node not found when resolving U64 metric: {node}")]
+    NodeNotFound { node: UnresolvedNode },
+    #[error("Parameter not found when resolving U64 metric: {parameter}")]
+    ParameterNotFound { parameter: ParameterName },
+    #[error("Inter-network transfer not found when resolving U64 metric: {transfer}")]
+    InterNetworkTransferNotFound { transfer: String },
+}
+
+pub enum UnresolvedMetricU64 {
+    ParameterValue {
+        name: ParameterName,
+        return_value: ParameterReturnValue,
+    },
+    MultiParameterValue {
+        name: ParameterName,
+        key: String,
+        return_value: ParameterReturnValue,
+    },
+    InterNetworkTransfer(String),
+    Constant(u64),
+}
+
+impl UnresolvedMetricU64 {
+    pub fn new_parameter_before<N: Into<ParameterName>>(name: N) -> Self {
+        Self::ParameterValue {
+            name: name.into(),
+            return_value: ParameterReturnValue::Before,
+        }
+    }
+    pub fn resolve(&self, resolution_maps: &ResolutionMaps) -> Result<MetricU64, MetricU64ResolutionError> {
+        let m = match self {
+            UnresolvedMetricU64::ParameterValue { name, return_value } => {
+                let idx = resolution_maps.parameters_u64.get(name).ok_or_else(|| {
+                    MetricU64ResolutionError::ParameterNotFound {
+                        parameter: name.clone(),
+                    }
+                })?;
+
+                idx.into_metric_u64(*return_value)
+            }
+            UnresolvedMetricU64::MultiParameterValue {
+                name,
+                key,
+                return_value,
+            } => {
+                let idx = resolution_maps.parameters_multi.get(name).ok_or_else(|| {
+                    MetricU64ResolutionError::ParameterNotFound {
+                        parameter: name.clone(),
+                    }
+                })?;
+
+                idx.clone().into_metric_u64(key, *return_value)
+            }
+            UnresolvedMetricU64::InterNetworkTransfer(unresolved) => {
+                let idx = resolution_maps.inter_network_transfers.get(unresolved).ok_or_else(|| {
+                    MetricU64ResolutionError::InterNetworkTransferNotFound {
+                        transfer: unresolved.clone(),
+                    }
+                })?;
+
+                MetricU64::InterNetworkTransfer(*idx)
+            }
+            UnresolvedMetricU64::Constant(value) => (*value).into(),
+        };
+
+        Ok(m)
+    }
+}
+
+impl From<u64> for UnresolvedMetricU64 {
+    fn from(v: u64) -> Self {
+        Self::Constant(v)
     }
 }

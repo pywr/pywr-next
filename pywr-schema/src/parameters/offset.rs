@@ -4,9 +4,8 @@ use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::network::LoadArgs;
 use crate::parameters::{ConstantValue, ParameterMeta, VariableSettings};
-
 #[cfg(feature = "core")]
-use pywr_core::parameters::{ParameterIndex, ParameterName};
+use pywr_core::parameters::ParameterName;
 use pywr_schema_macros::{PywrVisitAll, skip_serializing_none};
 use schemars::JsonSchema;
 
@@ -44,19 +43,22 @@ pub struct OffsetParameter {
 
 #[cfg(feature = "core")]
 impl OffsetParameter {
-    pub fn add_to_model(
+    pub fn add_to_network(
         &self,
-        network: &mut pywr_core::network::Network,
+        network: &mut pywr_core::network::NetworkBuilder,
         args: &LoadArgs,
         parent: Option<&str>,
-    ) -> Result<ParameterIndex<f64>, SchemaError> {
-        let idx = self.metric.load(network, args, None)?;
+    ) -> Result<(), SchemaError> {
+        let metric = self.metric.load(network, args, None)?;
 
-        let p = pywr_core::parameters::OffsetParameter::new(
+        let p = pywr_core::parameters::OffsetParameterBuilder::new(
             ParameterName::new(&self.meta.name, parent),
-            idx,
+            metric,
             self.offset.load(args.tables)?,
         );
-        Ok(network.add_parameter(Box::new(p))?)
+
+        network.parameters().f64(Box::new(p));
+
+        Ok(())
     }
 }

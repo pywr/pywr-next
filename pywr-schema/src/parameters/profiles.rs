@@ -6,7 +6,7 @@ use crate::network::LoadArgs;
 use crate::parameters::{ConstantFloatVec, ConstantValue, ConversionData, ParameterMeta};
 use crate::v1::{TryFromV1, TryIntoV2, try_convert_values};
 #[cfg(feature = "core")]
-use pywr_core::parameters::{ParameterIndex, ParameterName, WeeklyProfileError, WeeklyProfileValues};
+use pywr_core::parameters::{ParameterName, WeeklyProfileError, WeeklyProfileValues};
 use pywr_schema_macros::{PywrVisitAll, skip_serializing_none};
 use pywr_v1_schema::parameters::{
     DailyProfileParameter as DailyProfileParameterV1, MonthInterpDay as MonthInterpDayV1,
@@ -31,12 +31,12 @@ pub struct DailyProfileParameter {
 
 #[cfg(feature = "core")]
 impl DailyProfileParameter {
-    pub fn add_to_model(
+    pub fn add_to_network(
         &self,
-        network: &mut pywr_core::network::Network,
+        network: &mut pywr_core::network::NetworkBuilder,
         args: &LoadArgs,
         parent: Option<&str>,
-    ) -> Result<ParameterIndex<f64>, SchemaError> {
+    ) -> Result<(), SchemaError> {
         let mut values = self.values.load(args.tables)?;
 
         match values.len() {
@@ -54,11 +54,14 @@ impl DailyProfileParameter {
             }
         }
 
-        let p = pywr_core::parameters::DailyProfileParameter::new(
+        let p = pywr_core::parameters::DailyProfileParameterBuilder::new(
             ParameterName::new(&self.meta.name, parent),
             values.try_into().expect("Failed to convert values to [f64; 366]"),
         );
-        Ok(network.add_simple_parameter(Box::new(p))?)
+
+        network.parameters().f64(Box::new(p));
+
+        Ok(())
     }
 }
 
@@ -106,12 +109,12 @@ pub struct MonthlyProfileParameter {
 
 #[cfg(feature = "core")]
 impl MonthlyProfileParameter {
-    pub fn add_to_model(
+    pub fn add_to_network(
         &self,
-        network: &mut pywr_core::network::Network,
+        network: &mut pywr_core::network::NetworkBuilder,
         args: &LoadArgs,
         parent: Option<&str>,
-    ) -> Result<ParameterIndex<f64>, SchemaError> {
+    ) -> Result<(), SchemaError> {
         let values = self.values.load(args.tables)?;
 
         let values: [f64; 12] = values.try_into().map_err(|v: Vec<_>| SchemaError::DataLengthMismatch {
@@ -119,12 +122,18 @@ impl MonthlyProfileParameter {
             found: v.len(),
         })?;
 
-        let p = pywr_core::parameters::MonthlyProfileParameter::new(
+        let mut builder = pywr_core::parameters::MonthlyProfileParameterBuilder::new(
             ParameterName::new(&self.meta.name, parent),
             values,
-            self.interp_day.map(|id| id.into()),
         );
-        Ok(network.add_simple_parameter(Box::new(p))?)
+
+        if let Some(interp_day) = self.interp_day {
+            builder.interp_day(interp_day.into());
+        }
+
+        network.parameters().f64(Box::new(builder));
+
+        Ok(())
     }
 }
 
@@ -171,12 +180,12 @@ pub struct UniformDrawdownProfileParameter {
 
 #[cfg(feature = "core")]
 impl UniformDrawdownProfileParameter {
-    pub fn add_to_model(
+    pub fn add_to_network(
         &self,
-        network: &mut pywr_core::network::Network,
+        network: &mut pywr_core::network::NetworkBuilder,
         args: &LoadArgs,
         parent: Option<&str>,
-    ) -> Result<ParameterIndex<f64>, SchemaError> {
+    ) -> Result<(), SchemaError> {
         let reset_day = match &self.reset_day {
             Some(v) => v.load(args.tables)? as u32,
             None => 1,
@@ -190,13 +199,16 @@ impl UniformDrawdownProfileParameter {
             None => 0,
         };
 
-        let p = pywr_core::parameters::UniformDrawdownProfileParameter::new(
+        let p = pywr_core::parameters::UniformDrawdownProfileParameterBuilder::new(
             ParameterName::new(&self.meta.name, parent),
             reset_day,
             reset_month,
             residual_days,
         );
-        Ok(network.add_simple_parameter(Box::new(p))?)
+
+        network.parameters().f64(Box::new(p));
+
+        Ok(())
     }
 }
 
@@ -368,19 +380,22 @@ pub struct RbfProfileParameter {
 
 #[cfg(feature = "core")]
 impl RbfProfileParameter {
-    pub fn add_to_model(
+    pub fn add_to_network(
         &self,
-        network: &mut pywr_core::network::Network,
+        network: &mut pywr_core::network::NetworkBuilder,
         parent: Option<&str>,
-    ) -> Result<ParameterIndex<f64>, SchemaError> {
+    ) -> Result<(), SchemaError> {
         let function = self.function.into_core_rbf(&self.points)?;
 
-        let p = pywr_core::parameters::RbfProfileParameter::new(
+        let p = pywr_core::parameters::RbfProfileParameterBuilder::new(
             ParameterName::new(&self.meta.name, parent),
             self.points.clone(),
             function,
         );
-        Ok(network.add_simple_parameter(Box::new(p))?)
+
+        network.parameters().f64(Box::new(p));
+
+        Ok(())
     }
 }
 
@@ -568,13 +583,13 @@ pub struct WeeklyProfileParameter {
 
 #[cfg(feature = "core")]
 impl WeeklyProfileParameter {
-    pub fn add_to_model(
+    pub fn add_to_network(
         &self,
-        network: &mut pywr_core::network::Network,
+        network: &mut pywr_core::network::NetworkBuilder,
         args: &LoadArgs,
         parent: Option<&str>,
-    ) -> Result<ParameterIndex<f64>, SchemaError> {
-        let p = pywr_core::parameters::WeeklyProfileParameter::new(
+    ) -> Result<(), SchemaError> {
+        let mut builder = pywr_core::parameters::WeeklyProfileParameterBuilder::new(
             ParameterName::new(&self.meta.name, parent),
             WeeklyProfileValues::try_from(self.values.load(args.tables)?.as_slice()).map_err(
                 |err: WeeklyProfileError| SchemaError::LoadParameter {
@@ -582,9 +597,15 @@ impl WeeklyProfileParameter {
                     error: err.to_string(),
                 },
             )?,
-            self.interp_day.map(|id| id.into()),
         );
-        Ok(network.add_simple_parameter(Box::new(p))?)
+
+        if let Some(interp_day) = self.interp_day {
+            builder.interp_day(interp_day.into());
+        }
+
+        network.parameters().f64(Box::new(builder));
+
+        Ok(())
     }
 }
 
@@ -630,12 +651,12 @@ pub struct DirunalProfileParameter {
 
 #[cfg(feature = "core")]
 impl DirunalProfileParameter {
-    pub fn add_to_model(
+    pub fn add_to_network(
         &self,
-        network: &mut pywr_core::network::Network,
+        network: &mut pywr_core::network::NetworkBuilder,
         args: &LoadArgs,
         parent: Option<&str>,
-    ) -> Result<ParameterIndex<f64>, SchemaError> {
+    ) -> Result<(), SchemaError> {
         let values = self.values.load(args.tables)?;
 
         let values: [f64; 24] = values.try_into().map_err(|v: Vec<_>| SchemaError::DataLengthMismatch {
@@ -643,20 +664,26 @@ impl DirunalProfileParameter {
             found: v.len(),
         })?;
 
-        let p =
-            pywr_core::parameters::DiurnalProfileParameter::new(ParameterName::new(&self.meta.name, parent), values);
-        Ok(network.add_simple_parameter(Box::new(p))?)
+        let p = pywr_core::parameters::DiurnalProfileParameterBuilder::new(
+            ParameterName::new(&self.meta.name, parent),
+            values,
+        );
+
+        network.parameters().f64(Box::new(p));
+
+        Ok(())
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "core"))]
 mod tests {
     use super::*;
     use crate::network::NetworkSchema;
     use crate::parameters::ParameterMeta;
     use crate::parameters::{ConstantFloatVec, Parameter};
     use pywr_core::models::ModelDomain;
-    use pywr_core::test_utils::default_time_domain;
+    use pywr_core::network::NetworkBuilder;
+    use pywr_core::test_utils::default_domain;
 
     #[test]
     fn add_to_model_with_366_values() {
@@ -667,13 +694,14 @@ mod tests {
         };
         let values = ConstantFloatVec::Literal { values: vec![1.0; 366] };
         let param = DailyProfileParameter { meta, values };
-        let domain: ModelDomain = default_time_domain().into();
+        let domain: ModelDomain = default_domain();
         let network = NetworkSchema {
             parameters: Some(vec![Parameter::DailyProfile(param)]),
             ..Default::default()
         };
 
-        let result = network.build_network(&domain, None, None, &[]);
+        let mut builder = NetworkBuilder::default();
+        let result = network.add_to_network(&mut builder, &domain, None, None, &[]);
 
         assert!(result.is_ok());
     }
@@ -689,13 +717,14 @@ mod tests {
         let values = vec![1.0; 365];
         let values = ConstantFloatVec::Literal { values };
         let param = DailyProfileParameter { meta, values };
-        let domain: ModelDomain = default_time_domain().into();
+        let domain: ModelDomain = default_domain();
         let network = NetworkSchema {
             parameters: Some(vec![Parameter::DailyProfile(param)]),
             ..Default::default()
         };
 
-        let result = network.build_network(&domain, None, None, &[]);
+        let mut builder = NetworkBuilder::default();
+        let result = network.add_to_network(&mut builder, &domain, None, None, &[]);
 
         assert!(result.is_ok());
     }
@@ -709,13 +738,14 @@ mod tests {
         };
         let values = ConstantFloatVec::Literal { values: vec![1.0; 364] };
         let param = DailyProfileParameter { meta, values };
-        let domain: ModelDomain = default_time_domain().into();
+        let domain: ModelDomain = default_domain();
         let network = NetworkSchema {
             parameters: Some(vec![Parameter::DailyProfile(param)]),
             ..Default::default()
         };
 
-        let result = network.build_network(&domain, None, None, &[]);
+        let mut builder = NetworkBuilder::default();
+        let result = network.add_to_network(&mut builder, &domain, None, None, &[]);
 
         assert!(result.is_err());
     }

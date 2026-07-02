@@ -1,8 +1,9 @@
+use crate::network::ResolutionMaps;
 use crate::parameters::errors::{ConstCalculationError, ParameterSetupError};
 use crate::parameters::{
-    ActivationFunction, ConstParameter, Parameter, ParameterMeta, ParameterName, ParameterState, VariableConfig,
-    VariableParameter, VariableParameterError, downcast_internal_state_mut, downcast_internal_state_ref,
-    downcast_variable_config_ref,
+    ActivationFunction, BuiltParameter, ConstParameter, MaybeBuiltParameter, Parameter, ParameterBuildError,
+    ParameterBuilder, ParameterMeta, ParameterName, ParameterState, VariableConfig, VariableParameter,
+    VariableParameterError, downcast_internal_state_mut, downcast_internal_state_ref, downcast_variable_config_ref,
 };
 use crate::scenario::ScenarioIndex;
 use crate::state::ConstParameterValues;
@@ -17,13 +18,6 @@ pub struct ConstantParameter {
 type InternalValue = Option<f64>;
 
 impl ConstantParameter {
-    pub fn new(name: ParameterName, value: f64) -> Self {
-        Self {
-            meta: ParameterMeta::new(name),
-            value,
-        }
-    }
-
     /// Return the current value.
     ///
     /// If the internal state is None, the value is returned directly. Otherwise, the internal value must
@@ -122,9 +116,41 @@ impl VariableParameter<f64> for ConstantParameter {
     }
 }
 
+pub struct ConstantParameterBuilder {
+    meta: ParameterMeta,
+    value: f64,
+}
+
+impl ConstantParameterBuilder {
+    pub fn new(name: ParameterName, value: f64) -> Self {
+        Self {
+            meta: ParameterMeta::new(name),
+            value,
+        }
+    }
+}
+
+impl ParameterBuilder<f64> for ConstantParameterBuilder {
+    fn name(&self) -> &ParameterName {
+        &self.meta.name
+    }
+
+    fn build(
+        self: Box<Self>,
+        _resolution_maps: &ResolutionMaps,
+    ) -> Result<MaybeBuiltParameter<f64>, ParameterBuildError> {
+        Ok(BuiltParameter::Const(Box::new(ConstantParameter {
+            meta: self.meta,
+            value: self.value,
+        }))
+        .into())
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use crate::parameters::{ActivationFunction, ConstantParameter, Parameter, VariableParameter};
+    use super::ConstantParameter;
+    use crate::parameters::{ActivationFunction, Parameter, ParameterMeta, VariableParameter};
     use crate::test_utils::default_domain;
     use float_cmp::assert_approx_eq;
     use std::f64::consts::PI;
@@ -134,7 +160,10 @@ mod tests {
         let domain = default_domain();
 
         let var = ActivationFunction::Unit { min: 0.0, max: 2.0 };
-        let p = ConstantParameter::new("test".into(), 1.0);
+        let p = ConstantParameter {
+            meta: ParameterMeta::new("my-parameter".into()),
+            value: 1.0,
+        };
         let mut state = p
             .setup(domain.time().timesteps(), domain.scenarios().indices().first().unwrap())
             .unwrap();
@@ -156,7 +185,10 @@ mod tests {
     fn test_constant_parameter() {
         let domain = default_domain();
 
-        let p = ConstantParameter::new("my-parameter".into(), PI);
+        let p = ConstantParameter {
+            meta: ParameterMeta::new("my-parameter".into()),
+            value: PI,
+        };
         let state = p
             .setup(domain.time().timesteps(), domain.scenarios().indices().first().unwrap())
             .unwrap();

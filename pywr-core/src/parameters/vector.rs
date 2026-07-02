@@ -1,6 +1,9 @@
-use crate::network::Network;
-use crate::parameters::errors::ParameterCalculationError;
-use crate::parameters::{GeneralParameter, Parameter, ParameterMeta, ParameterName, ParameterState};
+use crate::network::{Network, ResolutionMaps};
+use crate::parameters::errors::GeneralCalculationError;
+use crate::parameters::{
+    BuiltParameter, GeneralParameter, MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder,
+    ParameterMeta, ParameterName, ParameterState,
+};
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
 use crate::timestep::Timestep;
@@ -8,15 +11,6 @@ use crate::timestep::Timestep;
 pub struct VectorParameter {
     meta: ParameterMeta,
     values: Vec<f64>,
-}
-
-impl VectorParameter {
-    pub fn new(name: ParameterName, values: Vec<f64>) -> Self {
-        Self {
-            meta: ParameterMeta::new(name),
-            values,
-        }
-    }
 }
 
 impl Parameter for VectorParameter {
@@ -33,10 +27,10 @@ impl GeneralParameter<f64> for VectorParameter {
         _model: &Network,
         _state: &State,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<Option<f64>, ParameterCalculationError> {
+    ) -> Result<Option<f64>, GeneralCalculationError> {
         match self.values.get(timestep.index) {
             Some(v) => Ok(Some(*v)),
-            None => Err(ParameterCalculationError::OutOfBoundsError {
+            None => Err(GeneralCalculationError::OutOfBoundsError {
                 index: timestep.index,
                 length: self.values.len(),
                 axis: 0,
@@ -49,5 +43,38 @@ impl GeneralParameter<f64> for VectorParameter {
         Self: Sized,
     {
         self
+    }
+}
+
+pub struct VectorParameterBuilder {
+    meta: ParameterMeta,
+    values: Vec<f64>,
+}
+
+impl VectorParameterBuilder {
+    pub fn new(name: ParameterName, values: &[f64]) -> Self {
+        Self {
+            meta: ParameterMeta::new(name),
+            values: values.to_vec(),
+        }
+    }
+}
+
+impl ParameterBuilder<f64> for VectorParameterBuilder {
+    fn name(&self) -> &ParameterName {
+        &self.meta.name
+    }
+
+    fn build(
+        self: Box<Self>,
+        _resolution_maps: &ResolutionMaps,
+    ) -> Result<MaybeBuiltParameter<f64>, ParameterBuildError> {
+        let p = VectorParameter {
+            meta: self.meta,
+            values: self.values,
+        };
+
+        let bp = BuiltParameter::General(Box::new(p));
+        Ok(bp.into())
     }
 }

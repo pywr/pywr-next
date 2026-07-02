@@ -4,7 +4,7 @@
     "description": "A river split with a proportion above an MRF taken off. The split is given a user defined slot name.",
     "minimum_version": "0.1"
   },
-  "timestepper": {
+  "time": {
     "start": "2015-01-01",
     "end": "2015-01-03",
     "timestep": {

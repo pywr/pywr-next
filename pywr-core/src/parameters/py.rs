@@ -1,10 +1,14 @@
-use super::{GeneralParameter, Parameter, ParameterMeta, ParameterName, ParameterState, Timestep};
-use crate::metric::{MetricF64, MetricU64};
-use crate::network::Network;
+use super::{
+    BuiltParameter, GeneralParameter, MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder,
+    ParameterMeta, ParameterName, ParameterState, Timestep,
+};
+use crate::metric::{MetricF64, MetricU64, UnresolvedMetricF64, UnresolvedMetricU64};
+use crate::network::{Network, ResolutionMaps};
 use crate::parameters::downcast_internal_state_mut;
-use crate::parameters::errors::{ParameterCalculationError, ParameterSetupError};
+use crate::parameters::errors::{GeneralCalculationError, ParameterSetupError};
 use crate::scenario::ScenarioIndex;
 use crate::state::{MultiValue, State};
+use crate::{resolve_metric_f64_hashmap, resolve_metric_u64_hashmap};
 use ahash::RandomState;
 use pyo3::exceptions::PyKeyError;
 use pyo3::prelude::*;
@@ -70,28 +74,12 @@ impl PartialEq for PyCommon {
 }
 
 impl PyCommon {
-    fn new(
-        meta: ParameterMeta,
-        args: Py<PyTuple>,
-        kwargs: Py<PyDict>,
-        metrics: &HashMap<String, MetricF64>,
-        indices: &HashMap<String, MetricU64>,
-    ) -> Self {
-        Self {
-            meta,
-            args,
-            kwargs,
-            metrics: metrics.clone(),
-            indices: indices.clone(),
-        }
-    }
-
     fn update_metrics(
         &self,
         network: &Network,
         state: &State,
         values: &mut HashMap<String, f64, RandomState>,
-    ) -> Result<(), ParameterCalculationError> {
+    ) -> Result<(), GeneralCalculationError> {
         for (k, m) in self.metrics.iter() {
             let value = m.get_value(network, state)?;
             values.insert(k.clone(), value);
@@ -105,13 +93,43 @@ impl PyCommon {
         network: &Network,
         state: &State,
         values: &mut HashMap<String, u64, RandomState>,
-    ) -> Result<(), ParameterCalculationError> {
+    ) -> Result<(), GeneralCalculationError> {
         for (k, m) in self.indices.iter() {
             let value = m.get_value(network, state)?;
             values.insert(k.clone(), value);
         }
 
         Ok(())
+    }
+}
+
+struct PyCommonBuilder {
+    meta: ParameterMeta,
+    args: Py<PyTuple>,
+    kwargs: Py<PyDict>,
+    metrics: HashMap<String, UnresolvedMetricF64>,
+    indices: HashMap<String, UnresolvedMetricU64>,
+}
+
+impl PyCommonBuilder {
+    fn new(meta: ParameterMeta, args: Py<PyTuple>, kwargs: Py<PyDict>) -> Self {
+        Self {
+            meta,
+            args,
+            kwargs,
+            metrics: HashMap::new(),
+            indices: HashMap::new(),
+        }
+    }
+
+    fn metric(&mut self, key: &str, value: UnresolvedMetricF64) -> &mut Self {
+        self.metrics.insert(key.to_string(), value);
+        self
+    }
+
+    fn index(&mut self, key: &str, value: UnresolvedMetricU64) -> &mut Self {
+        self.indices.insert(key.to_string(), value);
+        self
     }
 }
 
@@ -163,20 +181,6 @@ fn ensure_parameter_info(
 }
 
 impl PyClassParameter {
-    pub fn new(
-        name: ParameterName,
-        object: Py<PyAny>,
-        args: Py<PyTuple>,
-        kwargs: Py<PyDict>,
-        metrics: &HashMap<String, MetricF64>,
-        indices: &HashMap<String, MetricU64>,
-    ) -> Self {
-        Self {
-            class: object,
-            common: PyCommon::new(ParameterMeta::new(name), args, kwargs, metrics, indices),
-        }
-    }
-
     fn setup(&self) -> Result<Option<Box<dyn ParameterState>>, ParameterSetupError> {
         Python::initialize();
 
@@ -207,14 +211,14 @@ impl PyClassParameter {
         network: &Network,
         state: &State,
         internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<Option<T>, ParameterCalculationError>
+    ) -> Result<Option<T>, GeneralCalculationError>
     where
         T: for<'a, 'py> FromPyObject<'a, 'py>,
     {
         let internal = downcast_internal_state_mut::<InternalObj>(internal_state);
 
         ensure_parameter_info(&mut internal.info_obj, timestep, scenario_index).map_err(|py_error| {
-            ParameterCalculationError::PythonError {
+            GeneralCalculationError::PythonError {
                 name: self.common.meta.name.to_string(),
                 object: self.class.to_string(),
                 py_error: Box::new(py_error),
@@ -237,24 +241,23 @@ impl PyClassParameter {
                     self.common.update_indices(network, state, &mut info_mut.index_values)?;
                 }
 
-                let args =
-                    PyTuple::new(py, [info_bind]).map_err(|py_error| ParameterCalculationError::PythonError {
-                        name: self.common.meta.name.to_string(),
-                        object: self.class.to_string(),
-                        py_error: Box::new(py_error),
-                    })?;
+                let args = PyTuple::new(py, [info_bind]).map_err(|py_error| GeneralCalculationError::PythonError {
+                    name: self.common.meta.name.to_string(),
+                    object: self.class.to_string(),
+                    py_error: Box::new(py_error),
+                })?;
 
                 internal
                     .user_obj
                     .call_method1(py, method, args)
-                    .map_err(|py_error| ParameterCalculationError::PythonError {
+                    .map_err(|py_error| GeneralCalculationError::PythonError {
                         name: self.common.meta.name.to_string(),
                         object: self.class.to_string(),
                         py_error: Box::new(py_error),
                     })?
                     .extract(py)
                     .map_err(Into::into)
-                .map_err(|py_error| ParameterCalculationError::PythonError {
+                    .map_err(|py_error| GeneralCalculationError::PythonError {
                         name: self.common.meta.name.to_string(),
                         object: self.class.to_string(),
                         py_error: Box::new(py_error),
@@ -290,7 +293,7 @@ impl GeneralParameter<f64> for PyClassParameter {
         network: &Network,
         state: &State,
         internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<Option<f64>, ParameterCalculationError> {
+    ) -> Result<Option<f64>, GeneralCalculationError> {
         self.call_method("before", timestep, scenario_index, network, state, internal_state)
     }
 
@@ -301,7 +304,7 @@ impl GeneralParameter<f64> for PyClassParameter {
         network: &Network,
         state: &State,
         internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<Option<f64>, ParameterCalculationError> {
+    ) -> Result<Option<f64>, GeneralCalculationError> {
         self.call_method("after", timestep, scenario_index, network, state, internal_state)
     }
 
@@ -321,7 +324,7 @@ impl GeneralParameter<u64> for PyClassParameter {
         network: &Network,
         state: &State,
         internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<Option<u64>, ParameterCalculationError> {
+    ) -> Result<Option<u64>, GeneralCalculationError> {
         self.call_method("before", timestep, scenario_index, network, state, internal_state)
     }
 
@@ -332,7 +335,7 @@ impl GeneralParameter<u64> for PyClassParameter {
         network: &Network,
         state: &State,
         internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<Option<u64>, ParameterCalculationError> {
+    ) -> Result<Option<u64>, GeneralCalculationError> {
         self.call_method("after", timestep, scenario_index, network, state, internal_state)
     }
 
@@ -352,7 +355,7 @@ impl GeneralParameter<MultiValue> for PyClassParameter {
         network: &Network,
         state: &State,
         internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<Option<MultiValue>, ParameterCalculationError> {
+    ) -> Result<Option<MultiValue>, GeneralCalculationError> {
         self.call_method("before", timestep, scenario_index, network, state, internal_state)
     }
 
@@ -363,7 +366,7 @@ impl GeneralParameter<MultiValue> for PyClassParameter {
         model: &Network,
         state: &State,
         internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<Option<MultiValue>, ParameterCalculationError> {
+    ) -> Result<Option<MultiValue>, GeneralCalculationError> {
         self.call_method("after", timestep, scenario_index, model, state, internal_state)
     }
 
@@ -372,6 +375,117 @@ impl GeneralParameter<MultiValue> for PyClassParameter {
         Self: Sized,
     {
         self
+    }
+}
+
+pub struct PyClassParameterBuilder {
+    class: Py<PyAny>,
+    common: PyCommonBuilder,
+}
+
+impl PyClassParameterBuilder {
+    pub fn new(name: ParameterName, object: Py<PyAny>, args: Py<PyTuple>, kwargs: Py<PyDict>) -> Self {
+        Self {
+            class: object,
+            common: PyCommonBuilder::new(ParameterMeta::new(name), args, kwargs),
+        }
+    }
+
+    pub fn metric(&mut self, key: &str, value: UnresolvedMetricF64) -> &mut Self {
+        self.common.metric(key, value);
+        self
+    }
+
+    pub fn index(&mut self, key: &str, value: UnresolvedMetricU64) -> &mut Self {
+        self.common.index(key, value);
+        self
+    }
+}
+
+impl ParameterBuilder<f64> for PyClassParameterBuilder {
+    fn name(&self) -> &ParameterName {
+        &self.common.meta.name
+    }
+
+    fn build(
+        self: Box<Self>,
+        resolution_maps: &ResolutionMaps,
+    ) -> Result<MaybeBuiltParameter<f64>, ParameterBuildError> {
+        let metrics = resolve_metric_f64_hashmap!(self, &self.common.metrics, resolution_maps, "metrics");
+        let indices = resolve_metric_u64_hashmap!(self, &self.common.indices, resolution_maps, "indices");
+
+        let common = PyCommon {
+            meta: self.common.meta,
+            args: self.common.args,
+            kwargs: self.common.kwargs,
+            metrics,
+            indices,
+        };
+
+        let p = PyClassParameter {
+            class: self.class,
+            common,
+        };
+
+        Ok(MaybeBuiltParameter::Built(BuiltParameter::General(Box::new(p))))
+    }
+}
+
+impl ParameterBuilder<u64> for PyClassParameterBuilder {
+    fn name(&self) -> &ParameterName {
+        &self.common.meta.name
+    }
+
+    fn build(
+        self: Box<Self>,
+        resolution_maps: &ResolutionMaps,
+    ) -> Result<MaybeBuiltParameter<u64>, ParameterBuildError> {
+        let metrics = resolve_metric_f64_hashmap!(self, &self.common.metrics, resolution_maps, "metrics");
+        let indices = resolve_metric_u64_hashmap!(self, &self.common.indices, resolution_maps, "indices");
+
+        let common = PyCommon {
+            meta: self.common.meta,
+            args: self.common.args,
+            kwargs: self.common.kwargs,
+            metrics,
+            indices,
+        };
+
+        let p = PyClassParameter {
+            class: self.class,
+            common,
+        };
+
+        Ok(MaybeBuiltParameter::Built(BuiltParameter::General(Box::new(p))))
+    }
+}
+
+impl ParameterBuilder<MultiValue> for PyClassParameterBuilder {
+    fn name(&self) -> &ParameterName {
+        &self.common.meta.name
+    }
+
+    fn build(
+        self: Box<Self>,
+        resolution_maps: &ResolutionMaps,
+    ) -> Result<MaybeBuiltParameter<MultiValue>, ParameterBuildError> {
+        let metrics = resolve_metric_f64_hashmap!(self, &self.common.metrics, resolution_maps, "metrics");
+        let indices = resolve_metric_u64_hashmap!(self, &self.common.indices, resolution_maps, "indices");
+
+        let common = PyCommon {
+            meta: self.common.meta,
+            args: self.common.args,
+            kwargs: self.common.kwargs,
+            metrics,
+            indices,
+        };
+
+        let p = PyClassParameter {
+            class: self.class,
+            common,
+        };
+
+        Ok(MaybeBuiltParameter::Built(BuiltParameter::General(Box::new(p))))
     }
 }
 
@@ -402,20 +516,6 @@ impl InternalInfo {
 }
 
 impl PyFuncParameter {
-    pub fn new(
-        name: ParameterName,
-        function: Py<PyAny>,
-        args: Py<PyTuple>,
-        kwargs: Py<PyDict>,
-        metrics: &HashMap<String, MetricF64>,
-        indices: &HashMap<String, MetricU64>,
-    ) -> Self {
-        Self {
-            function,
-            common: PyCommon::new(ParameterMeta::new(name), args, kwargs, metrics, indices),
-        }
-    }
-
     fn setup(&self) -> Result<Option<Box<dyn ParameterState>>, ParameterSetupError> {
         Python::initialize();
 
@@ -431,14 +531,14 @@ impl PyFuncParameter {
         network: &Network,
         state: &State,
         internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<T, ParameterCalculationError>
+    ) -> Result<T, GeneralCalculationError>
     where
         T: for<'a, 'py> FromPyObject<'a, 'py>,
     {
         let internal = downcast_internal_state_mut::<InternalInfo>(internal_state);
 
         ensure_parameter_info(&mut internal.info_obj, timestep, scenario_index).map_err(|py_error| {
-            ParameterCalculationError::PythonError {
+            GeneralCalculationError::PythonError {
                 name: self.common.meta.name.to_string(),
                 object: self.function.to_string(),
                 py_error: Box::new(py_error),
@@ -460,7 +560,7 @@ impl PyFuncParameter {
                 self.common.update_indices(network, state, &mut info_mut.index_values)?;
             }
 
-            let args = PyTuple::new(py, [info_bind]).map_err(|py_error| ParameterCalculationError::PythonError {
+            let args = PyTuple::new(py, [info_bind]).map_err(|py_error| GeneralCalculationError::PythonError {
                 name: self.common.meta.name.to_string(),
                 object: self.function.to_string(),
                 py_error: Box::new(py_error),
@@ -470,14 +570,14 @@ impl PyFuncParameter {
             let args = args
                 .into_sequence()
                 .concat(self.common.args.bind(py).as_sequence())
-                .map_err(|py_error| ParameterCalculationError::PythonError {
+                .map_err(|py_error| GeneralCalculationError::PythonError {
                     name: self.common.meta.name.to_string(),
                     object: self.function.to_string(),
                     py_error: Box::new(py_error),
                 })?;
             let args = args
                 .to_tuple()
-                .map_err(|py_error| ParameterCalculationError::PythonError {
+                .map_err(|py_error| GeneralCalculationError::PythonError {
                     name: self.common.meta.name.to_string(),
                     object: self.function.to_string(),
                     py_error: Box::new(py_error),
@@ -487,14 +587,14 @@ impl PyFuncParameter {
 
             self.function
                 .call(py, args, Some(kwargs))
-                .map_err(|py_error| ParameterCalculationError::PythonError {
+                .map_err(|py_error| GeneralCalculationError::PythonError {
                     name: self.common.meta.name.to_string(),
                     object: self.function.to_string(),
                     py_error: Box::new(py_error),
                 })?
                 .extract(py)
                 .map_err(Into::into)
-                .map_err(|py_error| ParameterCalculationError::PythonError {
+                .map_err(|py_error| GeneralCalculationError::PythonError {
                     name: self.common.meta.name.to_string(),
                     object: self.function.to_string(),
                     py_error: Box::new(py_error),
@@ -526,7 +626,7 @@ impl GeneralParameter<f64> for PyFuncParameter {
         network: &Network,
         state: &State,
         internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<Option<f64>, ParameterCalculationError> {
+    ) -> Result<Option<f64>, GeneralCalculationError> {
         self.compute(timestep, scenario_index, network, state, internal_state)
     }
 
@@ -546,7 +646,7 @@ impl GeneralParameter<u64> for PyFuncParameter {
         network: &Network,
         state: &State,
         internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<Option<u64>, ParameterCalculationError> {
+    ) -> Result<Option<u64>, GeneralCalculationError> {
         self.compute(timestep, scenario_index, network, state, internal_state)
     }
 
@@ -566,7 +666,7 @@ impl GeneralParameter<MultiValue> for PyFuncParameter {
         network: &Network,
         state: &State,
         internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<Option<MultiValue>, ParameterCalculationError> {
+    ) -> Result<Option<MultiValue>, GeneralCalculationError> {
         self.compute(timestep, scenario_index, network, state, internal_state)
     }
 
@@ -578,13 +678,123 @@ impl GeneralParameter<MultiValue> for PyFuncParameter {
     }
 }
 
+pub struct PyFuncParameterBuilder {
+    function: Py<PyAny>,
+    common: PyCommonBuilder,
+}
+
+impl PyFuncParameterBuilder {
+    pub fn new(name: ParameterName, object: Py<PyAny>, args: Py<PyTuple>, kwargs: Py<PyDict>) -> Self {
+        Self {
+            function: object,
+            common: PyCommonBuilder::new(ParameterMeta::new(name), args, kwargs),
+        }
+    }
+
+    pub fn metric(&mut self, key: &str, value: UnresolvedMetricF64) -> &mut Self {
+        self.common.metric(key, value);
+        self
+    }
+
+    pub fn index(&mut self, key: &str, value: UnresolvedMetricU64) -> &mut Self {
+        self.common.index(key, value);
+        self
+    }
+}
+
+impl ParameterBuilder<f64> for PyFuncParameterBuilder {
+    fn name(&self) -> &ParameterName {
+        &self.common.meta.name
+    }
+
+    fn build(
+        self: Box<Self>,
+        resolution_maps: &ResolutionMaps,
+    ) -> Result<MaybeBuiltParameter<f64>, ParameterBuildError> {
+        let metrics = resolve_metric_f64_hashmap!(self, &self.common.metrics, resolution_maps, "metrics");
+        let indices = resolve_metric_u64_hashmap!(self, &self.common.indices, resolution_maps, "indices");
+
+        let common = PyCommon {
+            meta: self.common.meta,
+            args: self.common.args,
+            kwargs: self.common.kwargs,
+            metrics,
+            indices,
+        };
+
+        let p = PyFuncParameter {
+            function: self.function,
+            common,
+        };
+
+        Ok(MaybeBuiltParameter::Built(BuiltParameter::General(Box::new(p))))
+    }
+}
+
+impl ParameterBuilder<u64> for PyFuncParameterBuilder {
+    fn name(&self) -> &ParameterName {
+        &self.common.meta.name
+    }
+
+    fn build(
+        self: Box<Self>,
+        resolution_maps: &ResolutionMaps,
+    ) -> Result<MaybeBuiltParameter<u64>, ParameterBuildError> {
+        let metrics = resolve_metric_f64_hashmap!(self, &self.common.metrics, resolution_maps, "metrics");
+        let indices = resolve_metric_u64_hashmap!(self, &self.common.indices, resolution_maps, "indices");
+
+        let common = PyCommon {
+            meta: self.common.meta,
+            args: self.common.args,
+            kwargs: self.common.kwargs,
+            metrics,
+            indices,
+        };
+
+        let p = PyFuncParameter {
+            function: self.function,
+            common,
+        };
+
+        Ok(MaybeBuiltParameter::Built(BuiltParameter::General(Box::new(p))))
+    }
+}
+
+impl ParameterBuilder<MultiValue> for PyFuncParameterBuilder {
+    fn name(&self) -> &ParameterName {
+        &self.common.meta.name
+    }
+
+    fn build(
+        self: Box<Self>,
+        resolution_maps: &ResolutionMaps,
+    ) -> Result<MaybeBuiltParameter<MultiValue>, ParameterBuildError> {
+        let metrics = resolve_metric_f64_hashmap!(self, &self.common.metrics, resolution_maps, "metrics");
+        let indices = resolve_metric_u64_hashmap!(self, &self.common.indices, resolution_maps, "indices");
+
+        let common = PyCommon {
+            meta: self.common.meta,
+            args: self.common.args,
+            kwargs: self.common.kwargs,
+            metrics,
+            indices,
+        };
+
+        let p = PyFuncParameter {
+            function: self.function,
+            common,
+        };
+
+        Ok(MaybeBuiltParameter::Built(BuiltParameter::General(Box::new(p))))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::scenario::ScenarioIndexBuilder;
     use crate::state::StateBuilder;
-    use crate::test_utils::default_timestepper;
-    use crate::timestep::TimeDomain;
+    use crate::test_utils::default_time_domain_builder;
     use chrono::Datelike;
     use float_cmp::assert_approx_eq;
     use pyo3::ffi::c_str;
@@ -668,16 +878,17 @@ class MyParameter:
         let args = Python::attach(|py| PyTuple::new(py, [0]).unwrap().unbind());
         let kwargs = Python::attach(|py| PyDict::new(py).unbind());
 
-        let param = PyClassParameter::new(
-            "my-parameter".into(),
-            class,
+        let common = PyCommon {
+            meta: ParameterMeta::new("my-parameter".into()),
             args,
             kwargs,
-            &HashMap::new(),
-            &HashMap::new(),
-        );
-        let timestepper = default_timestepper();
-        let time: TimeDomain = TimeDomain::try_from(timestepper).unwrap();
+            metrics: Default::default(),
+            indices: Default::default(),
+        };
+
+        let param = PyClassParameter { class, common };
+
+        let time = default_time_domain_builder().build().unwrap();
         let timesteps = time.timesteps();
 
         let scenario_indices = [
@@ -773,16 +984,17 @@ class MyParameter:
         let args = Python::attach(|py| PyTuple::new(py, [0]).unwrap().unbind());
         let kwargs = Python::attach(|py| PyDict::new(py).unbind());
 
-        let param = PyClassParameter::new(
-            "my-parameter".into(),
-            class,
+        let common = PyCommon {
+            meta: ParameterMeta::new("my-parameter".into()),
             args,
             kwargs,
-            &HashMap::new(),
-            &HashMap::new(),
-        );
-        let timestepper = default_timestepper();
-        let time: TimeDomain = TimeDomain::try_from(timestepper).unwrap();
+            metrics: Default::default(),
+            indices: Default::default(),
+        };
+
+        let param = PyClassParameter { class, common };
+
+        let time = default_time_domain_builder().build().unwrap();
         let timesteps = time.timesteps();
 
         let scenario_indices = [
@@ -841,16 +1053,17 @@ def my_function(info, count, **kwargs):
         let args = Python::attach(|py| PyTuple::new(py, [2]).unwrap().unbind());
         let kwargs = Python::attach(|py| PyDict::new(py).unbind());
 
-        let param = PyFuncParameter::new(
-            "MyParameter".into(),
-            function,
+        let common = PyCommon {
+            meta: ParameterMeta::new("my-parameter".into()),
             args,
             kwargs,
-            &HashMap::new(),
-            &HashMap::new(),
-        );
-        let timestepper = default_timestepper();
-        let time: TimeDomain = TimeDomain::try_from(timestepper).unwrap();
+            metrics: Default::default(),
+            indices: Default::default(),
+        };
+
+        let param = PyFuncParameter { function, common };
+
+        let time = default_time_domain_builder().build().unwrap();
         let timesteps = time.timesteps();
 
         let scenario_indices = [
