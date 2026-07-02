@@ -19,3 +19,10 @@ pub mod test_utils;
 pub mod timestep;
 pub mod utils;
 pub mod virtual_storage;
+
+/// Absolute tolerance for floating-point equality checks.
+/// For values with large magnitudes, consider using relative tolerance instead.
+const FLOAT_EQ_TOLERANCE: f64 = 1e-6;
+
+/// Absolute tolerance for detecting mass-balance discrepancies on storage nodes.
+const STORAGE_MASS_BALANCE_TOLERANCE: f64 = 1e-6;

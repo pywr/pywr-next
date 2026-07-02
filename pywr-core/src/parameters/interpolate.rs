@@ -1,3 +1,4 @@
+use crate::FLOAT_EQ_TOLERANCE;
 use thiserror::Error;
 
 /// Interpolate a value between two bounds.
@@ -6,7 +7,7 @@ pub fn interpolate(value: f64, lower_bound: f64, upper_bound: f64, lower_value: 
         lower_value
     } else if value >= upper_bound {
         upper_value
-    } else if (lower_bound - upper_bound).abs() < 1E-6 {
+    } else if (lower_bound - upper_bound).abs() < FLOAT_EQ_TOLERANCE {
         lower_value
     } else {
         lower_value + (upper_value - lower_value) * (value - lower_bound) / (upper_bound - lower_bound)
