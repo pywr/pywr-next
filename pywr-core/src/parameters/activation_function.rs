@@ -1,3 +1,6 @@
+use crate::parameters::VariableConfig;
+use std::any::Any;
+
 #[derive(Copy, Clone)]
 pub enum ActivationFunction {
     Unit { min: f64, max: f64 },
@@ -48,6 +51,16 @@ impl ActivationFunction {
             Self::BinaryStep { .. } => 1.0,
             Self::Logistic { .. } => 6.0,
         }
+    }
+}
+
+impl VariableConfig for ActivationFunction {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
     }
 }
 

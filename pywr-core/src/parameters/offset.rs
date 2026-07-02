@@ -3,8 +3,8 @@ use crate::network::Network;
 use crate::parameters::errors::ParameterCalculationError;
 use crate::parameters::{
     ActivationFunction, GeneralParameter, Parameter, ParameterMeta, ParameterName, ParameterState, VariableConfig,
-    VariableParameter, VariableParameterError, downcast_internal_state_mut, downcast_internal_state_ref,
-    downcast_variable_config_ref,
+    VariableParameter, VariableParameterError, VariableParameterValues, downcast_internal_state_mut,
+    downcast_internal_state_ref, downcast_variable_config_ref,
 };
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
@@ -44,11 +44,7 @@ impl Parameter for OffsetParameter {
         &self.meta
     }
 
-    fn as_f64_variable(&self) -> Option<&dyn VariableParameter<f64>> {
-        Some(self)
-    }
-
-    fn as_f64_variable_mut(&mut self) -> Option<&mut dyn VariableParameter<f64>> {
+    fn as_variable(&self) -> Option<&dyn VariableParameter> {
         Some(self)
     }
 }
@@ -75,48 +71,65 @@ impl GeneralParameter<f64> for OffsetParameter {
     }
 }
 
-impl VariableParameter<f64> for OffsetParameter {
+impl VariableParameter for OffsetParameter {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }
 
-    fn size(&self, _variable_config: &dyn VariableConfig) -> usize {
-        1
+    fn size(&self, _variable_config: &dyn VariableConfig) -> (usize, usize) {
+        (1, 0)
     }
 
     fn set_variables(
         &self,
-        values: &[f64],
+        values_f64: &[f64],
+        values_u64: &[u64],
         variable_config: &dyn VariableConfig,
         internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<(), VariableParameterError> {
         let activation_function = downcast_variable_config_ref::<ActivationFunction>(variable_config);
 
-        if values.len() == 1 {
+        if !values_u64.is_empty() {
+            return Err(VariableParameterError::IncorrectNumberOfValues {
+                expected: 0,
+                received: values_u64.len(),
+            });
+        }
+
+        if values_f64.len() == 1 {
             let value = downcast_internal_state_mut::<InternalValue>(internal_state);
-            *value = Some(activation_function.apply(values[0]));
+            *value = Some(activation_function.apply(values_f64[0]));
             Ok(())
         } else {
             Err(VariableParameterError::IncorrectNumberOfValues {
                 expected: 1,
-                received: values.len(),
+                received: values_f64.len(),
             })
         }
     }
 
-    fn get_variables(&self, internal_state: &Option<Box<dyn ParameterState>>) -> Option<Vec<f64>> {
+    fn get_variables(&self, internal_state: &Option<Box<dyn ParameterState>>) -> Option<VariableParameterValues> {
         downcast_internal_state_ref::<InternalValue>(internal_state)
             .as_ref()
-            .map(|value| vec![*value])
+            .map(|value| VariableParameterValues {
+                f64: vec![*value],
+                u64: vec![],
+            })
     }
 
-    fn get_lower_bounds(&self, variable_config: &dyn VariableConfig) -> Option<Vec<f64>> {
+    fn get_lower_bounds(&self, variable_config: &dyn VariableConfig) -> Option<VariableParameterValues> {
         let activation_function = downcast_variable_config_ref::<ActivationFunction>(variable_config);
-        Some(vec![activation_function.lower_bound()])
+        Some(VariableParameterValues {
+            f64: vec![activation_function.lower_bound()],
+            u64: vec![],
+        })
     }
 
-    fn get_upper_bounds(&self, variable_config: &dyn VariableConfig) -> Option<Vec<f64>> {
+    fn get_upper_bounds(&self, variable_config: &dyn VariableConfig) -> Option<VariableParameterValues> {
         let activation_function = downcast_variable_config_ref::<ActivationFunction>(variable_config);
-        Some(vec![activation_function.upper_bound()])
+        Some(VariableParameterValues {
+            f64: vec![activation_function.upper_bound()],
+            u64: vec![],
+        })
     }
 }

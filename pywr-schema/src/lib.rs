@@ -20,6 +20,7 @@ pub mod parameters;
 mod py_utils;
 pub mod timeseries;
 mod v1;
+mod variable_config;
 mod visit;
 
 pub use digest::{Checksum, ChecksumError};
@@ -32,4 +33,5 @@ pub use network::{LoadArgs, NetworkSchemaBuildError};
 pub use network::{NetworkSchema, NetworkSchemaReadError, NetworkSchemaRef};
 pub use py_utils::{PythonSource, PythonSourceType, PythonSourceTypeIter};
 pub use v1::{ConversionData, TryFromV1, TryIntoV2};
+pub use variable_config::VariableConfigs;
 pub use visit::{VisitMetrics, VisitPaths};
