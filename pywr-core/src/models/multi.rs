@@ -2,7 +2,7 @@ use crate::metric::{MetricF64, MetricF64Error};
 use crate::models::ModelDomain;
 use crate::network::{
     Network, NetworkFinaliseError, NetworkRecorderSaveError, NetworkRecorderSetupError, NetworkResult,
-    NetworkSetupError, NetworkSolverSetupError, NetworkState, NetworkTimings, RunDuration,
+    NetworkSetupError, NetworkSolverSetupError, NetworkState, NetworkStepError, NetworkTimings, RunDuration,
 };
 use crate::recorders::RecorderInternalState;
 use crate::scenario::ScenarioIndex;
@@ -26,6 +26,7 @@ use pyo3::{
     pyclass, pymethods,
     types::PyDict,
 };
+use rayon::ThreadPool;
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::fmt;
@@ -120,6 +121,13 @@ pub enum MultiNetworkModelSetupError {
 /// Errors that can occur when stepping through (simulating) a multi-network model.
 #[derive(Debug, Error)]
 pub enum MultiNetworkModelStepError {
+    #[error("Error stepping through network `{network}` at timestep {timestep:#?}: {source}")]
+    NetworkStepError {
+        network: String,
+        timestep: Timestep,
+        #[source]
+        source: Box<NetworkStepError>,
+    },
     #[error("Failed to transfer value to `{to_network}`: {source}")]
     TransferError {
         to_network: String,
@@ -483,6 +491,7 @@ impl MultiNetworkModel {
     pub fn step<S>(
         &self,
         state: &mut MultiNetworkModelState<Vec<Box<S>>>,
+        thread_pool: Option<&ThreadPool>,
         timings: &mut MultiNetworkModelTimings,
     ) -> Result<(), MultiNetworkModelStepError>
     where
@@ -510,10 +519,27 @@ impl MultiNetworkModel {
             let sub_model_states = state.states.get_mut(idx).unwrap();
 
             // Perform sub-model step
-            entry
-                .network
-                .step(timestep, scenario_indices, sub_model_solvers, sub_model_states, timing)
-                .unwrap();
+            match thread_pool {
+                Some(pool) => pool
+                    .install(|| {
+                        entry
+                            .network
+                            .step_par(timestep, scenario_indices, sub_model_solvers, sub_model_states, timing)
+                    })
+                    .map_err(|source| MultiNetworkModelStepError::NetworkStepError {
+                        network: entry.name.clone(),
+                        timestep: *timestep,
+                        source: Box::new(source),
+                    })?,
+                None => entry
+                    .network
+                    .step(timestep, scenario_indices, sub_model_solvers, sub_model_states, timing)
+                    .map_err(|source| MultiNetworkModelStepError::NetworkStepError {
+                        network: entry.name.clone(),
+                        timestep: *timestep,
+                        source: Box::new(source),
+                    })?,
+            }
 
             let sub_model_recorder_states = state.recorder_states.get_mut(idx).unwrap();
 
@@ -542,6 +568,7 @@ impl MultiNetworkModel {
     pub fn step_multi_scenario<S>(
         &self,
         state: &mut MultiNetworkModelState<Box<S>>,
+        thread_pool: &ThreadPool,
         timings: &mut MultiNetworkModelTimings,
     ) -> Result<(), MultiNetworkModelStepError>
     where
@@ -569,10 +596,21 @@ impl MultiNetworkModel {
             let sub_model_states = state.states.get_mut(idx).unwrap();
 
             // Perform sub-model step
-            entry
-                .network
-                .step_multi_scenario(timestep, scenario_indices, sub_model_solvers, sub_model_states, timing)
-                .unwrap();
+            thread_pool
+                .install(|| {
+                    entry.network.step_multi_scenario(
+                        timestep,
+                        scenario_indices,
+                        sub_model_solvers,
+                        sub_model_states,
+                        timing,
+                    )
+                })
+                .map_err(|source| MultiNetworkModelStepError::NetworkStepError {
+                    network: entry.name.clone(),
+                    timestep: *timestep,
+                    source: Box::new(source),
+                })?;
 
             let sub_model_recorder_states = state.recorder_states.get_mut(idx).unwrap();
 
@@ -702,17 +740,27 @@ impl MultiNetworkModel {
     pub fn run_with_state<S>(
         &self,
         state: &mut MultiNetworkModelState<Vec<Box<S>>>,
-        _settings: &S::Settings,
+        settings: &S::Settings,
         timings: &mut MultiNetworkModelTimings,
     ) -> Result<(), MultiNetworkModelRunError>
     where
         S: Solver,
         <S as Solver>::Settings: SolverSettings,
     {
-        // TODO: Setup thread pool if running in parallel
+        // Setup thread pool if running in parallel
+        let pool = if settings.parallel() {
+            Some(
+                rayon::ThreadPoolBuilder::new()
+                    .num_threads(settings.threads())
+                    .build()
+                    .unwrap(),
+            )
+        } else {
+            None
+        };
 
         loop {
-            match self.step::<S>(state, timings) {
+            match self.step::<S>(state, pool.as_ref(), timings) {
                 Ok(_) => {}
                 Err(MultiNetworkModelStepError::EndOfTimesteps) => break,
                 Err(e) => return Err(MultiNetworkModelRunError::StepError(Box::new(e))),
@@ -751,17 +799,22 @@ impl MultiNetworkModel {
     pub fn run_multi_scenario_with_state<S>(
         &self,
         state: &mut MultiNetworkModelState<Box<S>>,
-        _settings: &S::Settings,
+        settings: &S::Settings,
         timings: &mut MultiNetworkModelTimings,
     ) -> Result<(), MultiNetworkModelRunError>
     where
         S: MultiStateSolver,
         <S as MultiStateSolver>::Settings: SolverSettings,
     {
-        // TODO: Setup thread pool if running in parallel
+        let num_threads = if settings.parallel() { settings.threads() } else { 1 };
+        // Setup thread pool
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(num_threads)
+            .build()
+            .unwrap();
 
         loop {
-            match self.step_multi_scenario::<S>(state, timings) {
+            match self.step_multi_scenario::<S>(state, &pool, timings) {
                 Ok(_) => {}
                 Err(MultiNetworkModelStepError::EndOfTimesteps) => break,
                 Err(e) => return Err(MultiNetworkModelRunError::StepError(Box::new(e))),
@@ -971,7 +1024,7 @@ mod tests {
         let mut timings = MultiNetworkModelTimings::new_with_component_timings(&multi_model.networks);
 
         multi_model
-            .step(&mut state, &mut timings)
+            .step(&mut state, None, &mut timings)
             .expect("Failed to step multi1-model.")
     }
 
