@@ -586,7 +586,7 @@ impl ScenarioIndexBuilder {
     }
 }
 
-#[cfg_attr(feature = "pyo3", pyclass)]
+#[cfg_attr(feature = "pyo3", pyclass(skip_from_py_object))]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ScenarioIndex {
     /// The indices of the scenarios run in the model.
