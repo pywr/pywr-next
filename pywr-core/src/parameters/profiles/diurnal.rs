@@ -12,6 +12,7 @@ use chrono::Timelike;
 /// A parameter that defines a profile over a 24-hour period.
 ///
 /// The values array should contain 24 values, one for each hour of the day.
+#[derive(Debug)]
 pub struct DiurnalProfileParameter {
     meta: ParameterMeta,
     values: [f64; 24],
@@ -42,6 +43,7 @@ impl SimpleParameter<f64> for DiurnalProfileParameter {
     }
 }
 
+#[derive(Debug)]
 pub struct DiurnalProfileParameterBuilder {
     meta: ParameterMeta,
     values: [f64; 24],

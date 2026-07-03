@@ -19,6 +19,7 @@ use std::collections::HashMap;
 /// is equal to `(1.0 - control_curve) * metric` and the lower amount is equal to
 /// `control_curve * metric`.
 ///
+#[derive(Debug)]
 pub struct ApportionParameter {
     meta: ParameterMeta,
     metric: MetricF64,
@@ -62,6 +63,7 @@ impl GeneralParameter<MultiValue> for ApportionParameter {
     }
 }
 
+#[derive(Debug)]
 pub struct ApportionParameterBuilder {
     meta: ParameterMeta,
     metric: UnresolvedMetricF64,

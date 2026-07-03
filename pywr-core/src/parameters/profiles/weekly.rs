@@ -9,12 +9,14 @@ use crate::state::SimpleParameterValues;
 use crate::timestep::Timestep;
 use thiserror::Error;
 
+#[derive(Debug)]
 pub enum WeeklyInterpDay {
     First,
     Last,
 }
 
 // A weekly profile can be 52 or 53 week long
+#[derive(Debug)]
 pub enum WeeklyProfileValues {
     FiftyTwo([f64; 52]),
     FiftyThree([f64; 53]),
@@ -157,6 +159,7 @@ impl TryFrom<&[f64]> for WeeklyProfileValues {
 }
 
 /// Weekly profile parameter. This supports a profile with either 52 or 53 weeks, with or without interpolation.
+#[derive(Debug)]
 pub struct WeeklyProfileParameter {
     meta: ParameterMeta,
     values: WeeklyProfileValues,
@@ -188,6 +191,7 @@ impl SimpleParameter<f64> for WeeklyProfileParameter {
     }
 }
 
+#[derive(Debug)]
 pub struct WeeklyProfileParameterBuilder {
     meta: ParameterMeta,
     values: WeeklyProfileValues,

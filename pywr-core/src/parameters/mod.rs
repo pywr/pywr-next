@@ -89,7 +89,7 @@ pub use profiles::{
 pub use py::{ParameterInfo, PyClassParameter, PyClassParameterBuilder, PyFuncParameter, PyFuncParameterBuilder};
 pub use rolling::{RollingParameter, RollingParameterBuilder};
 use std::fmt;
-use std::fmt::{Display, Formatter};
+use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::marker::PhantomData;
 use std::ops::Deref;
@@ -663,7 +663,7 @@ pub fn downcast_variable_config_ref<T: 'static>(variable_config: &dyn VariableCo
 /// A trait that defines a component that produces a value each time-step.
 ///
 /// The trait is generic over the type of the value produced.
-pub trait Parameter: Send + Sync {
+pub trait Parameter: Send + Sync + Debug {
     fn meta(&self) -> &ParameterMeta;
     fn name(&self) -> &ParameterName {
         &self.meta().name
@@ -788,7 +788,10 @@ pub enum BuiltParameter<T> {
 
 pub enum MaybeBuiltParameter<T> {
     Built(BuiltParameter<T>),
-    Retry(Box<dyn ParameterBuilder<T>>),
+    Retry {
+        builder: Box<dyn ParameterBuilder<T>>,
+        parameter_not_found: ParameterName,
+    },
 }
 
 impl<T> From<BuiltParameter<T>> for MaybeBuiltParameter<T> {
@@ -797,7 +800,7 @@ impl<T> From<BuiltParameter<T>> for MaybeBuiltParameter<T> {
     }
 }
 
-pub trait ParameterBuilder<T> {
+pub trait ParameterBuilder<T>: Debug {
     /// The name of the parameter
     fn name(&self) -> &ParameterName;
     /// Construct a parameter from the builder.
@@ -827,8 +830,11 @@ macro_rules! resolve_metric_f64 {
         match $unresolved.resolve($maps) {
             Ok(m) => m,
             Err(err) => {
-                return if let $crate::metric::MetricF64ResolutionError::ParameterNotFound { .. } = err {
-                    Ok($crate::parameters::MaybeBuiltParameter::Retry($self))
+                return if let $crate::metric::MetricF64ResolutionError::ParameterNotFound { parameter } = err {
+                    Ok($crate::parameters::MaybeBuiltParameter::Retry {
+                        builder: $self,
+                        parameter_not_found: parameter,
+                    })
                 } else {
                     Err($crate::parameters::ParameterBuildError::ResolveMetricF64Error {
                         attr: ($attr).to_string(),
@@ -858,8 +864,11 @@ macro_rules! resolve_metric_u64 {
         match $unresolved.resolve($maps) {
             Ok(m) => m,
             Err(err) => {
-                return if let $crate::metric::MetricU64ResolutionError::ParameterNotFound { .. } = err {
-                    Ok($crate::parameters::MaybeBuiltParameter::Retry($self))
+                return if let $crate::metric::MetricU64ResolutionError::ParameterNotFound { parameter } = err {
+                    Ok($crate::parameters::MaybeBuiltParameter::Retry {
+                        builder: $self,
+                        parameter_not_found: parameter,
+                    })
                 } else {
                     Err($crate::parameters::ParameterBuildError::ResolveMetricU64Error {
                         attr: ($attr).to_string(),
@@ -886,8 +895,11 @@ macro_rules! resolve_optional_metric_f64 {
             Some(u) => match u.resolve($maps) {
                 Ok(m) => Some(m),
                 Err(err) => {
-                    return if let $crate::metric::MetricF64ResolutionError::ParameterNotFound { .. } = err {
-                        Ok($crate::parameters::MaybeBuiltParameter::Retry($self))
+                    return if let $crate::metric::MetricF64ResolutionError::ParameterNotFound { parameter } = err {
+                        Ok($crate::parameters::MaybeBuiltParameter::Retry {
+                            builder: $self,
+                            parameter_not_found: parameter,
+                        })
                     } else {
                         Err($crate::parameters::ParameterBuildError::ResolveMetricF64Error {
                             attr: ($attr).to_string(),
@@ -922,8 +934,11 @@ macro_rules! resolve_metric_f64_vec {
             match m.resolve($maps) {
                 Ok(m) => resolved.push(m),
                 Err(err) => {
-                    return if let $crate::metric::MetricF64ResolutionError::ParameterNotFound { .. } = err {
-                        Ok($crate::parameters::MaybeBuiltParameter::Retry($self))
+                    return if let $crate::metric::MetricF64ResolutionError::ParameterNotFound { parameter } = err {
+                        Ok($crate::parameters::MaybeBuiltParameter::Retry {
+                            builder: $self,
+                            parameter_not_found: parameter,
+                        })
                     } else {
                         Err($crate::parameters::ParameterBuildError::ResolveMetricF64Error {
                             attr: ($attr).to_string(),
@@ -953,8 +968,11 @@ macro_rules! resolve_metric_u64_vec {
             match m.resolve($maps) {
                 Ok(m) => resolved.push(m),
                 Err(err) => {
-                    return if let $crate::metric::MetricU64ResolutionError::ParameterNotFound { .. } = err {
-                        Ok($crate::parameters::MaybeBuiltParameter::Retry($self))
+                    return if let $crate::metric::MetricU64ResolutionError::ParameterNotFound { parameter } = err {
+                        Ok($crate::parameters::MaybeBuiltParameter::Retry {
+                            builder: $self,
+                            parameter_not_found: parameter,
+                        })
                     } else {
                         Err($crate::parameters::ParameterBuildError::ResolveMetricU64Error {
                             attr: ($attr).to_string(),
@@ -986,8 +1004,11 @@ macro_rules! resolve_metric_f64_hashmap {
                     resolved.insert(k.clone(), m);
                 }
                 Err(err) => {
-                    return if let $crate::metric::MetricF64ResolutionError::ParameterNotFound { .. } = err {
-                        Ok($crate::parameters::MaybeBuiltParameter::Retry($self))
+                    return if let $crate::metric::MetricF64ResolutionError::ParameterNotFound { parameter } = err {
+                        Ok($crate::parameters::MaybeBuiltParameter::Retry {
+                            builder: $self,
+                            parameter_not_found: parameter,
+                        })
                     } else {
                         Err($crate::parameters::ParameterBuildError::ResolveMetricF64Error {
                             attr: ($attr).to_string(),
@@ -1019,8 +1040,11 @@ macro_rules! resolve_metric_u64_hashmap {
                     resolved.insert(k.clone(), m);
                 }
                 Err(err) => {
-                    return if let $crate::metric::MetricU64ResolutionError::ParameterNotFound { .. } = err {
-                        Ok($crate::parameters::MaybeBuiltParameter::Retry($self))
+                    return if let $crate::metric::MetricU64ResolutionError::ParameterNotFound { parameter } = err {
+                        Ok($crate::parameters::MaybeBuiltParameter::Retry {
+                            builder: $self,
+                            parameter_not_found: parameter,
+                        })
                     } else {
                         Err($crate::parameters::ParameterBuildError::ResolveMetricU64Error {
                             attr: ($attr).to_string(),
@@ -1077,7 +1101,7 @@ pub trait ConstParameter<T>: Parameter {
     fn as_parameter(&self) -> &dyn Parameter;
 }
 
-#[derive(Hash, PartialEq, Eq, Clone, Copy)]
+#[derive(Debug, Hash, PartialEq, Eq, Clone, Copy)]
 pub enum GeneralParameterType {
     Parameter(GeneralParameterIndex<f64>),
     Index(GeneralParameterIndex<u64>),
@@ -1102,6 +1126,7 @@ impl From<GeneralParameterIndex<MultiValue>> for GeneralParameterType {
     }
 }
 
+#[derive(Debug)]
 pub enum SimpleParameterType {
     Parameter(SimpleParameterIndex<f64>),
     Index(SimpleParameterIndex<u64>),
@@ -1126,6 +1151,7 @@ impl From<SimpleParameterIndex<MultiValue>> for SimpleParameterType {
     }
 }
 
+#[derive(Debug)]
 pub enum ConstParameterType {
     Parameter(ConstParameterIndex<f64>),
     Index(ConstParameterIndex<u64>),
@@ -1480,6 +1506,7 @@ pub enum ParameterCollectionGeneralCalculationError {
 }
 
 /// A collection of parameters that return different types.
+#[derive(Debug)]
 pub struct ParameterCollection {
     constant_f64: Vec<Box<dyn ConstParameter<f64>>>,
     constant_u64: Vec<Box<dyn ConstParameter<u64>>>,
@@ -2509,13 +2536,15 @@ pub enum ParameterCollectionBuilderError {
         #[source]
         source: Box<ParameterBuildError>,
     },
-    #[error("Circulate parameters found: {names:?}")]
+    #[error("Circular (or self) parameter references found: {names:?}")]
     CircularParameterReference { names: Vec<ParameterName> },
+    #[error("Parameter not found: {name}.")]
+    ParameterNotFound { name: ParameterName },
 }
 
 /// A builder for [`ParameterCollection`] that allows adding parameters without worrying about the
 /// internal structure of the collection.
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct ParameterCollectionBuilder {
     pub f64: Vec<Box<dyn ParameterBuilder<f64>>>,
     pub u64: Vec<Box<dyn ParameterBuilder<u64>>>,
@@ -2588,8 +2617,11 @@ impl ParameterCollectionBuilder {
 
                                 resolution_maps.parameters_f64.insert(name, idx);
                             }
-                            MaybeBuiltParameter::Retry(builder) => {
-                                failed_f64.push(builder);
+                            MaybeBuiltParameter::Retry {
+                                builder,
+                                parameter_not_found,
+                            } => {
+                                failed_f64.push((builder, parameter_not_found));
                             }
                         }
                     }
@@ -2622,8 +2654,11 @@ impl ParameterCollectionBuilder {
 
                                 resolution_maps.parameters_u64.insert(name, idx);
                             }
-                            MaybeBuiltParameter::Retry(builder) => {
-                                failed_u64.push(builder);
+                            MaybeBuiltParameter::Retry {
+                                builder,
+                                parameter_not_found,
+                            } => {
+                                failed_u64.push((builder, parameter_not_found));
                             }
                         }
                     }
@@ -2656,8 +2691,11 @@ impl ParameterCollectionBuilder {
 
                                 resolution_maps.parameters_multi.insert(name, idx);
                             }
-                            MaybeBuiltParameter::Retry(builder) => {
-                                failed_multi.push(builder);
+                            MaybeBuiltParameter::Retry {
+                                builder,
+                                parameter_not_found,
+                            } => {
+                                failed_multi.push((builder, parameter_not_found));
                             }
                         }
                     }
@@ -2670,27 +2708,36 @@ impl ParameterCollectionBuilder {
                 }
             }
 
-            self.f64 = failed_f64;
-            self.u64 = failed_u64;
-            self.multi = failed_multi;
-
-            let new_total = self.len();
+            let new_total = failed_f64.len() + failed_u64.len() + failed_multi.len();
 
             if num_unbuilt == new_total {
-                let failed_names = self
-                    .f64
-                    .iter()
-                    .map(|b| b.name().clone())
+                let (failed_names, missing_names): (Vec<_>, Vec<_>) = failed_f64
+                    .into_iter()
+                    .map(|(b, pn)| (b.name().clone(), pn))
                     .chain(
-                        self.u64
-                            .iter()
-                            .map(|b| b.name().clone())
-                            .chain(self.multi.iter().map(|b| b.name().clone())),
+                        failed_u64
+                            .into_iter()
+                            .map(|(b, pn)| (b.name().clone(), pn))
+                            .chain(failed_multi.into_iter().map(|(b, pn)| (b.name().clone(), pn))),
                     )
-                    .collect::<Vec<_>>();
+                    .unzip();
 
+                // If any of the missing names are not in the failed names, then we have legitimate
+                // missing parameter (or typo).
+                for missing in missing_names {
+                    if !failed_names.contains(&missing) {
+                        return Err(ParameterCollectionBuilderError::ParameterNotFound { name: missing });
+                    }
+                }
+                // Otherwise all the missing names are other failed parameters and this is a circular
+                // or self reference.
                 return Err(ParameterCollectionBuilderError::CircularParameterReference { names: failed_names });
             } else {
+                // Keep the builders for the next iteration, but we no longer need the missing parameter names.
+                self.f64 = failed_f64.into_iter().map(|(b, _)| b).collect();
+                self.u64 = failed_u64.into_iter().map(|(b, _)| b).collect();
+                self.multi = failed_multi.into_iter().map(|(b, _)| b).collect();
+
                 num_unbuilt = new_total;
             }
         }
@@ -2712,6 +2759,7 @@ mod tests {
     use crate::state::{ConstParameterValues, MultiValue};
     use crate::test_utils::default_domain;
 
+    #[derive(Debug)]
     struct TestParameterBuilder {
         meta: ParameterMeta,
     }
@@ -2753,6 +2801,7 @@ mod tests {
     }
 
     /// Parameter for testing purposes
+    #[derive(Debug)]
     struct TestParameter {
         meta: ParameterMeta,
     }

@@ -10,6 +10,7 @@ use crate::scenario::ScenarioIndex;
 use crate::state::State;
 use crate::timestep::Timestep;
 
+#[derive(Debug)]
 pub struct AsymmetricSwitchIndexParameter {
     meta: ParameterMeta,
     on_parameter: MetricU64,
@@ -68,6 +69,7 @@ impl GeneralParameter<u64> for AsymmetricSwitchIndexParameter {
     }
 }
 
+#[derive(Debug)]
 pub struct AsymmetricSwitchIndexParameterBuilder {
     meta: ParameterMeta,
     on_parameter: UnresolvedMetricU64,

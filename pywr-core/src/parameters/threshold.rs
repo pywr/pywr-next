@@ -10,6 +10,7 @@ use crate::scenario::ScenarioIndex;
 use crate::state::State;
 use crate::timestep::Timestep;
 
+#[derive(Debug)]
 pub enum Predicate {
     LessThan,
     GreaterThan,
@@ -31,6 +32,7 @@ impl Predicate {
     }
 }
 
+#[derive(Debug)]
 pub struct ThresholdParameter {
     meta: ParameterMeta,
     metric: MetricF64,
@@ -93,6 +95,7 @@ impl GeneralParameter<u64> for ThresholdParameter {
     }
 }
 
+#[derive(Debug)]
 pub struct ThresholdParameterBuilder {
     meta: ParameterMeta,
     metric: UnresolvedMetricF64,

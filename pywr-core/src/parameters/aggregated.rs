@@ -11,7 +11,9 @@ use crate::resolve_metric_f64_vec;
 use crate::scenario::ScenarioIndex;
 use crate::state::{ConstParameterValues, SimpleParameterValues, State};
 use crate::timestep::Timestep;
+use std::fmt::Debug;
 
+#[derive(Debug)]
 pub struct AggregatedParameter<M> {
     meta: ParameterMeta,
     metrics: Vec<M>,
@@ -20,7 +22,7 @@ pub struct AggregatedParameter<M> {
 
 impl<M> Parameter for AggregatedParameter<M>
 where
-    M: Send + Sync,
+    M: Send + Sync + Debug,
 {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
@@ -134,6 +136,7 @@ impl ConstParameter<f64> for AggregatedParameter<ConstantMetricF64> {
     }
 }
 
+#[derive(Debug)]
 pub struct AggregatedParameterBuilder {
     meta: ParameterMeta,
     agg_func: AggFuncF64,

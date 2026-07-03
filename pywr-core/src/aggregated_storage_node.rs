@@ -52,6 +52,7 @@ pub enum AggregatedStorageNodeBuilderError {
     NodeIndexNotFound { node: UnresolvedNode },
 }
 
+#[derive(Debug)]
 pub struct AggregatedStorageNodeBuilder {
     name: UnresolvedNode,
     nodes: Vec<UnresolvedNode>,

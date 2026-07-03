@@ -10,6 +10,7 @@ use crate::scenario::ScenarioIndex;
 use crate::state::State;
 use crate::timestep::Timestep;
 
+#[derive(Debug)]
 pub struct MinParameter {
     meta: ParameterMeta,
     metric: MetricF64,
@@ -42,6 +43,7 @@ impl GeneralParameter<f64> for MinParameter {
     }
 }
 
+#[derive(Debug)]
 pub struct MinParameterBuilder {
     meta: ParameterMeta,
     metric: UnresolvedMetricF64,

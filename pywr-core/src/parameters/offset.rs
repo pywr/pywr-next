@@ -11,6 +11,7 @@ use crate::scenario::ScenarioIndex;
 use crate::state::State;
 use crate::timestep::Timestep;
 
+#[derive(Debug)]
 pub struct OffsetParameter {
     meta: ParameterMeta,
     metric: MetricF64,
@@ -114,6 +115,7 @@ impl VariableParameter<f64> for OffsetParameter {
     }
 }
 
+#[derive(Debug)]
 pub struct OffsetParameterBuilder {
     meta: ParameterMeta,
     metric: UnresolvedMetricF64,

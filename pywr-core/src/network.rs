@@ -542,7 +542,7 @@ impl NetworkResult {
 /// to represent a discrete system. A network can be simulated using a model and a solver. The
 /// network is translated into a linear program using the [`Solver`] trait.
 ///
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct Network {
     nodes: Vec<Node>,
     edges: Vec<Edge>,
@@ -1711,6 +1711,7 @@ impl Display for MetricSetIndex {
 
 /// A helper struct for building a network. This struct contains look-ups and references
 /// for resolving names and other unresolved references during the build process.
+#[derive(Debug)]
 pub struct ResolutionMaps {
     pub nodes: HashMap<UnresolvedNode, NodeIndex>,
     /// The edges incoming to each node.
@@ -1820,8 +1821,6 @@ pub enum NetworkBuildError {
         #[source]
         source: Box<MetricSetBuilderError>,
     },
-    #[error("Could not load all parameters due to circulate reference(s).")]
-    CircularParameterReference,
     #[error("Parameter collection build error: {0}")]
     ParameterCollectionBuildError(#[from] Box<ParameterCollectionBuilderError>),
 }
@@ -1829,7 +1828,7 @@ pub enum NetworkBuildError {
 /// A builder for [`Network`].
 ///
 /// This is the only way to construct a [`Network`] instance.
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct NetworkBuilder {
     nodes: Vec<NodeBuilder>,
     virtual_storage_nodes: Vec<VirtualStorageNodeBuilder>,
@@ -2227,7 +2226,7 @@ impl NetworkBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::metric::UnresolvedMetricF64;
+    use crate::metric::{MetricF64ResolutionError, UnresolvedMetricF64};
     use crate::models::ModelBuilder;
     use crate::parameters::{ActivationFunction, ControlCurveInterpolatedParameterBuilder};
     use crate::recorders::AssertionF64RecorderBuilder;
@@ -2340,6 +2339,127 @@ mod tests {
 
         let domain = default_domain();
         builder.build(&domain, &HashMap::new()).unwrap();
+    }
+
+    #[test]
+    /// Test the error response when a parameter is missing for a node's attribute.
+    fn test_missing_parameter_for_node_attr() {
+        let mut builder = NetworkBuilder::default();
+
+        let mut input_node_builder = NodeBuilder::input("input");
+        // Add the reference to the constant parameter we have not yet added.
+        input_node_builder.max_flow(UnresolvedMetricF64::new_parameter_before("this-is-missing"));
+        builder.node(input_node_builder);
+
+        let output_node_builder = NodeBuilder::output("output");
+        builder.node(output_node_builder);
+
+        builder.connect("input", "output");
+
+        let input_max_flow_builder = parameters::ConstantParameterBuilder::new("my-constant".into(), 10.0);
+        builder.parameters().f64(Box::new(input_max_flow_builder));
+
+        let domain = default_domain();
+
+        let build_err = builder
+            .build(&domain, &HashMap::new())
+            .expect_err("Builder should error.");
+
+        if let NetworkBuildError::NodeBuilderError {
+            name, source: node_err, ..
+        } = &build_err
+            && let NodeBuilderError::ResolveMetricF64Error {
+                attr,
+                source: metric_err,
+            } = node_err.deref()
+            && let MetricF64ResolutionError::ParameterNotFound { parameter } = metric_err
+        {
+            assert_eq!(name.to_string(), "input");
+            assert_eq!(attr, "max_flow");
+            assert_eq!(parameter.name(), "this-is-missing");
+        } else {
+            panic!("Incorrect error returned, expect ParameterNotFound: {build_err:?}");
+        }
+    }
+
+    #[test]
+    /// Test a parameter with a reference to a missing parameter.
+    fn test_missing_parameter() {
+        let mut builder = NetworkBuilder::default();
+
+        let input_node_builder = NodeBuilder::input("input");
+        builder.node(input_node_builder);
+
+        let output_node_builder = NodeBuilder::output("output");
+        builder.node(output_node_builder);
+
+        builder.connect("input", "output");
+
+        let broken_parameter = parameters::MaxParameterBuilder::new(
+            "my-max".into(),
+            UnresolvedMetricF64::new_parameter_before("this-is-missing"),
+            0.0,
+        );
+        builder.parameters().f64(Box::new(broken_parameter));
+
+        let domain = default_domain();
+
+        let build_err = builder
+            .build(&domain, &HashMap::new())
+            .expect_err("Builder should error.");
+
+        if let NetworkBuildError::ParameterCollectionBuildError(coll_err) = &build_err
+            && let ParameterCollectionBuilderError::ParameterNotFound { name } = coll_err.deref()
+        {
+            assert_eq!(name.to_string(), "this-is-missing");
+        } else {
+            panic!("Incorrect error returned, expected ParameterNotFound: {build_err:?}");
+        }
+    }
+
+    #[test]
+    /// Test the error return when there is a circular reference.
+    fn test_circular_parameter() {
+        let mut builder = NetworkBuilder::default();
+
+        let input_node_builder = NodeBuilder::input("input");
+        builder.node(input_node_builder);
+
+        let output_node_builder = NodeBuilder::output("output");
+        builder.node(output_node_builder);
+
+        builder.connect("input", "output");
+
+        let max_param = parameters::MaxParameterBuilder::new(
+            "my-max".into(),
+            UnresolvedMetricF64::new_parameter_before("my-other-max"),
+            0.0,
+        );
+        builder.parameters().f64(Box::new(max_param));
+
+        let max_param = parameters::MaxParameterBuilder::new(
+            "my-other-max".into(),
+            UnresolvedMetricF64::new_parameter_before("my-max"),
+            0.0,
+        );
+        builder.parameters().f64(Box::new(max_param));
+
+        let domain = default_domain();
+
+        let build_err = builder
+            .build(&domain, &HashMap::new())
+            .expect_err("Builder should error.");
+
+        if let NetworkBuildError::ParameterCollectionBuildError(coll_err) = &build_err
+            && let ParameterCollectionBuilderError::CircularParameterReference { names } = coll_err.deref()
+        {
+            // This is fine!
+            assert_eq!(names.len(), 2);
+            assert_eq!(names[0].name(), "my-max");
+            assert_eq!(names[1].name(), "my-other-max");
+        } else {
+            panic!("Incorrect error returned, expected CircularParameterReference: {build_err:?}");
+        }
     }
 
     #[test]

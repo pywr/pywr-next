@@ -10,6 +10,7 @@ use crate::state::State;
 use crate::timestep::Timestep;
 use crate::{resolve_metric_f64_vec, resolve_metric_u64};
 
+#[derive(Debug)]
 pub struct IndexedArrayParameter {
     meta: ParameterMeta,
     index_parameter: MetricU64,
@@ -53,6 +54,7 @@ impl GeneralParameter<f64> for IndexedArrayParameter {
     }
 }
 
+#[derive(Debug)]
 pub struct IndexedArrayParameterBuilder {
     meta: ParameterMeta,
     index_parameter: UnresolvedMetricU64,

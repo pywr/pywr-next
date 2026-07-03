@@ -10,6 +10,7 @@ use crate::resolve_metric_f64;
 use crate::scenario::ScenarioIndex;
 use crate::state::{SimpleParameterValues, State};
 use crate::timestep::Timestep;
+use std::fmt::Debug;
 
 /// A parameter that computes the difference between two metrics, with optional minimum and maximum bounds.
 ///
@@ -18,6 +19,7 @@ use crate::timestep::Timestep;
 ///
 /// If `min` is provided, the result is clamped to be at least `min`.
 /// If `max` is provided, the result is clamped to be at most `max`.
+#[derive(Debug)]
 pub struct DifferenceParameter<M> {
     meta: ParameterMeta,
     a: M,
@@ -28,7 +30,7 @@ pub struct DifferenceParameter<M> {
 
 impl<M> Parameter for DifferenceParameter<M>
 where
-    M: Send + Sync,
+    M: Send + Sync + Debug,
 {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
@@ -116,6 +118,7 @@ fn difference(a: f64, b: f64, min: Option<f64>, max: Option<f64>) -> f64 {
     result
 }
 
+#[derive(Debug)]
 pub struct DifferenceParameterBuilder {
     meta: ParameterMeta,
     a: UnresolvedMetricF64,

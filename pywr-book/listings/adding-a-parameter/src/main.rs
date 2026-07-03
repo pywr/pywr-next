@@ -11,6 +11,7 @@ use pywr_core::state::State;
 use pywr_core::timestep::Timestep;
 
 // ANCHOR: parameter
+#[derive(Debug)]
 pub struct MaxParameter {
     meta: ParameterMeta,
     metric: MetricF64,
@@ -48,6 +49,7 @@ impl GeneralParameter<f64> for MaxParameter {
 }
 
 // ANCHOR: impl-builder
+#[derive(Debug)]
 pub struct MaxParameterBuilder {
     meta: ParameterMeta,
     metric: UnresolvedMetricF64,

@@ -9,8 +9,10 @@ use crate::resolve_metric_f64;
 use crate::scenario::ScenarioIndex;
 use crate::state::SimpleParameterValues;
 use crate::timestep::Timestep;
+use std::fmt::Debug;
 
 /// A parameter that returns the volume that is the proportion between two control curves
+#[derive(Debug)]
 pub struct VolumeBetweenControlCurvesParameter<M> {
     meta: ParameterMeta,
     total: M,
@@ -20,7 +22,7 @@ pub struct VolumeBetweenControlCurvesParameter<M> {
 
 impl<M> Parameter for VolumeBetweenControlCurvesParameter<M>
 where
-    M: Send + Sync,
+    M: Send + Sync + Debug,
 {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
@@ -51,6 +53,7 @@ impl SimpleParameter<f64> for VolumeBetweenControlCurvesParameter<SimpleMetricF6
     }
 }
 
+#[derive(Debug)]
 pub struct VolumeBetweenControlCurvesParameterBuilder<M> {
     meta: ParameterMeta,
     total: M,

@@ -27,7 +27,7 @@ pub enum AggregationError {
     AggFuncError(#[from] AggFuncError),
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Aggregation {
     scenario: Option<AggFuncF64>,
     time: Option<AggFuncF64>,
@@ -281,7 +281,7 @@ impl RecorderFinalResult for MemoryRecorderResult {
     }
 }
 
-#[derive(Default, Copy, Clone)]
+#[derive(Debug, Default, Copy, Clone)]
 pub enum AggregationOrder {
     #[default]
     MetricTimeScenario,
@@ -296,6 +296,7 @@ pub enum AggregationOrder {
 ///
 /// Users should be aware that this recorder can consume a large amount of memory if the number of
 /// scenarios, time steps, and metrics is large.
+#[derive(Debug)]
 pub struct MemoryRecorder {
     meta: RecorderMeta,
     metric_set_idx: MetricSetIndex,
@@ -388,6 +389,7 @@ impl Recorder for MemoryRecorder {
     }
 }
 
+#[derive(Debug)]
 pub struct MemoryRecorderBuilder {
     meta: RecorderMeta,
     metric_set: String,

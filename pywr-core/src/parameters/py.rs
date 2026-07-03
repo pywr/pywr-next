@@ -53,6 +53,7 @@ impl ParameterInfo {
     }
 }
 
+#[derive(Debug)]
 struct PyCommon {
     meta: ParameterMeta,
     args: Py<PyTuple>,
@@ -103,6 +104,7 @@ impl PyCommon {
     }
 }
 
+#[derive(Debug)]
 struct PyCommonBuilder {
     meta: ParameterMeta,
     args: Py<PyTuple>,
@@ -137,6 +139,7 @@ impl PyCommonBuilder {
 ///
 /// This parameter allows you to define a Python class that implements a `before` and/or `after` methods,
 /// which will be called to compute the parameter values.
+#[derive(Debug)]
 pub struct PyClassParameter {
     /// This is the user's class that implements the parameter logic.
     class: Py<PyAny>,
@@ -378,6 +381,7 @@ impl GeneralParameter<MultiValue> for PyClassParameter {
     }
 }
 
+#[derive(Debug)]
 pub struct PyClassParameterBuilder {
     class: Py<PyAny>,
     common: PyCommonBuilder,
@@ -493,6 +497,7 @@ impl ParameterBuilder<MultiValue> for PyClassParameterBuilder {
 ///
 /// This parameter allows you to define a Python function which takes a `ParameterInfo` object as its first argument,
 /// and then the user defined `args` and `kwargs` as additional arguments.
+#[derive(Debug)]
 pub struct PyFuncParameter {
     /// This is the user's class that implements the parameter logic.
     function: Py<PyAny>,
@@ -678,6 +683,7 @@ impl GeneralParameter<MultiValue> for PyFuncParameter {
     }
 }
 
+#[derive(Debug)]
 pub struct PyFuncParameterBuilder {
     function: Py<PyAny>,
     common: PyCommonBuilder,

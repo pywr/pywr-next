@@ -40,6 +40,7 @@ impl RbfProfileVariableConfig {
 
 /// A parameter that interpolates between a set of points using a radial basis function to
 /// create a daily profile.
+#[derive(Debug)]
 pub struct RbfProfileParameter {
     meta: ParameterMeta,
     points: Vec<(u32, f64)>,
@@ -291,6 +292,7 @@ impl VariableParameter<u32> for RbfProfileParameter {
 }
 
 /// Radial basis functions for interpolation.
+#[derive(Debug)]
 pub enum RadialBasisFunction {
     Linear,
     Cubic,
@@ -377,6 +379,7 @@ fn interpolate_rbf_profile(points: &[(u32, f64)], function: &RadialBasisFunction
     profile.try_into().unwrap()
 }
 
+#[derive(Debug)]
 pub struct RbfProfileParameterBuilder {
     meta: ParameterMeta,
     points: Vec<(u32, f64)>,

@@ -10,6 +10,7 @@ use crate::scenario::ScenarioIndex;
 use crate::state::State;
 use crate::timestep::Timestep;
 
+#[derive(Debug)]
 pub struct Polynomial1DParameter {
     meta: ParameterMeta,
     metric: MetricF64,
@@ -53,6 +54,7 @@ impl GeneralParameter<f64> for Polynomial1DParameter {
     }
 }
 
+#[derive(Debug)]
 pub struct Polynomial1DParameterBuilder {
     meta: ParameterMeta,
     metric: UnresolvedMetricF64,

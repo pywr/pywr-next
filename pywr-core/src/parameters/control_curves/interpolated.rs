@@ -11,6 +11,7 @@ use crate::state::State;
 use crate::timestep::Timestep;
 use crate::{resolve_metric_f64, resolve_metric_f64_vec};
 
+#[derive(Debug)]
 pub struct ControlCurveInterpolatedParameter {
     meta: ParameterMeta,
     metric: MetricF64,
@@ -67,6 +68,7 @@ impl GeneralParameter<f64> for ControlCurveInterpolatedParameter {
     }
 }
 
+#[derive(Debug)]
 pub struct ControlCurveInterpolatedParameterBuilder {
     meta: ParameterMeta,
     metric: UnresolvedMetricF64,

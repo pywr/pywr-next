@@ -32,6 +32,7 @@ pub enum VirtualStorageNodeBuilderError {
 }
 
 /// Builder for creating a [`VirtualStorageNode`] node.
+#[derive(Debug)]
 pub struct VirtualStorageNodeBuilder {
     name: UnresolvedNode,
     nodes: Vec<UnresolvedNode>,
@@ -285,7 +286,7 @@ impl VirtualStorageNodeBuilder {
 }
 
 /// Defines when the virtual storage volume should be reset.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub enum VirtualStorageReset {
     Never,
     DayOfYear { day: u32, month: Month },
@@ -293,14 +294,14 @@ pub enum VirtualStorageReset {
 }
 
 /// When resetting the virtual storage volume, this enum defines how much volume to set.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub enum VirtualStorageResetVolume {
     Initial,
     Max,
 }
 
 /// Active periods for a virtual storage node.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub enum VirtualStorageActivePeriod {
     Always,
     Period {
@@ -363,6 +364,7 @@ pub enum VirtualStorageError {
 /// for the choices. In addition, a rolling window can be provided as a number of time-steps.
 /// Volume is recovered into the virtual storage after this number of time-steps once per time-step
 /// with the oldest value added back to the volume.
+#[derive(Debug)]
 pub struct VirtualStorageNode {
     meta: NodeMeta<VirtualStorageIndex>,
     nodes: Vec<NodeIndex>,

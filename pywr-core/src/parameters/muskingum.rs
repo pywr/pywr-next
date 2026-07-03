@@ -10,6 +10,7 @@ use crate::state::{MultiValue, State};
 use crate::timestep::Timestep;
 use std::collections::HashMap;
 
+#[derive(Debug)]
 pub enum MuskingumInitialCondition {
     SteadyState,
     Specified { inflow: f64, outflow: f64 },
@@ -32,6 +33,7 @@ pub enum MuskingumInitialCondition {
 /// - `SteadyState`: Assumes that the inflow and outflow are equal at the first time-step.
 /// - `Specified`: Allows the user to specify the initial inflow and outflow values.
 ///
+#[derive(Debug)]
 pub struct MuskingumParameter {
     meta: ParameterMeta,
     inflow: MetricF64,
@@ -122,6 +124,7 @@ fn steady_state_outflow_factor(weight: f64, travel_time: f64) -> f64 {
     1.0 - (2.0 * travel_time * (1.0 - weight) - 1.0) / (2.0 * travel_time * (1.0 - weight) + 1.0)
 }
 
+#[derive(Debug)]
 pub struct MuskingumParameterBuilder {
     meta: ParameterMeta,
     inflow: UnresolvedMetricF64,

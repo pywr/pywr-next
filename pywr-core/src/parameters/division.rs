@@ -8,6 +8,7 @@ use crate::scenario::ScenarioIndex;
 use crate::state::State;
 use crate::timestep::Timestep;
 
+#[derive(Debug)]
 pub struct DivisionParameter {
     meta: ParameterMeta,
     numerator: MetricF64,
@@ -46,6 +47,7 @@ impl GeneralParameter<f64> for DivisionParameter {
     }
 }
 
+#[derive(Debug)]
 pub struct DivisionParameterBuilder {
     meta: ParameterMeta,
     numerator: UnresolvedMetricF64,

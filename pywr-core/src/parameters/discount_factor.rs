@@ -11,6 +11,7 @@ use crate::state::State;
 use crate::timestep::Timestep;
 use chrono::Datelike;
 
+#[derive(Debug)]
 pub struct DiscountFactorParameter {
     meta: ParameterMeta,
     discount_rate: MetricF64,
@@ -46,6 +47,7 @@ impl GeneralParameter<f64> for DiscountFactorParameter {
     }
 }
 
+#[derive(Debug)]
 pub struct DiscountFactorParameterBuilder {
     meta: ParameterMeta,
     discount_rate: UnresolvedMetricF64,

@@ -10,6 +10,7 @@ use crate::scenario::ScenarioIndex;
 use crate::state::State;
 use crate::timestep::Timestep;
 
+#[derive(Debug)]
 pub struct MaxParameter {
     meta: ParameterMeta,
     metric: MetricF64,
@@ -44,6 +45,7 @@ impl GeneralParameter<f64> for MaxParameter {
     }
 }
 
+#[derive(Debug)]
 pub struct MaxParameterBuilder {
     meta: ParameterMeta,
     metric: UnresolvedMetricF64,

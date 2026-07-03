@@ -13,6 +13,7 @@ fn is_leap_year(year: i32) -> bool {
     (year % 4 == 0) & ((year % 100 != 0) | (year % 400 == 0))
 }
 
+#[derive(Debug)]
 pub struct UniformDrawdownProfileParameter {
     meta: ParameterMeta,
     residual_days: u8,
@@ -75,6 +76,7 @@ impl SimpleParameter<f64> for UniformDrawdownProfileParameter {
     }
 }
 
+#[derive(Debug)]
 pub struct UniformDrawdownProfileParameterBuilder {
     meta: ParameterMeta,
     residual_days: u8,

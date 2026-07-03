@@ -9,6 +9,7 @@ use crate::scenario::ScenarioIndex;
 use crate::state::ConstParameterValues;
 use crate::timestep::Timestep;
 
+#[derive(Debug)]
 pub struct ConstantParameter {
     meta: ParameterMeta,
     value: f64,
@@ -116,6 +117,7 @@ impl VariableParameter<f64> for ConstantParameter {
     }
 }
 
+#[derive(Debug)]
 pub struct ConstantParameterBuilder {
     meta: ParameterMeta,
     value: f64,

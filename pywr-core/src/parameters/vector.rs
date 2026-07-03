@@ -8,6 +8,7 @@ use crate::scenario::ScenarioIndex;
 use crate::state::State;
 use crate::timestep::Timestep;
 
+#[derive(Debug)]
 pub struct VectorParameter {
     meta: ParameterMeta,
     values: Vec<f64>,
@@ -46,6 +47,7 @@ impl GeneralParameter<f64> for VectorParameter {
     }
 }
 
+#[derive(Debug)]
 pub struct VectorParameterBuilder {
     meta: ParameterMeta,
     values: Vec<f64>,

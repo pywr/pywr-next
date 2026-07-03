@@ -9,18 +9,20 @@ use crate::state::SimpleParameterValues;
 use crate::timestep::Timestep;
 use chrono::{Datelike, NaiveDateTime, Timelike};
 
-#[derive(Copy, Clone)]
+#[derive(Debug, Copy, Clone)]
 pub enum MonthlyInterpDay {
     First,
     Last,
 }
 
+#[derive(Debug)]
 pub struct MonthlyProfileParameter {
     meta: ParameterMeta,
     values: [f64; 12],
     interp_day: Option<MonthlyInterpDay>,
 }
 
+#[derive(Debug)]
 pub struct MonthlyProfileParameterBuilder {
     meta: ParameterMeta,
     values: [f64; 12],

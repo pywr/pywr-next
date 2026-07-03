@@ -946,6 +946,7 @@ pub enum MetricU64ResolutionError {
     InterNetworkTransferNotFound { transfer: String },
 }
 
+#[derive(Debug)]
 pub enum UnresolvedMetricU64 {
     ParameterValue {
         name: ParameterName,

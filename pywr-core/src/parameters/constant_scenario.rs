@@ -7,6 +7,7 @@ use crate::parameters::{
 use crate::scenario::ScenarioIndex;
 use crate::state::ConstParameterValues;
 
+#[derive(Debug)]
 pub struct ConstantScenarioParameter {
     meta: ParameterMeta,
     values: Vec<f64>,
@@ -38,6 +39,7 @@ impl ConstParameter<f64> for ConstantScenarioParameter {
     }
 }
 
+#[derive(Debug)]
 pub struct ConstantScenarioParameterBuilder {
     meta: ParameterMeta,
     values: Vec<f64>,

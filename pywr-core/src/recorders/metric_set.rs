@@ -42,7 +42,7 @@ impl OutputMetric {
     }
 }
 
-#[derive(Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct UnresolvedOutputMetric {
     name: String,
     attribute: String,
@@ -210,6 +210,7 @@ pub enum MetricSetBuilderError {
     },
 }
 
+#[derive(Debug)]
 pub struct MetricSetBuilder {
     name: String,
     aggregator: Option<Aggregator>,

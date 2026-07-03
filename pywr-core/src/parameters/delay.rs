@@ -13,7 +13,9 @@ use crate::state::{SimpleParameterValues, State};
 use crate::timestep::Timestep;
 use crate::{resolve_metric_f64, resolve_metric_u64};
 use std::collections::VecDeque;
+use std::fmt::Debug;
 
+#[derive(Debug)]
 pub struct DelayParameter<M, T> {
     meta: ParameterMeta,
     metric: M,
@@ -55,8 +57,8 @@ where
 
 impl<M, T> Parameter for DelayParameter<M, T>
 where
-    M: Send + Sync,
-    T: Send + Sync + Copy + 'static,
+    M: Send + Sync + Debug,
+    T: Send + Sync + Copy + Debug + 'static,
 {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
@@ -279,6 +281,7 @@ impl SimpleParameter<u64> for DelayParameter<SimpleMetricU64, u64> {
     }
 }
 
+#[derive(Debug)]
 pub struct DelayParameterBuilder<M, T> {
     meta: ParameterMeta,
     metric: M,

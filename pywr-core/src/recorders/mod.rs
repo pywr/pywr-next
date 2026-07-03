@@ -33,6 +33,7 @@ use ndarray::Array2;
 use ndarray::prelude::*;
 use polars::prelude::PolarsError;
 use std::any::Any;
+use std::fmt::Debug;
 use thiserror::Error;
 
 /// Meta data common to all parameters.
@@ -175,7 +176,7 @@ pub trait RecorderFinalResult: Any + Send + Sync {
     }
 }
 
-pub trait Recorder: Send + Sync {
+pub trait Recorder: Send + Sync + Debug {
     fn meta(&self) -> &RecorderMeta;
     fn name(&self) -> &str {
         self.meta().name.as_str()
@@ -234,10 +235,11 @@ pub enum RecorderBuilderError {
     MetricSetNotFound { name: String },
 }
 
-pub trait RecorderBuilder {
+pub trait RecorderBuilder: Debug {
     fn name(&self) -> &str;
     fn build(self: Box<Self>, resolution_maps: &ResolutionMaps) -> Result<Box<dyn Recorder>, RecorderBuilderError>;
 }
+#[derive(Debug)]
 pub struct Array2Recorder {
     meta: RecorderMeta,
     metric: MetricF64,
@@ -281,6 +283,7 @@ impl Recorder for Array2Recorder {
     }
 }
 
+#[derive(Debug)]
 pub struct Array2RecorderBuilder {
     meta: RecorderMeta,
     metric: UnresolvedMetricF64,
@@ -317,6 +320,7 @@ impl RecorderBuilder for Array2RecorderBuilder {
     }
 }
 
+#[derive(Debug)]
 pub struct AssertionF64Recorder {
     meta: RecorderMeta,
     expected_values: Array2<f64>,
@@ -380,6 +384,7 @@ expected: `{:?}`"#,
     }
 }
 
+#[derive(Debug)]
 pub struct AssertionF64RecorderBuilder {
     meta: RecorderMeta,
     expected_values: Array2<f64>,
@@ -435,6 +440,7 @@ impl RecorderBuilder for AssertionF64RecorderBuilder {
     }
 }
 
+#[derive(Debug)]
 pub struct AssertionU64Recorder {
     meta: RecorderMeta,
     expected_values: Array2<u64>,
@@ -490,6 +496,7 @@ expected: `{:?}`"#,
     }
 }
 
+#[derive(Debug)]
 pub struct AssertionU64RecorderBuilder {
     meta: RecorderMeta,
     expected_values: Array2<u64>,
@@ -535,6 +542,17 @@ pub struct AssertionFnRecorder<F> {
     metric: MetricF64,
     ulps: i64,
     epsilon: f64,
+}
+
+impl<F> Debug for AssertionFnRecorder<F> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AssertionFnRecorder")
+            .field("meta", &self.meta)
+            .field("metric", &self.metric)
+            .field("ulps", &self.ulps)
+            .field("epsilon", &self.epsilon)
+            .finish()
+    }
 }
 
 impl<F> Recorder for AssertionFnRecorder<F>
@@ -585,6 +603,17 @@ pub struct AssertionFnRecorderBuilder<F> {
     metric: UnresolvedMetricF64,
     ulps: i64,
     epsilon: f64,
+}
+
+impl<F> Debug for AssertionFnRecorderBuilder<F> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AssertionFnRecorderBuilder")
+            .field("meta", &self.meta)
+            .field("metric", &self.metric)
+            .field("ulps", &self.ulps)
+            .field("epsilon", &self.epsilon)
+            .finish()
+    }
 }
 
 impl<F> AssertionFnRecorderBuilder<F>

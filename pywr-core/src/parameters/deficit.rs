@@ -13,6 +13,7 @@ use crate::timestep::Timestep;
 ///
 /// Typically used to represent the deficit between actual inflow and requested max flow at
 /// a node.
+#[derive(Debug)]
 pub struct DeficitParameter {
     meta: ParameterMeta,
     flow: MetricF64,
@@ -49,6 +50,7 @@ impl GeneralParameter<f64> for DeficitParameter {
     }
 }
 
+#[derive(Debug)]
 pub struct DeficitParameterBuilder {
     meta: ParameterMeta,
     flow: UnresolvedMetricF64,

@@ -1,9 +1,11 @@
 #![warn(clippy::pedantic)]
+
 use crate::NodeIndex;
 use crate::metric::{ConstantMetricF64Error, MetricF64, MetricF64Error, MetricF64ResolutionError, UnresolvedMetricF64};
 use crate::network::{AggregatedNodeIndex, Network, ResolutionMaps};
 use crate::node::{FlowConstraints, NodeMeta, UnresolvedNode};
 use crate::state::{ConstParameterValues, State};
+use std::fmt::Debug;
 use thiserror::Error;
 
 /// Factors relating node flows in an aggregated node.
@@ -38,7 +40,7 @@ impl Factors {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct ProportionalFactorsBuilder {
     factors: Vec<UnresolvedMetricF64>,
 }
@@ -66,7 +68,7 @@ impl RelationshipBuilder for ProportionalFactorsBuilder {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct RatioFactorsBuilder {
     factors: Vec<UnresolvedMetricF64>,
 }
@@ -94,7 +96,7 @@ impl RelationshipBuilder for RatioFactorsBuilder {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct CoefficientFactorsBuilder {
     factors: Vec<UnresolvedMetricF64>,
     rhs: Option<UnresolvedMetricF64>,
@@ -158,7 +160,7 @@ impl Exclusivity {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct ExclusivityBuilder {
     min_active: u64,
     max_active: u64,
@@ -212,7 +214,7 @@ pub enum RelationshipBuildError {
         source: MetricF64ResolutionError,
     },
 }
-pub trait RelationshipBuilder {
+pub trait RelationshipBuilder: Debug {
     /// Try to construct a [`Relationship`].
     ///
     /// # Errors
@@ -547,6 +549,7 @@ pub enum AggregatedNodeBuilderError {
     RelationshipBuildError(#[from] RelationshipBuildError),
 }
 
+#[derive(Debug)]
 pub struct AggregatedNodeBuilder {
     name: UnresolvedNode,
     min_flow: Option<UnresolvedMetricF64>,

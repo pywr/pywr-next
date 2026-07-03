@@ -68,6 +68,7 @@ pub enum NodeBuilderError {
     UnexpectedIncomingEdges { node_type: NodeType, num: usize },
 }
 
+#[derive(Debug)]
 pub struct NodeBuilder {
     name: UnresolvedNode,
     node_type: NodeType,
@@ -1100,6 +1101,7 @@ impl StorageInitialVolume {
     }
 }
 
+#[derive(Debug)]
 pub enum UnresolvedStorageInitialVolume {
     Absolute(f64),
     Proportional(f64),

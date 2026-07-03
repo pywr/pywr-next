@@ -13,7 +13,9 @@ use crate::resolve_metric_u64_vec;
 use crate::scenario::ScenarioIndex;
 use crate::state::{ConstParameterValues, SimpleParameterValues, State};
 use crate::timestep::Timestep;
+use std::fmt::Debug;
 
+#[derive(Debug)]
 pub struct AggregatedIndexParameter<M> {
     meta: ParameterMeta,
     metrics: Vec<M>,
@@ -22,7 +24,7 @@ pub struct AggregatedIndexParameter<M> {
 
 impl<M> Parameter for AggregatedIndexParameter<M>
 where
-    M: Send + Sync,
+    M: Send + Sync + Debug,
 {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
@@ -136,6 +138,7 @@ impl ConstParameter<u64> for AggregatedIndexParameter<ConstantMetricU64> {
     }
 }
 
+#[derive(Debug)]
 pub struct AggregatedIndexParameterBuilder {
     meta: ParameterMeta,
     metrics: Vec<UnresolvedMetricU64>,

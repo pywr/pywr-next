@@ -12,6 +12,7 @@ use crate::state::State;
 use crate::timestep::Timestep;
 
 /// A parameter that interpolates a value to a function with given discrete data points.
+#[derive(Debug)]
 pub struct InterpolatedParameter {
     meta: ParameterMeta,
     x: MetricF64,
@@ -60,6 +61,7 @@ impl GeneralParameter<f64> for InterpolatedParameter {
     }
 }
 
+#[derive(Debug)]
 pub struct InterpolatedParameterBuilder {
     meta: ParameterMeta,
     x: UnresolvedMetricF64,

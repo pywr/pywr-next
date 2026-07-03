@@ -25,6 +25,7 @@ pub struct HydropowerTargetData {
     pub energy_unit_conversion: Option<f64>,
 }
 
+#[derive(Debug)]
 pub struct HydropowerTargetParameter {
     meta: ParameterMeta,
     actual_flow: Option<MetricF64>,
@@ -145,6 +146,7 @@ impl GeneralParameter<f64> for HydropowerTargetParameter {
     }
 }
 
+#[derive(Debug)]
 pub struct HydropowerTargetParameterBuilder {
     meta: ParameterMeta,
     actual_flow: Option<UnresolvedMetricF64>,

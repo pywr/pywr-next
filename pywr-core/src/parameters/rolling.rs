@@ -15,6 +15,7 @@ use crate::state::{SimpleParameterValues, State};
 use crate::timestep::Timestep;
 use crate::{resolve_metric_f64, resolve_metric_u64};
 use std::collections::VecDeque;
+use std::fmt::Debug;
 
 /// A rolling parameter that computes an aggregated value over a specified window of metric
 /// values.
@@ -24,6 +25,7 @@ use std::collections::VecDeque;
 /// previous metric values are included in the calculation. If an `initial_value` is provided,
 /// it will be used as the return value until `min_values` number of metric values have been
 /// processed.
+#[derive(Debug)]
 pub struct RollingParameter<M, T, AF> {
     meta: ParameterMeta,
     metric: M,
@@ -65,8 +67,8 @@ impl TryInto<RollingParameter<SimpleMetricU64, u64, AggFuncU64>> for &RollingPar
 
 impl<M, AF> Parameter for RollingParameter<M, f64, AF>
 where
-    M: Send + Sync,
-    AF: Send + Sync,
+    M: Send + Sync + Debug,
+    AF: Send + Sync + Debug,
 {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
@@ -85,8 +87,8 @@ where
 
 impl<M, AF> Parameter for RollingParameter<M, u64, AF>
 where
-    M: Send + Sync,
-    AF: Send + Sync,
+    M: Send + Sync + Debug,
+    AF: Send + Sync + Debug,
 {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
@@ -321,6 +323,7 @@ impl SimpleParameter<u64> for RollingParameter<SimpleMetricU64, u64, AggFuncU64>
     }
 }
 
+#[derive(Debug)]
 pub struct RollingParameterBuilder<M, T, AF> {
     meta: ParameterMeta,
     metric: M,

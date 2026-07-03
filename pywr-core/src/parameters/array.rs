@@ -8,7 +8,9 @@ use crate::scenario::ScenarioIndex;
 use crate::state::SimpleParameterValues;
 use crate::timestep::{Timestep, TimestepIndex};
 use ndarray::{Array1, Array2, Axis, s};
+use std::fmt::Debug;
 
+#[derive(Debug)]
 pub struct Array1Parameter<T> {
     meta: ParameterMeta,
     array: Array1<T>,
@@ -31,7 +33,7 @@ impl<T> Array1Parameter<T> {
 }
 impl<T> Parameter for Array1Parameter<T>
 where
-    T: Send + Sync + Clone,
+    T: Send + Sync + Clone + Debug,
 {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
@@ -93,7 +95,7 @@ impl SimpleParameter<u64> for Array1Parameter<u64> {
         self
     }
 }
-
+#[derive(Debug)]
 pub struct Array1ParameterBuilder<T> {
     meta: ParameterMeta,
     array: Array1<T>,
@@ -149,6 +151,7 @@ impl ParameterBuilder<u64> for Array1ParameterBuilder<u64> {
     }
 }
 
+#[derive(Debug)]
 pub struct Array2Parameter<T> {
     meta: ParameterMeta,
     array: Array2<T>,
@@ -173,7 +176,7 @@ impl<T> Array2Parameter<T> {
 
 impl<T> Parameter for Array2Parameter<T>
 where
-    T: Send + Sync + Clone,
+    T: Send + Sync + Clone + Debug,
 {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
@@ -266,6 +269,7 @@ impl SimpleParameter<u64> for Array2Parameter<u64> {
     }
 }
 
+#[derive(Debug)]
 pub struct Array2ParameterBuilder<T> {
     meta: ParameterMeta,
     array: Array2<T>,

@@ -10,6 +10,7 @@ use crate::scenario::ScenarioIndex;
 use crate::state::State;
 use crate::timestep::Timestep;
 
+#[derive(Debug)]
 pub struct NegativeParameter {
     meta: ParameterMeta,
     metric: MetricF64,
@@ -43,6 +44,7 @@ impl GeneralParameter<f64> for NegativeParameter {
     }
 }
 
+#[derive(Debug)]
 pub struct NegativeParameterBuilder {
     meta: ParameterMeta,
     metric: UnresolvedMetricF64,

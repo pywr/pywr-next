@@ -8,6 +8,7 @@ use crate::scenario::ScenarioIndex;
 use crate::state::SimpleParameterValues;
 use crate::timestep::Timestep;
 
+#[derive(Debug)]
 pub struct DailyProfileParameter {
     meta: ParameterMeta,
     values: [f64; 366],
@@ -38,6 +39,7 @@ impl SimpleParameter<f64> for DailyProfileParameter {
     }
 }
 
+#[derive(Debug)]
 pub struct DailyProfileParameterBuilder {
     meta: ParameterMeta,
     values: [f64; 366],
