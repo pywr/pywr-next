@@ -557,7 +557,7 @@ pub enum NetworkRecorderAggregationError {
 /// The results of a model run.
 ///
 /// Only recorders which produced a result will be present.
-#[cfg_attr(feature = "pyo3", pyclass)]
+#[cfg_attr(feature = "pyo3", pyclass(skip_from_py_object))]
 #[derive(Clone)]
 pub struct NetworkResult {
     results: Arc<HashMap<String, Box<dyn RecorderFinalResult>>>,

@@ -142,7 +142,7 @@ pub struct LoadArgs<'a> {
 
 #[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, JsonSchema)]
-#[cfg_attr(feature = "pyo3", pyclass)]
+#[cfg_attr(feature = "pyo3", pyclass(skip_from_py_object))]
 #[serde(deny_unknown_fields)]
 pub struct NetworkSchema {
     pub nodes: Vec<Node>,

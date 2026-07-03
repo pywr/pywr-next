@@ -336,7 +336,7 @@ impl LoadedTableCollection {
 #[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll, PartialEq)]
 #[serde(deny_unknown_fields)]
-#[cfg_attr(feature = "pyo3", pyclass)]
+#[cfg_attr(feature = "pyo3", pyclass(from_py_object))]
 pub struct TableDataRef {
     pub table: String,
     pub column: Option<TableIndex>,
