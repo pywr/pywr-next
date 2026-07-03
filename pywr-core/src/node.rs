@@ -225,7 +225,6 @@ impl NodeBuilder {
         &self,
         resolution_maps: &ResolutionMaps,
     ) -> Result<StorageConstraints, NodeBuilderError> {
-        println!("Min volume: {:#?}", &self.min_volume);
         let min_volume = self
             .min_volume
             .as_ref()
