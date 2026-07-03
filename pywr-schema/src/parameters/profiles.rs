@@ -199,12 +199,12 @@ impl UniformDrawdownProfileParameter {
             None => 0,
         };
 
-        let p = pywr_core::parameters::UniformDrawdownProfileParameterBuilder::new(
+        let mut p = pywr_core::parameters::UniformDrawdownProfileParameterBuilder::new(
             ParameterName::new(&self.meta.name, parent),
             reset_day,
             reset_month,
-            residual_days,
         );
+        p.residual_days(residual_days);
 
         network.parameters().f64(Box::new(p));
 

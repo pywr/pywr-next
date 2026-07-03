@@ -778,6 +778,8 @@ pub enum ParameterBuildError {
         #[source]
         source: MetricF64Error,
     },
+    #[error("Could not compute day of the year; invalid date: day: {day}, month: {day}")]
+    InvalidDayOfYear { day: u32, month: u32 },
 }
 
 pub enum BuiltParameter<T> {

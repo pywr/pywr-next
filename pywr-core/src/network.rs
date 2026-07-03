@@ -444,8 +444,6 @@ pub enum NetworkError {
         #[source]
         source: Box<NodeError>,
     },
-    #[error("Cannot connect a node to itself: `{name}`")]
-    NodeConnectToSelf { name: String, sub_name: Option<String> },
     #[error("Error in parameter collection: `{0}`")]
     ParameterCollectionError(#[from] ParameterCollectionError),
     #[error("Metric set `{0}` already exists")]
@@ -1555,10 +1553,6 @@ impl Network {
     }
 }
 
-/// Errors returned by [`NetworkBuilder`]
-#[derive(Debug, Error)]
-pub enum NetworkBuilderError {}
-
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct UnresolvedEdge {
     from: UnresolvedNode,
@@ -1763,6 +1757,7 @@ impl ResolutionMaps {
 
 type NodeEdgeMap = HashMap<NodeIndex, Vec<EdgeIndex>>;
 
+/// Errors returned by [`NetworkBuilder`]
 #[derive(Debug, Error)]
 pub enum NetworkBuildError {
     #[error("Duplicate node names found: {name}")]
@@ -1791,6 +1786,8 @@ pub enum NetworkBuildError {
         #[source]
         source: Box<NodeBuilderError>,
     },
+    #[error("Cannot connect a node to itself: `{name}`")]
+    NodeConnectToSelf { name: UnresolvedNode },
     #[error("Error building aggregated node `{name}`: {source}")]
     AggregatedNodeBuilderError {
         name: UnresolvedNode,
@@ -1949,6 +1946,11 @@ impl NetworkBuilder {
                     name: edge.to.clone(),
                     edge: Box::new(edge.clone()),
                 })?;
+
+            // Self connections are forbidden.
+            if from_node_index == to_node_index {
+                return Err(NetworkBuildError::NodeConnectToSelf { name: edge.to.clone() });
+            }
 
             outgoing.entry(*from_node_index).or_default().push(ei);
             incoming.entry(*to_node_index).or_default().push(ei);
@@ -2315,6 +2317,28 @@ mod tests {
         builder.node(n1).node(n2);
         assert!(
             matches!(builder.build(&domain, &HashMap::new()), Err(NetworkBuildError::DuplicateNodeName { name, .. }) if name.to_string() == "my-node[sub1]"
+            )
+        );
+    }
+
+    #[test]
+    /// Test connecting to yourself is forbidden.
+    fn test_self_connection() {
+        let mut builder = NetworkBuilder::default();
+
+        builder
+            .node(NodeBuilder::input("my-input"))
+            .node(NodeBuilder::link("my-link"))
+            .node(NodeBuilder::output("my-output"));
+
+        builder.connect("my-input", "my-link");
+        builder.connect("my-link", "my-link");
+        builder.connect("my-link", "my-output");
+
+        let domain = default_domain();
+        let result = builder.build(&domain, &HashMap::new());
+        assert!(
+            matches!(result, Err(NetworkBuildError::NodeConnectToSelf { name}) if name.to_string() == "my-link"
             )
         );
     }

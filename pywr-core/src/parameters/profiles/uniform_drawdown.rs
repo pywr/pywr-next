@@ -80,21 +80,23 @@ impl SimpleParameter<f64> for UniformDrawdownProfileParameter {
 pub struct UniformDrawdownProfileParameterBuilder {
     meta: ParameterMeta,
     residual_days: u8,
-    reset_doy: u16,
+    reset_day: u32,
+    reset_month: u32,
 }
 
 impl UniformDrawdownProfileParameterBuilder {
-    pub fn new(name: ParameterName, reset_day: u32, reset_month: u32, residual_days: u8) -> Self {
-        // Calculate the reset day of year in a known leap year.
-        let reset_doy = NaiveDate::from_ymd_opt(2016, reset_month, reset_day)
-            .expect("Invalid reset day")
-            .ordinal() as u16;
-
+    pub fn new(name: ParameterName, reset_day: u32, reset_month: u32) -> Self {
         Self {
             meta: ParameterMeta::new(name),
-            residual_days,
-            reset_doy,
+            residual_days: 0,
+            reset_month,
+            reset_day,
         }
+    }
+
+    pub fn residual_days(&mut self, residual_days: u8) -> &mut Self {
+        self.residual_days = residual_days;
+        self
     }
 }
 
@@ -107,10 +109,18 @@ impl ParameterBuilder<f64> for UniformDrawdownProfileParameterBuilder {
         self: Box<Self>,
         _resolution_maps: &ResolutionMaps,
     ) -> Result<MaybeBuiltParameter<f64>, ParameterBuildError> {
+        // Calculate the reset day of year in a known leap year.
+        let reset_doy = NaiveDate::from_ymd_opt(2016, self.reset_month, self.reset_day)
+            .ok_or(ParameterBuildError::InvalidDayOfYear {
+                day: self.reset_day,
+                month: self.reset_month,
+            })?
+            .ordinal() as u16;
+
         let p = UniformDrawdownProfileParameter {
             meta: self.meta,
             residual_days: self.residual_days,
-            reset_doy: self.reset_doy,
+            reset_doy,
         };
 
         Ok(MaybeBuiltParameter::Built(BuiltParameter::Simple(Box::new(p))))
