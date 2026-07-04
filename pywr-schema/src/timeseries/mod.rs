@@ -432,7 +432,7 @@ pub enum TimeseriesColumns {
 #[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PartialEq)]
 #[serde(deny_unknown_fields)]
-#[cfg_attr(feature = "pyo3", pyclass)]
+#[cfg_attr(feature = "pyo3", pyclass(from_py_object))]
 pub struct TimeseriesReference {
     pub name: String,
     pub columns: Option<TimeseriesColumns>,

@@ -133,7 +133,7 @@ impl TryFrom<SchemaError> for PyErr {
 }
 
 #[derive(Error, Debug, PartialEq, Eq, Clone)]
-#[cfg_attr(feature = "pyo3", pyclass)]
+#[cfg_attr(feature = "pyo3", pyclass(from_py_object))]
 pub enum ComponentConversionError {
     #[error("Failed to convert `{attr}` on node `{name}`: {error}")]
     Node {
@@ -165,7 +165,7 @@ pub enum ComponentConversionError {
 }
 
 #[derive(Error, Debug, PartialEq, Eq, Clone)]
-#[cfg_attr(feature = "pyo3", pyclass)]
+#[cfg_attr(feature = "pyo3", pyclass(from_py_object))]
 pub enum ConversionError {
     #[error("Constant float value cannot be a parameter reference.")]
     ConstantFloatReferencesParameter {},

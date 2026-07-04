@@ -113,7 +113,7 @@ pub type TimestepIndex = usize;
 /// A time-step in a simulation.
 ///
 /// This struct represents a single time-step in a simulation, including the date, index, and duration of the time-step.
-#[cfg_attr(feature = "pyo3", pyclass)]
+#[cfg_attr(feature = "pyo3", pyclass(skip_from_py_object))]
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct Timestep {
     pub date: NaiveDateTime,
