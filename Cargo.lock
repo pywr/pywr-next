@@ -1267,9 +1267,9 @@ dependencies = [
 
 [[package]]
 name = "hdf5-metno"
-version = "0.12.6"
+version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e51ace340c788fe2d081641ad417d52aba2edcff562f1df5ab4b3571ce3f9e89"
+checksum = "845de82d327e55f72a16db43ddc875ad3b1dc8f8b5860b9df135851c5f4e11a3"
 dependencies = [
  "bitflags 2.9.1",
  "cfg-if",
