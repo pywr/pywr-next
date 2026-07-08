@@ -1023,11 +1023,6 @@ impl Network {
             .compute_general(timestep, scenario_index, self, state, internal_states, p_timings)
             .map_err(|source| NetworkStepError::GeneralParameterCalculationError(Box::new(source)))?;
 
-        // if let Some(timings) = timings.as_deref_mut() {
-        //     // Update the component timings
-        //     timings.add_component_calculation_timing(c_idx, start.elapsed());
-        // }
-
         Ok(())
     }
 
