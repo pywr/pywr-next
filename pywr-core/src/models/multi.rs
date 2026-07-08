@@ -2,8 +2,8 @@ use crate::metric::{MetricF64, MetricF64Error, MetricF64ResolutionError, Unresol
 use crate::models::{ModelDomain, ModelDomainBuilder, ModelDomainBuilderError};
 use crate::network::{
     Network, NetworkBuildError, NetworkBuilder, NetworkFinaliseError, NetworkRecorderSaveError,
-    NetworkRecorderSetupError, NetworkResult, NetworkSetupError, NetworkSolverSetupError, NetworkState, NetworkStepError, NetworkTimings,
-    RunDuration,
+    NetworkRecorderSetupError, NetworkResult, NetworkSetupError, NetworkSolverSetupError, NetworkState,
+    NetworkStepError, NetworkTimings, RunDuration,
 };
 use crate::recorders::RecorderInternalState;
 use crate::scenario::ScenarioIndex;
@@ -47,11 +47,14 @@ enum OtherNetworkIndex {
 }
 
 impl OtherNetworkIndex {
-    fn new(from_idx: usize, to_idx: usize) -> Self {
+    /// Create an [`OtherNetworkIndex`] from two indices.
+    ///
+    /// If `from_idx` is equal to `to_idx` then `None` is returned, as a model cannot reference itself.
+    fn from_indices(from_idx: usize, to_idx: usize) -> Option<Self> {
         match from_idx.cmp(&to_idx) {
-            Ordering::Equal => panic!("Cannot create OtherNetworkIndex to self."),
-            Ordering::Less => Self::Before(NonZeroUsize::new(to_idx - from_idx).unwrap()),
-            Ordering::Greater => Self::After(NonZeroUsize::new(from_idx - to_idx).unwrap()),
+            Ordering::Equal => None,
+            Ordering::Less => Some(Self::Before(NonZeroUsize::new(to_idx - from_idx).unwrap())),
+            Ordering::Greater => Some(Self::After(NonZeroUsize::new(from_idx - to_idx).unwrap())),
         }
     }
 }
@@ -364,23 +367,6 @@ impl MultiNetworkModel {
     /// Get the index of a network by name.
     pub fn get_network_index_by_name(&self, name: &str) -> Option<usize> {
         self.networks.iter().position(|n| n.name == name)
-    }
-
-    /// Add a transfer of data from one network to another.
-    pub fn add_inter_network_transfer(
-        &mut self,
-        from_network_idx: usize,
-        from_metric: MetricF64,
-        to_network_idx: usize,
-        initial_value: Option<f64>,
-    ) {
-        let parameter = MultiNetworkTransfer {
-            from_model_idx: OtherNetworkIndex::new(from_network_idx, to_network_idx),
-            from_metric,
-            initial_value,
-        };
-
-        self.networks[to_network_idx].transfers.push(parameter);
     }
 
     pub fn setup<S>(
@@ -969,6 +955,10 @@ pub enum MultiNetworkModelBuilderError {
     },
     #[error("Duplicate network name `{name}` found.")]
     DuplicateNetworkName { name: String },
+    #[error("Duplicate transfer name `{transfer}` found in network `{network}`.")]
+    DuplicateTransferName { transfer: String, network: String },
+    #[error("Transfer `{name}` in network `{network}` cannot transfer from itself.")]
+    TransferToSelf { name: String, network: String },
 }
 
 #[cfg(feature = "pyo3")]
@@ -1010,16 +1000,20 @@ impl MultiNetworkModelBuilder {
 
         for (i, entry_builder) in self.networks.into_iter().enumerate() {
             let name = entry_builder.name;
-            let transfers_map: HashMap<_, _> = entry_builder
-                .transfers
-                .iter()
-                .enumerate()
-                .map(|(i, t)| {
-                    let idx = MultiNetworkTransferIndex(i);
-                    let name = t.name.clone();
-                    (name, idx)
-                })
-                .collect();
+            // Build a map of transfer names to their indices for this network
+            let mut transfers_map = HashMap::with_capacity(entry_builder.transfers.len());
+            for (i, t) in entry_builder.transfers.iter().enumerate() {
+                let idx = MultiNetworkTransferIndex(i);
+                let transfer_name = t.name.clone();
+                if transfers_map.contains_key(&transfer_name) {
+                    return Err(MultiNetworkModelBuilderError::DuplicateTransferName {
+                        transfer: transfer_name,
+                        network: name,
+                    });
+                }
+
+                transfers_map.insert(transfer_name, idx);
+            }
 
             let (network, resolution_map) = entry_builder.network.build(&domain, &transfers_map).map_err(|source| {
                 MultiNetworkModelBuilderError::NetworkBuilderError {
@@ -1059,8 +1053,15 @@ impl MultiNetworkModelBuilder {
                         }
                     })?;
 
+                    let from_model_idx = OtherNetworkIndex::from_indices(idx, entries.len()).ok_or_else(|| {
+                        MultiNetworkModelBuilderError::TransferToSelf {
+                            name: t.name.clone(),
+                            network: name.clone(),
+                        }
+                    })?;
+
                     Ok(MultiNetworkTransfer {
-                        from_model_idx: OtherNetworkIndex::new(idx, entries.len()),
+                        from_model_idx,
                         from_metric: metric,
                         initial_value: t.initial_value,
                     })
