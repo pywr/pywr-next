@@ -114,8 +114,9 @@ pub fn simple_model(num_scenarios: usize, time_builder: Option<TimeDomainBuilder
 
     let mut domain_builder = ModelDomainBuilder::new(time_builder.unwrap_or_else(default_time_domain_builder));
     domain_builder.scenario(scenario_builder);
+    let domain = domain_builder.build().unwrap();
 
-    ModelBuilder::new(domain_builder, network_builder)
+    ModelBuilder::new(domain, network_builder)
 }
 
 /// A test model with a single storage node.
@@ -148,7 +149,7 @@ pub fn simple_storage_network() -> NetworkBuilder {
 
 pub fn simple_storage_model() -> ModelBuilder {
     let network = simple_storage_network();
-    ModelBuilder::new(default_domain_builder(), network)
+    ModelBuilder::new(default_domain(), network)
 }
 
 /// Add the given parameter to the given model along with an assertion recorder that asserts
@@ -677,9 +678,10 @@ pub fn make_random_model_builder<R: Rng>(
 
     let mut domain_builder = ModelDomainBuilder::new(time_builder);
     domain_builder.scenario(scenario_builder);
+    let domain = domain_builder.build().unwrap();
 
     // Quickly build the domain to determine its shape so we can setup the correct input data.
-    let (num_timesteps, num_inflow_scenarios) = domain_builder.clone().build().unwrap().shape();
+    let (num_timesteps, num_inflow_scenarios) = domain.shape();
 
     let mut network_builder = NetworkBuilder::default();
     for i in 0..num_systems {
@@ -696,7 +698,7 @@ pub fn make_random_model_builder<R: Rng>(
 
     make_simple_connections(&mut network_builder, num_systems, density, rng);
 
-    ModelBuilder::new(domain_builder, network_builder)
+    ModelBuilder::new(domain, network_builder)
 }
 
 #[cfg(all(test, feature = "ipm-simd"))]

@@ -512,7 +512,7 @@ mod tests {
     use crate::parameters::ControlCurveInterpolatedParameterBuilder;
     use crate::recorders::{AssertionF64RecorderBuilder, AssertionFnRecorderBuilder};
     use crate::scenario::ScenarioIndex;
-    use crate::test_utils::{default_domain_builder, run_all_solvers, simple_model};
+    use crate::test_utils::{default_domain, run_all_solvers, simple_model};
     use crate::timestep::{TimeDomainBuilder, Timestep, TimestepDuration};
     use crate::virtual_storage::{
         VirtualStorageActivePeriod, VirtualStorageNodeBuilder, VirtualStorageReset, months_since_last_reset,
@@ -651,7 +651,7 @@ mod tests {
         );
         network_builder.recorder(Box::new(recorder));
 
-        let domain = default_domain_builder();
+        let domain = default_domain();
         let model = ModelBuilder::new(domain, network_builder).build().unwrap();
         // Test all solvers
         run_all_solvers(&model, &["ipm-ocl", "ipm-simd"], &[], &[]);

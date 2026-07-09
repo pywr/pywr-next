@@ -22,7 +22,7 @@ use pywr_core::models::Model;
 #[cfg(feature = "core")]
 use pywr_core::{
     models::{
-        ModelBuilder, ModelDomainBuilder, MultiNetworkEntryBuilder, MultiNetworkModelBuilder,
+        ModelBuilder, ModelDomainBuilder, ModelDomainBuilderError, MultiNetworkEntryBuilder, MultiNetworkModelBuilder,
         MultiNetworkModelBuilderError, MultiNetworkTransferBuilder,
     },
     timestep::TimestepDuration,
@@ -417,6 +417,8 @@ pub enum ModelSchemaBuildError {
         #[source]
         source: Box<NetworkSchemaBuildError>,
     },
+    #[error("Error building model domain: {0}")]
+    CoreModelDomainBuilderError(#[from] ModelDomainBuilderError),
 }
 
 #[cfg(all(feature = "core", feature = "pyo3"))]
@@ -543,8 +545,7 @@ impl ModelSchema {
         let mut domain_builder = ModelDomainBuilder::new(time_domain_builder);
         domain_builder.scenario(scenario_builder);
 
-        // TODO handle this error
-        let domain = domain_builder.clone().build().unwrap();
+        let domain = domain_builder.build()?;
 
         let mut network_builder = pywr_core::network::NetworkBuilder::default();
 
@@ -554,7 +555,7 @@ impl ModelSchema {
                 source: Box::new(source),
             })?;
 
-        let model_builder = ModelBuilder::new(domain_builder, network_builder);
+        let model_builder = ModelBuilder::new(domain, network_builder);
 
         Ok(model_builder)
     }
@@ -667,8 +668,8 @@ pub struct MultiNetworkEntry {
 pub enum MultiNetworkModelSchemaBuildError {
     #[error("Failed to construct scenario builder: {0}")]
     ScenarioBuilderError(#[from] pywr_core::scenario::ScenarioDomainBuilderError),
-    #[error("Failed to construct model domain: {0}")]
-    CoreModelDomainError(#[from] pywr_core::models::ModelDomainError),
+    #[error("Error building model domain: {0}")]
+    CoreModelDomainBuilderError(#[from] ModelDomainBuilderError),
     #[error("Failed to construct the network `{name}`: {source}")]
     NetworkBuildError {
         name: String,
@@ -836,7 +837,7 @@ impl MultiNetworkModelSchema {
 
         let mut domain_builder = ModelDomainBuilder::new(time_builder);
         domain_builder.scenario(scenario_builder);
-        let domain = domain_builder.clone().build().unwrap();
+        let domain = domain_builder.build()?;
 
         let mut network_entry_builders = Vec::with_capacity(self.networks.len());
         let mut network_builder_map = HashMap::with_capacity(self.networks.len());
@@ -950,7 +951,7 @@ impl MultiNetworkModelSchema {
         }
 
         // Now construct the model from the loaded components
-        let mut model_builder = MultiNetworkModelBuilder::new(domain_builder);
+        let mut model_builder = MultiNetworkModelBuilder::new(domain);
 
         for (network_entry, (network_builder, t_builders)) in self
             .networks

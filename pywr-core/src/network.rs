@@ -2229,8 +2229,7 @@ mod tests {
     use crate::recorders::AssertionF64RecorderBuilder;
     use crate::solvers::{ClpSolver, ClpSolverSettings};
     use crate::test_utils::{
-        default_domain, default_domain_builder, run_all_solvers, simple_model, simple_storage_model,
-        simple_storage_network,
+        default_domain, run_all_solvers, simple_model, simple_storage_model, simple_storage_network,
     };
     use float_cmp::assert_approx_eq;
     use ndarray::{Array, Array2};
@@ -2575,7 +2574,8 @@ mod tests {
         );
         network.recorder(Box::new(recorder));
 
-        let model = ModelBuilder::new(default_domain_builder(), network).build().unwrap();
+        let domain = default_domain();
+        let model = ModelBuilder::new(domain, network).build().unwrap();
 
         // Test all solvers
         run_all_solvers(&model, &[], &[], &[]);

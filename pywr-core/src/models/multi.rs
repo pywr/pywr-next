@@ -1,5 +1,5 @@
 use crate::metric::{MetricF64, MetricF64Error, MetricF64ResolutionError, UnresolvedMetricF64};
-use crate::models::{ModelDomain, ModelDomainBuilder, ModelDomainBuilderError};
+use crate::models::ModelDomain;
 use crate::network::{
     Network, NetworkBuildError, NetworkBuilder, NetworkFinaliseError, NetworkRecorderSaveError,
     NetworkRecorderSetupError, NetworkResult, NetworkSetupError, NetworkSolverSetupError, NetworkState,
@@ -937,8 +937,6 @@ impl MultiNetworkModel {
 
 #[derive(Debug, Error)]
 pub enum MultiNetworkModelBuilderError {
-    #[error("Error building model domain: {0}")]
-    ModelDomainBuilderError(#[from] ModelDomainBuilderError),
     #[error("Error building network `{name}`: {source}")]
     NetworkBuilderError {
         name: String,
@@ -969,12 +967,12 @@ impl From<MultiNetworkModelBuilderError> for PyErr {
 }
 
 pub struct MultiNetworkModelBuilder {
-    domain: ModelDomainBuilder,
+    domain: ModelDomain,
     networks: Vec<MultiNetworkEntryBuilder>,
 }
 
 impl MultiNetworkModelBuilder {
-    pub fn new(domain: ModelDomainBuilder) -> Self {
+    pub fn new(domain: ModelDomain) -> Self {
         Self {
             domain,
             networks: Vec::new(),
@@ -992,8 +990,6 @@ impl MultiNetworkModelBuilder {
     }
 
     pub fn build(self) -> Result<MultiNetworkModel, MultiNetworkModelBuilderError> {
-        let domain = self.domain.build()?;
-
         let mut networks = Vec::with_capacity(self.networks.len());
         let mut network_map = HashMap::with_capacity(self.networks.len());
         let mut resolution_maps = Vec::with_capacity(self.networks.len());
@@ -1015,12 +1011,14 @@ impl MultiNetworkModelBuilder {
                 transfers_map.insert(transfer_name, idx);
             }
 
-            let (network, resolution_map) = entry_builder.network.build(&domain, &transfers_map).map_err(|source| {
-                MultiNetworkModelBuilderError::NetworkBuilderError {
-                    name: name.clone(),
-                    source: Box::new(source),
-                }
-            })?;
+            let (network, resolution_map) =
+                entry_builder
+                    .network
+                    .build(&self.domain, &transfers_map)
+                    .map_err(|source| MultiNetworkModelBuilderError::NetworkBuilderError {
+                        name: name.clone(),
+                        source: Box::new(source),
+                    })?;
 
             networks.push((name.clone(), network, entry_builder.transfers));
             resolution_maps.push(resolution_map);
@@ -1078,7 +1076,7 @@ impl MultiNetworkModelBuilder {
         }
 
         Ok(MultiNetworkModel {
-            domain,
+            domain: self.domain,
             networks: entries,
         })
     }
@@ -1171,8 +1169,9 @@ mod tests {
 
         let mut domain_builder = ModelDomainBuilder::new(time_builder);
         domain_builder.scenario(scenario_builder);
+        let domain = domain_builder.build().unwrap();
 
-        let mut builder = MultiNetworkModelBuilder::new(domain_builder);
+        let mut builder = MultiNetworkModelBuilder::new(domain);
 
         let mut network1 = NetworkBuilder::default();
         simple_network(&mut network1, "test-scenario", 2);
@@ -1201,7 +1200,7 @@ mod tests {
     fn test_duplicate_network_names() {
         let time_builder = default_time_domain_builder();
 
-        let mut builder = MultiNetworkModelBuilder::new(ModelDomainBuilder::new(time_builder));
+        let mut builder = MultiNetworkModelBuilder::new(ModelDomainBuilder::new(time_builder).build().unwrap());
 
         builder.network(MultiNetworkEntryBuilder::new("network1", NetworkBuilder::default()));
         builder.network(MultiNetworkEntryBuilder::new("network1", NetworkBuilder::default()));

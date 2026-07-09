@@ -1092,7 +1092,7 @@ mod tests {
     use crate::parameters::{MonthlyProfileParameterBuilder, ParameterName};
     use crate::recorders::AssertionF64RecorderBuilder;
     use crate::state::ParameterReturnValue;
-    use crate::test_utils::{default_domain_builder, run_all_solvers};
+    use crate::test_utils::{default_domain, run_all_solvers};
     use ndarray::Array2;
 
     /// Test the factors forcing a simple ratio of flow
@@ -1164,7 +1164,7 @@ mod tests {
         );
         builder.recorder(Box::new(recorder));
 
-        let domain = default_domain_builder();
+        let domain = default_domain();
         let model = ModelBuilder::new(domain, builder).build().unwrap();
 
         run_all_solvers(&model, &["ipm-simd", "ipm-ocl"], &[], &[]);
@@ -1248,7 +1248,7 @@ mod tests {
         );
         builder.recorder(Box::new(recorder));
 
-        let domain = default_domain_builder();
+        let domain = default_domain();
         let model = ModelBuilder::new(domain, builder).build().unwrap();
 
         run_all_solvers(&model, &["cbc", "ipm-simd", "ipm-ocl"], &[], &[]);
@@ -1326,7 +1326,7 @@ mod tests {
         );
         builder.recorder(Box::new(recorder));
 
-        let domain = default_domain_builder();
+        let domain = default_domain();
         let model = ModelBuilder::new(domain, builder).build().unwrap();
 
         run_all_solvers(&model, &["clp", "ipm-simd", "ipm-ocl"], &[], &[]);
@@ -1435,7 +1435,7 @@ mod tests {
         );
         builder.recorder(Box::new(recorder));
 
-        let domain = default_domain_builder();
+        let domain = default_domain();
         let model = ModelBuilder::new(domain, builder).build().unwrap();
 
         run_all_solvers(&model, &["clp", "ipm-ocl", "ipm-simd"], &[], &[]);

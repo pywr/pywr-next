@@ -1,4 +1,4 @@
-use crate::models::{ModelDomain, ModelDomainBuilder, ModelDomainBuilderError};
+use crate::models::ModelDomain;
 use crate::network::{
     Network, NetworkBuildError, NetworkBuilder, NetworkFinaliseError, NetworkRecorderSaveError,
     NetworkRecorderSetupError, NetworkResult, NetworkSetupError, NetworkSolverSetupError, NetworkState,
@@ -603,8 +603,6 @@ impl Model {
 
 #[derive(Debug, Error)]
 pub enum ModelBuilderError {
-    #[error("Error building model domain: {0}")]
-    ModelDomainBuilderError(#[from] ModelDomainBuilderError),
     #[error("Error building network: {0}")]
     NetworkBuildError(#[from] NetworkBuildError),
 }
@@ -617,12 +615,12 @@ impl From<ModelBuilderError> for PyErr {
 }
 
 pub struct ModelBuilder {
-    domain: ModelDomainBuilder,
+    domain: ModelDomain,
     network: NetworkBuilder,
 }
 
 impl ModelBuilder {
-    pub fn new(domain: ModelDomainBuilder, network: NetworkBuilder) -> Self {
+    pub fn new(domain: ModelDomain, network: NetworkBuilder) -> Self {
         Self { domain, network }
     }
 
@@ -632,9 +630,11 @@ impl ModelBuilder {
     }
 
     pub fn build(self) -> Result<Model, ModelBuilderError> {
-        let domain = self.domain.build()?;
-        let (network, _) = self.network.build(&domain, &HashMap::new())?;
-        Ok(Model { domain, network })
+        let (network, _) = self.network.build(&self.domain, &HashMap::new())?;
+        Ok(Model {
+            domain: self.domain,
+            network,
+        })
     }
 }
 
