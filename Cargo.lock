@@ -3211,7 +3211,7 @@ dependencies = [
 
 [[package]]
 name = "pywr-cli"
-version = "2.0.0-beta3"
+version = "2.0.0-beta4"
 dependencies = [
  "anyhow",
  "clap",
@@ -3229,7 +3229,7 @@ dependencies = [
 
 [[package]]
 name = "pywr-core"
-version = "2.0.0-beta3"
+version = "2.0.0-beta4"
 dependencies = [
  "ahash",
  "chrono",
@@ -3262,7 +3262,7 @@ dependencies = [
 
 [[package]]
 name = "pywr-python"
-version = "2.0.0-beta3"
+version = "2.0.0-beta4"
 dependencies = [
  "chrono",
  "pyo3",
@@ -3278,7 +3278,7 @@ dependencies = [
 
 [[package]]
 name = "pywr-schema"
-version = "2.0.0-beta3"
+version = "2.0.0-beta4"
 dependencies = [
  "chrono",
  "csv",
@@ -3309,7 +3309,7 @@ dependencies = [
 
 [[package]]
 name = "pywr-schema-macros"
-version = "2.0.0-beta3"
+version = "2.0.0-beta4"
 dependencies = [
  "heck",
  "proc-macro2",
