@@ -4,6 +4,7 @@ use crate::network::{
     NetworkRecorderSetupError, NetworkResult, NetworkSetupError, NetworkSolverSetupError, NetworkState,
     NetworkStepError, NetworkTimings, RunDuration,
 };
+use crate::parameters::ParameterCollectionIdMismatchError;
 use crate::recorders::RecorderInternalState;
 #[cfg(all(feature = "cbc", feature = "pyo3"))]
 use crate::solvers::{CbcSolver, build_cbc_settings_py};
@@ -80,6 +81,11 @@ pub enum ModelStepError {
 pub enum ModelFinaliseError {
     #[error("Error finalising network: {0}")]
     NetworkFinaliseError(#[from] NetworkFinaliseError),
+    #[error("Timing data from a different network: {source}")]
+    TimingMismatchError {
+        #[source]
+        source: ParameterCollectionIdMismatchError,
+    },
 }
 
 #[derive(Debug, Error)]
@@ -120,12 +126,14 @@ impl ModelTimings {
     }
 
     /// Print summary statistics of the model run.
-    pub fn print_summary_statistics(&self, network: &Network) {
+    pub fn print_summary_statistics(&self, network: &Network) -> Result<(), ParameterCollectionIdMismatchError> {
         info!("Run timing statistics:");
         let total_duration = self.run_duration.total_duration().as_secs_f64();
         info!("{: <24} | {: <10}", "Metric", "Value");
         self.run_duration.print_table();
-        self.network_timings.print_table(total_duration, network);
+        self.network_timings.print_table(total_duration, network)?;
+
+        Ok(())
     }
 }
 
@@ -428,7 +436,9 @@ impl Model {
         // End the global timer and print the run statistics
         timings.finish();
 
-        timings.print_summary_statistics(&self.network);
+        timings
+            .print_summary_statistics(&self.network)
+            .map_err(|source| ModelFinaliseError::TimingMismatchError { source })?;
 
         Ok(ModelResult {
             network_result,
@@ -458,7 +468,9 @@ impl Model {
         // End the global timer and print the run statistics
         timings.finish();
 
-        timings.print_summary_statistics(&self.network);
+        timings
+            .print_summary_statistics(&self.network)
+            .map_err(|source| ModelFinaliseError::TimingMismatchError { source })?;
 
         Ok(ModelResult {
             network_result,

@@ -1343,6 +1343,14 @@ pub enum ParameterCollectionSimpleCalculationError {
 // Unique ID for each parameter collection.
 static PARAMETER_COLLECTION_ID: AtomicU64 = AtomicU64::new(0);
 
+#[derive(Debug, Error)]
+#[error("Parameter collection ID mismatch: expected {expected}, actual {actual}: {context}")]
+pub struct ParameterCollectionIdMismatchError {
+    expected: u64,
+    actual: u64,
+    context: String,
+}
+
 #[derive(Default, Copy, Clone)]
 pub struct ParameterTiming {
     before: Duration,
@@ -1454,19 +1462,25 @@ impl ParameterTimings {
         &self,
         n: usize,
         collection: &ParameterCollection,
-    ) -> Vec<(ParameterName, ParameterTiming)> {
+    ) -> Result<Vec<(ParameterName, ParameterTiming)>, ParameterCollectionIdMismatchError> {
         if self.id != collection.id {
-            todo!("Return error with ID mismatch");
+            return Err(ParameterCollectionIdMismatchError{
+                expected: collection.id,
+                actual: self.id,
+                context: "ParameterTimings and ParameterCollection must have the same ID to ensure that the indices are correct.".to_string(),
+            });
         }
 
         // SAFETY: The id of the timings must match the id of the collection to ensure that the
         // indices are correct. This is checked above and should be guaranteed by construction.
-        unsafe {
+        let slowest = unsafe {
             self.slowest_parameters(n)
                 .into_iter()
                 .map(|(idx, timing)| (collection.get_general_unchecked(idx).name().clone(), timing))
                 .collect()
-        }
+        };
+
+        Ok(slowest)
     }
 }
 

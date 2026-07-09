@@ -5,6 +5,7 @@ use crate::network::{
     NetworkRecorderSetupError, NetworkResult, NetworkSetupError, NetworkSolverSetupError, NetworkState,
     NetworkStepError, NetworkTimings, RunDuration,
 };
+use crate::parameters::ParameterCollectionIdMismatchError;
 use crate::recorders::RecorderInternalState;
 use crate::scenario::ScenarioIndex;
 #[cfg(all(feature = "cbc", feature = "pyo3"))]
@@ -213,6 +214,11 @@ pub enum MultiNetworkModelFinaliseError {
         #[source]
         source: Box<NetworkFinaliseError>,
     },
+    #[error("Timing data from a different network: {source}")]
+    TimingMismatchError {
+        #[source]
+        source: ParameterCollectionIdMismatchError,
+    },
 }
 
 #[derive(Debug, Error)]
@@ -258,7 +264,10 @@ impl MultiNetworkModelTimings {
     }
 
     /// Print summary statistics of the model run.
-    fn print_summary_statistics(&self, entries: &[MultiNetworkEntry]) {
+    fn print_summary_statistics(
+        &self,
+        entries: &[MultiNetworkEntry],
+    ) -> Result<(), ParameterCollectionIdMismatchError> {
         info!("Run timing statistics:");
         let total_duration = self.run_duration.total_duration().as_secs_f64();
         info!("{: <24} | {: <10}", "Metric", "Value");
@@ -269,8 +278,10 @@ impl MultiNetworkModelTimings {
                 .get(&entry.name)
                 .expect("Network timings not found for network.");
             info!("Network: {}", entry.name);
-            timing.print_table(total_duration, &entry.network);
+            timing.print_table(total_duration, &entry.network)?;
         }
+
+        Ok(())
     }
 }
 
@@ -689,7 +700,9 @@ impl MultiNetworkModel {
             .collect::<Result<HashMap<_, _>, _>>()?;
 
         timings.finish();
-        timings.print_summary_statistics(&self.networks);
+        timings
+            .print_summary_statistics(&self.networks)
+            .map_err(|source| MultiNetworkModelFinaliseError::TimingMismatchError { source })?;
 
         Ok(MultiNetworkModelResult {
             network_results,
@@ -730,7 +743,9 @@ impl MultiNetworkModel {
             .collect::<Result<HashMap<_, _>, _>>()?;
 
         timings.finish();
-        timings.print_summary_statistics(&self.networks);
+        timings
+            .print_summary_statistics(&self.networks)
+            .map_err(|source| MultiNetworkModelFinaliseError::TimingMismatchError { source })?;
 
         Ok(MultiNetworkModelResult {
             network_results,

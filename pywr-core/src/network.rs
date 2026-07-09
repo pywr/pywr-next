@@ -8,7 +8,7 @@ use crate::node::{Node, NodeBuilder, NodeBuilderError, NodeError, UnresolvedNode
 use crate::parameters::{
     GeneralParameterIndex, GeneralParameterType, ParameterCollection, ParameterCollectionBuilder,
     ParameterCollectionBuilderError, ParameterCollectionConstCalculationError, ParameterCollectionError,
-    ParameterCollectionGeneralCalculationError, ParameterCollectionSetupError,
+    ParameterCollectionGeneralCalculationError, ParameterCollectionIdMismatchError, ParameterCollectionSetupError,
     ParameterCollectionSimpleCalculationError, ParameterIndex, ParameterName, ParameterStates, ParameterTiming,
     ParameterTimings, VariableConfig,
 };
@@ -151,10 +151,11 @@ impl ComponentTimings {
         &self,
         n: usize,
         collection: &ParameterCollection,
-    ) -> Option<Vec<(ParameterName, ParameterTiming)>> {
+    ) -> Result<Option<Vec<(ParameterName, ParameterTiming)>>, ParameterCollectionIdMismatchError> {
         self.parameters
             .as_ref()
             .map(|p| p.slowest_parameters_named(n, collection))
+            .transpose()
     }
 }
 
@@ -186,7 +187,11 @@ impl NetworkTimings {
     }
 
     /// Print a summary of the timings to the log.
-    pub fn print_table(&self, total_duration: f64, network: &Network) {
+    pub fn print_table(
+        &self,
+        total_duration: f64,
+        network: &Network,
+    ) -> Result<(), ParameterCollectionIdMismatchError> {
         info!(
             "{: <24} | {: <10.5}s ({:5.2}%)",
             "Components calcs",
@@ -242,7 +247,7 @@ impl NetworkTimings {
             100.0 * not_counted / total_duration,
         );
 
-        if let Some(slowest) = self.component_timings.slowest_components(10, &network.parameters) {
+        if let Some(slowest) = self.component_timings.slowest_components(10, &network.parameters)? {
             info!("Slowest components:");
             info!(
                 "  {: <24} | {: <10}  | {: <10}  | {: <10}  | {:5}",
@@ -259,6 +264,8 @@ impl NetworkTimings {
                 );
             }
         }
+
+        Ok(())
     }
 }
 
