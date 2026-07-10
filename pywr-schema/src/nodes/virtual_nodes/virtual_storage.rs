@@ -123,12 +123,8 @@ impl RollingWindow {
     pub fn as_timesteps(&self, time: &TimeDomain) -> Option<NonZeroUsize> {
         match self {
             Self::Days { days } => {
-                let ts_days = match time.step_duration().whole_days() {
-                    Some(d) => d as usize,
-                    // If the timestep duration is not a whole number of days then the rolling window cannot be specified in days.
-                    None => return None,
-                };
-
+                // If the timestep duration is not a whole number of days then the rolling window cannot be specified in days.
+                let ts_days = time.step_duration().whole_days()? as usize;
                 let timesteps = days.get() / ts_days;
 
                 NonZeroUsize::new(timesteps)
