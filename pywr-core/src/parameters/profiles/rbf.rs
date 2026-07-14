@@ -176,8 +176,10 @@ impl VariableParameter<f64> for RbfProfileParameter {
     ///
     /// # Arguments
     ///
-    /// * `values`: The y value to set for the points. This is an array of size equal to the
-    ///   number of points in the RBF profile.
+    /// * `values`: The value to set for the points. This is an array of size equal to twice the
+    /// number of points in the RBF profile. The first set of values contain the x values followed
+    /// by the y points. For example, if you have a 3-point RBF profile, the size of the array is 6
+    /// with the first 3 items being the x values and last 3 the y values.
     /// * `_variable_config`:
     /// * `internal_state`:
     ///
@@ -188,16 +190,20 @@ impl VariableParameter<f64> for RbfProfileParameter {
         _variable_config: &dyn VariableConfig,
         internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<(), VariableParameterError> {
-        if values.len() == self.points.len() {
-            let value = downcast_internal_state_mut::<RbfProfileInternalState>(internal_state);
+        let rbf_len = self.points.len();
+        if values.len() == rbf_len * 2 {
+            let x: Vec<_> = values[0..rbf_len].iter().map(|n| *n as u32).collect();
+            let y = values[rbf_len..].to_vec();
 
-            value.update_y(values.to_vec());
+            let value = downcast_internal_state_mut::<RbfProfileInternalState>(internal_state);
+            value.update_x(x);
+            value.update_y(y);
             value.update_profile(&self.points, &self.function);
 
             Ok(())
         } else {
             Err(VariableParameterError::IncorrectNumberOfValues {
-                expected: self.points.len(),
+                expected: rbf_len * 2,
                 received: values.len(),
             })
         }
