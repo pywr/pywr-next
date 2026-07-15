@@ -1,3 +1,4 @@
+use crate::FLOAT_EQ_TOLERANCE;
 use crate::metric::MetricF64;
 use crate::network::Network;
 use crate::parameters::errors::{ParameterCalculationError, ParameterSetupError};
@@ -17,12 +18,16 @@ pub enum Predicate {
 }
 
 impl Predicate {
-    /// Apply the predicate to a value and a threshold.
+    /// Applies the predicate to a `value` against a `threshold`.
+    ///
+    /// Equality comparison uses an absolute tolerance equal to [`FLOAT_EQ_TOLERANCE`].
+    ///
+    /// Note: Comparisons involving `NaN` will always return `false`.
     pub fn apply(&self, value: f64, threshold: f64) -> bool {
         match self {
             Predicate::LessThan => value < threshold,
             Predicate::GreaterThan => value > threshold,
-            Predicate::EqualTo => (value - threshold).abs() < 1E-6, // TODO make this a global constant
+            Predicate::EqualTo => (value - threshold).abs() <= FLOAT_EQ_TOLERANCE,
             Predicate::LessThanOrEqualTo => value <= threshold,
             Predicate::GreaterThanOrEqualTo => value >= threshold,
         }
