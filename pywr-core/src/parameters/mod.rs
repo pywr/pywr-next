@@ -6,7 +6,6 @@ mod asymmetric;
 mod constant;
 mod constant_scenario;
 mod control_curves;
-mod deficit;
 mod delay;
 mod difference;
 mod discount_factor;
@@ -52,7 +51,6 @@ pub use control_curves::{
     ApportionParameter, ControlCurveIndexParameter, ControlCurveInterpolatedParameter, ControlCurveParameter,
     PiecewiseInterpolatedParameter, VolumeBetweenControlCurvesParameter,
 };
-pub use deficit::DeficitParameter;
 pub use delay::DelayParameter;
 pub use difference::DifferenceParameter;
 pub use discount_factor::DiscountFactorParameter;
