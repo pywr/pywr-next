@@ -1,17 +1,17 @@
 /// AggregatedIndexParameter
 ///
 use super::{
-    BuiltParameter, ConstParameter, MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder,
-    ParameterName, ParameterState, SimpleParameter,
+    BuiltParameter, ConstParameter, GeneralParameterContext, MaybeBuiltParameter, Parameter, ParameterBuildError,
+    ParameterBuilder, ParameterName, ParameterState, SimpleParameter,
 };
 use crate::agg_funcs::AggFuncU64;
 use crate::metric::{ConstantMetricU64, MetricU64, SimpleMetricU64, UnresolvedMetricU64};
-use crate::network::{Network, ResolutionMaps};
+use crate::network::ResolutionMaps;
 use crate::parameters::errors::{ConstCalculationError, GeneralCalculationError, SimpleCalculationError};
 use crate::parameters::{GeneralParameter, ParameterMeta};
 use crate::resolve_metric_u64_vec;
 use crate::scenario::ScenarioIndex;
-use crate::state::{ConstParameterValues, SimpleParameterValues, State};
+use crate::state::{ConstParameterValues, SimpleParameterValues};
 use crate::timestep::Timestep;
 use std::fmt::Debug;
 
@@ -34,16 +34,13 @@ where
 impl GeneralParameter<u64> for AggregatedIndexParameter<MetricU64> {
     fn before(
         &self,
-        _timestep: &Timestep,
-        _scenario_index: &ScenarioIndex,
-        network: &Network,
-        state: &State,
+        ctx: GeneralParameterContext<'_>,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<Option<u64>, GeneralCalculationError> {
         let values = self
             .metrics
             .iter()
-            .map(|p| p.get_value(network, state))
+            .map(|p| p.get_value(ctx.network, ctx.state))
             .collect::<Result<Vec<_>, _>>()?;
 
         Ok(Some(self.agg_func.calc_iter_u64(&values)?))

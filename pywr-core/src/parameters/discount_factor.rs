@@ -1,14 +1,11 @@
 use crate::metric::{MetricF64, UnresolvedMetricF64};
-use crate::network::{Network, ResolutionMaps};
+use crate::network::ResolutionMaps;
 use crate::parameters::errors::GeneralCalculationError;
 use crate::parameters::{
-    BuiltParameter, GeneralParameter, MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder,
-    ParameterMeta, ParameterName, ParameterState,
+    BuiltParameter, GeneralParameter, GeneralParameterContext, MaybeBuiltParameter, Parameter, ParameterBuildError,
+    ParameterBuilder, ParameterMeta, ParameterName, ParameterState,
 };
 use crate::resolve_metric_f64;
-use crate::scenario::ScenarioIndex;
-use crate::state::State;
-use crate::timestep::Timestep;
 use chrono::Datelike;
 
 #[derive(Debug)]
@@ -26,14 +23,11 @@ impl Parameter for DiscountFactorParameter {
 impl GeneralParameter<f64> for DiscountFactorParameter {
     fn before(
         &self,
-        timestep: &Timestep,
-        _scenario_index: &ScenarioIndex,
-        network: &Network,
-        state: &State,
+        ctx: GeneralParameterContext<'_>,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<Option<f64>, GeneralCalculationError> {
-        let year = timestep.date.year() - self.base_year;
-        let rate = self.discount_rate.get_value(network, state)?;
+        let year = ctx.timestep.date.year() - self.base_year;
+        let rate = self.discount_rate.get_value(ctx.network, ctx.state)?;
 
         let factor = 1.0 / (1.0 + rate).powi(year);
         Ok(Some(factor))

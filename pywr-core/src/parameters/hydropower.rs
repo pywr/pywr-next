@@ -2,13 +2,11 @@ use crate::metric::{MetricF64, UnresolvedMetricF64};
 use crate::network::{Network, ResolutionMaps};
 use crate::parameters::errors::GeneralCalculationError;
 use crate::parameters::{
-    BuiltParameter, GeneralParameter, MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder,
-    ParameterMeta, ParameterName, ParameterState,
+    BuiltParameter, GeneralParameter, GeneralParameterContext, MaybeBuiltParameter, Parameter, ParameterBuildError,
+    ParameterBuilder, ParameterMeta, ParameterName, ParameterState,
 };
 use crate::resolve_optional_metric_f64;
-use crate::scenario::ScenarioIndex;
 use crate::state::State;
-use crate::timestep::Timestep;
 use crate::utils::{hydropower_calculation, inverse_hydropower_calculation};
 
 pub struct HydropowerTargetData {
@@ -61,13 +59,10 @@ impl Parameter for HydropowerTargetParameter {
 impl GeneralParameter<f64> for HydropowerTargetParameter {
     fn before(
         &self,
-        _timestep: &Timestep,
-        _scenario_index: &ScenarioIndex,
-        model: &Network,
-        state: &State,
+        ctx: GeneralParameterContext<'_>,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<Option<f64>, GeneralCalculationError> {
-        let head = self.head(model, state)?;
+        let head = self.head(ctx.network, ctx.state)?;
 
         // apply the minimum head threshold
         if head <= self.turbine_min_head {
@@ -76,7 +71,7 @@ impl GeneralParameter<f64> for HydropowerTargetParameter {
 
         // Get the flow from the current node
         if let Some(target) = &self.target {
-            let power = target.get_value(model, state)?;
+            let power = target.get_value(ctx.network, ctx.state)?;
             let mut q = inverse_hydropower_calculation(
                 power,
                 head,
@@ -88,10 +83,10 @@ impl GeneralParameter<f64> for HydropowerTargetParameter {
 
             // Bound the flow if required
             if let Some(max_flow) = &self.max_flow {
-                q = q.min(max_flow.get_value(model, state)?);
+                q = q.min(max_flow.get_value(ctx.network, ctx.state)?);
             }
             if let Some(min_flow) = &self.min_flow {
-                q = q.max(min_flow.get_value(model, state)?);
+                q = q.max(min_flow.get_value(ctx.network, ctx.state)?);
             }
 
             if q < 0.0 {
@@ -108,16 +103,13 @@ impl GeneralParameter<f64> for HydropowerTargetParameter {
 
     fn after(
         &self,
-        _timestep: &Timestep,
-        _scenario_index: &ScenarioIndex,
-        model: &Network,
-        state: &State,
+        ctx: GeneralParameterContext<'_>,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<Option<f64>, GeneralCalculationError> {
         if let Some(actual_flow) = &self.actual_flow {
-            let flow = actual_flow.get_value(model, state)?;
+            let flow = actual_flow.get_value(ctx.network, ctx.state)?;
             // Calculate the head (the head may be negative)
-            let head = self.head(model, state)?;
+            let head = self.head(ctx.network, ctx.state)?;
 
             // apply the minimum head threshold
             if head <= self.turbine_min_head {

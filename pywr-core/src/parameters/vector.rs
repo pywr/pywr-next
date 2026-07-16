@@ -1,12 +1,9 @@
-use crate::network::{Network, ResolutionMaps};
+use crate::network::ResolutionMaps;
 use crate::parameters::errors::GeneralCalculationError;
 use crate::parameters::{
-    BuiltParameter, GeneralParameter, MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder,
-    ParameterMeta, ParameterName, ParameterState,
+    BuiltParameter, GeneralParameter, GeneralParameterContext, MaybeBuiltParameter, Parameter, ParameterBuildError,
+    ParameterBuilder, ParameterMeta, ParameterName, ParameterState,
 };
-use crate::scenario::ScenarioIndex;
-use crate::state::State;
-use crate::timestep::Timestep;
 
 #[derive(Debug)]
 pub struct VectorParameter {
@@ -23,16 +20,13 @@ impl Parameter for VectorParameter {
 impl GeneralParameter<f64> for VectorParameter {
     fn before(
         &self,
-        timestep: &Timestep,
-        _scenario_index: &ScenarioIndex,
-        _model: &Network,
-        _state: &State,
+        ctx: GeneralParameterContext<'_>,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<Option<f64>, GeneralCalculationError> {
-        match self.values.get(timestep.index) {
+        match self.values.get(ctx.timestep.index) {
             Some(v) => Ok(Some(*v)),
             None => Err(GeneralCalculationError::OutOfBoundsError {
-                index: timestep.index,
+                index: ctx.timestep.index,
                 length: self.values.len(),
                 axis: 0,
             }),

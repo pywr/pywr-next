@@ -1,13 +1,10 @@
 use crate::metric::{MetricF64, UnresolvedMetricF64};
-use crate::network::{Network, ResolutionMaps};
+use crate::network::ResolutionMaps;
 use crate::parameters::{
-    BuiltParameter, GeneralCalculationError, GeneralParameter, MaybeBuiltParameter, Parameter, ParameterBuildError,
-    ParameterBuilder, ParameterMeta, ParameterName, ParameterState,
+    BuiltParameter, GeneralCalculationError, GeneralParameter, GeneralParameterContext, MaybeBuiltParameter, Parameter,
+    ParameterBuildError, ParameterBuilder, ParameterMeta, ParameterName, ParameterState,
 };
 use crate::resolve_metric_f64;
-use crate::scenario::ScenarioIndex;
-use crate::state::State;
-use crate::timestep::Timestep;
 
 /// A parameter representing the deficit between a flow metric and a max metric.
 ///
@@ -29,14 +26,11 @@ impl Parameter for DeficitParameter {
 impl GeneralParameter<f64> for DeficitParameter {
     fn after(
         &self,
-        _timestep: &Timestep,
-        _scenario_index: &ScenarioIndex,
-        model: &Network,
-        state: &State,
+        ctx: GeneralParameterContext<'_>,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<Option<f64>, GeneralCalculationError> {
-        let actual_flow = self.flow.get_value(model, state)?;
-        let max_flow = self.max_flow.get_value(model, state)?;
+        let actual_flow = self.flow.get_value(ctx.network, ctx.state)?;
+        let max_flow = self.max_flow.get_value(ctx.network, ctx.state)?;
 
         let deficit = (max_flow - actual_flow).max(0.0);
         Ok(Some(deficit))

@@ -1,14 +1,11 @@
 use crate::metric::{MetricF64, UnresolvedMetricF64};
-use crate::network::{Network, ResolutionMaps};
+use crate::network::ResolutionMaps;
 use crate::parameters::errors::GeneralCalculationError;
 use crate::parameters::interpolate::interpolate;
 use crate::parameters::{
-    BuiltParameter, GeneralParameter, MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder,
-    ParameterMeta, ParameterName, ParameterState,
+    BuiltParameter, GeneralParameter, GeneralParameterContext, MaybeBuiltParameter, Parameter, ParameterBuildError,
+    ParameterBuilder, ParameterMeta, ParameterName, ParameterState,
 };
-use crate::scenario::ScenarioIndex;
-use crate::state::State;
-use crate::timestep::Timestep;
 use crate::{resolve_metric_f64, resolve_metric_f64_vec};
 
 #[derive(Debug)]
@@ -29,18 +26,15 @@ impl Parameter for PiecewiseInterpolatedParameter {
 impl GeneralParameter<f64> for PiecewiseInterpolatedParameter {
     fn before(
         &self,
-        _timestep: &Timestep,
-        _scenario_index: &ScenarioIndex,
-        model: &Network,
-        state: &State,
+        ctx: GeneralParameterContext<'_>,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<Option<f64>, GeneralCalculationError> {
         // Current value
-        let x = self.metric.get_value(model, state)?;
+        let x = self.metric.get_value(ctx.network, ctx.state)?;
 
         let mut cc_previous_value = self.maximum;
         for (idx, control_curve) in self.control_curves.iter().enumerate() {
-            let cc_value = control_curve.get_value(model, state)?;
+            let cc_value = control_curve.get_value(ctx.network, ctx.state)?;
             if x >= cc_value {
                 let v = self
                     .values

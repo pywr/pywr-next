@@ -1,12 +1,12 @@
-use super::{BuiltParameter, MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder, ParameterName};
+use super::{
+    BuiltParameter, GeneralParameterContext, MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder,
+    ParameterName,
+};
 use crate::metric::{MetricF64, UnresolvedMetricF64};
-use crate::network::{Network, ResolutionMaps};
+use crate::network::ResolutionMaps;
 use crate::parameters::errors::GeneralCalculationError;
 use crate::parameters::{GeneralParameter, ParameterMeta, ParameterState};
 use crate::resolve_metric_f64;
-use crate::scenario::ScenarioIndex;
-use crate::state::State;
-use crate::timestep::Timestep;
 
 #[derive(Debug)]
 pub struct DivisionParameter {
@@ -23,19 +23,16 @@ impl Parameter for DivisionParameter {
 impl GeneralParameter<f64> for DivisionParameter {
     fn before(
         &self,
-        _timestep: &Timestep,
-        _scenario_index: &ScenarioIndex,
-        model: &Network,
-        state: &State,
+        ctx: GeneralParameterContext<'_>,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<Option<f64>, GeneralCalculationError> {
-        let denominator = self.denominator.get_value(model, state)?;
+        let denominator = self.denominator.get_value(ctx.network, ctx.state)?;
 
         if denominator == 0.0 {
             return Err(GeneralCalculationError::DivisionByZeroError);
         }
 
-        let numerator = self.numerator.get_value(model, state)?;
+        let numerator = self.numerator.get_value(ctx.network, ctx.state)?;
         Ok(Some(numerator / denominator))
     }
 

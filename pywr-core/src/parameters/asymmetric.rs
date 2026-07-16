@@ -1,13 +1,12 @@
 use crate::metric::{MetricU64, UnresolvedMetricU64};
-use crate::network::{Network, ResolutionMaps};
+use crate::network::ResolutionMaps;
 use crate::parameters::errors::{GeneralCalculationError, ParameterSetupError};
 use crate::parameters::{
-    BuiltParameter, GeneralParameter, MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder,
-    ParameterMeta, ParameterName, ParameterState, downcast_internal_state_mut,
+    BuiltParameter, GeneralParameter, GeneralParameterContext, MaybeBuiltParameter, Parameter, ParameterBuildError,
+    ParameterBuilder, ParameterMeta, ParameterName, ParameterState, downcast_internal_state_mut,
 };
 use crate::resolve_metric_u64;
 use crate::scenario::ScenarioIndex;
-use crate::state::State;
 use crate::timestep::Timestep;
 
 #[derive(Debug)]
@@ -33,13 +32,10 @@ impl Parameter for AsymmetricSwitchIndexParameter {
 impl GeneralParameter<u64> for AsymmetricSwitchIndexParameter {
     fn before(
         &self,
-        _timestep: &Timestep,
-        _scenario_index: &ScenarioIndex,
-        network: &Network,
-        state: &State,
+        ctx: GeneralParameterContext<'_>,
         internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<Option<u64>, GeneralCalculationError> {
-        let on_value = self.on_parameter.get_value(network, state)?;
+        let on_value = self.on_parameter.get_value(ctx.network, ctx.state)?;
 
         // Downcast the internal state to the correct type
         let current_state = downcast_internal_state_mut::<u64>(internal_state);
@@ -48,7 +44,7 @@ impl GeneralParameter<u64> for AsymmetricSwitchIndexParameter {
             if on_value > 0 {
                 // No change
             } else {
-                let off_value = self.off_parameter.get_value(network, state)?;
+                let off_value = self.off_parameter.get_value(ctx.network, ctx.state)?;
 
                 if off_value == 0 {
                     *current_state = 0;

@@ -1,15 +1,13 @@
 use crate::metric::{MetricF64, UnresolvedMetricF64};
-use crate::network::{Network, ResolutionMaps};
+use crate::network::ResolutionMaps;
 use crate::parameters::errors::GeneralCalculationError;
 use crate::parameters::{
-    ActivationFunction, BuiltParameter, GeneralParameter, MaybeBuiltParameter, Parameter, ParameterBuildError,
-    ParameterBuilder, ParameterMeta, ParameterName, ParameterState, VariableConfig, VariableParameter,
-    VariableParameterError, downcast_internal_state_mut, downcast_internal_state_ref, downcast_variable_config_ref,
+    ActivationFunction, BuiltParameter, GeneralParameter, GeneralParameterContext, MaybeBuiltParameter, Parameter,
+    ParameterBuildError, ParameterBuilder, ParameterMeta, ParameterName, ParameterState, VariableConfig,
+    VariableParameter, VariableParameterError, downcast_internal_state_mut, downcast_internal_state_ref,
+    downcast_variable_config_ref,
 };
 use crate::resolve_metric_f64;
-use crate::scenario::ScenarioIndex;
-use crate::state::State;
-use crate::timestep::Timestep;
 
 #[derive(Debug)]
 pub struct OffsetParameter {
@@ -49,15 +47,12 @@ impl Parameter for OffsetParameter {
 impl GeneralParameter<f64> for OffsetParameter {
     fn before(
         &self,
-        _timestep: &Timestep,
-        _scenario_index: &ScenarioIndex,
-        model: &Network,
-        state: &State,
+        ctx: GeneralParameterContext<'_>,
         internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<Option<f64>, GeneralCalculationError> {
         let offset = self.offset(internal_state);
         // Current value
-        let x = self.metric.get_value(model, state)?;
+        let x = self.metric.get_value(ctx.network, ctx.state)?;
         Ok(Some(x + offset))
     }
 

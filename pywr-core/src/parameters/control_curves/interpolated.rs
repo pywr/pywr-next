@@ -1,14 +1,11 @@
 use crate::metric::{MetricF64, UnresolvedMetricF64};
-use crate::network::{Network, ResolutionMaps};
+use crate::network::ResolutionMaps;
 use crate::parameters::errors::GeneralCalculationError;
 use crate::parameters::interpolate::interpolate;
 use crate::parameters::{
-    BuiltParameter, GeneralParameter, MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder,
-    ParameterMeta, ParameterName, ParameterState,
+    BuiltParameter, GeneralParameter, GeneralParameterContext, MaybeBuiltParameter, Parameter, ParameterBuildError,
+    ParameterBuilder, ParameterMeta, ParameterName, ParameterState,
 };
-use crate::scenario::ScenarioIndex;
-use crate::state::State;
-use crate::timestep::Timestep;
 use crate::{resolve_metric_f64, resolve_metric_f64_vec};
 
 #[derive(Debug)]
@@ -28,22 +25,19 @@ impl Parameter for ControlCurveInterpolatedParameter {
 impl GeneralParameter<f64> for ControlCurveInterpolatedParameter {
     fn before(
         &self,
-        _timestep: &Timestep,
-        _scenario_index: &ScenarioIndex,
-        model: &Network,
-        state: &State,
+        ctx: GeneralParameterContext<'_>,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<Option<f64>, GeneralCalculationError> {
         // Current value
-        let x = self.metric.get_value(model, state)?;
+        let x = self.metric.get_value(ctx.network, ctx.state)?;
 
         let mut cc_prev = 1.0;
         for (idx, control_curve) in self.control_curves.iter().enumerate() {
-            let cc_value = control_curve.get_value(model, state)?;
+            let cc_value = control_curve.get_value(ctx.network, ctx.state)?;
 
             if x >= cc_value {
-                let lower_value = self.values[idx + 1].get_value(model, state)?;
-                let upper_value = self.values[idx].get_value(model, state)?;
+                let lower_value = self.values[idx + 1].get_value(ctx.network, ctx.state)?;
+                let upper_value = self.values[idx].get_value(ctx.network, ctx.state)?;
 
                 return Ok(Some(interpolate(x, cc_value, cc_prev, lower_value, upper_value)));
             }
@@ -54,8 +48,8 @@ impl GeneralParameter<f64> for ControlCurveInterpolatedParameter {
         let cc_value = 0.0;
         let n = self.values.len();
 
-        let lower_value = self.values[n - 1].get_value(model, state)?;
-        let upper_value = self.values[n - 2].get_value(model, state)?;
+        let lower_value = self.values[n - 1].get_value(ctx.network, ctx.state)?;
+        let upper_value = self.values[n - 2].get_value(ctx.network, ctx.state)?;
 
         Ok(Some(interpolate(x, cc_value, cc_prev, lower_value, upper_value)))
     }
