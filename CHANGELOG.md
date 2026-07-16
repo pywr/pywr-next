@@ -2,6 +2,38 @@
 
 All notable changes to this project since v2.0.0-beta will be documented in this file.
 
+## [2.0.0-beta4] - 2026-07-09
+
+### 🚀 Features
+
+- Add meta method to Parameter (#692)
+- Allow parameters to (optionally) return value in after. (#599)
+- *(schema)* Add tags field to node and parameter metadata (#691)
+- *(core)* Implement thread pool for multi-model solves. (#713)
+
+### 🐛 Bug Fixes
+
+- *(core)* Remove extern crate from pywr-core. (#654)
+- *(core)* Fix incorrect default lower bound. (#671)
+- *(core)* Fix memory leak in the Cbc solver. (#672)
+- *(core)* Fix memory leak in the Clp solver. (#673)
+
+### 🚜 Refactor
+
+- Use consts for float equality tolerances (#714)
+
+### 🧪 Testing
+
+- Add some basic unit tests for ipm-common. (#613)
+
+### ⚙️ Miscellaneous Tasks
+
+- *(pedantic)* Enforce clippy::pedantic in pywr_core::aggregated_node. (#653)
+- *(core)* Enforce clippy::pedantic in pywr_core::aggregated_storage_node. (#655)
+- Fix clippy lints from Rust v1.95 (#664)
+- Bump cmake to 0.1.58
+- Build free-threaded wheels for Python 3.14t instead of 3.13t
+
 ## [2.0.0-beta3] - 2026-04-02
 
 ### 💼 Other

@@ -55,7 +55,7 @@ fn random_benchmark(
                 for setup in solver_setups {
                     match &setup.setting {
                         SolverSetting::Clp(settings) => {
-                            let parameter_string = format!("clp * {n_sys} * {density} * {n_sc} * {}", &setup.name);
+                            let parameter_string = format!("clp * {n_sys} * {density} * {n_sc} * {}", setup.name);
 
                             group.bench_with_input(
                                 BenchmarkId::new("random-model", parameter_string),
@@ -72,7 +72,7 @@ fn random_benchmark(
                         }
                         #[cfg(feature = "highs")]
                         SolverSetting::Highs(settings) => {
-                            let parameter_string = format!("highs * {n_sys} * {density} * {n_sc} * {}", &setup.name);
+                            let parameter_string = format!("highs * {n_sys} * {density} * {n_sc} * {}", setup.name);
 
                             group.bench_with_input(
                                 BenchmarkId::new("random-model", parameter_string),
@@ -90,7 +90,7 @@ fn random_benchmark(
                         #[cfg(feature = "ipm-simd")]
                         SolverSetting::IpmSimdF64x4(settings) => {
                             let parameter_string =
-                                format!("ipm-simd-f64x4 * {n_sys} * {density} * {n_sc} * {}", &setup.name);
+                                format!("ipm-simd-f64x4 * {n_sys} * {density} * {n_sc} * {}", setup.name);
 
                             group.bench_with_input(
                                 BenchmarkId::new("random-model", parameter_string),
@@ -109,7 +109,7 @@ fn random_benchmark(
                         #[cfg(feature = "ipm-ocl")]
                         SolverSetting::IpmOcl(settings) => {
                             let parameter_string =
-                                format!("ipm-ocl-f64 * {n_sys} * {density} * {n_sc} * {}", &setup.name);
+                                format!("ipm-ocl-f64 * {n_sys} * {density} * {n_sc} * {}", setup.name);
 
                             group.bench_with_input(
                                 BenchmarkId::new("random-model", parameter_string),

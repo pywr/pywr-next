@@ -422,9 +422,9 @@ dependencies = [
 
 [[package]]
 name = "cc"
-version = "1.2.65"
+version = "1.2.67"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e228eec9be7c17ccb640b59b36a5cd805ea2a564a4c5e162c2f659fea30d3b96"
+checksum = "e17dd265a7d0f31ef544e1b20e03add05d3b45b491b633b10d67145d2acc1a38"
 dependencies = [
  "find-msvc-tools",
  "jobserver",
@@ -910,9 +910,9 @@ dependencies = [
 
 [[package]]
 name = "ethnum"
-version = "1.5.2"
+version = "1.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ca81e6b4777c89fd810c25a4be2b1bd93ea034fbe58e6a75216a34c6b82c539b"
+checksum = "40404c3f5f511ec4da6fe866ddf6a717c309fdbb69fbbad7b0f3edab8f2e835f"
 
 [[package]]
 name = "event-listener"
@@ -1267,9 +1267,9 @@ dependencies = [
 
 [[package]]
 name = "hdf5-metno"
-version = "0.12.6"
+version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e51ace340c788fe2d081641ad417d52aba2edcff562f1df5ab4b3571ce3f9e89"
+checksum = "845de82d327e55f72a16db43ddc875ad3b1dc8f8b5860b9df135851c5f4e11a3"
 dependencies = [
  "bitflags 2.9.1",
  "cfg-if",
@@ -1283,12 +1283,11 @@ dependencies = [
 
 [[package]]
 name = "hdf5-metno-derive"
-version = "0.10.0"
+version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e5f5b353c797530e868881b12c1c307c0994cd3400195391d7021e6e6db02da6"
+checksum = "5071e6eb3474ce3c38c2e6e01061c4224e49be8314b11ea8cad97a70efaa000a"
 dependencies = [
  "proc-macro-crate",
- "proc-macro-error2",
  "proc-macro2",
  "quote",
  "syn",
@@ -1296,9 +1295,9 @@ dependencies = [
 
 [[package]]
 name = "hdf5-metno-src"
-version = "0.10.0"
+version = "0.10.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c9f4d3e1f2a19838c64d33c32eb7354e5dd5bfe3ef600e1f530a1dc15b51d8ff"
+checksum = "3e8dfed88a20aca1e594f0e2e2f2c9115e0812ba20bbea1ef7c99e0142dc84b9"
 dependencies = [
  "cmake",
  "libz-sys",
@@ -3083,27 +3082,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "proc-macro-error-attr2"
-version = "2.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "96de42df36bb9bba5542fe9f1a054b8cc87e172759a1868aa05c1f3acc89dfc5"
-dependencies = [
- "proc-macro2",
- "quote",
-]
-
-[[package]]
-name = "proc-macro-error2"
-version = "2.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "11ec05c52be0a07b08061f7dd003e7d7092e0472bc731b4af7bb1ef876109802"
-dependencies = [
- "proc-macro-error-attr2",
- "proc-macro2",
- "quote",
-]
-
-[[package]]
 name = "proc-macro2"
 version = "1.0.106"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3211,14 +3189,14 @@ dependencies = [
 
 [[package]]
 name = "pywr-cli"
-version = "2.0.0-beta3"
+version = "2.0.0-beta4"
 dependencies = [
  "anyhow",
  "clap",
  "pywr-core",
  "pywr-schema",
  "pywr-v1-schema",
- "rand 0.10.1",
+ "rand 0.10.2",
  "rand_chacha 0.10.0",
  "schemars",
  "serde",
@@ -3229,7 +3207,7 @@ dependencies = [
 
 [[package]]
 name = "pywr-core"
-version = "2.0.0-beta3"
+version = "2.0.0-beta4"
 dependencies = [
  "ahash",
  "chrono",
@@ -3250,7 +3228,7 @@ dependencies = [
  "polars",
  "pyo3",
  "pyo3-polars",
- "rand 0.10.1",
+ "rand 0.10.2",
  "rand_chacha 0.10.0",
  "rand_distr 0.6.0",
  "rayon",
@@ -3262,7 +3240,7 @@ dependencies = [
 
 [[package]]
 name = "pywr-python"
-version = "2.0.0-beta3"
+version = "2.0.0-beta4"
 dependencies = [
  "chrono",
  "pyo3",
@@ -3278,7 +3256,7 @@ dependencies = [
 
 [[package]]
 name = "pywr-schema"
-version = "2.0.0-beta3"
+version = "2.0.0-beta4"
 dependencies = [
  "chrono",
  "csv",
@@ -3309,7 +3287,7 @@ dependencies = [
 
 [[package]]
 name = "pywr-schema-macros"
-version = "2.0.0-beta3"
+version = "2.0.0-beta4"
 dependencies = [
  "heck",
  "proc-macro2",
@@ -3459,9 +3437,9 @@ dependencies = [
 
 [[package]]
 name = "rand"
-version = "0.10.1"
+version = "0.10.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d2e8e8bcc7961af1fdac401278c6a831614941f6164ee3bf4ce61b7edb162207"
+checksum = "c7f5fa3a058cd35567ef9bfa5e75732bee0f9e4c55fa90477bef2dfcdbc4be80"
 dependencies = [
  "chacha20",
  "getrandom 0.4.2",
@@ -3526,7 +3504,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4d431c2703ccf129de4d45253c03f49ebb22b97d6ad79ee3ecfc7e3f4862c1d8"
 dependencies = [
  "num-traits 0.2.19",
- "rand 0.10.1",
+ "rand 0.10.2",
 ]
 
 [[package]]
