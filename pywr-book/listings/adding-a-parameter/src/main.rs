@@ -1,14 +1,11 @@
 #![allow(dead_code)]
 use pywr_core::metric::{MetricF64, UnresolvedMetricF64};
-use pywr_core::network::{Network, ResolutionMaps};
+use pywr_core::network::ResolutionMaps;
 use pywr_core::parameters::{
-    BuiltParameter, GeneralCalculationError, GeneralParameter, MaybeBuiltParameter, Parameter, ParameterBuildError,
-    ParameterBuilder, ParameterMeta, ParameterName, ParameterState,
+    BuiltParameter, GeneralCalculationError, GeneralParameter, GeneralParameterContext, MaybeBuiltParameter, Parameter,
+    ParameterBuildError, ParameterBuilder, ParameterMeta, ParameterName, ParameterState,
 };
 use pywr_core::resolve_metric_f64;
-use pywr_core::scenario::ScenarioIndex;
-use pywr_core::state::State;
-use pywr_core::timestep::Timestep;
 
 // ANCHOR: parameter
 #[derive(Debug)]
@@ -29,14 +26,11 @@ impl Parameter for MaxParameter {
 impl GeneralParameter<f64> for MaxParameter {
     fn before(
         &self,
-        _timestep: &Timestep,
-        _scenario_index: &ScenarioIndex,
-        model: &Network,
-        state: &State,
+        ctx: GeneralParameterContext<'_>,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<Option<f64>, GeneralCalculationError> {
         // Current value
-        let x = self.metric.get_value(model, state)?;
+        let x = self.metric.get_value(ctx.network, ctx.state)?;
         Ok(Some(x.max(self.threshold)))
     }
 

@@ -1,12 +1,11 @@
 use crate::metric::{MetricF64, UnresolvedMetricF64};
-use crate::network::{Network, ResolutionMaps};
+use crate::network::ResolutionMaps;
 use crate::parameters::errors::{GeneralCalculationError, ParameterSetupError};
 use crate::parameters::{
-    BuiltParameter, GeneralParameter, MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder,
-    ParameterMeta, ParameterName, ParameterState, Predicate, downcast_internal_state_mut,
+    BuiltParameter, GeneralParameter, GeneralParameterContext, MaybeBuiltParameter, Parameter, ParameterBuildError,
+    ParameterBuilder, ParameterMeta, ParameterName, ParameterState, Predicate, downcast_internal_state_mut,
 };
 use crate::scenario::ScenarioIndex;
-use crate::state::State;
 use crate::timestep::Timestep;
 use crate::{resolve_metric_f64, resolve_metric_f64_vec};
 
@@ -38,21 +37,18 @@ impl Parameter for MultiThresholdParameter {
 impl GeneralParameter<u64> for MultiThresholdParameter {
     fn before(
         &self,
-        _timestep: &Timestep,
-        _scenario_index: &ScenarioIndex,
-        model: &Network,
-        state: &State,
+        ctx: GeneralParameterContext<'_>,
         internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<Option<u64>, GeneralCalculationError> {
         // Downcast the internal state to the correct type
         let previous_max = downcast_internal_state_mut::<u64>(internal_state);
 
-        let value = self.metric.get_value(model, state)?;
+        let value = self.metric.get_value(ctx.network, ctx.state)?;
 
         // Determine the first threshold that is met
         let mut position: u64 = 0;
         for threshold in &self.thresholds {
-            let t = threshold.get_value(model, state)?;
+            let t = threshold.get_value(ctx.network, ctx.state)?;
             let active = self.predicate.apply(value, t);
 
             if active {

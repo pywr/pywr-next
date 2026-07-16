@@ -1,14 +1,14 @@
 use super::{
-    BuiltParameter, MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder, ParameterName,
-    SimpleParameter,
+    BuiltParameter, GeneralParameterContext, MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder,
+    ParameterName, SimpleParameter,
 };
 use crate::metric::{MetricF64, SimpleMetricF64, UnresolvedMetricF64};
-use crate::network::{Network, ResolutionMaps};
+use crate::network::ResolutionMaps;
 use crate::parameters::errors::{GeneralCalculationError, SimpleCalculationError};
 use crate::parameters::{GeneralParameter, ParameterMeta, ParameterState};
 use crate::resolve_metric_f64;
 use crate::scenario::ScenarioIndex;
-use crate::state::{SimpleParameterValues, State};
+use crate::state::SimpleParameterValues;
 use crate::timestep::Timestep;
 use std::fmt::Debug;
 
@@ -39,16 +39,21 @@ where
 impl GeneralParameter<f64> for DifferenceParameter<MetricF64> {
     fn before(
         &self,
-        _timestep: &Timestep,
-        _scenario_index: &ScenarioIndex,
-        model: &Network,
-        state: &State,
+        ctx: GeneralParameterContext<'_>,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<Option<f64>, GeneralCalculationError> {
-        let a = self.a.get_value(model, state)?;
-        let b = self.b.get_value(model, state)?;
-        let min = self.min.as_ref().map(|m| m.get_value(model, state)).transpose()?;
-        let max = self.max.as_ref().map(|m| m.get_value(model, state)).transpose()?;
+        let a = self.a.get_value(ctx.network, ctx.state)?;
+        let b = self.b.get_value(ctx.network, ctx.state)?;
+        let min = self
+            .min
+            .as_ref()
+            .map(|m| m.get_value(ctx.network, ctx.state))
+            .transpose()?;
+        let max = self
+            .max
+            .as_ref()
+            .map(|m| m.get_value(ctx.network, ctx.state))
+            .transpose()?;
 
         Ok(Some(difference(a, b, min, max)))
     }

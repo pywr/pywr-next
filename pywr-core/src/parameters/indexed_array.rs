@@ -1,13 +1,10 @@
 use crate::metric::{MetricF64, MetricU64, UnresolvedMetricF64, UnresolvedMetricU64};
-use crate::network::{Network, ResolutionMaps};
+use crate::network::ResolutionMaps;
 use crate::parameters::errors::GeneralCalculationError;
 use crate::parameters::{
-    BuiltParameter, GeneralParameter, MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder,
-    ParameterMeta, ParameterName, ParameterState,
+    BuiltParameter, GeneralParameter, GeneralParameterContext, MaybeBuiltParameter, Parameter, ParameterBuildError,
+    ParameterBuilder, ParameterMeta, ParameterName, ParameterState,
 };
-use crate::scenario::ScenarioIndex;
-use crate::state::State;
-use crate::timestep::Timestep;
 use crate::{resolve_metric_f64_vec, resolve_metric_u64};
 
 #[derive(Debug)]
@@ -26,13 +23,10 @@ impl Parameter for IndexedArrayParameter {
 impl GeneralParameter<f64> for IndexedArrayParameter {
     fn before(
         &self,
-        _timestep: &Timestep,
-        _scenario_index: &ScenarioIndex,
-        network: &Network,
-        state: &State,
+        ctx: GeneralParameterContext<'_>,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<Option<f64>, GeneralCalculationError> {
-        let index = self.index_parameter.get_value(network, state)? as usize;
+        let index = self.index_parameter.get_value(ctx.network, ctx.state)? as usize;
 
         let metric = self
             .metrics
@@ -43,7 +37,7 @@ impl GeneralParameter<f64> for IndexedArrayParameter {
                 axis: 0,
             })?;
 
-        Ok(Some(metric.get_value(network, state)?))
+        Ok(Some(metric.get_value(ctx.network, ctx.state)?))
     }
 
     fn as_parameter(&self) -> &dyn Parameter

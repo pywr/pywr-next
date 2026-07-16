@@ -1,14 +1,13 @@
 use crate::FLOAT_EQ_TOLERANCE;
 use crate::metric::{MetricF64, UnresolvedMetricF64};
-use crate::network::{Network, ResolutionMaps};
+use crate::network::ResolutionMaps;
 use crate::parameters::errors::{GeneralCalculationError, ParameterSetupError};
 use crate::parameters::{
-    BuiltParameter, GeneralParameter, MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder,
-    ParameterMeta, ParameterName, ParameterState, downcast_internal_state_mut,
+    BuiltParameter, GeneralParameter, GeneralParameterContext, MaybeBuiltParameter, Parameter, ParameterBuildError,
+    ParameterBuilder, ParameterMeta, ParameterName, ParameterState, downcast_internal_state_mut,
 };
 use crate::resolve_metric_f64;
 use crate::scenario::ScenarioIndex;
-use crate::state::State;
 use crate::timestep::Timestep;
 
 #[derive(Debug)]
@@ -65,10 +64,7 @@ impl Parameter for ThresholdParameter {
 impl GeneralParameter<u64> for ThresholdParameter {
     fn before(
         &self,
-        _timestep: &Timestep,
-        _scenario_index: &ScenarioIndex,
-        model: &Network,
-        state: &State,
+        ctx: GeneralParameterContext<'_>,
         internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<Option<u64>, GeneralCalculationError> {
         // Downcast the internal state to the correct type
@@ -79,8 +75,8 @@ impl GeneralParameter<u64> for ThresholdParameter {
             return Ok(Some(1));
         }
 
-        let threshold = self.threshold.get_value(model, state)?;
-        let value = self.metric.get_value(model, state)?;
+        let threshold = self.threshold.get_value(ctx.network, ctx.state)?;
+        let value = self.metric.get_value(ctx.network, ctx.state)?;
         let active = self.predicate.apply(value, threshold);
 
         if active {

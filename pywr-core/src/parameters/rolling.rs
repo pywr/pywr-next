@@ -3,15 +3,15 @@ use crate::metric::{
     MetricF64, MetricF64Error, MetricU64, MetricU64Error, SimpleMetricF64, SimpleMetricU64, UnresolvedMetricF64,
     UnresolvedMetricU64,
 };
-use crate::network::{Network, ResolutionMaps};
+use crate::network::ResolutionMaps;
 use crate::parameters::errors::{GeneralCalculationError, ParameterSetupError, SimpleCalculationError};
 use crate::parameters::{
-    BuiltParameter, GeneralParameter, MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder,
-    ParameterMeta, ParameterName, ParameterState, SimpleParameter, downcast_internal_state_mut,
+    BuiltParameter, GeneralParameter, GeneralParameterContext, MaybeBuiltParameter, Parameter, ParameterBuildError,
+    ParameterBuilder, ParameterMeta, ParameterName, ParameterState, SimpleParameter, downcast_internal_state_mut,
     downcast_internal_state_ref,
 };
 use crate::scenario::ScenarioIndex;
-use crate::state::{SimpleParameterValues, State};
+use crate::state::SimpleParameterValues;
 use crate::timestep::Timestep;
 use crate::{resolve_metric_f64, resolve_metric_u64};
 use std::collections::VecDeque;
@@ -108,10 +108,7 @@ where
 impl GeneralParameter<f64> for RollingParameter<MetricF64, f64, AggFuncF64> {
     fn before(
         &self,
-        _timestep: &Timestep,
-        _scenario_index: &ScenarioIndex,
-        _model: &Network,
-        _state: &State,
+        _ctx: GeneralParameterContext<'_>,
         internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<Option<f64>, GeneralCalculationError> {
         // Downcast the internal state to the correct type
@@ -127,17 +124,14 @@ impl GeneralParameter<f64> for RollingParameter<MetricF64, f64, AggFuncF64> {
 
     fn after(
         &self,
-        _timestep: &Timestep,
-        _scenario_index: &ScenarioIndex,
-        model: &Network,
-        state: &State,
+        ctx: GeneralParameterContext<'_>,
         internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<Option<f64>, GeneralCalculationError> {
         // Downcast the internal state to the correct type
         let memory = downcast_internal_state_mut::<VecDeque<f64>>(internal_state);
 
         // Get today's value from the metric
-        let value = self.metric.get_value(model, state)?;
+        let value = self.metric.get_value(ctx.network, ctx.state)?;
         memory.push_back(value);
 
         // If the memory exceeds the window size, remove the oldest value
@@ -217,10 +211,7 @@ impl SimpleParameter<f64> for RollingParameter<SimpleMetricF64, f64, AggFuncF64>
 impl GeneralParameter<u64> for RollingParameter<MetricU64, u64, AggFuncU64> {
     fn before(
         &self,
-        _timestep: &Timestep,
-        _scenario_index: &ScenarioIndex,
-        _model: &Network,
-        _state: &State,
+        _ctx: GeneralParameterContext<'_>,
         internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<Option<u64>, GeneralCalculationError> {
         // Downcast the internal state to the correct type
@@ -236,17 +227,14 @@ impl GeneralParameter<u64> for RollingParameter<MetricU64, u64, AggFuncU64> {
 
     fn after(
         &self,
-        _timestep: &Timestep,
-        _scenario_index: &ScenarioIndex,
-        model: &Network,
-        state: &State,
+        ctx: GeneralParameterContext<'_>,
         internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<Option<u64>, GeneralCalculationError> {
         // Downcast the internal state to the correct type
         let memory = downcast_internal_state_mut::<VecDeque<u64>>(internal_state);
 
         // Get today's value from the metric
-        let value = self.metric.get_value(model, state)?;
+        let value = self.metric.get_value(ctx.network, ctx.state)?;
         memory.push_back(value);
 
         // If the memory exceeds the window size, remove the oldest value

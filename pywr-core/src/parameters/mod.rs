@@ -708,16 +708,22 @@ pub trait Parameter: Send + Sync + Debug {
     }
 }
 
+/// A context struct that is passed to the `before` and `after` methods of a [`GeneralParameter`].
+#[derive(Clone, Copy)]
+pub struct GeneralParameterContext<'a> {
+    pub timestep: &'a Timestep,
+    pub scenario_index: &'a ScenarioIndex,
+    pub network: &'a Network,
+    pub state: &'a State,
+}
+
 /// A trait that defines a component that produces a value each time-step.
 ///
 /// The trait is generic over the type of the value produced.
 pub trait GeneralParameter<T>: Parameter {
     fn before(
         &self,
-        #[allow(unused_variables)] timestep: &Timestep,
-        #[allow(unused_variables)] scenario_index: &ScenarioIndex,
-        #[allow(unused_variables)] model: &Network,
-        #[allow(unused_variables)] state: &State,
+        #[allow(unused_variables)] context: GeneralParameterContext<'_>,
         #[allow(unused_variables)] internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<Option<T>, GeneralCalculationError> {
         Ok(None)
@@ -725,10 +731,7 @@ pub trait GeneralParameter<T>: Parameter {
 
     fn after(
         &self,
-        #[allow(unused_variables)] timestep: &Timestep,
-        #[allow(unused_variables)] scenario_index: &ScenarioIndex,
-        #[allow(unused_variables)] model: &Network,
-        #[allow(unused_variables)] state: &State,
+        #[allow(unused_variables)] context: GeneralParameterContext<'_>,
         #[allow(unused_variables)] internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<Option<T>, GeneralCalculationError> {
         Ok(None)
@@ -2050,12 +2053,19 @@ impl ParameterCollection {
                         .get_general_mut_f64_state(*idx)
                         .ok_or(ParameterCollectionGeneralCalculationError::F64IndexNotFound(*idx))?;
 
-                    let value = p
-                        .before(timestep, scenario_index, network, state, internal_state)
-                        .map_err(|source| ParameterCollectionGeneralCalculationError::CalculationError {
+                    let ctx = GeneralParameterContext {
+                        timestep,
+                        scenario_index,
+                        network,
+                        state,
+                    };
+
+                    let value = p.before(ctx, internal_state).map_err(|source| {
+                        ParameterCollectionGeneralCalculationError::CalculationError {
                             name: p.name().clone(),
                             source: Box::new(source),
-                        })?;
+                        }
+                    })?;
 
                     state
                         .set_general_parameter_value_before(*idx, value)
@@ -2081,12 +2091,19 @@ impl ParameterCollection {
                         .get_general_mut_u64_state(*idx)
                         .ok_or(ParameterCollectionGeneralCalculationError::U64IndexNotFound(*idx))?;
 
-                    let value = p
-                        .before(timestep, scenario_index, network, state, internal_state)
-                        .map_err(|source| ParameterCollectionGeneralCalculationError::CalculationError {
+                    let ctx = GeneralParameterContext {
+                        timestep,
+                        scenario_index,
+                        network,
+                        state,
+                    };
+
+                    let value = p.before(ctx, internal_state).map_err(|source| {
+                        ParameterCollectionGeneralCalculationError::CalculationError {
                             name: p.name().clone(),
                             source: Box::new(source),
-                        })?;
+                        }
+                    })?;
 
                     state
                         .set_general_parameter_index_before(*idx, value)
@@ -2112,12 +2129,19 @@ impl ParameterCollection {
                         .get_general_mut_multi_state(*idx)
                         .ok_or(ParameterCollectionGeneralCalculationError::MultiIndexNotFound(*idx))?;
 
-                    let value = p
-                        .before(timestep, scenario_index, network, state, internal_state)
-                        .map_err(|source| ParameterCollectionGeneralCalculationError::CalculationError {
+                    let ctx = GeneralParameterContext {
+                        timestep,
+                        scenario_index,
+                        network,
+                        state,
+                    };
+
+                    let value = p.before(ctx, internal_state).map_err(|source| {
+                        ParameterCollectionGeneralCalculationError::CalculationError {
                             name: p.name().clone(),
                             source: Box::new(source),
-                        })?;
+                        }
+                    })?;
 
                     state
                         .set_general_multi_parameter_value_before(*idx, value)
@@ -2170,12 +2194,19 @@ impl ParameterCollection {
                         .get_general_mut_f64_state(*idx)
                         .ok_or(ParameterCollectionGeneralCalculationError::F64IndexNotFound(*idx))?;
 
-                    let value = p
-                        .after(timestep, scenario_index, network, state, internal_state)
-                        .map_err(|source| ParameterCollectionGeneralCalculationError::CalculationError {
+                    let ctx = GeneralParameterContext {
+                        timestep,
+                        scenario_index,
+                        network,
+                        state,
+                    };
+
+                    let value = p.after(ctx, internal_state).map_err(|source| {
+                        ParameterCollectionGeneralCalculationError::CalculationError {
                             name: p.name().clone(),
                             source: Box::new(source),
-                        })?;
+                        }
+                    })?;
 
                     state.set_general_parameter_value_after(*idx, value).map_err(|source| {
                         ParameterCollectionGeneralCalculationError::F64SetStateError {
@@ -2201,12 +2232,19 @@ impl ParameterCollection {
                         .get_general_mut_u64_state(*idx)
                         .ok_or(ParameterCollectionGeneralCalculationError::U64IndexNotFound(*idx))?;
 
-                    let value = p
-                        .after(timestep, scenario_index, network, state, internal_state)
-                        .map_err(|source| ParameterCollectionGeneralCalculationError::CalculationError {
+                    let ctx = GeneralParameterContext {
+                        timestep,
+                        scenario_index,
+                        network,
+                        state,
+                    };
+
+                    let value = p.after(ctx, internal_state).map_err(|source| {
+                        ParameterCollectionGeneralCalculationError::CalculationError {
                             name: p.name().clone(),
                             source: Box::new(source),
-                        })?;
+                        }
+                    })?;
 
                     state.set_general_parameter_index_after(*idx, value).map_err(|source| {
                         ParameterCollectionGeneralCalculationError::U64SetStateError {
@@ -2232,12 +2270,19 @@ impl ParameterCollection {
                         .get_general_mut_multi_state(*idx)
                         .ok_or(ParameterCollectionGeneralCalculationError::MultiIndexNotFound(*idx))?;
 
-                    let value = p
-                        .after(timestep, scenario_index, network, state, internal_state)
-                        .map_err(|source| ParameterCollectionGeneralCalculationError::CalculationError {
+                    let ctx = GeneralParameterContext {
+                        timestep,
+                        scenario_index,
+                        network,
+                        state,
+                    };
+
+                    let value = p.after(ctx, internal_state).map_err(|source| {
+                        ParameterCollectionGeneralCalculationError::CalculationError {
                             name: p.name().clone(),
                             source: Box::new(source),
-                        })?;
+                        }
+                    })?;
 
                     state
                         .set_general_multi_parameter_value_after(*idx, value)
@@ -2765,9 +2810,9 @@ impl ParameterCollectionBuilder {
 #[cfg(test)]
 mod tests {
     use super::{
-        BuiltParameter, ConstParameter, GeneralCalculationError, GeneralParameter, MaybeBuiltParameter, Parameter,
-        ParameterBuildError, ParameterBuilder, ParameterCollectionBuilder, ParameterMeta, ParameterName,
-        ParameterState, SimpleParameter,
+        BuiltParameter, ConstParameter, GeneralCalculationError, GeneralParameter, GeneralParameterContext,
+        MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder, ParameterCollectionBuilder,
+        ParameterMeta, ParameterName, ParameterState, SimpleParameter,
     };
     use crate::network::ResolutionMaps;
     use crate::parameters::errors::{ConstCalculationError, SimpleCalculationError};
@@ -2907,10 +2952,7 @@ mod tests {
     {
         fn before(
             &self,
-            _timestep: &crate::timestep::Timestep,
-            _scenario_index: &ScenarioIndex,
-            _model: &crate::network::Network,
-            _state: &crate::state::State,
+            _ctx: GeneralParameterContext<'_>,
             _internal_state: &mut Option<Box<dyn ParameterState>>,
         ) -> Result<Option<T>, GeneralCalculationError> {
             Ok(Some(T::from(1)))
@@ -2924,10 +2966,7 @@ mod tests {
     impl GeneralParameter<MultiValue> for TestParameter {
         fn before(
             &self,
-            _timestep: &crate::timestep::Timestep,
-            _scenario_index: &ScenarioIndex,
-            _model: &crate::network::Network,
-            _state: &crate::state::State,
+            _ctx: GeneralParameterContext<'_>,
             _internal_state: &mut Option<Box<dyn ParameterState>>,
         ) -> Result<Option<MultiValue>, GeneralCalculationError> {
             Ok(Some(MultiValue::default()))

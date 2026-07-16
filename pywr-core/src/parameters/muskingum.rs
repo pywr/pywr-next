@@ -1,13 +1,11 @@
 use crate::metric::{MetricF64, UnresolvedMetricF64};
-use crate::network::{Network, ResolutionMaps};
+use crate::network::ResolutionMaps;
 use crate::parameters::{
-    BuiltParameter, GeneralCalculationError, GeneralParameter, MaybeBuiltParameter, Parameter, ParameterBuildError,
-    ParameterBuilder, ParameterMeta, ParameterName, ParameterState,
+    BuiltParameter, GeneralCalculationError, GeneralParameter, GeneralParameterContext, MaybeBuiltParameter, Parameter,
+    ParameterBuildError, ParameterBuilder, ParameterMeta, ParameterName, ParameterState,
 };
 use crate::resolve_metric_f64;
-use crate::scenario::ScenarioIndex;
-use crate::state::{MultiValue, State};
-use crate::timestep::Timestep;
+use crate::state::MultiValue;
 use std::collections::HashMap;
 
 #[derive(Debug)]
@@ -55,17 +53,14 @@ impl Parameter for MuskingumParameter {
 impl GeneralParameter<MultiValue> for MuskingumParameter {
     fn before(
         &self,
-        timestep: &Timestep,
-        _scenario_index: &ScenarioIndex,
-        model: &Network,
-        state: &State,
+        ctx: GeneralParameterContext<'_>,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<Option<MultiValue>, GeneralCalculationError> {
-        let weight = self.weight.get_value(model, state)?;
-        let travel_time = self.travel_time.get_value(model, state)?;
+        let weight = self.weight.get_value(ctx.network, ctx.state)?;
+        let travel_time = self.travel_time.get_value(ctx.network, ctx.state)?;
 
         // The inflow and outflow metrics from the previous time-step
-        let (inflow, outflow) = if timestep.is_first() {
+        let (inflow, outflow) = if ctx.timestep.is_first() {
             match &self.initial_condition {
                 MuskingumInitialCondition::SteadyState => {
                     // For steady-state the inflow and outflow are equal
@@ -81,8 +76,8 @@ impl GeneralParameter<MultiValue> for MuskingumParameter {
             }
         } else {
             (
-                self.inflow.get_value(model, state)?,
-                self.outflow.get_value(model, state)?,
+                self.inflow.get_value(ctx.network, ctx.state)?,
+                self.outflow.get_value(ctx.network, ctx.state)?,
             )
         };
 

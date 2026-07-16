@@ -1,6 +1,6 @@
 use super::{
-    BuiltParameter, GeneralParameter, MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder,
-    ParameterMeta, ParameterName, ParameterState, Timestep,
+    BuiltParameter, GeneralParameter, GeneralParameterContext, MaybeBuiltParameter, Parameter, ParameterBuildError,
+    ParameterBuilder, ParameterMeta, ParameterName, ParameterState, Timestep,
 };
 use crate::metric::{MetricF64, MetricU64, UnresolvedMetricF64, UnresolvedMetricU64};
 use crate::network::{Network, ResolutionMaps};
@@ -209,10 +209,7 @@ impl PyClassParameter {
     fn call_method<T>(
         &self,
         method: &str,
-        timestep: &Timestep,
-        scenario_index: &ScenarioIndex,
-        network: &Network,
-        state: &State,
+        ctx: GeneralParameterContext<'_>,
         internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<Option<T>, GeneralCalculationError>
     where
@@ -220,7 +217,7 @@ impl PyClassParameter {
     {
         let internal = downcast_internal_state_mut::<InternalObj>(internal_state);
 
-        ensure_parameter_info(&mut internal.info_obj, timestep, scenario_index).map_err(|py_error| {
+        ensure_parameter_info(&mut internal.info_obj, ctx.timestep, ctx.scenario_index).map_err(|py_error| {
             GeneralCalculationError::PythonError {
                 name: self.common.meta.name.to_string(),
                 object: self.class.to_string(),
@@ -236,12 +233,13 @@ impl PyClassParameter {
                 let info_bind = info.bind(py);
                 {
                     let mut info_mut = info_bind.borrow_mut();
-                    info_mut.timestep = *timestep;
-                    info_mut.scenario_index = scenario_index.clone();
+                    info_mut.timestep = *ctx.timestep;
+                    info_mut.scenario_index = ctx.scenario_index.clone();
                     self.common
-                        .update_metrics(network, state, &mut info_mut.metric_values)?;
+                        .update_metrics(ctx.network, ctx.state, &mut info_mut.metric_values)?;
 
-                    self.common.update_indices(network, state, &mut info_mut.index_values)?;
+                    self.common
+                        .update_indices(ctx.network, ctx.state, &mut info_mut.index_values)?;
                 }
 
                 let args = PyTuple::new(py, [info_bind]).map_err(|py_error| GeneralCalculationError::PythonError {
@@ -291,24 +289,18 @@ impl Parameter for PyClassParameter {
 impl GeneralParameter<f64> for PyClassParameter {
     fn before(
         &self,
-        timestep: &Timestep,
-        scenario_index: &ScenarioIndex,
-        network: &Network,
-        state: &State,
+        ctx: GeneralParameterContext<'_>,
         internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<Option<f64>, GeneralCalculationError> {
-        self.call_method("before", timestep, scenario_index, network, state, internal_state)
+        self.call_method("before", ctx, internal_state)
     }
 
     fn after(
         &self,
-        timestep: &Timestep,
-        scenario_index: &ScenarioIndex,
-        network: &Network,
-        state: &State,
+        ctx: GeneralParameterContext<'_>,
         internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<Option<f64>, GeneralCalculationError> {
-        self.call_method("after", timestep, scenario_index, network, state, internal_state)
+        self.call_method("after", ctx, internal_state)
     }
 
     fn as_parameter(&self) -> &dyn Parameter
@@ -322,24 +314,18 @@ impl GeneralParameter<f64> for PyClassParameter {
 impl GeneralParameter<u64> for PyClassParameter {
     fn before(
         &self,
-        timestep: &Timestep,
-        scenario_index: &ScenarioIndex,
-        network: &Network,
-        state: &State,
+        ctx: GeneralParameterContext<'_>,
         internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<Option<u64>, GeneralCalculationError> {
-        self.call_method("before", timestep, scenario_index, network, state, internal_state)
+        self.call_method("before", ctx, internal_state)
     }
 
     fn after(
         &self,
-        timestep: &Timestep,
-        scenario_index: &ScenarioIndex,
-        network: &Network,
-        state: &State,
+        ctx: GeneralParameterContext<'_>,
         internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<Option<u64>, GeneralCalculationError> {
-        self.call_method("after", timestep, scenario_index, network, state, internal_state)
+        self.call_method("after", ctx, internal_state)
     }
 
     fn as_parameter(&self) -> &dyn Parameter
@@ -353,24 +339,18 @@ impl GeneralParameter<u64> for PyClassParameter {
 impl GeneralParameter<MultiValue> for PyClassParameter {
     fn before(
         &self,
-        timestep: &Timestep,
-        scenario_index: &ScenarioIndex,
-        network: &Network,
-        state: &State,
+        ctx: GeneralParameterContext<'_>,
         internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<Option<MultiValue>, GeneralCalculationError> {
-        self.call_method("before", timestep, scenario_index, network, state, internal_state)
+        self.call_method("before", ctx, internal_state)
     }
 
     fn after(
         &self,
-        timestep: &Timestep,
-        scenario_index: &ScenarioIndex,
-        model: &Network,
-        state: &State,
+        ctx: GeneralParameterContext<'_>,
         internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<Option<MultiValue>, GeneralCalculationError> {
-        self.call_method("after", timestep, scenario_index, model, state, internal_state)
+        self.call_method("after", ctx, internal_state)
     }
 
     fn as_parameter(&self) -> &dyn Parameter
@@ -531,10 +511,7 @@ impl PyFuncParameter {
 
     fn compute<T>(
         &self,
-        timestep: &Timestep,
-        scenario_index: &ScenarioIndex,
-        network: &Network,
-        state: &State,
+        ctx: GeneralParameterContext<'_>,
         internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<T, GeneralCalculationError>
     where
@@ -542,7 +519,7 @@ impl PyFuncParameter {
     {
         let internal = downcast_internal_state_mut::<InternalInfo>(internal_state);
 
-        ensure_parameter_info(&mut internal.info_obj, timestep, scenario_index).map_err(|py_error| {
+        ensure_parameter_info(&mut internal.info_obj, ctx.timestep, ctx.scenario_index).map_err(|py_error| {
             GeneralCalculationError::PythonError {
                 name: self.common.meta.name.to_string(),
                 object: self.function.to_string(),
@@ -557,12 +534,13 @@ impl PyFuncParameter {
             let info_bind = info.bind(py);
             {
                 let mut info_mut = info_bind.borrow_mut();
-                info_mut.timestep = *timestep;
-                info_mut.scenario_index = scenario_index.clone();
+                info_mut.timestep = *ctx.timestep;
+                info_mut.scenario_index = ctx.scenario_index.clone();
                 self.common
-                    .update_metrics(network, state, &mut info_mut.metric_values)?;
+                    .update_metrics(ctx.network, ctx.state, &mut info_mut.metric_values)?;
 
-                self.common.update_indices(network, state, &mut info_mut.index_values)?;
+                self.common
+                    .update_indices(ctx.network, ctx.state, &mut info_mut.index_values)?;
             }
 
             let args = PyTuple::new(py, [info_bind]).map_err(|py_error| GeneralCalculationError::PythonError {
@@ -626,13 +604,10 @@ impl Parameter for PyFuncParameter {
 impl GeneralParameter<f64> for PyFuncParameter {
     fn before(
         &self,
-        timestep: &Timestep,
-        scenario_index: &ScenarioIndex,
-        network: &Network,
-        state: &State,
+        ctx: GeneralParameterContext<'_>,
         internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<Option<f64>, GeneralCalculationError> {
-        self.compute(timestep, scenario_index, network, state, internal_state)
+        self.compute(ctx, internal_state)
     }
 
     fn as_parameter(&self) -> &dyn Parameter
@@ -646,13 +621,10 @@ impl GeneralParameter<f64> for PyFuncParameter {
 impl GeneralParameter<u64> for PyFuncParameter {
     fn before(
         &self,
-        timestep: &Timestep,
-        scenario_index: &ScenarioIndex,
-        network: &Network,
-        state: &State,
+        ctx: GeneralParameterContext<'_>,
         internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<Option<u64>, GeneralCalculationError> {
-        self.compute(timestep, scenario_index, network, state, internal_state)
+        self.compute(ctx, internal_state)
     }
 
     fn as_parameter(&self) -> &dyn Parameter
@@ -666,13 +638,10 @@ impl GeneralParameter<u64> for PyFuncParameter {
 impl GeneralParameter<MultiValue> for PyFuncParameter {
     fn before(
         &self,
-        timestep: &Timestep,
-        scenario_index: &ScenarioIndex,
-        network: &Network,
-        state: &State,
+        ctx: GeneralParameterContext<'_>,
         internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<Option<MultiValue>, GeneralCalculationError> {
-        self.compute(timestep, scenario_index, network, state, internal_state)
+        self.compute(ctx, internal_state)
     }
 
     fn as_parameter(&self) -> &dyn Parameter
@@ -913,11 +882,16 @@ class MyParameter:
 
         for ts in timesteps {
             for (si, internal) in scenario_indices.iter().zip(internal_p_states.iter_mut()) {
-                let before_value: Option<f64> =
-                    GeneralParameter::before(&param, ts, si, &model, &state, internal).unwrap();
+                let ctx = GeneralParameterContext {
+                    timestep: ts,
+                    scenario_index: si,
+                    network: &model,
+                    state: &state,
+                };
 
-                let after_value: Option<f64> =
-                    GeneralParameter::after(&param, ts, si, &model, &state, internal).unwrap();
+                let before_value: Option<f64> = GeneralParameter::before(&param, ctx, internal).unwrap();
+
+                let after_value: Option<f64> = GeneralParameter::after(&param, ctx, internal).unwrap();
 
                 match counter_parameter_type {
                     CounterParameterType::BeforeOnly => {
@@ -1019,7 +993,14 @@ class MyParameter:
 
         for ts in timesteps {
             for (si, internal) in scenario_indices.iter().zip(internal_p_states.iter_mut()) {
-                let value = GeneralParameter::<MultiValue>::before(&param, ts, si, &model, &state, internal)
+                let ctx = GeneralParameterContext {
+                    timestep: ts,
+                    scenario_index: si,
+                    network: &model,
+                    state: &state,
+                };
+
+                let value = GeneralParameter::<MultiValue>::before(&param, ctx, internal)
                     .unwrap()
                     .unwrap();
 
@@ -1088,9 +1069,14 @@ def my_function(info, count, **kwargs):
 
         for ts in timesteps {
             for (si, internal) in scenario_indices.iter().zip(internal_p_states.iter_mut()) {
-                let value = GeneralParameter::before(&param, ts, si, &model, &state, internal)
-                    .unwrap()
-                    .unwrap();
+                let ctx = GeneralParameterContext {
+                    timestep: ts,
+                    scenario_index: si,
+                    network: &model,
+                    state: &state,
+                };
+
+                let value = GeneralParameter::before(&param, ctx, internal).unwrap().unwrap();
 
                 assert_approx_eq!(f64, value, (2 + si.simulation_id() + ts.date.day() as usize) as f64);
             }
