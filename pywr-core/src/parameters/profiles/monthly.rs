@@ -2,11 +2,8 @@ use crate::network::ResolutionMaps;
 use crate::parameters::errors::SimpleCalculationError;
 use crate::parameters::{
     BuiltParameter, MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder, ParameterMeta,
-    ParameterName, ParameterState, SimpleParameter,
+    ParameterName, ParameterState, SimpleParameter, SimpleParameterContext,
 };
-use crate::scenario::ScenarioIndex;
-use crate::state::SimpleParameterValues;
-use crate::timestep::Timestep;
 use chrono::{Datelike, NaiveDateTime, Timelike};
 
 #[derive(Debug, Copy, Clone)]
@@ -112,30 +109,28 @@ impl Parameter for MonthlyProfileParameter {
 impl SimpleParameter<f64> for MonthlyProfileParameter {
     fn before(
         &self,
-        timestep: &Timestep,
-        _scenario_index: &ScenarioIndex,
-        _values: &SimpleParameterValues,
+        ctx: SimpleParameterContext<'_>,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<Option<f64>, SimpleCalculationError> {
         let v = match &self.interp_day {
             Some(interp_day) => match interp_day {
                 MonthlyInterpDay::First => {
-                    let next_month0 = (timestep.date.month0() + 1) % 12;
-                    let first_value = self.values[timestep.date.month0() as usize];
+                    let next_month0 = (ctx.timestep.date.month0() + 1) % 12;
+                    let first_value = self.values[ctx.timestep.date.month0() as usize];
                     let last_value = self.values[next_month0 as usize];
 
-                    interpolate_first(&timestep.date, first_value, last_value)
+                    interpolate_first(&ctx.timestep.date, first_value, last_value)
                 }
                 MonthlyInterpDay::Last => {
-                    let current_month = timestep.date.month();
+                    let current_month = ctx.timestep.date.month();
                     let last_month = if current_month == 1 { 12 } else { current_month - 1 };
                     let first_value = self.values[last_month as usize - 1];
-                    let last_value = self.values[timestep.date.month() as usize - 1];
+                    let last_value = self.values[ctx.timestep.date.month() as usize - 1];
 
-                    interpolate_last(&timestep.date, first_value, last_value)
+                    interpolate_last(&ctx.timestep.date, first_value, last_value)
                 }
             },
-            None => self.values[timestep.date.month() as usize - 1],
+            None => self.values[ctx.timestep.date.month() as usize - 1],
         };
         Ok(Some(v))
     }

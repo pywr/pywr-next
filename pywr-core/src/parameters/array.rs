@@ -2,10 +2,8 @@ use crate::network::ResolutionMaps;
 use crate::parameters::errors::SimpleCalculationError;
 use crate::parameters::{
     BuiltParameter, MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder, ParameterMeta,
-    ParameterName, ParameterState, SimpleParameter,
+    ParameterName, ParameterState, SimpleParameter, SimpleParameterContext,
 };
-use crate::scenario::ScenarioIndex;
-use crate::state::SimpleParameterValues;
 use crate::timestep::{Timestep, TimestepIndex};
 use ndarray::{Array1, Array2, Axis, s};
 use std::fmt::Debug;
@@ -42,12 +40,10 @@ where
 impl SimpleParameter<f64> for Array1Parameter<f64> {
     fn before(
         &self,
-        timestep: &Timestep,
-        _scenario_index: &ScenarioIndex,
-        _values: &SimpleParameterValues,
+        ctx: SimpleParameterContext<'_>,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<Option<f64>, SimpleCalculationError> {
-        let idx = self.timestep_index(timestep);
+        let idx = self.timestep_index(ctx.timestep);
 
         let value = self
             .array
@@ -71,12 +67,10 @@ impl SimpleParameter<f64> for Array1Parameter<f64> {
 impl SimpleParameter<u64> for Array1Parameter<u64> {
     fn before(
         &self,
-        timestep: &Timestep,
-        _scenario_index: &ScenarioIndex,
-        _values: &SimpleParameterValues,
+        ctx: SimpleParameterContext<'_>,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<Option<u64>, SimpleCalculationError> {
-        let idx = self.timestep_index(timestep);
+        let idx = self.timestep_index(ctx.timestep);
         let value = self
             .array
             .get(idx)
@@ -186,13 +180,11 @@ where
 impl SimpleParameter<f64> for Array2Parameter<f64> {
     fn before(
         &self,
-        timestep: &Timestep,
-        scenario_index: &ScenarioIndex,
-        _values: &SimpleParameterValues,
+        ctx: SimpleParameterContext<'_>,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<Option<f64>, SimpleCalculationError> {
-        let t_idx = self.timestep_index(timestep);
-        let s_idx = scenario_index.simulation_index_for_group(self.scenario_group_index);
+        let t_idx = self.timestep_index(ctx.timestep);
+        let s_idx = ctx.scenario_index.simulation_index_for_group(self.scenario_group_index);
 
         let value = self.array.get([t_idx, s_idx]).ok_or_else(|| {
             let shape = self.array.shape();
@@ -229,13 +221,11 @@ impl SimpleParameter<f64> for Array2Parameter<f64> {
 impl SimpleParameter<u64> for Array2Parameter<u64> {
     fn before(
         &self,
-        timestep: &Timestep,
-        scenario_index: &ScenarioIndex,
-        _values: &SimpleParameterValues,
+        ctx: SimpleParameterContext<'_>,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<Option<u64>, SimpleCalculationError> {
-        let t_idx = self.timestep_index(timestep);
-        let s_idx = scenario_index.simulation_index_for_group(self.scenario_group_index);
+        let t_idx = self.timestep_index(ctx.timestep);
+        let s_idx = ctx.scenario_index.simulation_index_for_group(self.scenario_group_index);
 
         let value = self.array.get([t_idx, s_idx]).ok_or_else(|| {
             let shape = self.array.shape();
@@ -404,13 +394,12 @@ mod tests {
 
         for ts in domain.time().timesteps().iter() {
             for si in domain.scenarios().indices().iter() {
-                assert_approx_eq!(
-                    f64,
-                    p.before(ts, si, &spv.get_simple_parameter_values(), &mut state)
-                        .unwrap()
-                        .unwrap(),
-                    ts.index as f64
-                );
+                let ctx = SimpleParameterContext {
+                    timestep: ts,
+                    scenario_index: si,
+                    values: &spv.get_simple_parameter_values(),
+                };
+                assert_approx_eq!(f64, p.before(ctx, &mut state).unwrap().unwrap(), ts.index as f64);
             }
         }
     }
@@ -437,13 +426,13 @@ mod tests {
 
         for ts in domain.time().timesteps().iter() {
             for si in domain.scenarios().indices().iter() {
-                assert_approx_eq!(
-                    f64,
-                    p.before(ts, si, &spv.get_simple_parameter_values(), &mut state)
-                        .unwrap()
-                        .unwrap(),
-                    ts.index as f64
-                );
+                let ctx = SimpleParameterContext {
+                    timestep: ts,
+                    scenario_index: si,
+                    values: &spv.get_simple_parameter_values(),
+                };
+
+                assert_approx_eq!(f64, p.before(ctx, &mut state).unwrap().unwrap(), ts.index as f64);
             }
         }
     }
@@ -470,21 +459,18 @@ mod tests {
 
         for ts in domain.time().timesteps().iter() {
             for si in domain.scenarios().indices().iter() {
+                let ctx = SimpleParameterContext {
+                    timestep: ts,
+                    scenario_index: si,
+                    values: &spv.get_simple_parameter_values(),
+                };
+
                 if ts.index >= 5 {
                     // If the time-step index is out of bounds, we should return an error
-                    assert!(
-                        p.before(ts, si, &spv.get_simple_parameter_values(), &mut state)
-                            .is_err()
-                    );
+                    assert!(p.before(ctx, &mut state).is_err());
                 } else {
                     // Otherwise, we should return the value
-                    assert_approx_eq!(
-                        f64,
-                        p.before(ts, si, &spv.get_simple_parameter_values(), &mut state)
-                            .unwrap()
-                            .unwrap(),
-                        ts.index as f64
-                    );
+                    assert_approx_eq!(f64, p.before(ctx, &mut state).unwrap().unwrap(), ts.index as f64);
                 }
             }
         }

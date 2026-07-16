@@ -2,7 +2,7 @@
 ///
 use super::{
     BuiltParameter, ConstParameter, GeneralParameterContext, MaybeBuiltParameter, Parameter, ParameterBuildError,
-    ParameterBuilder, ParameterName, ParameterState, SimpleParameter,
+    ParameterBuilder, ParameterName, ParameterState, SimpleParameter, SimpleParameterContext,
 };
 use crate::agg_funcs::AggFuncU64;
 use crate::metric::{ConstantMetricU64, MetricU64, SimpleMetricU64, UnresolvedMetricU64};
@@ -11,8 +11,7 @@ use crate::parameters::errors::{ConstCalculationError, GeneralCalculationError, 
 use crate::parameters::{GeneralParameter, ParameterMeta};
 use crate::resolve_metric_u64_vec;
 use crate::scenario::ScenarioIndex;
-use crate::state::{ConstParameterValues, SimpleParameterValues};
-use crate::timestep::Timestep;
+use crate::state::ConstParameterValues;
 use std::fmt::Debug;
 
 #[derive(Debug)]
@@ -73,15 +72,13 @@ impl GeneralParameter<u64> for AggregatedIndexParameter<MetricU64> {
 impl SimpleParameter<u64> for AggregatedIndexParameter<SimpleMetricU64> {
     fn before(
         &self,
-        _timestep: &Timestep,
-        _scenario_index: &ScenarioIndex,
-        values: &SimpleParameterValues,
+        ctx: SimpleParameterContext<'_>,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<Option<u64>, SimpleCalculationError> {
         let values = self
             .metrics
             .iter()
-            .map(|p| p.get_value(values))
+            .map(|p| p.get_value(ctx.values))
             .collect::<Result<Vec<_>, _>>()?;
 
         Ok(Some(self.agg_func.calc_iter_u64(&values)?))

@@ -3,12 +3,9 @@ use crate::network::ResolutionMaps;
 use crate::parameters::errors::SimpleCalculationError;
 use crate::parameters::{
     BuiltParameter, MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder, ParameterMeta,
-    ParameterName, ParameterState, SimpleParameter,
+    ParameterName, ParameterState, SimpleParameter, SimpleParameterContext,
 };
 use crate::resolve_metric_f64;
-use crate::scenario::ScenarioIndex;
-use crate::state::SimpleParameterValues;
-use crate::timestep::Timestep;
 use std::fmt::Debug;
 
 /// A parameter that returns the volume that is the proportion between two control curves
@@ -32,15 +29,19 @@ where
 impl SimpleParameter<f64> for VolumeBetweenControlCurvesParameter<SimpleMetricF64> {
     fn before(
         &self,
-        _timestep: &Timestep,
-        _scenario_index: &ScenarioIndex,
-        values: &SimpleParameterValues,
+        ctx: SimpleParameterContext<'_>,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<Option<f64>, SimpleCalculationError> {
-        let total = self.total.get_value(values)?;
+        let total = self.total.get_value(ctx.values)?;
 
-        let lower = self.lower.as_ref().map_or(Ok(0.0), |metric| metric.get_value(values))?;
-        let upper = self.upper.as_ref().map_or(Ok(1.0), |metric| metric.get_value(values))?;
+        let lower = self
+            .lower
+            .as_ref()
+            .map_or(Ok(0.0), |metric| metric.get_value(ctx.values))?;
+        let upper = self
+            .upper
+            .as_ref()
+            .map_or(Ok(1.0), |metric| metric.get_value(ctx.values))?;
 
         Ok(Some(total * (upper - lower)))
     }
