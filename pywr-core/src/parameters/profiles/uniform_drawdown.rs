@@ -2,11 +2,8 @@ use crate::network::ResolutionMaps;
 use crate::parameters::errors::SimpleCalculationError;
 use crate::parameters::{
     BuiltParameter, MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder, ParameterMeta,
-    ParameterName, ParameterState, SimpleParameter,
+    ParameterName, ParameterState, SimpleParameter, SimpleParameterContext,
 };
-use crate::scenario::ScenarioIndex;
-use crate::state::SimpleParameterValues;
-use crate::timestep::Timestep;
 use chrono::{Datelike, NaiveDate};
 
 fn is_leap_year(year: i32) -> bool {
@@ -28,16 +25,14 @@ impl Parameter for UniformDrawdownProfileParameter {
 impl SimpleParameter<f64> for UniformDrawdownProfileParameter {
     fn before(
         &self,
-        timestep: &Timestep,
-        _scenario_index: &ScenarioIndex,
-        _values: &SimpleParameterValues,
+        ctx: SimpleParameterContext<'_>,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<Option<f64>, SimpleCalculationError> {
         // Current calendar year (might be adjusted depending on position of reset day)
-        let mut year = timestep.date.year();
+        let mut year = ctx.timestep.date.year();
 
         // Current day of the year.
-        let current_doy = timestep.day_of_year_index() + 1;
+        let current_doy = ctx.timestep.day_of_year_index() + 1;
         let mut days_into_period: i32 = current_doy as i32 - self.reset_doy as i32;
         if days_into_period < 0 {
             // We're not past the reset day yet; use the previous year
@@ -57,7 +52,7 @@ impl SimpleParameter<f64> for UniformDrawdownProfileParameter {
             days_into_period += 366;
             // Need to adjust for post 29th Feb in non-leap years.
             // Recall `current_doy` was incremented by 1 if it is a non-leap already (hence comparison to 60)
-            if !is_leap_year(timestep.date.year()) && current_doy > 60 {
+            if !is_leap_year(ctx.timestep.date.year()) && current_doy > 60 {
                 days_into_period -= 1;
             }
         }

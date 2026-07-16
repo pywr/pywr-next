@@ -6,10 +6,10 @@ use crate::network::ResolutionMaps;
 use crate::parameters::errors::{GeneralCalculationError, ParameterSetupError, SimpleCalculationError};
 use crate::parameters::{
     BuiltParameter, GeneralParameter, GeneralParameterContext, MaybeBuiltParameter, Parameter, ParameterBuildError,
-    ParameterBuilder, ParameterMeta, ParameterName, ParameterState, SimpleParameter, downcast_internal_state_mut,
+    ParameterBuilder, ParameterMeta, ParameterName, ParameterState, SimpleParameter, SimpleParameterContext,
+    downcast_internal_state_mut,
 };
 use crate::scenario::ScenarioIndex;
-use crate::state::SimpleParameterValues;
 use crate::timestep::Timestep;
 use crate::{resolve_metric_f64, resolve_metric_u64};
 use std::collections::VecDeque;
@@ -129,9 +129,7 @@ impl GeneralParameter<f64> for DelayParameter<MetricF64, f64> {
 impl SimpleParameter<f64> for DelayParameter<SimpleMetricF64, f64> {
     fn before(
         &self,
-        _timestep: &Timestep,
-        _scenario_index: &ScenarioIndex,
-        _values: &SimpleParameterValues,
+        _ctx: SimpleParameterContext<'_>,
         internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<Option<f64>, SimpleCalculationError> {
         // Downcast the internal state to the correct type
@@ -149,16 +147,14 @@ impl SimpleParameter<f64> for DelayParameter<SimpleMetricF64, f64> {
 
     fn after(
         &self,
-        _timestep: &Timestep,
-        _scenario_index: &ScenarioIndex,
-        values: &SimpleParameterValues,
+        ctx: SimpleParameterContext<'_>,
         internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<Option<f64>, SimpleCalculationError> {
         // Downcast the internal state to the correct type
         let memory = downcast_internal_state_mut::<VecDeque<f64>>(internal_state);
 
         // Get today's value from the metric
-        let value = self.metric.get_value(values)?;
+        let value = self.metric.get_value(ctx.values)?;
         memory.push_back(value);
 
         Ok(None)
@@ -226,9 +222,7 @@ impl GeneralParameter<u64> for DelayParameter<MetricU64, u64> {
 impl SimpleParameter<u64> for DelayParameter<SimpleMetricU64, u64> {
     fn before(
         &self,
-        _timestep: &Timestep,
-        _scenario_index: &ScenarioIndex,
-        _values: &SimpleParameterValues,
+        _ctx: SimpleParameterContext<'_>,
         internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<Option<u64>, SimpleCalculationError> {
         // Downcast the internal state to the correct type
@@ -246,16 +240,14 @@ impl SimpleParameter<u64> for DelayParameter<SimpleMetricU64, u64> {
 
     fn after(
         &self,
-        _timestep: &Timestep,
-        _scenario_index: &ScenarioIndex,
-        values: &SimpleParameterValues,
+        ctx: SimpleParameterContext<'_>,
         internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<Option<u64>, SimpleCalculationError> {
         // Downcast the internal state to the correct type
         let memory = downcast_internal_state_mut::<VecDeque<u64>>(internal_state);
 
         // Get today's value from the metric
-        let value = self.metric.get_value(values)?;
+        let value = self.metric.get_value(ctx.values)?;
         memory.push_back(value);
 
         Ok(None)

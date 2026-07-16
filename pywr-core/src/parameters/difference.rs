@@ -1,15 +1,12 @@
 use super::{
     BuiltParameter, GeneralParameterContext, MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder,
-    ParameterName, SimpleParameter,
+    ParameterName, SimpleParameter, SimpleParameterContext,
 };
 use crate::metric::{MetricF64, SimpleMetricF64, UnresolvedMetricF64};
 use crate::network::ResolutionMaps;
 use crate::parameters::errors::{GeneralCalculationError, SimpleCalculationError};
 use crate::parameters::{GeneralParameter, ParameterMeta, ParameterState};
 use crate::resolve_metric_f64;
-use crate::scenario::ScenarioIndex;
-use crate::state::SimpleParameterValues;
-use crate::timestep::Timestep;
 use std::fmt::Debug;
 
 /// A parameter that computes the difference between two metrics, with optional minimum and maximum bounds.
@@ -85,15 +82,13 @@ impl GeneralParameter<f64> for DifferenceParameter<MetricF64> {
 impl SimpleParameter<f64> for DifferenceParameter<SimpleMetricF64> {
     fn before(
         &self,
-        _timestep: &Timestep,
-        _scenario_index: &ScenarioIndex,
-        values: &SimpleParameterValues,
+        ctx: SimpleParameterContext<'_>,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<Option<f64>, SimpleCalculationError> {
-        let a = self.a.get_value(values)?;
-        let b = self.b.get_value(values)?;
-        let min = self.min.as_ref().map(|m| m.get_value(values)).transpose()?;
-        let max = self.max.as_ref().map(|m| m.get_value(values)).transpose()?;
+        let a = self.a.get_value(ctx.values)?;
+        let b = self.b.get_value(ctx.values)?;
+        let min = self.min.as_ref().map(|m| m.get_value(ctx.values)).transpose()?;
+        let max = self.max.as_ref().map(|m| m.get_value(ctx.values)).transpose()?;
 
         Ok(Some(difference(a, b, min, max)))
     }

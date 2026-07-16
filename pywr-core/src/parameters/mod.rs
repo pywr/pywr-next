@@ -1063,23 +1063,27 @@ macro_rules! resolve_metric_u64_hashmap {
     }};
 }
 
+/// A context struct that is passed to the `before` and `after` methods of a [`SimpleParameter`].
+#[derive(Clone, Copy)]
+pub struct SimpleParameterContext<'a> {
+    pub timestep: &'a Timestep,
+    pub scenario_index: &'a ScenarioIndex,
+    pub values: &'a SimpleParameterValues<'a>,
+}
+
 /// A trait that defines a component that produces a value each time-step.
 ///
 /// The trait is generic over the type of the value produced.
 pub trait SimpleParameter<T>: Parameter {
     fn before(
         &self,
-        timestep: &Timestep,
-        scenario_index: &ScenarioIndex,
-        values: &SimpleParameterValues,
+        context: SimpleParameterContext<'_>,
         internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<Option<T>, SimpleCalculationError>;
 
     fn after(
         &self,
-        #[allow(unused_variables)] timestep: &Timestep,
-        #[allow(unused_variables)] scenario_index: &ScenarioIndex,
-        #[allow(unused_variables)] values: &SimpleParameterValues,
+        #[allow(unused_variables)] context: SimpleParameterContext<'_>,
         #[allow(unused_variables)] internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<Option<T>, SimpleCalculationError> {
         Ok(None)
@@ -2325,17 +2329,18 @@ impl ParameterCollection {
                         .get_simple_mut_f64_state(*idx)
                         .ok_or(ParameterCollectionSimpleCalculationError::F64IndexNotFound(*idx))?;
 
-                    let value = p
-                        .before(
-                            timestep,
-                            scenario_index,
-                            &state.get_simple_parameter_values(),
-                            internal_state,
-                        )
-                        .map_err(|source| ParameterCollectionSimpleCalculationError::CalculationError {
+                    let ctx = SimpleParameterContext {
+                        timestep,
+                        scenario_index,
+                        values: &state.get_simple_parameter_values(),
+                    };
+
+                    let value = p.before(ctx, internal_state).map_err(|source| {
+                        ParameterCollectionSimpleCalculationError::CalculationError {
                             name: p.name().clone(),
                             source,
-                        })?;
+                        }
+                    })?;
 
                     state.set_simple_parameter_value_before(*idx, value).map_err(|source| {
                         ParameterCollectionSimpleCalculationError::F64SetStateError {
@@ -2355,17 +2360,18 @@ impl ParameterCollection {
                         .get_simple_mut_u64_state(*idx)
                         .ok_or(ParameterCollectionSimpleCalculationError::U64IndexNotFound(*idx))?;
 
-                    let value = p
-                        .before(
-                            timestep,
-                            scenario_index,
-                            &state.get_simple_parameter_values(),
-                            internal_state,
-                        )
-                        .map_err(|source| ParameterCollectionSimpleCalculationError::CalculationError {
+                    let ctx = SimpleParameterContext {
+                        timestep,
+                        scenario_index,
+                        values: &state.get_simple_parameter_values(),
+                    };
+
+                    let value = p.before(ctx, internal_state).map_err(|source| {
+                        ParameterCollectionSimpleCalculationError::CalculationError {
                             name: p.name().clone(),
                             source,
-                        })?;
+                        }
+                    })?;
 
                     state.set_simple_parameter_index_before(*idx, value).map_err(|source| {
                         ParameterCollectionSimpleCalculationError::U64SetStateError {
@@ -2385,17 +2391,18 @@ impl ParameterCollection {
                         .get_simple_mut_multi_state(*idx)
                         .ok_or(ParameterCollectionSimpleCalculationError::MultiIndexNotFound(*idx))?;
 
-                    let value = p
-                        .before(
-                            timestep,
-                            scenario_index,
-                            &state.get_simple_parameter_values(),
-                            internal_state,
-                        )
-                        .map_err(|source| ParameterCollectionSimpleCalculationError::CalculationError {
+                    let ctx = SimpleParameterContext {
+                        timestep,
+                        scenario_index,
+                        values: &state.get_simple_parameter_values(),
+                    };
+
+                    let value = p.before(ctx, internal_state).map_err(|source| {
+                        ParameterCollectionSimpleCalculationError::CalculationError {
                             name: p.name().clone(),
                             source,
-                        })?;
+                        }
+                    })?;
 
                     state
                         .set_simple_multi_parameter_value_before(*idx, value)
@@ -2431,13 +2438,13 @@ impl ParameterCollection {
                         .get_simple_mut_f64_state(*idx)
                         .ok_or(ParameterCollectionSimpleCalculationError::F64IndexNotFound(*idx))?;
 
-                    p.after(
+                    let ctx = SimpleParameterContext {
                         timestep,
                         scenario_index,
-                        &state.get_simple_parameter_values(),
-                        internal_state,
-                    )
-                    .map_err(|source| {
+                        values: &state.get_simple_parameter_values(),
+                    };
+
+                    p.after(ctx, internal_state).map_err(|source| {
                         ParameterCollectionSimpleCalculationError::CalculationError {
                             name: p.name().clone(),
                             source,
@@ -2455,13 +2462,13 @@ impl ParameterCollection {
                         .get_simple_mut_u64_state(*idx)
                         .ok_or(ParameterCollectionSimpleCalculationError::U64IndexNotFound(*idx))?;
 
-                    p.after(
+                    let ctx = SimpleParameterContext {
                         timestep,
                         scenario_index,
-                        &state.get_simple_parameter_values(),
-                        internal_state,
-                    )
-                    .map_err(|source| {
+                        values: &state.get_simple_parameter_values(),
+                    };
+
+                    p.after(ctx, internal_state).map_err(|source| {
                         ParameterCollectionSimpleCalculationError::CalculationError {
                             name: p.name().clone(),
                             source,
@@ -2479,13 +2486,13 @@ impl ParameterCollection {
                         .get_simple_mut_multi_state(*idx)
                         .ok_or(ParameterCollectionSimpleCalculationError::MultiIndexNotFound(*idx))?;
 
-                    p.after(
+                    let ctx = SimpleParameterContext {
                         timestep,
                         scenario_index,
-                        &state.get_simple_parameter_values(),
-                        internal_state,
-                    )
-                    .map_err(|source| {
+                        values: &state.get_simple_parameter_values(),
+                    };
+
+                    p.after(ctx, internal_state).map_err(|source| {
                         ParameterCollectionSimpleCalculationError::CalculationError {
                             name: p.name().clone(),
                             source,
@@ -2812,7 +2819,7 @@ mod tests {
     use super::{
         BuiltParameter, ConstParameter, GeneralCalculationError, GeneralParameter, GeneralParameterContext,
         MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder, ParameterCollectionBuilder,
-        ParameterMeta, ParameterName, ParameterState, SimpleParameter,
+        ParameterMeta, ParameterName, ParameterState, SimpleParameter, SimpleParameterContext,
     };
     use crate::network::ResolutionMaps;
     use crate::parameters::errors::{ConstCalculationError, SimpleCalculationError};
@@ -2918,9 +2925,7 @@ mod tests {
     {
         fn before(
             &self,
-            _timestep: &crate::timestep::Timestep,
-            _scenario_index: &ScenarioIndex,
-            _values: &crate::state::SimpleParameterValues,
+            _ctx: SimpleParameterContext<'_>,
             _internal_state: &mut Option<Box<dyn ParameterState>>,
         ) -> Result<Option<T>, SimpleCalculationError> {
             Ok(Some(T::from(1)))
@@ -2934,9 +2939,7 @@ mod tests {
     impl SimpleParameter<MultiValue> for TestParameter {
         fn before(
             &self,
-            _timestep: &crate::timestep::Timestep,
-            _scenario_index: &ScenarioIndex,
-            _values: &crate::state::SimpleParameterValues,
+            _ctx: SimpleParameterContext<'_>,
             _internal_state: &mut Option<Box<dyn ParameterState>>,
         ) -> Result<Option<MultiValue>, SimpleCalculationError> {
             Ok(Some(MultiValue::default()))

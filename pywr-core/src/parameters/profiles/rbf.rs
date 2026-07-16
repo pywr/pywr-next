@@ -2,11 +2,10 @@ use crate::network::ResolutionMaps;
 use crate::parameters::errors::{ParameterSetupError, SimpleCalculationError};
 use crate::parameters::{
     BuiltParameter, MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder, ParameterMeta,
-    ParameterName, ParameterState, SimpleParameter, VariableConfig, VariableParameter, VariableParameterError,
-    downcast_internal_state_mut, downcast_internal_state_ref, downcast_variable_config_ref,
+    ParameterName, ParameterState, SimpleParameter, SimpleParameterContext, VariableConfig, VariableParameter,
+    VariableParameterError, downcast_internal_state_mut, downcast_internal_state_ref, downcast_variable_config_ref,
 };
 use crate::scenario::ScenarioIndex;
-use crate::state::SimpleParameterValues;
 use crate::timestep::Timestep;
 use nalgebra::DMatrix;
 
@@ -136,15 +135,13 @@ impl Parameter for RbfProfileParameter {
 impl SimpleParameter<f64> for RbfProfileParameter {
     fn before(
         &self,
-        timestep: &Timestep,
-        _scenario_index: &ScenarioIndex,
-        _values: &SimpleParameterValues,
+        ctx: SimpleParameterContext<'_>,
         internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<Option<f64>, SimpleCalculationError> {
         // Get the profile from the internal state
         let internal_state = downcast_internal_state_ref::<RbfProfileInternalState>(internal_state);
         // Return today's value from the profile
-        Ok(Some(internal_state.profile[timestep.day_of_year_index()]))
+        Ok(Some(internal_state.profile[ctx.timestep.day_of_year_index()]))
     }
 
     fn as_parameter(&self) -> &dyn Parameter
