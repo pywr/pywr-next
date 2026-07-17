@@ -8,7 +8,7 @@ use crate::nodes::{NodeMeta, NodeSlot};
 use crate::parameters::Parameter;
 use crate::{mermaid, node_attribute_subset_enum, node_component_subset_enum};
 #[cfg(feature = "core")]
-use pywr_core::metric::MetricF64;
+use pywr_core::{metric::UnresolvedMetricF64, node::UnresolvedNode};
 use pywr_schema_macros::{PywrVisitAll, skip_serializing_none};
 use schemars::JsonSchema;
 
@@ -94,63 +94,6 @@ pub struct AbstractionNode {
 impl AbstractionNode {
     const DEFAULT_ATTRIBUTE: AbstractionNodeAttribute = AbstractionNodeAttribute::Abstraction;
     const DEFAULT_COMPONENT: AbstractionNodeComponent = AbstractionNodeComponent::Abstraction;
-    const DEFAULT_OUTPUT_SLOT: AbstractionOutputNodeSlot = AbstractionOutputNodeSlot::River;
-
-    fn mrf_sub_name() -> Option<&'static str> {
-        Some("mrf")
-    }
-
-    fn bypass_sub_name() -> Option<&'static str> {
-        Some("bypass")
-    }
-
-    fn abstraction_sub_name() -> Option<&'static str> {
-        Some("abstraction")
-    }
-
-    pub fn input_connectors(&self, slot: Option<&NodeSlot>) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
-        if let Some(slot) = slot {
-            Err(SchemaError::InputNodeSlotNotSupported { slot: slot.clone() })
-        } else {
-            let mut connectors = vec![
-                (self.meta.name.as_str(), Self::bypass_sub_name().map(|s| s.to_string())),
-                (
-                    self.meta.name.as_str(),
-                    Self::abstraction_sub_name().map(|s| s.to_string()),
-                ),
-            ];
-            if self.mrf.is_some() {
-                connectors.push((self.meta.name.as_str(), Self::mrf_sub_name().map(|s| s.to_string())));
-            }
-            Ok(connectors)
-        }
-    }
-
-    pub fn output_connectors(&self, slot: Option<&NodeSlot>) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
-        let slot = match slot {
-            Some(s) => s.clone().try_into()?,
-            None => Self::DEFAULT_OUTPUT_SLOT,
-        };
-
-        let indices = match slot {
-            AbstractionOutputNodeSlot::River => {
-                if self.mrf.is_some() {
-                    vec![
-                        (self.meta.name.as_str(), Self::mrf_sub_name().map(|s| s.to_string())),
-                        (self.meta.name.as_str(), Self::bypass_sub_name().map(|s| s.to_string())),
-                    ]
-                } else {
-                    vec![(self.meta.name.as_str(), Self::bypass_sub_name().map(|s| s.to_string()))]
-                }
-            }
-            AbstractionOutputNodeSlot::Abstraction => vec![(
-                self.meta.name.as_str(),
-                Self::abstraction_sub_name().map(|s| s.to_string()),
-            )],
-        };
-
-        Ok(indices)
-    }
 
     pub fn iter_output_slots(&self) -> impl Iterator<Item = NodeSlot> + '_ {
         [
@@ -171,11 +114,54 @@ impl AbstractionNode {
 
 #[cfg(feature = "core")]
 impl AbstractionNode {
-    pub fn node_indices_for_flow_constraints(
+    const DEFAULT_OUTPUT_SLOT: AbstractionOutputNodeSlot = AbstractionOutputNodeSlot::River;
+    fn mrf_sub_name(&self) -> UnresolvedNode {
+        UnresolvedNode::new(&self.meta.name, Some("mrf"))
+    }
+
+    fn bypass_sub_name(&self) -> UnresolvedNode {
+        UnresolvedNode::new(&self.meta.name, Some("bypass"))
+    }
+
+    fn abstraction_sub_name(&self) -> UnresolvedNode {
+        UnresolvedNode::new(&self.meta.name, Some("abstraction"))
+    }
+
+    pub fn input_connectors(&self, slot: Option<&NodeSlot>) -> Result<Vec<UnresolvedNode>, SchemaError> {
+        if let Some(slot) = slot {
+            Err(SchemaError::InputNodeSlotNotSupported { slot: slot.clone() })
+        } else {
+            let mut connectors = vec![self.bypass_sub_name(), self.abstraction_sub_name()];
+            if self.mrf.is_some() {
+                connectors.push(self.mrf_sub_name());
+            }
+            Ok(connectors)
+        }
+    }
+
+    pub fn output_connectors(&self, slot: Option<&NodeSlot>) -> Result<Vec<UnresolvedNode>, SchemaError> {
+        let slot = match slot {
+            Some(s) => s.clone().try_into()?,
+            None => Self::DEFAULT_OUTPUT_SLOT,
+        };
+
+        let indices = match slot {
+            AbstractionOutputNodeSlot::River => {
+                if self.mrf.is_some() {
+                    vec![self.mrf_sub_name(), self.bypass_sub_name()]
+                } else {
+                    vec![self.bypass_sub_name()]
+                }
+            }
+            AbstractionOutputNodeSlot::Abstraction => vec![self.abstraction_sub_name()],
+        };
+
+        Ok(indices)
+    }
+    pub fn nodes_for_flow_constraints(
         &self,
-        network: &pywr_core::network::Network,
         component: Option<NodeComponent>,
-    ) -> Result<Vec<pywr_core::node::NodeIndex>, SchemaError> {
+    ) -> Result<Vec<UnresolvedNode>, SchemaError> {
         // Use the default component if none is specified
         let component = match component {
             Some(c) => c.try_into()?,
@@ -187,129 +173,80 @@ impl AbstractionNode {
                 let mut indices = Vec::new();
 
                 if self.mrf.is_some() {
-                    indices.push(
-                        network
-                            .get_node_index_by_name(self.meta.name.as_str(), Self::mrf_sub_name())
-                            .ok_or_else(|| SchemaError::CoreNodeNotFound {
-                                name: self.meta.name.clone(),
-                                sub_name: Self::mrf_sub_name().map(String::from),
-                            })?,
-                    );
+                    indices.push(self.mrf_sub_name());
                 }
-                indices.push(
-                    network
-                        .get_node_index_by_name(self.meta.name.as_str(), Self::bypass_sub_name())
-                        .ok_or_else(|| SchemaError::CoreNodeNotFound {
-                            name: self.meta.name.clone(),
-                            sub_name: Self::bypass_sub_name().map(String::from),
-                        })?,
-                );
-                indices.push(
-                    network
-                        .get_node_index_by_name(self.meta.name.as_str(), Self::abstraction_sub_name())
-                        .ok_or_else(|| SchemaError::CoreNodeNotFound {
-                            name: self.meta.name.clone(),
-                            sub_name: Self::abstraction_sub_name().map(String::from),
-                        })?,
-                );
+                indices.push(self.bypass_sub_name());
+                indices.push(self.abstraction_sub_name());
                 indices
             }
             AbstractionNodeComponent::Outflow => {
                 let mut indices = Vec::new();
 
                 if self.mrf.is_some() {
-                    indices.push(
-                        network
-                            .get_node_index_by_name(self.meta.name.as_str(), Self::mrf_sub_name())
-                            .ok_or_else(|| SchemaError::CoreNodeNotFound {
-                                name: self.meta.name.clone(),
-                                sub_name: Self::mrf_sub_name().map(String::from),
-                            })?,
-                    );
+                    indices.push(self.mrf_sub_name());
                 }
 
-                indices.push(
-                    network
-                        .get_node_index_by_name(self.meta.name.as_str(), Self::bypass_sub_name())
-                        .ok_or_else(|| SchemaError::CoreNodeNotFound {
-                            name: self.meta.name.clone(),
-                            sub_name: Self::bypass_sub_name().map(String::from),
-                        })?,
-                );
+                indices.push(self.bypass_sub_name());
                 indices
             }
             AbstractionNodeComponent::Abstraction => {
-                vec![
-                    network
-                        .get_node_index_by_name(self.meta.name.as_str(), Self::abstraction_sub_name())
-                        .ok_or_else(|| SchemaError::CoreNodeNotFound {
-                            name: self.meta.name.clone(),
-                            sub_name: Self::abstraction_sub_name().map(String::from),
-                        })?,
-                ]
+                vec![self.abstraction_sub_name()]
             }
         };
         Ok(indices)
     }
 
-    pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
-        if self.mrf.is_some() {
-            network.add_link_node(self.meta.name.as_str(), Self::mrf_sub_name())?;
-        }
-
-        network.add_link_node(self.meta.name.as_str(), Self::bypass_sub_name())?;
-        network.add_link_node(self.meta.name.as_str(), Self::abstraction_sub_name())?;
-
-        Ok(())
-    }
-
-    pub fn set_constraints(
+    pub fn add_to_network(
         &self,
-        network: &mut pywr_core::network::Network,
+        network: &mut pywr_core::network::NetworkBuilder,
         args: &LoadArgs,
     ) -> Result<(), SchemaError> {
         if let Some(mrf) = &self.mrf {
+            let mut mrf_node = pywr_core::node::NodeBuilder::link(self.mrf_sub_name());
+
             let value = mrf.load(network, args, Some(&self.meta.name))?;
-            network.set_node_max_flow(self.meta.name.as_str(), Self::mrf_sub_name(), value.into())?;
+            mrf_node.max_flow(value);
+
+            if let Some(cost) = &self.mrf_cost {
+                let value = cost.load(network, args, Some(&self.meta.name))?;
+                mrf_node.cost(value);
+            }
+
+            network.node(mrf_node);
+        } else if self.mrf_cost.is_some() {
+            return Err(SchemaError::InvalidNodeAttributes {
+                msg: format!(
+                    "MRF cost defined but no MRF constraint provided for node '{}'",
+                    self.meta.name
+                ),
+            });
         }
 
-        if let Some(cost) = &self.mrf_cost {
-            if self.mrf.is_some() {
-                let value = cost.load(network, args, Some(&self.meta.name))?;
-                network.set_node_cost(self.meta.name.as_str(), Self::mrf_sub_name(), value.into())?;
-            } else {
-                return Err(SchemaError::InvalidNodeAttributes {
-                    msg: format!(
-                        "MRF cost defined but no MRF constraint provided for node '{}'",
-                        self.meta.name
-                    ),
-                });
-            }
-        }
+        let bypass_node = pywr_core::node::NodeBuilder::link(self.bypass_sub_name());
+        let mut abstraction_node = pywr_core::node::NodeBuilder::link(self.abstraction_sub_name());
 
         if let Some(abs_max_flow) = &self.abs_max_flow {
             let value = abs_max_flow.load(network, args, Some(&self.meta.name))?;
-            network.set_node_max_flow(self.meta.name.as_str(), Self::abstraction_sub_name(), value.into())?;
+            abstraction_node.max_flow(value);
         }
 
         if let Some(abs_min_flow) = &self.abs_min_flow {
             let value = abs_min_flow.load(network, args, Some(&self.meta.name))?;
-            network.set_node_min_flow(self.meta.name.as_str(), Self::abstraction_sub_name(), value.into())?;
+            abstraction_node.min_flow(value);
         }
 
         if let Some(cost) = &self.abs_cost {
             let value = cost.load(network, args, Some(&self.meta.name))?;
-            network.set_node_cost(self.meta.name.as_str(), Self::abstraction_sub_name(), value.into())?;
+            abstraction_node.cost(value);
         }
+
+        network.node(bypass_node);
+        network.node(abstraction_node);
 
         Ok(())
     }
 
-    pub fn create_metric(
-        &self,
-        network: &pywr_core::network::Network,
-        attribute: Option<NodeAttribute>,
-    ) -> Result<MetricF64, SchemaError> {
+    pub fn create_metric(&self, attribute: Option<NodeAttribute>) -> Result<UnresolvedMetricF64, SchemaError> {
         // Use the default attribute if none is specified
         let attr = match attribute {
             Some(attr) => attr.try_into()?,
@@ -318,27 +255,22 @@ impl AbstractionNode {
 
         match attr {
             AbstractionNodeAttribute::Inflow => {
-                let indices = self.node_indices_for_flow_constraints(network, Some(NodeComponent::Inflow))?;
-                Ok(MetricF64::MultiNodeInFlow {
-                    indices,
+                let nodes = self.nodes_for_flow_constraints(Some(NodeComponent::Inflow))?;
+                Ok(UnresolvedMetricF64::MultiNodeInFlow {
+                    nodes,
                     name: self.meta.name.to_string(),
                 })
             }
             AbstractionNodeAttribute::Outflow => {
-                let indices = self.node_indices_for_flow_constraints(network, Some(NodeComponent::Outflow))?;
-                Ok(MetricF64::MultiNodeInFlow {
-                    indices,
+                let nodes = self.nodes_for_flow_constraints(Some(NodeComponent::Outflow))?;
+                Ok(UnresolvedMetricF64::MultiNodeInFlow {
+                    nodes,
                     name: self.meta.name.to_string(),
                 })
             }
             AbstractionNodeAttribute::Abstraction => {
-                let idx = network
-                    .get_node_index_by_name(self.meta.name.as_str(), Self::abstraction_sub_name())
-                    .ok_or_else(|| SchemaError::CoreNodeNotFound {
-                        name: self.meta.name.clone(),
-                        sub_name: Self::abstraction_sub_name().map(String::from),
-                    })?;
-                Ok(MetricF64::NodeOutFlow(idx))
+                let node = self.abstraction_sub_name();
+                Ok(UnresolvedMetricF64::NodeOutFlow(node))
             }
         }
     }

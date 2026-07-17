@@ -7,9 +7,12 @@ mod memory;
 mod metric_set;
 mod py;
 
-use crate::metric::{MetricF64, MetricF64Error, MetricU64, MetricU64Error};
+use crate::metric::{
+    MetricF64, MetricF64Error, MetricF64ResolutionError, MetricU64, MetricU64Error, MetricU64ResolutionError,
+    UnresolvedMetricF64, UnresolvedMetricU64,
+};
 use crate::models::ModelDomain;
-use crate::network::Network;
+use crate::network::{MetricSetIndex, Network, ResolutionMaps};
 use crate::recorders::csv::CsvError;
 #[cfg(feature = "hdf5")]
 use crate::recorders::hdf::Hdf5Error;
@@ -17,43 +20,21 @@ use crate::scenario::ScenarioIndex;
 use crate::state::State;
 use crate::timestep::Timestep;
 pub use aggregator::{AggregationFrequency, Aggregator, PeriodValue};
-pub use csv::{CsvLongFmtOutput, CsvLongFmtRecord, CsvWideFmtOutput};
+pub use csv::{CsvLongFmtOutput, CsvLongFmtOutputBuilder, CsvLongFmtRecord, CsvWideFmtOutput, CsvWideFmtOutputBuilder};
 use float_cmp::{ApproxEq, F64Margin, approx_eq};
 #[cfg(feature = "hdf5")]
-pub use hdf::HDF5Recorder;
-pub use memory::{Aggregation, AggregationError, AggregationOrder, MemoryRecorder};
-pub use metric_set::{MetricSet, MetricSetIndex, MetricSetSaveError, MetricSetState, OutputMetric};
+pub use hdf::{HDF5Recorder, HDF5RecorderBuilder};
+pub use memory::{Aggregation, AggregationError, AggregationOrder, MemoryRecorder, MemoryRecorderBuilder};
+pub use metric_set::{
+    MetricSet, MetricSetBuilder, MetricSetBuilderError, MetricSetSaveError, MetricSetState, OutputMetric,
+    UnresolvedOutputMetric,
+};
 use ndarray::Array2;
 use ndarray::prelude::*;
 use polars::prelude::PolarsError;
 use std::any::Any;
-use std::fmt;
-use std::fmt::{Display, Formatter};
-use std::ops::Deref;
+use std::fmt::Debug;
 use thiserror::Error;
-
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
-pub struct RecorderIndex(usize);
-
-impl RecorderIndex {
-    pub fn new(idx: usize) -> Self {
-        Self(idx)
-    }
-}
-
-impl Deref for RecorderIndex {
-    type Target = usize;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl Display for RecorderIndex {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
 
 /// Meta data common to all parameters.
 #[derive(Clone, Debug)]
@@ -195,7 +176,7 @@ pub trait RecorderFinalResult: Any + Send + Sync {
     }
 }
 
-pub trait Recorder: Send + Sync {
+pub trait Recorder: Send + Sync + Debug {
     fn meta(&self) -> &RecorderMeta;
     fn name(&self) -> &str {
         self.meta().name.as_str()
@@ -236,18 +217,32 @@ pub trait Recorder: Send + Sync {
     }
 }
 
+#[derive(Debug, Error)]
+pub enum RecorderBuilderError {
+    #[error("Could not resolve f64 metric for `{attr}` attribute: {source}")]
+    ResolveMetricF64Error {
+        attr: String,
+        #[source]
+        source: MetricF64ResolutionError,
+    },
+    #[error("Could not resolve u64 metric for `{attr}` attribute: {source}")]
+    ResolveMetricU64Error {
+        attr: String,
+        #[source]
+        source: MetricU64ResolutionError,
+    },
+    #[error("Metric set `{name}` not found.")]
+    MetricSetNotFound { name: String },
+}
+
+pub trait RecorderBuilder: Debug {
+    fn name(&self) -> &str;
+    fn build(self: Box<Self>, resolution_maps: &ResolutionMaps) -> Result<Box<dyn Recorder>, RecorderBuilderError>;
+}
+#[derive(Debug)]
 pub struct Array2Recorder {
     meta: RecorderMeta,
     metric: MetricF64,
-}
-
-impl Array2Recorder {
-    pub fn new(name: &str, metric: MetricF64) -> Self {
-        Self {
-            meta: RecorderMeta::new(name),
-            metric,
-        }
-    }
 }
 
 impl Recorder for Array2Recorder {
@@ -288,30 +283,50 @@ impl Recorder for Array2Recorder {
     }
 }
 
+#[derive(Debug)]
+pub struct Array2RecorderBuilder {
+    meta: RecorderMeta,
+    metric: UnresolvedMetricF64,
+}
+
+impl Array2RecorderBuilder {
+    pub fn new(name: &str, metric: UnresolvedMetricF64) -> Self {
+        Self {
+            meta: RecorderMeta::new(name),
+            metric,
+        }
+    }
+}
+
+impl RecorderBuilder for Array2RecorderBuilder {
+    fn name(&self) -> &str {
+        self.meta.name.as_str()
+    }
+    fn build(self: Box<Self>, resolution_maps: &ResolutionMaps) -> Result<Box<dyn Recorder>, RecorderBuilderError> {
+        let metric =
+            self.metric
+                .resolve(resolution_maps)
+                .map_err(|source| RecorderBuilderError::ResolveMetricF64Error {
+                    attr: "metric".to_string(),
+                    source,
+                })?;
+
+        let r = Array2Recorder {
+            meta: self.meta,
+            metric,
+        };
+
+        Ok(Box::new(r))
+    }
+}
+
+#[derive(Debug)]
 pub struct AssertionF64Recorder {
     meta: RecorderMeta,
     expected_values: Array2<f64>,
     metric: MetricF64,
     ulps: i64,
     epsilon: f64,
-}
-
-impl AssertionF64Recorder {
-    pub fn new(
-        name: &str,
-        metric: MetricF64,
-        expected_values: Array2<f64>,
-        ulps: Option<i64>,
-        epsilon: Option<f64>,
-    ) -> Self {
-        Self {
-            meta: RecorderMeta::new(name),
-            expected_values,
-            metric,
-            ulps: ulps.unwrap_or(5),
-            epsilon: epsilon.unwrap_or(1e-6),
-        }
-    }
 }
 
 impl Recorder for AssertionF64Recorder {
@@ -369,21 +384,69 @@ expected: `{:?}`"#,
     }
 }
 
+#[derive(Debug)]
+pub struct AssertionF64RecorderBuilder {
+    meta: RecorderMeta,
+    expected_values: Array2<f64>,
+    metric: UnresolvedMetricF64,
+    ulps: i64,
+    epsilon: f64,
+}
+
+impl AssertionF64RecorderBuilder {
+    pub fn new(name: &str, metric: UnresolvedMetricF64, expected_values: Array2<f64>) -> Self {
+        Self {
+            meta: RecorderMeta::new(name),
+            expected_values,
+            metric,
+            ulps: 5,
+            epsilon: 1e-6,
+        }
+    }
+
+    pub fn ulps(&mut self, ulps: i64) -> &mut Self {
+        self.ulps = ulps;
+        self
+    }
+
+    pub fn epsilon(&mut self, epsilon: f64) -> &mut Self {
+        self.epsilon = epsilon;
+        self
+    }
+}
+
+impl RecorderBuilder for AssertionF64RecorderBuilder {
+    fn name(&self) -> &str {
+        &self.meta.name
+    }
+    fn build(self: Box<Self>, resolution_maps: &ResolutionMaps) -> Result<Box<dyn Recorder>, RecorderBuilderError> {
+        let metric =
+            self.metric
+                .resolve(resolution_maps)
+                .map_err(|source| RecorderBuilderError::ResolveMetricF64Error {
+                    attr: "metric".to_string(),
+                    source,
+                })?;
+
+        let r = AssertionF64Recorder {
+            meta: self.meta,
+            expected_values: self.expected_values,
+            metric,
+            ulps: self.ulps,
+            epsilon: self.epsilon,
+        };
+
+        Ok(Box::new(r))
+    }
+}
+
+#[derive(Debug)]
 pub struct AssertionU64Recorder {
     meta: RecorderMeta,
     expected_values: Array2<u64>,
     metric: MetricU64,
 }
 
-impl AssertionU64Recorder {
-    pub fn new(name: &str, metric: MetricU64, expected_values: Array2<u64>) -> Self {
-        Self {
-            meta: RecorderMeta::new(name),
-            expected_values,
-            metric,
-        }
-    }
-}
 impl Recorder for AssertionU64Recorder {
     fn meta(&self) -> &RecorderMeta {
         &self.meta
@@ -433,6 +496,46 @@ expected: `{:?}`"#,
     }
 }
 
+#[derive(Debug)]
+pub struct AssertionU64RecorderBuilder {
+    meta: RecorderMeta,
+    expected_values: Array2<u64>,
+    metric: UnresolvedMetricU64,
+}
+
+impl AssertionU64RecorderBuilder {
+    pub fn new(name: &str, metric: UnresolvedMetricU64, expected_values: Array2<u64>) -> Self {
+        Self {
+            meta: RecorderMeta::new(name),
+            expected_values,
+            metric,
+        }
+    }
+}
+
+impl RecorderBuilder for AssertionU64RecorderBuilder {
+    fn name(&self) -> &str {
+        &self.meta.name
+    }
+    fn build(self: Box<Self>, resolution_maps: &ResolutionMaps) -> Result<Box<dyn Recorder>, RecorderBuilderError> {
+        let metric =
+            self.metric
+                .resolve(resolution_maps)
+                .map_err(|source| RecorderBuilderError::ResolveMetricU64Error {
+                    attr: "metric".to_string(),
+                    source,
+                })?;
+
+        let r = AssertionU64Recorder {
+            meta: self.meta,
+            expected_values: self.expected_values,
+            metric,
+        };
+
+        Ok(Box::new(r))
+    }
+}
+
 pub struct AssertionFnRecorder<F> {
     meta: RecorderMeta,
     expected_func: F,
@@ -441,18 +544,14 @@ pub struct AssertionFnRecorder<F> {
     epsilon: f64,
 }
 
-impl<F> AssertionFnRecorder<F>
-where
-    F: Fn(&Timestep, &ScenarioIndex) -> f64,
-{
-    pub fn new(name: &str, metric: MetricF64, expected_func: F, ulps: Option<i64>, epsilon: Option<f64>) -> Self {
-        Self {
-            meta: RecorderMeta::new(name),
-            expected_func,
-            metric,
-            ulps: ulps.unwrap_or(2),
-            epsilon: epsilon.unwrap_or(f64::EPSILON * 2.0),
-        }
+impl<F> Debug for AssertionFnRecorder<F> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AssertionFnRecorder")
+            .field("meta", &self.meta)
+            .field("metric", &self.metric)
+            .field("ulps", &self.ulps)
+            .field("epsilon", &self.epsilon)
+            .finish()
     }
 }
 
@@ -498,68 +597,75 @@ where
     }
 }
 
-pub struct IndexAssertionRecorder {
+pub struct AssertionFnRecorderBuilder<F> {
     meta: RecorderMeta,
-    expected_values: Array2<u64>,
-    metric: MetricU64,
+    expected_func: F,
+    metric: UnresolvedMetricF64,
+    ulps: i64,
+    epsilon: f64,
 }
 
-impl IndexAssertionRecorder {
-    pub fn new(name: &str, metric: MetricU64, expected_values: Array2<u64>) -> Self {
+impl<F> Debug for AssertionFnRecorderBuilder<F> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AssertionFnRecorderBuilder")
+            .field("meta", &self.meta)
+            .field("metric", &self.metric)
+            .field("ulps", &self.ulps)
+            .field("epsilon", &self.epsilon)
+            .finish()
+    }
+}
+
+impl<F> AssertionFnRecorderBuilder<F>
+where
+    F: Fn(&Timestep, &ScenarioIndex) -> f64,
+{
+    pub fn new(name: &str, metric: UnresolvedMetricF64, expected_func: F) -> Self {
         Self {
             meta: RecorderMeta::new(name),
-            expected_values,
+            expected_func,
             metric,
+            ulps: 2,
+            epsilon: f64::EPSILON * 2.0,
         }
+    }
+
+    pub fn ulps(&mut self, ulps: i64) -> &mut Self {
+        self.ulps = ulps;
+        self
+    }
+
+    pub fn epsilon(&mut self, epsilon: f64) -> &mut Self {
+        self.epsilon = epsilon;
+        self
     }
 }
 
-impl Recorder for IndexAssertionRecorder {
-    fn meta(&self) -> &RecorderMeta {
-        &self.meta
+impl<F> RecorderBuilder for AssertionFnRecorderBuilder<F>
+where
+    F: Send + Sync + Fn(&Timestep, &ScenarioIndex) -> f64 + 'static,
+{
+    fn name(&self) -> &str {
+        &self.meta.name
     }
+    fn build(self: Box<Self>, resolution_maps: &ResolutionMaps) -> Result<Box<dyn Recorder>, RecorderBuilderError> {
+        let metric =
+            self.metric
+                .resolve(resolution_maps)
+                .map_err(|source| RecorderBuilderError::ResolveMetricF64Error {
+                    attr: "metric".to_string(),
+                    source,
+                })?;
 
-    fn save(
-        &self,
-        timestep: &Timestep,
-        scenario_indices: &[ScenarioIndex],
-        network: &Network,
-        state: &[State],
-        _metric_set_states: &[Vec<MetricSetState>],
-        _internal_state: &mut Option<Box<dyn RecorderInternalState>>,
-    ) -> Result<(), RecorderSaveError> {
-        // This panics if out-of-bounds
+        let r = AssertionFnRecorder {
+            meta: self.meta,
+            expected_func: self.expected_func,
+            metric,
+            ulps: self.ulps,
+            epsilon: self.epsilon,
+        };
 
-        for scenario_index in scenario_indices {
-            let expected_value = match self
-                .expected_values
-                .get([timestep.index, scenario_index.simulation_id()])
-            {
-                Some(v) => *v,
-                None => panic!("Simulation produced results out of range."),
-            };
-
-            let actual_value = self.metric.get_value(network, &state[scenario_index.simulation_id()])?;
-
-            if actual_value != expected_value {
-                panic!(
-                    r#"assertion failed: (actual eq expected)
-recorder: `{}`
-timestep: `{:?}` ({})
-scenario: `{:?}`
-actual: `{:?}`
-expected: `{:?}`"#,
-                    self.meta.name,
-                    timestep.date,
-                    timestep.index,
-                    scenario_index.simulation_id(),
-                    actual_value,
-                    expected_value
-                )
-            }
-        }
-
-        Ok(())
+        Ok(Box::new(r))
     }
 }
 
@@ -570,13 +676,14 @@ mod tests {
 
     #[test]
     fn test_array2_recorder() {
-        let mut model = simple_model(2, None);
+        let mut model_builder = simple_model(2, None);
 
-        let node_idx = model.network().get_node_index_by_name("input", None).unwrap();
+        let rec = Array2RecorderBuilder::new("test", UnresolvedMetricF64::NodeOutFlow("input".into()));
 
-        let rec = Array2Recorder::new("test", MetricF64::NodeOutFlow(node_idx));
+        model_builder.network_builder().recorder(Box::new(rec));
 
-        let _idx = model.network_mut().add_recorder(Box::new(rec)).unwrap();
+        let model = model_builder.build().unwrap();
+
         // Test all solvers
         run_all_solvers(&model, &[], &[], &[]);
 

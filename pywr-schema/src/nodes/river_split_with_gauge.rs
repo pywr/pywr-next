@@ -11,7 +11,7 @@ use crate::parameters::Parameter;
 use crate::v1::{ConversionData, TryFromV1, try_convert_node_attr, try_convert_node_meta};
 use crate::{ConversionError, TryIntoV2, mermaid, node_attribute_subset_enum, node_component_subset_enum};
 #[cfg(feature = "core")]
-use pywr_core::{aggregated_node::Relationship, metric::MetricF64, node::NodeIndex};
+use pywr_core::{aggregated_node::ProportionalFactorsBuilder, metric::UnresolvedMetricF64, node::UnresolvedNode};
 use pywr_schema_macros::PywrVisitAll;
 use pywr_schema_macros::skip_serializing_none;
 use pywr_v1_schema::nodes::RiverSplitWithGaugeNode as RiverSplitWithGaugeNodeV1;
@@ -102,82 +102,6 @@ pub struct RiverSplitWithGaugeNode {
 impl RiverSplitWithGaugeNode {
     const DEFAULT_ATTRIBUTE: RiverSplitWithGaugeNodeAttribute = RiverSplitWithGaugeNodeAttribute::Outflow;
     const DEFAULT_COMPONENT: RiverSplitWithGaugeNodeComponent = RiverSplitWithGaugeNodeComponent::Outflow;
-    const DEFAULT_OUTPUT_SLOT: RiverSplitWithGaugeOutputNodeSlot = RiverSplitWithGaugeOutputNodeSlot::River;
-
-    fn mrf_sub_name() -> Option<&'static str> {
-        Some("mrf")
-    }
-
-    fn bypass_sub_name() -> Option<&'static str> {
-        Some("bypass")
-    }
-
-    fn split_sub_name(i: usize) -> Option<String> {
-        Some(format!("split-{i}"))
-    }
-
-    /// These connectors are used for both incoming and Output edges on the default slot.
-    fn default_connectors(&self) -> Vec<(&str, Option<String>)> {
-        let mut connectors = vec![
-            (self.meta.name.as_str(), Self::mrf_sub_name().map(|s| s.to_string())),
-            (self.meta.name.as_str(), Self::bypass_sub_name().map(|s| s.to_string())),
-        ];
-
-        connectors.extend(
-            self.splits
-                .iter()
-                .enumerate()
-                .map(|(i, _)| (self.meta.name.as_str(), Self::split_sub_name(i))),
-        );
-
-        connectors
-    }
-
-    pub fn input_connectors(&self, slot: Option<&NodeSlot>) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
-        if let Some(slot) = slot {
-            Err(SchemaError::InputNodeSlotNotSupported { slot: slot.clone() })
-        } else {
-            Ok(self.default_connectors())
-        }
-    }
-
-    pub fn output_connectors(&self, slot: Option<&NodeSlot>) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
-        let slot = match slot {
-            Some(s) => s.clone().try_into()?,
-            None => Self::DEFAULT_OUTPUT_SLOT,
-        };
-
-        let indices = match &slot {
-            RiverSplitWithGaugeOutputNodeSlot::River => self.default_connectors(),
-            RiverSplitWithGaugeOutputNodeSlot::Split { position } => {
-                if *position < self.splits.len() {
-                    vec![(self.meta.name.as_str(), Self::split_sub_name(*position))]
-                } else {
-                    return Err(SchemaError::NodeConnectionSlotNotFound {
-                        node: self.meta.name.clone(),
-                        slot: slot.into(),
-                    });
-                }
-            }
-            RiverSplitWithGaugeOutputNodeSlot::User { name } => {
-                match self
-                    .splits
-                    .iter()
-                    .position(|split| split.slot_name.as_ref().is_some_and(|s| s == name))
-                {
-                    Some(i) => vec![(self.meta.name.as_str(), Self::split_sub_name(i))],
-                    None => {
-                        return Err(SchemaError::NodeConnectionSlotNotFound {
-                            node: self.meta.name.clone(),
-                            slot: slot.into(),
-                        });
-                    }
-                }
-            }
-        };
-
-        Ok(indices)
-    }
 
     pub fn iter_output_slots(&self) -> impl Iterator<Item = NodeSlot> + '_ {
         [AbstractionOutputNodeSlot::River.into()]
@@ -199,15 +123,82 @@ impl RiverSplitWithGaugeNode {
 
 #[cfg(feature = "core")]
 impl RiverSplitWithGaugeNode {
-    fn split_agg_sub_name(i: usize) -> Option<String> {
-        Some(format!("split-agg-{i}"))
+    const DEFAULT_OUTPUT_SLOT: RiverSplitWithGaugeOutputNodeSlot = RiverSplitWithGaugeOutputNodeSlot::River;
+    fn mrf_sub_name(&self) -> UnresolvedNode {
+        UnresolvedNode::new(&self.meta.name, Some("mrf"))
     }
 
-    pub fn node_indices_for_flow_constraints(
+    fn bypass_sub_name(&self) -> UnresolvedNode {
+        UnresolvedNode::new(&self.meta.name, Some("bypass"))
+    }
+
+    fn split_sub_name(&self, i: usize) -> UnresolvedNode {
+        UnresolvedNode::new(&self.meta.name, Some(&format!("split-{i}")))
+    }
+
+    fn split_agg_sub_name(&self, i: usize) -> UnresolvedNode {
+        UnresolvedNode::new(&self.meta.name, Some(&format!("split-agg-{i}")))
+    }
+
+    /// These connectors are used for both incoming and Output edges on the default slot.
+    fn default_connectors(&self) -> Vec<UnresolvedNode> {
+        let mut connectors = vec![self.mrf_sub_name(), self.bypass_sub_name()];
+
+        connectors.extend(self.splits.iter().enumerate().map(|(i, _)| self.split_sub_name(i)));
+
+        connectors
+    }
+
+    pub fn input_connectors(&self, slot: Option<&NodeSlot>) -> Result<Vec<UnresolvedNode>, SchemaError> {
+        if let Some(slot) = slot {
+            Err(SchemaError::InputNodeSlotNotSupported { slot: slot.clone() })
+        } else {
+            Ok(self.default_connectors())
+        }
+    }
+
+    pub fn output_connectors(&self, slot: Option<&NodeSlot>) -> Result<Vec<UnresolvedNode>, SchemaError> {
+        let slot = match slot {
+            Some(s) => s.clone().try_into()?,
+            None => Self::DEFAULT_OUTPUT_SLOT,
+        };
+
+        let indices = match &slot {
+            RiverSplitWithGaugeOutputNodeSlot::River => self.default_connectors(),
+            RiverSplitWithGaugeOutputNodeSlot::Split { position } => {
+                if *position < self.splits.len() {
+                    vec![self.split_sub_name(*position)]
+                } else {
+                    return Err(SchemaError::NodeConnectionSlotNotFound {
+                        node: self.meta.name.clone(),
+                        slot: slot.into(),
+                    });
+                }
+            }
+            RiverSplitWithGaugeOutputNodeSlot::User { name } => {
+                match self
+                    .splits
+                    .iter()
+                    .position(|split| split.slot_name.as_ref().is_some_and(|s| s == name))
+                {
+                    Some(i) => vec![self.split_sub_name(i)],
+                    None => {
+                        return Err(SchemaError::NodeConnectionSlotNotFound {
+                            node: self.meta.name.clone(),
+                            slot: slot.into(),
+                        });
+                    }
+                }
+            }
+        };
+
+        Ok(indices)
+    }
+
+    pub fn nodes_for_flow_constraints(
         &self,
-        network: &pywr_core::network::Network,
         component: Option<NodeComponent>,
-    ) -> Result<Vec<NodeIndex>, SchemaError> {
+    ) -> Result<Vec<UnresolvedNode>, SchemaError> {
         // Use the default component if none is specified
         let component = match component {
             Some(c) => c.try_into()?,
@@ -219,94 +210,55 @@ impl RiverSplitWithGaugeNode {
             // There's currently no way to isolate the flows to the individual splits
             // Therefore, the only components are gross inflow and outflow
             RiverSplitWithGaugeNodeComponent::Inflow | RiverSplitWithGaugeNodeComponent::Outflow => {
-                let mut indices = vec![
-                    network
-                        .get_node_index_by_name(self.meta.name.as_str(), Self::mrf_sub_name())
-                        .ok_or_else(|| SchemaError::CoreNodeNotFound {
-                            name: self.meta.name.clone(),
-                            sub_name: Self::mrf_sub_name().map(String::from),
-                        })?,
-                    network
-                        .get_node_index_by_name(self.meta.name.as_str(), Self::bypass_sub_name())
-                        .ok_or_else(|| SchemaError::CoreNodeNotFound {
-                            name: self.meta.name.clone(),
-                            sub_name: Self::bypass_sub_name().map(String::from),
-                        })?,
-                ];
-
-                let split_idx: Vec<NodeIndex> = self
-                    .splits
-                    .iter()
-                    .enumerate()
-                    .map(|(i, _)| {
-                        network
-                            .get_node_index_by_name(self.meta.name.as_str(), Self::split_sub_name(i).as_deref())
-                            .ok_or_else(|| SchemaError::CoreNodeNotFound {
-                                name: self.meta.name.clone(),
-                                sub_name: Self::split_sub_name(i),
-                            })
-                    })
-                    .collect::<Result<_, _>>()?;
-
-                indices.extend(split_idx);
-                Ok(indices)
+                Ok(self.default_connectors())
             }
         }
     }
-    pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
-        // TODO do this properly
-        network.add_link_node(self.meta.name.as_str(), Self::mrf_sub_name())?;
-        let bypass_idx = network.add_link_node(self.meta.name.as_str(), Self::bypass_sub_name())?;
-
-        for (i, _) in self.splits.iter().enumerate() {
-            // Each split has a link node and an aggregated node to enforce the factors
-            let split_idx = network.add_link_node(self.meta.name.as_str(), Self::split_sub_name(i).as_deref())?;
-
-            // The factors will be set during the `set_constraints` method
-            network.add_aggregated_node(
-                self.meta.name.as_str(),
-                Self::split_agg_sub_name(i).as_deref(),
-                &[vec![bypass_idx], vec![split_idx]],
-                None,
-            )?;
-        }
-
-        Ok(())
-    }
-
-    pub fn set_constraints(
+    pub fn add_to_network(
         &self,
-        network: &mut pywr_core::network::Network,
+        network: &mut pywr_core::network::NetworkBuilder,
         args: &LoadArgs,
     ) -> Result<(), SchemaError> {
+        let mut mrf_node = pywr_core::node::NodeBuilder::link(self.mrf_sub_name());
+        let bypass_node = pywr_core::node::NodeBuilder::link(self.bypass_sub_name());
+
         // MRF applies as a maximum on the MRF node.
         if let Some(cost) = &self.mrf_cost {
             let value = cost.load(network, args, Some(&self.meta.name))?;
-            network.set_node_cost(self.meta.name.as_str(), Self::mrf_sub_name(), value.into())?;
+            mrf_node.cost(value);
         }
 
         if let Some(mrf) = &self.mrf {
             let value = mrf.load(network, args, Some(&self.meta.name))?;
-            network.set_node_max_flow(self.meta.name.as_str(), Self::mrf_sub_name(), value.into())?;
+            mrf_node.max_flow(value);
         }
 
         for (i, split) in self.splits.iter().enumerate() {
+            // Each split has a link node and an aggregated node to enforce the factors
+            let split_node = pywr_core::node::NodeBuilder::link(self.split_sub_name(i));
+
             // Set the factors for each split
-            let r = Relationship::new_proportion_factors(&[split.factor.load(network, args, Some(&self.meta.name))?]);
-            network.set_aggregated_node_relationship(
-                self.meta.name.as_str(),
-                Self::split_agg_sub_name(i).as_deref(),
-                Some(r),
-            )?;
+            let mut r = ProportionalFactorsBuilder::default();
+            r.factor(split.factor.load(network, args, Some(&self.meta.name))?);
+
+            // The factors will be set during the `set_constraints` method
+            let mut agg_node = pywr_core::AggregatedNodeBuilder::new(self.split_agg_sub_name(i));
+            agg_node
+                .nodes(vec![self.bypass_sub_name()])
+                .nodes(vec![self.split_sub_name(i)])
+                .relationship(Box::new(r));
+
+            network.agg_node(agg_node);
+            network.node(split_node);
         }
+
+        network.node(mrf_node);
+        network.node(bypass_node);
 
         Ok(())
     }
-    pub fn create_metric(
-        &self,
-        network: &pywr_core::network::Network,
-        attribute: Option<NodeAttribute>,
-    ) -> Result<MetricF64, SchemaError> {
+
+    pub fn create_metric(&self, attribute: Option<NodeAttribute>) -> Result<UnresolvedMetricF64, SchemaError> {
         // Use the default attribute if none is specified
         let attr = match attribute {
             Some(attr) => attr.try_into()?,
@@ -316,44 +268,15 @@ impl RiverSplitWithGaugeNode {
         // This gets the indices of all the link nodes
         // There's currently no way to isolate the flows to the individual splits
         // Therefore, the only metrics are gross inflow and outflow
-        let mut indices = vec![
-            network
-                .get_node_index_by_name(self.meta.name.as_str(), Self::mrf_sub_name())
-                .ok_or_else(|| SchemaError::CoreNodeNotFound {
-                    name: self.meta.name.clone(),
-                    sub_name: Self::mrf_sub_name().map(String::from),
-                })?,
-            network
-                .get_node_index_by_name(self.meta.name.as_str(), Self::bypass_sub_name())
-                .ok_or_else(|| SchemaError::CoreNodeNotFound {
-                    name: self.meta.name.clone(),
-                    sub_name: Self::bypass_sub_name().map(String::from),
-                })?,
-        ];
-
-        let split_idx: Vec<NodeIndex> = self
-            .splits
-            .iter()
-            .enumerate()
-            .map(|(i, _)| {
-                network
-                    .get_node_index_by_name(self.meta.name.as_str(), Self::split_sub_name(i).as_deref())
-                    .ok_or_else(|| SchemaError::CoreNodeNotFound {
-                        name: self.meta.name.clone(),
-                        sub_name: Self::split_sub_name(i),
-                    })
-            })
-            .collect::<Result<_, _>>()?;
-
-        indices.extend(split_idx);
+        let nodes = self.default_connectors();
 
         let metric = match attr {
-            RiverSplitWithGaugeNodeAttribute::Inflow => MetricF64::MultiNodeInFlow {
-                indices,
+            RiverSplitWithGaugeNodeAttribute::Inflow => UnresolvedMetricF64::MultiNodeInFlow {
+                nodes,
                 name: self.meta.name.to_string(),
             },
-            RiverSplitWithGaugeNodeAttribute::Outflow => MetricF64::MultiNodeOutFlow {
-                indices,
+            RiverSplitWithGaugeNodeAttribute::Outflow => UnresolvedMetricF64::MultiNodeOutFlow {
+                nodes,
                 name: self.meta.name.to_string(),
             },
         };

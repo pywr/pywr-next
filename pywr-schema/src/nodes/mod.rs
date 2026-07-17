@@ -55,15 +55,14 @@ mod water_treatment_works;
 // `virtual` is a reserved keyword in Rust, so we use `virtual_nodes` as the module name
 mod virtual_nodes;
 
-use crate::error::SchemaError;
 use crate::error::{ComponentConversionError, ConversionError};
 use crate::metric::Metric;
-#[cfg(feature = "core")]
-use crate::network::LoadArgs;
 use crate::network::NetworkSchema;
 use crate::parameters::Parameter;
 use crate::v1::{ConversionData, TryFromV1, TryIntoV2};
 use crate::visit::{VisitMetrics, VisitPaths};
+#[cfg(feature = "core")]
+use crate::{error::SchemaError, network::LoadArgs};
 pub use abstraction::AbstractionNode;
 pub use attributes::NodeAttribute;
 pub use components::NodeComponent;
@@ -80,7 +79,7 @@ pub use piecewise_link::{
 pub use piecewise_storage::{PiecewiseStorageNode, PiecewiseStorageNodeAttribute, PiecewiseStore};
 pub use placeholder::PlaceholderNode;
 #[cfg(feature = "core")]
-use pywr_core::metric::MetricF64;
+use pywr_core::{metric::UnresolvedMetricF64, node::UnresolvedNode};
 use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::nodes::{
     CoreNode as CoreNodeV1, Node as NodeV1, NodeMeta as NodeMetaV1, NodePosition as NodePositionV1,
@@ -340,38 +339,6 @@ impl Node {
         }
     }
 
-    /// Get the input connectors for this node.
-    ///
-    /// The `slot` argument is used for nodes that have multiple input connectors. If the node
-    /// does not have multiple input connectors, then a [`SchemaError`] is returned.
-    ///
-    /// The input connectors are returned as a vector of tuples, where the first element is the name of the
-    /// connector, and the second element is an optional sub-name. The sub-name is used for nodes
-    /// that have multiple internal nodes, such as a [`ReservoirNode`].
-    ///
-    pub fn input_connectors(&self, slot: Option<&NodeSlot>) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
-        match self {
-            Node::Input(n) => n.input_connectors(slot),
-            Node::Link(n) => n.input_connectors(slot),
-            Node::Output(n) => n.input_connectors(slot),
-            Node::Storage(n) => n.input_connectors(slot),
-            Node::Catchment(n) => n.input_connectors(slot),
-            Node::RiverGauge(n) => n.input_connectors(slot),
-            Node::LossLink(n) => n.input_connectors(slot),
-            Node::River(n) => n.input_connectors(slot),
-            Node::RiverSplitWithGauge(n) => n.input_connectors(slot),
-            Node::WaterTreatmentWorks(n) => n.input_connectors(slot),
-            Node::PiecewiseLink(n) => n.input_connectors(slot),
-            Node::PiecewiseStorage(n) => n.input_connectors(slot),
-            Node::Delay(n) => n.input_connectors(slot),
-            Node::Turbine(n) => n.input_connectors(slot),
-            Node::Reservoir(n) => n.input_connectors(slot),
-            // Deliberately do not take a slot for Placeholder nodes so they can be used with any slot
-            Node::Placeholder(n) => n.input_connectors(),
-            Node::Abstraction(n) => n.input_connectors(slot),
-        }
-    }
-
     /// Get any input (or "to") slots that this node has.
     pub fn iter_input_slots(&self) -> Option<Box<dyn Iterator<Item = NodeSlot> + '_>> {
         match self {
@@ -392,38 +359,6 @@ impl Node {
             Node::Reservoir(_) => None,
             Node::Placeholder(_) => None,
             Node::Abstraction(_) => None,
-        }
-    }
-
-    /// Get the output connectors for this node.
-    ///
-    /// The `slot` argument is used for nodes that have multiple output connectors. If the node
-    /// does not have multiple output connectors, then a [`SchemaError`] is returned.
-    ///
-    /// The output connectors are returned as a vector of tuples, where the first element is the name of the
-    /// connector, and the second element is an optional sub-name. The sub-name is used for nodes
-    /// that have multiple internal nodes, such as a [`ReservoirNode`].
-    ///
-    pub fn output_connectors(&self, slot: Option<&NodeSlot>) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
-        match self {
-            Node::Input(n) => n.output_connectors(slot),
-            Node::Link(n) => n.output_connectors(slot),
-            Node::Output(n) => n.output_connectors(slot),
-            Node::Storage(n) => n.output_connectors(slot),
-            Node::Catchment(n) => n.output_connectors(slot),
-            Node::RiverGauge(n) => n.output_connectors(slot),
-            Node::LossLink(n) => n.output_connectors(slot),
-            Node::River(n) => n.output_connectors(slot),
-            Node::RiverSplitWithGauge(n) => n.output_connectors(slot),
-            Node::WaterTreatmentWorks(n) => n.output_connectors(slot),
-            Node::PiecewiseLink(n) => n.output_connectors(slot),
-            Node::PiecewiseStorage(n) => n.output_connectors(slot),
-            Node::Delay(n) => n.output_connectors(slot),
-            Node::Turbine(n) => n.output_connectors(slot),
-            Node::Reservoir(n) => n.output_connectors(slot),
-            // Deliberately do not take a slot for Placeholder nodes so they can be used with any slot
-            Node::Placeholder(n) => n.output_connectors(),
-            Node::Abstraction(n) => n.output_connectors(slot),
         }
     }
 
@@ -524,29 +459,92 @@ impl Node {
 
 #[cfg(feature = "core")]
 impl Node {
-    pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
+    /// Get the input connectors for this node.
+    ///
+    /// The `slot` argument is used for nodes that have multiple input connectors. If the node
+    /// does not have multiple input connectors, then a [`SchemaError`] is returned.
+    ///
+    /// The input connectors are returned as a vector of unresolved node names.
+    ///
+    pub fn input_connectors(&self, slot: Option<&NodeSlot>) -> Result<Vec<UnresolvedNode>, SchemaError> {
         match self {
-            Node::Input(n) => n.add_to_model(network),
-            Node::Link(n) => n.add_to_model(network),
-            Node::Output(n) => n.add_to_model(network),
-            Node::Storage(n) => n.add_to_model(network),
-            Node::Catchment(n) => n.add_to_model(network),
-            Node::RiverGauge(n) => n.add_to_model(network),
-            Node::LossLink(n) => n.add_to_model(network),
-            Node::River(n) => n.add_to_model(network),
-            Node::RiverSplitWithGauge(n) => n.add_to_model(network),
-            Node::WaterTreatmentWorks(n) => n.add_to_model(network),
-            Node::PiecewiseLink(n) => n.add_to_model(network),
-            Node::PiecewiseStorage(n) => n.add_to_model(network),
-            Node::Delay(n) => n.add_to_model(network),
-            Node::Turbine(n) => n.add_to_model(network),
-            Node::Reservoir(n) => n.add_to_model(network),
-            Node::Placeholder(n) => n.add_to_model(),
-            Node::Abstraction(n) => n.add_to_model(network),
+            Node::Input(n) => n.input_connectors(slot),
+            Node::Link(n) => n.input_connectors(slot),
+            Node::Output(n) => n.input_connectors(slot),
+            Node::Storage(n) => n.input_connectors(slot),
+            Node::Catchment(n) => n.input_connectors(slot),
+            Node::RiverGauge(n) => n.input_connectors(slot),
+            Node::LossLink(n) => n.input_connectors(slot),
+            Node::River(n) => n.input_connectors(slot),
+            Node::RiverSplitWithGauge(n) => n.input_connectors(slot),
+            Node::WaterTreatmentWorks(n) => n.input_connectors(slot),
+            Node::PiecewiseLink(n) => n.input_connectors(slot),
+            Node::PiecewiseStorage(n) => n.input_connectors(slot),
+            Node::Delay(n) => n.input_connectors(slot),
+            Node::Turbine(n) => n.input_connectors(slot),
+            Node::Reservoir(n) => n.input_connectors(slot),
+            // Deliberately do not take a slot for Placeholder nodes so they can be used with any slot
+            Node::Placeholder(n) => n.input_connectors(),
+            Node::Abstraction(n) => n.input_connectors(slot),
         }
     }
 
-    /// Get the node indices for flow constraints that this node has added to the network.
+    /// Get the output connectors for this node.
+    ///
+    /// The `slot` argument is used for nodes that have multiple output connectors. If the node
+    /// does not have multiple output connectors, then a [`SchemaError`] is returned.
+    ///
+    /// The output connectors are returned as a vector of unresolved node names.
+    ///
+    pub fn output_connectors(&self, slot: Option<&NodeSlot>) -> Result<Vec<UnresolvedNode>, SchemaError> {
+        match self {
+            Node::Input(n) => n.output_connectors(slot),
+            Node::Link(n) => n.output_connectors(slot),
+            Node::Output(n) => n.output_connectors(slot),
+            Node::Storage(n) => n.output_connectors(slot),
+            Node::Catchment(n) => n.output_connectors(slot),
+            Node::RiverGauge(n) => n.output_connectors(slot),
+            Node::LossLink(n) => n.output_connectors(slot),
+            Node::River(n) => n.output_connectors(slot),
+            Node::RiverSplitWithGauge(n) => n.output_connectors(slot),
+            Node::WaterTreatmentWorks(n) => n.output_connectors(slot),
+            Node::PiecewiseLink(n) => n.output_connectors(slot),
+            Node::PiecewiseStorage(n) => n.output_connectors(slot),
+            Node::Delay(n) => n.output_connectors(slot),
+            Node::Turbine(n) => n.output_connectors(slot),
+            Node::Reservoir(n) => n.output_connectors(slot),
+            // Deliberately do not take a slot for Placeholder nodes so they can be used with any slot
+            Node::Placeholder(n) => n.output_connectors(),
+            Node::Abstraction(n) => n.output_connectors(slot),
+        }
+    }
+    pub fn add_to_network(
+        &self,
+        network: &mut pywr_core::network::NetworkBuilder,
+        args: &LoadArgs,
+    ) -> Result<(), SchemaError> {
+        match self {
+            Node::Input(n) => n.add_to_network(network, args),
+            Node::Link(n) => n.add_to_network(network, args),
+            Node::Output(n) => n.add_to_network(network, args),
+            Node::Storage(n) => n.add_to_network(network, args),
+            Node::Catchment(n) => n.add_to_model(network, args),
+            Node::RiverGauge(n) => n.add_to_network(network, args),
+            Node::LossLink(n) => n.add_to_network(network, args),
+            Node::River(n) => n.add_to_network(network, args),
+            Node::RiverSplitWithGauge(n) => n.add_to_network(network, args),
+            Node::WaterTreatmentWorks(n) => n.add_to_network(network, args),
+            Node::PiecewiseLink(n) => n.add_to_network(network, args),
+            Node::PiecewiseStorage(n) => n.add_to_network(network, args),
+            Node::Delay(n) => n.add_to_model(network, args),
+            Node::Turbine(n) => n.add_to_network(network, args),
+            Node::Reservoir(n) => n.add_to_network(network, args),
+            Node::Placeholder(n) => n.add_to_network(),
+            Node::Abstraction(n) => n.add_to_network(network, args),
+        }
+    }
+
+    /// Get the nodes for flow constraints that this node has added to the network.
     ///
     /// This is used to determine which core nodes should be used when this node is used
     /// in a flow constraint. Depending on the node type, this may return multiple
@@ -555,47 +553,43 @@ impl Node {
     /// to determine which component of the node is used in the flow constraint.
     ///
     /// If the node is not allowed in flow constraints it should return [`SchemaError::NodeNotAllowedInFlowConstraint`].
-    pub fn node_indices_for_flow_constraints(
+    pub fn nodes_for_flow_constraints(
         &self,
-        network: &pywr_core::network::Network,
         component: Option<NodeComponent>,
-    ) -> Result<Vec<pywr_core::node::NodeIndex>, SchemaError> {
+    ) -> Result<Vec<UnresolvedNode>, SchemaError> {
         match self {
-            Node::Input(n) => n.node_indices_for_flow_constraints(network, component),
-            Node::Link(n) => n.node_indices_for_flow_constraints(network, component),
-            Node::Output(n) => n.node_indices_for_flow_constraints(network, component),
+            Node::Input(n) => n.nodes_for_flow_constraints(component),
+            Node::Link(n) => n.nodes_for_flow_constraints(component),
+            Node::Output(n) => n.nodes_for_flow_constraints(component),
             Node::Storage(_) => Err(SchemaError::NodeNotAllowedInFlowConstraint),
-            Node::Catchment(n) => n.node_indices_for_flow_constraints(network, component),
-            Node::RiverGauge(n) => n.node_indices_for_flow_constraints(network, component),
-            Node::LossLink(n) => n.node_indices_for_flow_constraints(network, component),
-            Node::River(n) => n.node_indices_for_flow_constraints(network, component),
-            Node::RiverSplitWithGauge(n) => n.node_indices_for_flow_constraints(network, component),
-            Node::WaterTreatmentWorks(n) => n.node_indices_for_flow_constraints(network, component),
-            Node::PiecewiseLink(n) => n.node_indices_for_flow_constraints(network, component),
+            Node::Catchment(n) => n.nodes_for_flow_constraints(component),
+            Node::RiverGauge(n) => n.nodes_for_flow_constraints(component),
+            Node::LossLink(n) => n.nodes_for_flow_constraints(component),
+            Node::River(n) => n.nodes_for_flow_constraints(component),
+            Node::RiverSplitWithGauge(n) => n.nodes_for_flow_constraints(component),
+            Node::WaterTreatmentWorks(n) => n.nodes_for_flow_constraints(component),
+            Node::PiecewiseLink(n) => n.nodes_for_flow_constraints(component),
             Node::PiecewiseStorage(_) => Err(SchemaError::NodeNotAllowedInFlowConstraint),
-            Node::Delay(n) => n.node_indices_for_flow_constraints(network, component),
-            Node::Turbine(n) => n.node_indices_for_flow_constraints(network, component),
-            Node::Reservoir(n) => n.node_indices_for_flow_constraints(network, component),
-            Node::Placeholder(n) => n.node_indices_for_flow_constraints(),
-            Node::Abstraction(n) => n.node_indices_for_flow_constraints(network, component),
+            Node::Delay(n) => n.nodes_for_flow_constraints(component),
+            Node::Turbine(n) => n.nodes_for_flow_constraints(component),
+            Node::Reservoir(n) => n.nodes_for_flow_constraints(component),
+            Node::Placeholder(n) => n.nodes_for_flow_constraints(),
+            Node::Abstraction(n) => n.nodes_for_flow_constraints(component),
         }
     }
 
-    /// Get the node indices for storage nodes for this node.
+    /// Get the nodes for storage nodes for this node.
     ///
     /// This is used to determine which core nodes should be used when this node is used
     /// in an [`AggregatedStorageNode`].
     ///
     /// If the node is not allowed in storage constraints it should return [`SchemaError::NodeNotAllowedInStorageConstraint`].
-    pub fn node_indices_for_storage_constraints(
-        &self,
-        network: &pywr_core::network::Network,
-    ) -> Result<Vec<pywr_core::node::NodeIndex>, SchemaError> {
+    pub fn nodes_for_storage_constraints(&self) -> Result<Vec<UnresolvedNode>, SchemaError> {
         match self {
             Node::Input(_) => Err(SchemaError::NodeNotAllowedInStorageConstraint),
             Node::Link(_) => Err(SchemaError::NodeNotAllowedInStorageConstraint),
             Node::Output(_) => Err(SchemaError::NodeNotAllowedInStorageConstraint),
-            Node::Storage(n) => n.node_indices_for_storage_constraints(network),
+            Node::Storage(n) => n.nodes_for_storage_constraints(),
             Node::Catchment(_) => Err(SchemaError::NodeNotAllowedInStorageConstraint),
             Node::RiverGauge(_) => Err(SchemaError::NodeNotAllowedInStorageConstraint),
             Node::LossLink(_) => Err(SchemaError::NodeNotAllowedInStorageConstraint),
@@ -603,65 +597,39 @@ impl Node {
             Node::RiverSplitWithGauge(_) => Err(SchemaError::NodeNotAllowedInStorageConstraint),
             Node::WaterTreatmentWorks(_) => Err(SchemaError::NodeNotAllowedInStorageConstraint),
             Node::PiecewiseLink(_) => Err(SchemaError::NodeNotAllowedInStorageConstraint),
-            Node::PiecewiseStorage(n) => n.node_indices_for_storage_constraints(network),
+            Node::PiecewiseStorage(n) => n.nodes_for_storage_constraints(),
             Node::Delay(_) => Err(SchemaError::NodeNotAllowedInStorageConstraint),
             Node::Turbine(_) => Err(SchemaError::NodeNotAllowedInStorageConstraint),
-            Node::Reservoir(n) => n.node_indices_for_storage_constraints(network),
-            Node::Placeholder(n) => n.node_indices_for_storage_constraints(),
+            Node::Reservoir(n) => n.node_indices_for_storage_constraints(),
+            Node::Placeholder(n) => n.nodes_for_storage_constraints(),
             Node::Abstraction(_) => Err(SchemaError::NodeNotAllowedInStorageConstraint),
-        }
-    }
-
-    pub fn set_constraints(
-        &self,
-        network: &mut pywr_core::network::Network,
-        args: &LoadArgs,
-    ) -> Result<(), SchemaError> {
-        match self {
-            Node::Input(n) => n.set_constraints(network, args),
-            Node::Link(n) => n.set_constraints(network, args),
-            Node::Output(n) => n.set_constraints(network, args),
-            Node::Storage(n) => n.set_constraints(network, args),
-            Node::Catchment(n) => n.set_constraints(network, args),
-            Node::RiverGauge(n) => n.set_constraints(network, args),
-            Node::LossLink(n) => n.set_constraints(network, args),
-            Node::River(n) => n.set_constraints(network, args),
-            Node::RiverSplitWithGauge(n) => n.set_constraints(network, args),
-            Node::WaterTreatmentWorks(n) => n.set_constraints(network, args),
-            Node::PiecewiseLink(n) => n.set_constraints(network, args),
-            Node::PiecewiseStorage(n) => n.set_constraints(network, args),
-            Node::Delay(n) => n.set_constraints(network, args),
-            Node::Turbine(n) => n.set_constraints(network, args),
-            Node::Reservoir(n) => n.set_constraints(network, args),
-            Node::Placeholder(n) => n.set_constraints(),
-            Node::Abstraction(n) => n.set_constraints(network, args),
         }
     }
 
     /// Create a metric for the given attribute on this node.
     pub fn create_metric(
         &self,
-        network: &mut pywr_core::network::Network,
+        network: &mut pywr_core::network::NetworkBuilder,
         attribute: Option<NodeAttribute>,
-    ) -> Result<MetricF64, SchemaError> {
+    ) -> Result<UnresolvedMetricF64, SchemaError> {
         match self {
-            Node::Input(n) => n.create_metric(network, attribute),
-            Node::Link(n) => n.create_metric(network, attribute),
+            Node::Input(n) => n.create_metric(attribute),
+            Node::Link(n) => n.create_metric(attribute),
             Node::Output(n) => n.create_metric(network, attribute),
-            Node::Storage(n) => n.create_metric(network, attribute),
-            Node::Catchment(n) => n.create_metric(network, attribute),
-            Node::RiverGauge(n) => n.create_metric(network, attribute),
-            Node::LossLink(n) => n.create_metric(network, attribute),
-            Node::River(n) => n.create_metric(network, attribute),
-            Node::RiverSplitWithGauge(n) => n.create_metric(network, attribute),
-            Node::WaterTreatmentWorks(n) => n.create_metric(network, attribute),
-            Node::PiecewiseLink(n) => n.create_metric(network, attribute),
-            Node::PiecewiseStorage(n) => n.create_metric(network, attribute),
-            Node::Delay(n) => n.create_metric(network, attribute),
-            Node::Turbine(n) => n.create_metric(network, attribute),
-            Node::Reservoir(n) => n.create_metric(network, attribute),
+            Node::Storage(n) => n.create_metric(attribute),
+            Node::Catchment(n) => n.create_metric(attribute),
+            Node::RiverGauge(n) => n.create_metric(attribute),
+            Node::LossLink(n) => n.create_metric(attribute),
+            Node::River(n) => n.create_metric(attribute),
+            Node::RiverSplitWithGauge(n) => n.create_metric(attribute),
+            Node::WaterTreatmentWorks(n) => n.create_metric(attribute),
+            Node::PiecewiseLink(n) => n.create_metric(attribute),
+            Node::PiecewiseStorage(n) => n.create_metric(attribute),
+            Node::Delay(n) => n.create_metric(attribute),
+            Node::Turbine(n) => n.create_metric(attribute),
+            Node::Reservoir(n) => n.create_metric(attribute),
             Node::Placeholder(n) => n.create_metric(),
-            Node::Abstraction(n) => n.create_metric(network, attribute),
+            Node::Abstraction(n) => n.create_metric(attribute),
         }
     }
 }
@@ -695,10 +663,14 @@ pub enum NodeOrVirtualNode {
 
 #[cfg(feature = "core")]
 impl NodeOrVirtualNode {
-    pub fn add_to_model(&self, network: &mut pywr_core::network::Network, args: &LoadArgs) -> Result<(), SchemaError> {
+    pub fn add_to_model(
+        &self,
+        network: &mut pywr_core::network::NetworkBuilder,
+        args: &LoadArgs,
+    ) -> Result<(), SchemaError> {
         match self {
-            NodeOrVirtualNode::Node(n) => n.add_to_model(network),
-            NodeOrVirtualNode::Virtual(n) => n.add_to_model(network, args),
+            NodeOrVirtualNode::Node(n) => n.add_to_network(network, args),
+            NodeOrVirtualNode::Virtual(n) => n.add_to_network(network, args),
         }
     }
 }

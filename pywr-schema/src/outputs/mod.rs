@@ -29,14 +29,14 @@ pub enum Output {
 impl Output {
     pub fn add_to_model(
         &self,
-        network: &mut pywr_core::network::Network,
+        network: &mut pywr_core::network::NetworkBuilder,
         data_path: Option<&Path>,
         output_path: Option<&Path>,
     ) -> Result<(), SchemaError> {
         match self {
-            Self::CSV(o) => o.add_to_model(network, output_path),
-            Self::HDF5(o) => o.add_to_model(network, output_path),
-            Self::Memory(o) => o.add_to_model(network, data_path),
+            Self::CSV(o) => o.add_to_network(network, output_path),
+            Self::HDF5(o) => o.add_to_network(network, output_path),
+            Self::Memory(o) => o.add_to_network(network, data_path),
         }
     }
 

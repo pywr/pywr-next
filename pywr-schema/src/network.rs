@@ -446,22 +446,14 @@ impl NetworkSchema {
     }
 
     #[cfg(feature = "core")]
-    pub fn build_network(
+    pub fn add_to_network(
         &self,
+        network_builder: &mut pywr_core::network::NetworkBuilder,
         domain: &ModelDomain,
         data_path: Option<&Path>,
         output_path: Option<&Path>,
         inter_network_transfers: &[MultiNetworkTransfer],
-    ) -> Result<
-        (
-            pywr_core::network::Network,
-            LoadedTableCollection,
-            LoadedTimeseriesCollection,
-        ),
-        NetworkSchemaBuildError,
-    > {
-        let mut network = pywr_core::network::Network::default();
-
+    ) -> Result<(LoadedTableCollection, LoadedTimeseriesCollection), NetworkSchemaBuildError> {
         let tables = LoadedTableCollection::from_schema(self.tables.as_deref(), data_path)?;
         let timeseries = LoadedTimeseriesCollection::from_schema(self.timeseries.as_deref(), domain, data_path)?;
 
@@ -474,57 +466,28 @@ impl NetworkSchema {
             inter_network_transfers,
         };
 
-        // Create a combined list of nodes and virtual nodes
-        let mut remaining_nodes: Vec<NodeOrVirtualNode> = self
-            .nodes
-            .iter()
-            .map(|n| n.clone().into())
-            .chain(
-                self.virtual_nodes
-                    .clone()
-                    .unwrap_or_default()
-                    .into_iter()
-                    .map(|vn| vn.into()),
-            )
-            .collect();
+        for node in &self.nodes {
+            node.add_to_network(network_builder, &args)
+                .map_err(|source| NetworkSchemaBuildError::AddNodeError {
+                    name: node.name().to_string(),
+                    source: Box::new(source),
+                })?;
+        }
 
-        while !remaining_nodes.is_empty() {
-            let mut failed_nodes: Vec<NodeOrVirtualNode> = Vec::new();
-            let n = remaining_nodes.len();
-            for node in remaining_nodes.into_iter() {
-                if let Err(e) = node.add_to_model(&mut network, &args) {
-                    // Adding the node failed!
-                    match e {
-                        // And it failed because another node was not found.
-                        // Let's try to load more nodes and see if this one can be added later
-                        SchemaError::CoreNodeNotFound { .. } => failed_nodes.push(node),
-                        _ => {
-                            return match node {
-                                NodeOrVirtualNode::Node(n) => Err(NetworkSchemaBuildError::AddNodeError {
-                                    name: n.name().to_string(),
-                                    source: Box::new(e),
-                                }),
-                                NodeOrVirtualNode::Virtual(vn) => Err(NetworkSchemaBuildError::AddVirtualNodeError {
-                                    name: vn.name().to_string(),
-                                    source: Box::new(e),
-                                }),
-                            };
-                        }
+        if let Some(virtual_nodes) = &self.virtual_nodes {
+            for v_node in virtual_nodes {
+                v_node.add_to_network(network_builder, &args).map_err(|source| {
+                    NetworkSchemaBuildError::AddVirtualNodeError {
+                        name: v_node.name().to_string(),
+                        source: Box::new(source),
                     }
-                };
+                })?;
             }
-
-            if failed_nodes.len() == n {
-                // Could not load any nodes; must be a circular reference
-                return Err(NetworkSchemaBuildError::CircularNodeReference);
-            }
-
-            remaining_nodes = failed_nodes;
         }
 
         // Create the edges
         for edge in &self.edges {
-            edge.add_to_model(&mut network, &args)
+            edge.add_to_network(network_builder, &args)
                 .map_err(|source| NetworkSchemaBuildError::AddEdgeError {
                     from_node: edge.from_node.clone(),
                     to_node: edge.to_node.clone(),
@@ -532,84 +495,36 @@ impl NetworkSchema {
                 })?;
         }
 
-        // Gather all the parameters from the nodes
-        let mut remaining_parameters: Vec<(Option<&str>, Parameter)> = Vec::new();
+        // Add all the parameters from the nodes
         for node in &self.nodes {
             if let Some(local_parameters) = node.local_parameters() {
-                remaining_parameters.extend(local_parameters.iter().map(|p| (Some(node.name()), p.clone())));
+                for parameter in local_parameters {
+                    parameter
+                        .add_to_network(network_builder, &args, Some(node.name()))
+                        .map_err(|source| NetworkSchemaBuildError::AddLocalParameterError {
+                            parent: node.name().to_string(),
+                            name: parameter.name().to_string(),
+                            source: Box::new(source),
+                        })?;
+                }
             }
         }
         // Add any global parameters
         if let Some(parameters) = self.parameters.as_deref() {
-            remaining_parameters.extend(parameters.iter().map(|p| (None, p.clone())));
-        }
-
-        // Create all the parameters
-        while !remaining_parameters.is_empty() {
-            let mut failed_parameters: Vec<(Option<&str>, Parameter)> = Vec::new();
-            let n = remaining_parameters.len();
-            for (parent, parameter) in remaining_parameters.into_iter() {
-                if let Err(e) = parameter.add_to_model(&mut network, &args, parent) {
-                    // Adding the parameter failed!
-                    match e {
-                        // And it failed because another parameter was not found.
-                        // Let's try to load more parameters and see if this one can be added later
-                        SchemaError::CoreParameterNotFound { .. } => failed_parameters.push((parent, parameter)),
-                        _ => {
-                            return match parent {
-                                Some(p) => Err(NetworkSchemaBuildError::AddLocalParameterError {
-                                    parent: p.to_string(),
-                                    name: parameter.name().to_string(),
-                                    source: Box::new(e),
-                                }),
-                                None => {
-                                    // Global parameter
-                                    Err(NetworkSchemaBuildError::AddParameterError {
-                                        name: parameter.name().to_string(),
-                                        source: Box::new(e),
-                                    })
-                                }
-                            };
-                        }
-                    };
-                }
-            }
-
-            if failed_parameters.len() == n {
-                // Could not load any parameters; must be a circular reference
-                let failed_names = failed_parameters.iter().map(|(_n, p)| p.name().to_string()).collect();
-                return Err(NetworkSchemaBuildError::CircularParameterReference(failed_names));
-            }
-
-            remaining_parameters = failed_parameters;
-        }
-
-        // Apply the constraints to the nodes
-        for node in &self.nodes {
-            node.set_constraints(&mut network, &args).map_err(|source| {
-                NetworkSchemaBuildError::SetNodeConstraintsError {
-                    name: node.name().to_string(),
-                    source: Box::new(source),
-                }
-            })?;
-        }
-
-        // Apply the constraints to the virtual nodes
-        if let Some(virtual_nodes) = &self.virtual_nodes {
-            for node in virtual_nodes {
-                node.set_constraints(&mut network, &args).map_err(|source| {
-                    NetworkSchemaBuildError::SetVirtualNodeConstraintsError {
-                        name: node.name().to_string(),
+            for parameter in parameters {
+                parameter
+                    .add_to_network(network_builder, &args, None)
+                    .map_err(|source| NetworkSchemaBuildError::AddParameterError {
+                        name: parameter.name().to_string(),
                         source: Box::new(source),
-                    }
-                })?;
+                    })?;
             }
         }
 
         // Create all of the metric sets
         if let Some(metric_sets) = &self.metric_sets {
             for metric_set in metric_sets {
-                metric_set.add_to_model(&mut network, &args).map_err(|source| {
+                metric_set.add_to_network(network_builder, &args).map_err(|source| {
                     NetworkSchemaBuildError::AddMetricSetError {
                         name: metric_set.name.clone(),
                         source: Box::new(source),
@@ -622,7 +537,7 @@ impl NetworkSchema {
         if let Some(outputs) = &self.outputs {
             for output in outputs {
                 output
-                    .add_to_model(&mut network, data_path, output_path)
+                    .add_to_model(network_builder, data_path, output_path)
                     .map_err(|source| NetworkSchemaBuildError::AddOutputError {
                         name: output.name().to_string(),
                         source: Box::new(source),
@@ -630,7 +545,7 @@ impl NetworkSchema {
             }
         }
 
-        Ok((network, tables, timeseries))
+        Ok((tables, timeseries))
     }
 }
 

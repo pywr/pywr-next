@@ -23,7 +23,6 @@ use libc::c_void;
 pub use settings::build_highs_settings_py;
 pub use settings::{HighsSolverSettings, HighsSolverSettingsBuilder};
 use std::ffi::CString;
-use std::ops::Deref;
 use std::ptr::null;
 use std::time::Instant;
 use thiserror::Error;
@@ -426,7 +425,7 @@ impl Solver for HighsSolver {
         network_state.reset();
         let start_save_solution = Instant::now();
 
-        for edge in network.edges().deref() {
+        for edge in network.edges() {
             let col = self.builder.col_for_edge(&edge.index()) as usize;
             let flow = solution[col];
             network_state.add_flow(edge, timestep, flow)?;

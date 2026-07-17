@@ -3,7 +3,7 @@
     "title": "Abstraction 1",
     "comment": "Test behaviour of an abstraction node constrained by an MRF and licence"
   },
-  "timestepper": {
+  "time": {
     "start": "2021-01-01",
     "end": "2021-01-07",
     "timestep": {

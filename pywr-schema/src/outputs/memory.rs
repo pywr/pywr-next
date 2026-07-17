@@ -2,7 +2,7 @@
 use crate::SchemaError;
 use crate::agg_funcs::AggFunc;
 #[cfg(feature = "core")]
-use pywr_core::recorders::MemoryRecorder;
+use pywr_core::recorders::MemoryRecorderBuilder;
 use pywr_schema_macros::{PywrVisitPaths, skip_serializing_none};
 use schemars::JsonSchema;
 #[cfg(feature = "core")]
@@ -55,21 +55,19 @@ pub struct MemoryOutput {
 
 #[cfg(feature = "core")]
 impl MemoryOutput {
-    pub fn add_to_model(
+    pub fn add_to_network(
         &self,
-        network: &mut pywr_core::network::Network,
+        network: &mut pywr_core::network::NetworkBuilder,
         data_path: Option<&Path>,
     ) -> Result<(), SchemaError> {
-        let metric_set_idx = network.get_metric_set_index_by_name(&self.metric_set)?;
-
-        let recorder = MemoryRecorder::new(
+        let recorder = MemoryRecorderBuilder::new(
             &self.name,
-            metric_set_idx,
+            &self.metric_set,
             self.aggregation.clone().unwrap_or_default().load(data_path)?,
             self.order.map(|o| o.into()).unwrap_or_default(),
         );
 
-        network.add_recorder(Box::new(recorder))?;
+        network.recorder(Box::new(recorder));
 
         Ok(())
     }
@@ -109,7 +107,8 @@ mod tests {
 
         let temp_dir = TempDir::new().unwrap();
 
-        let model = schema.build_model(None, Some(temp_dir.path())).unwrap();
+        let builder = schema.create_model_builder(None, Some(temp_dir.path())).unwrap();
+        let model = builder.build().unwrap();
 
         let result = model.run::<ClpSolver>(&ClpSolverSettings::default()).unwrap();
 

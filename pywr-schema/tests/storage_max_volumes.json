@@ -4,7 +4,7 @@
     "description": "Several examples of storage nodes with different max volumes.",
     "minimum_version": "0.1"
   },
-  "timestepper": {
+  "time": {
     "start": "2015-01-01",
     "end": "2015-12-31",
     "timestep": {

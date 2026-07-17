@@ -1,67 +1,9 @@
 #![warn(clippy::pedantic)]
 use crate::NodeIndex;
 use crate::metric::MetricF64;
-use crate::node::NodeMeta;
-use std::fmt::Display;
-use std::ops::{Deref, DerefMut};
-
-#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Debug)]
-pub struct AggregatedStorageNodeIndex(usize);
-
-impl Deref for AggregatedStorageNodeIndex {
-    type Target = usize;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl Display for AggregatedStorageNodeIndex {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.0.fmt(f)
-    }
-}
-
-#[derive(Default)]
-pub struct AggregatedStorageNodeVec {
-    nodes: Vec<AggregatedStorageNode>,
-}
-
-impl Deref for AggregatedStorageNodeVec {
-    type Target = Vec<AggregatedStorageNode>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.nodes
-    }
-}
-
-impl DerefMut for AggregatedStorageNodeVec {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.nodes
-    }
-}
-
-impl AggregatedStorageNodeVec {
-    pub fn get(&self, index: AggregatedStorageNodeIndex) -> Option<&AggregatedStorageNode> {
-        self.nodes.get(index.0)
-    }
-
-    pub fn get_mut(&mut self, index: AggregatedStorageNodeIndex) -> Option<&mut AggregatedStorageNode> {
-        self.nodes.get_mut(index.0)
-    }
-
-    pub fn push_new(
-        &mut self,
-        name: &str,
-        sub_name: Option<&str>,
-        nodes: Vec<NodeIndex>,
-    ) -> AggregatedStorageNodeIndex {
-        let node_index = AggregatedStorageNodeIndex(self.nodes.len());
-        let node = AggregatedStorageNode::new(node_index, name, sub_name, nodes);
-        self.nodes.push(node);
-        node_index
-    }
-}
+use crate::network::{AggregatedStorageNodeIndex, ResolutionMaps};
+use crate::node::{NodeMeta, UnresolvedNode};
+use thiserror::Error;
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct AggregatedStorageNode {
@@ -70,27 +12,24 @@ pub struct AggregatedStorageNode {
 }
 
 impl AggregatedStorageNode {
-    pub fn new(index: AggregatedStorageNodeIndex, name: &str, sub_name: Option<&str>, nodes: Vec<NodeIndex>) -> Self {
-        Self {
-            meta: NodeMeta::new(index, name, sub_name),
-            nodes,
-        }
-    }
-
+    #[must_use]
     pub fn name(&self) -> &str {
         self.meta.name()
     }
 
     /// Get a node's sub-name
+    #[must_use]
     pub fn sub_name(&self) -> Option<&str> {
         self.meta.sub_name()
     }
 
     /// Get a node's full name
+    #[must_use]
     pub fn full_name(&self) -> (&str, Option<&str>) {
         self.meta.full_name()
     }
 
+    #[must_use]
     pub fn index(&self) -> AggregatedStorageNodeIndex {
         *self.meta.index()
     }
@@ -99,7 +38,81 @@ impl AggregatedStorageNode {
         self.nodes.iter()
     }
 
+    #[must_use]
     pub fn default_metric(&self) -> Vec<MetricF64> {
         self.nodes.iter().map(|n| MetricF64::NodeOutFlow(*n)).collect()
+    }
+}
+
+#[derive(Debug, Error)]
+pub enum AggregatedStorageNodeBuilderError {
+    #[error("Index not found in resolution map.")]
+    IndexNotFound,
+    #[error("Reference to node not found.")]
+    NodeIndexNotFound { node: UnresolvedNode },
+}
+
+#[derive(Debug)]
+pub struct AggregatedStorageNodeBuilder {
+    name: UnresolvedNode,
+    nodes: Vec<UnresolvedNode>,
+}
+
+impl AggregatedStorageNodeBuilder {
+    pub fn new<N: Into<UnresolvedNode>>(name: N) -> Self {
+        let name = name.into();
+
+        Self {
+            name,
+            nodes: Vec::new(),
+        }
+    }
+
+    #[must_use]
+    pub fn name(&self) -> &UnresolvedNode {
+        &self.name
+    }
+
+    pub fn sub_name(&mut self, sub_name: &str) -> &mut Self {
+        self.name.set_sub_name(Some(sub_name));
+        self
+    }
+
+    pub fn node(&mut self, node: UnresolvedNode) -> &mut Self {
+        self.nodes.push(node);
+        self
+    }
+
+    /// Try to construct an [`AggregatedStorageNode`] from this builder.
+    ///
+    /// # Errors
+    ///
+    /// The construction will fail if the name of the aggregated storage node is not found in the
+    /// resolution maps, or if any of the nodes referenced by this builder are not found in the
+    /// resolution maps.
+    ///
+    pub fn build(
+        &self,
+        resolution_maps: &ResolutionMaps,
+    ) -> Result<AggregatedStorageNode, AggregatedStorageNodeBuilderError> {
+        let index = resolution_maps
+            .aggregated_storage_nodes
+            .get(&self.name)
+            .ok_or(AggregatedStorageNodeBuilderError::IndexNotFound)?;
+        let meta = NodeMeta::from_unresolved_name(self.name.clone(), *index);
+
+        let nodes = self
+            .nodes
+            .iter()
+            .map(|unresolved| {
+                resolution_maps.nodes.get(unresolved).copied().ok_or_else(|| {
+                    AggregatedStorageNodeBuilderError::NodeIndexNotFound {
+                        node: unresolved.clone(),
+                    }
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(AggregatedStorageNode { meta, nodes })
     }
 }

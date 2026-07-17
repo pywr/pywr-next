@@ -10,7 +10,7 @@ use crate::parameters::ParameterMeta;
 use crate::v1::{ConversionData, TryFromV1, TryIntoV2};
 use crate::visit::VisitPaths;
 #[cfg(feature = "core")]
-use ndarray::{Array2, ShapeError, s};
+use ndarray::{Array2, ShapeError};
 pub use pandas::PandasTimeseries;
 #[cfg(feature = "core")]
 use polars::error::PolarsError;
@@ -26,7 +26,7 @@ use pyo3::{PyErr, pyclass};
 #[cfg(feature = "core")]
 use pywr_core::{
     models::ModelDomain,
-    parameters::{Array1Parameter, Array2Parameter, ParameterIndex, ParameterName},
+    parameters::{Array1ParameterBuilder, Array2ParameterBuilder, ParameterName},
 };
 use pywr_schema_macros::skip_serializing_none;
 use pywr_v1_schema::parameters::DataFrameParameter as DataFrameParameterV1;
@@ -72,7 +72,7 @@ pub enum TimeseriesError {
     PythonNotEnabled,
     #[cfg(feature = "core")]
     #[error("Scenario error: {0}")]
-    Scenario(#[from] pywr_core::scenario::ScenarioError),
+    Scenario(#[from] pywr_core::scenario::ScenarioDomainBuilderError),
     #[cfg(feature = "core")]
     #[error("Shape error: {0}")]
     NdarrayShape(#[from] ShapeError),
@@ -190,10 +190,10 @@ impl LoadedTimeseriesCollection {
 
     pub fn load_column_f64(
         &self,
-        network: &mut pywr_core::network::Network,
+        network: &mut pywr_core::network::NetworkBuilder,
         name: &str,
         col: &str,
-    ) -> Result<ParameterIndex<f64>, TimeseriesError> {
+    ) -> Result<ParameterName, TimeseriesError> {
         let df = self
             .timeseries
             .get(name)
@@ -203,21 +203,20 @@ impl LoadedTimeseriesCollection {
         let array = series.cast(&Float64)?.f64()?.to_ndarray()?.to_owned();
         let name = ParameterName::new(col, Some(name));
 
-        match network.get_parameter_index_by_name(&name) {
-            Some(idx) => Ok(idx),
-            None => {
-                let p = Array1Parameter::new(name, array, None);
-                Ok(network.add_simple_parameter(Box::new(p))?)
-            }
+        if !network.parameters().contains_name(&name) {
+            let p = Array1ParameterBuilder::new(name.clone(), array);
+            network.parameters().f64(Box::new(p));
         }
+
+        Ok(name)
     }
 
     pub fn load_column_usize(
         &self,
-        network: &mut pywr_core::network::Network,
+        network: &mut pywr_core::network::NetworkBuilder,
         name: &str,
         col: &str,
-    ) -> Result<ParameterIndex<u64>, TimeseriesError> {
+    ) -> Result<ParameterName, TimeseriesError> {
         let df = self
             .timeseries
             .get(name)
@@ -227,20 +226,19 @@ impl LoadedTimeseriesCollection {
         let array = series.cast(&UInt64)?.u64()?.to_ndarray()?.to_owned();
         let name = ParameterName::new(col, Some(name));
 
-        match network.get_index_parameter_index_by_name(&name) {
-            Some(idx) => Ok(idx),
-            None => {
-                let p = Array1Parameter::new(name, array, None);
-                Ok(network.add_simple_index_parameter(Box::new(p))?)
-            }
+        if !network.parameters().contains_name(&name) {
+            let p = Array1ParameterBuilder::new(name.clone(), array);
+            network.parameters().u64(Box::new(p));
         }
+
+        Ok(name)
     }
 
     pub fn load_single_column_f64(
         &self,
-        network: &mut pywr_core::network::Network,
+        network: &mut pywr_core::network::NetworkBuilder,
         name: &str,
-    ) -> Result<ParameterIndex<f64>, TimeseriesError> {
+    ) -> Result<ParameterName, TimeseriesError> {
         let df = self
             .timeseries
             .get(name)
@@ -262,20 +260,19 @@ impl LoadedTimeseriesCollection {
         let array = series.cast(&Float64)?.f64()?.to_ndarray()?.to_owned();
         let name = ParameterName::new(col, Some(name));
 
-        match network.get_parameter_index_by_name(&name) {
-            Some(idx) => Ok(idx),
-            None => {
-                let p = Array1Parameter::new(name, array, None);
-                Ok(network.add_simple_parameter(Box::new(p))?)
-            }
+        if !network.parameters().contains_name(&name) {
+            let p = Array1ParameterBuilder::new(name.clone(), array);
+            network.parameters().f64(Box::new(p));
         }
+
+        Ok(name)
     }
 
     pub fn load_single_column_usize(
         &self,
-        network: &mut pywr_core::network::Network,
+        network: &mut pywr_core::network::NetworkBuilder,
         name: &str,
-    ) -> Result<ParameterIndex<u64>, TimeseriesError> {
+    ) -> Result<ParameterName, TimeseriesError> {
         let df = self
             .timeseries
             .get(name)
@@ -297,98 +294,62 @@ impl LoadedTimeseriesCollection {
         let array = series.cast(&UInt64)?.u64()?.to_ndarray()?.to_owned();
         let name = ParameterName::new(col, Some(name));
 
-        match network.get_index_parameter_index_by_name(&name) {
-            Some(idx) => Ok(idx),
-            None => {
-                let p = Array1Parameter::new(name, array, None);
-                Ok(network.add_simple_index_parameter(Box::new(p))?)
-            }
+        if !network.parameters().contains_name(&name) {
+            let p = Array1ParameterBuilder::new(name.clone(), array);
+            network.parameters().u64(Box::new(p));
         }
+
+        Ok(name)
     }
 
     /// Load a timeseries dataframe as a 2D array F64 parameter.
     pub fn load_df_f64(
         &self,
-        network: &mut pywr_core::network::Network,
+        network: &mut pywr_core::network::NetworkBuilder,
         name: &str,
-        domain: &ModelDomain,
         scenario: &str,
-    ) -> Result<ParameterIndex<f64>, TimeseriesError> {
-        let scenario_group_index = domain.scenarios().group_index(scenario)?;
+    ) -> Result<ParameterName, TimeseriesError> {
         let df = self
             .timeseries
             .get(name)
             .ok_or(TimeseriesError::TimeseriesNotFound(name.to_string()))?;
 
         // Original array as loaded from the timeseries
-        let mut array: Array2<f64> = df.to_ndarray::<Float64Type>(IndexOrder::default())?;
-
-        // If there is a scenario subset then we can reduce the data to align with the scenarios
-        // that are actually used in the model.
-        if let Some(subset) = domain.scenarios().group_scenario_subset(scenario)? {
-            array = subset_array2(&array, subset)?;
-        }
+        let array: Array2<f64> = df.to_ndarray::<Float64Type>(IndexOrder::default())?;
 
         let name = ParameterName::new(scenario, Some(name));
-
-        match network.get_parameter_index_by_name(&name) {
-            Some(idx) => Ok(idx),
-            None => {
-                let p = Array2Parameter::new(name, array, scenario_group_index, None);
-                Ok(network.add_simple_parameter(Box::new(p))?)
-            }
+        if !network.parameters().contains_name(&name) {
+            let p = Array2ParameterBuilder::new(name.clone(), array, scenario);
+            network.parameters().f64(Box::new(p));
         }
+
+        Ok(name)
     }
 
     /// Load a timeseries dataframe as a 2D array Usize parameter.
     pub fn load_df_usize(
         &self,
-        network: &mut pywr_core::network::Network,
+        network: &mut pywr_core::network::NetworkBuilder,
         name: &str,
-        domain: &ModelDomain,
-        scenario: &str,
-    ) -> Result<ParameterIndex<u64>, TimeseriesError> {
-        let scenario_group_index = domain.scenarios().group_index(scenario)?;
 
+        scenario: &str,
+    ) -> Result<ParameterName, TimeseriesError> {
         let df = self
             .timeseries
             .get(name)
             .ok_or(TimeseriesError::TimeseriesNotFound(name.to_string()))?;
 
-        let mut array: Array2<u64> = df.to_ndarray::<UInt64Type>(IndexOrder::default())?;
-
-        // If there is a scenario subset then we can reduce the data to align with the scenarios
-        // that are actually used in the model.
-        if let Some(subset) = domain.scenarios().group_scenario_subset(scenario)? {
-            array = subset_array2(&array, subset)?;
-        }
+        let array: Array2<u64> = df.to_ndarray::<UInt64Type>(IndexOrder::default())?;
 
         let name = ParameterName::new(scenario, Some(name));
 
-        match network.get_index_parameter_index_by_name(&name) {
-            Some(idx) => Ok(idx),
-            None => {
-                let p = Array2Parameter::new(name, array, scenario_group_index, None);
-                Ok(network.add_simple_index_parameter(Box::new(p))?)
-            }
+        if !network.parameters().contains_name(&name) {
+            let p = Array2ParameterBuilder::new(name.clone(), array, scenario);
+            network.parameters().u64(Box::new(p));
         }
-    }
-}
 
-/// Create a subset of a 2D array based on the column indices.
-///
-/// This function is used to reduce the size of a timeseries dataframe to only include the columns
-/// that are used in a simulation.
-#[cfg(feature = "core")]
-pub fn subset_array2<T>(array: &Array2<T>, subset: &[usize]) -> Result<Array2<T>, ShapeError>
-where
-    T: Copy,
-{
-    // Slice the array to only include the columns that are used in the scenario
-    let slices = subset.iter().map(|c| array.slice(s![.., *c])).collect::<Vec<_>>();
-    // Stack the slices to create a new array; this should be infallible because
-    // the slices are all the same length.
-    ndarray::stack(ndarray::Axis(1), &slices)
+        Ok(name)
+    }
 }
 
 /// Convert timeseries inputs to this schema.

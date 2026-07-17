@@ -1,8 +1,6 @@
 #[cfg(feature = "core")]
 use crate::SchemaError;
 use crate::parameters::ParameterMeta;
-#[cfg(feature = "core")]
-use pywr_core::parameters::ParameterIndex;
 use pywr_schema_macros::PywrVisitAll;
 use schemars::JsonSchema;
 
@@ -21,7 +19,7 @@ pub struct PlaceholderParameter {
 
 #[cfg(feature = "core")]
 impl PlaceholderParameter {
-    pub fn add_to_model(&self) -> Result<ParameterIndex<f64>, SchemaError> {
+    pub fn add_to_network(&self) -> Result<(), SchemaError> {
         Err(SchemaError::PlaceholderParameterNotAllowed {
             name: self.meta.name.clone(),
         })
@@ -43,7 +41,7 @@ mod test {
         };
 
         // Attempt to add the placeholder parameter to a model
-        let result = placeholder.add_to_model();
+        let result = placeholder.add_to_network();
         assert!(result.is_err());
         assert!(matches!(
             result,

@@ -1,8 +1,10 @@
 use crate::models::ModelDomain;
 use crate::network::{
-    Network, NetworkFinaliseError, NetworkRecorderSaveError, NetworkRecorderSetupError, NetworkResult,
-    NetworkSetupError, NetworkSolverSetupError, NetworkState, NetworkStepError, NetworkTimings, RunDuration,
+    Network, NetworkBuildError, NetworkBuilder, NetworkFinaliseError, NetworkRecorderSaveError,
+    NetworkRecorderSetupError, NetworkResult, NetworkSetupError, NetworkSolverSetupError, NetworkState,
+    NetworkStepError, NetworkTimings, RunDuration,
 };
+use crate::parameters::ParameterCollectionIdMismatchError;
 use crate::recorders::RecorderInternalState;
 #[cfg(all(feature = "cbc", feature = "pyo3"))]
 use crate::solvers::{CbcSolver, build_cbc_settings_py};
@@ -19,7 +21,7 @@ use crate::timestep::Timestep;
 #[cfg(feature = "pyo3")]
 use pyo3::{Bound, PyErr, PyResult, Python, exceptions::PyRuntimeError, pyclass, pymethods, types::PyDict};
 use rayon::ThreadPool;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use thiserror::Error;
 use tracing::{debug, info};
 
@@ -79,6 +81,11 @@ pub enum ModelStepError {
 pub enum ModelFinaliseError {
     #[error("Error finalising network: {0}")]
     NetworkFinaliseError(#[from] NetworkFinaliseError),
+    #[error("Timing data from a different network: {source}")]
+    TimingMismatchError {
+        #[source]
+        source: ParameterCollectionIdMismatchError,
+    },
 }
 
 #[derive(Debug, Error)]
@@ -119,12 +126,14 @@ impl ModelTimings {
     }
 
     /// Print summary statistics of the model run.
-    pub fn print_summary_statistics(&self, network: &Network) {
+    pub fn print_summary_statistics(&self, network: &Network) -> Result<(), ParameterCollectionIdMismatchError> {
         info!("Run timing statistics:");
         let total_duration = self.run_duration.total_duration().as_secs_f64();
         info!("{: <24} | {: <10}", "Metric", "Value");
         self.run_duration.print_table();
-        self.network_timings.print_table(total_duration, network);
+        self.network_timings.print_table(total_duration, network)?;
+
+        Ok(())
     }
 }
 
@@ -180,7 +189,7 @@ impl ModelResult {
         format!(
             "<ModelResult with {} recorder results; {} scenarios completed in {:.2} seconds with speed {:.2} time-steps/second>",
             self.network_result.len(),
-            self.domain.scenarios.len(),
+            self.domain.scenario.len(),
             self.timings.total_duration(),
             self.timings.speed()
         )
@@ -239,7 +248,7 @@ impl Model {
         <S as Solver>::Settings: SolverSettings,
     {
         let timesteps = self.domain.time.timesteps();
-        let scenario_indices = self.domain.scenarios.indices();
+        let scenario_indices = self.domain.scenario.indices();
 
         let state = self
             .network
@@ -269,7 +278,7 @@ impl Model {
         <S as MultiStateSolver>::Settings: SolverSettings,
     {
         let timesteps = self.domain.time.timesteps();
-        let scenario_indices = self.domain.scenarios.indices();
+        let scenario_indices = self.domain.scenario.indices();
 
         let state = self
             .network
@@ -308,7 +317,7 @@ impl Model {
             .get(state.current_time_step_idx)
             .ok_or(ModelStepError::EndOfTimesteps)?;
 
-        let scenario_indices = self.domain.scenarios.indices();
+        let scenario_indices = self.domain.scenario.indices();
         debug!("Starting timestep {:?}", timestep);
 
         let solvers = &mut state.solvers;
@@ -370,7 +379,7 @@ impl Model {
             .get(state.current_time_step_idx)
             .ok_or(ModelStepError::EndOfTimesteps)?;
 
-        let scenario_indices = self.domain.scenarios.indices();
+        let scenario_indices = self.domain.scenario.indices();
         debug!("Starting timestep {:?}", timestep);
 
         let solvers = &mut state.solvers;
@@ -418,7 +427,7 @@ impl Model {
         let network_result = self
             .network
             .finalise(
-                self.domain.scenarios.indices(),
+                self.domain.scenario.indices(),
                 state.state.all_metric_set_internal_states_mut(),
                 state.recorder_state,
             )
@@ -427,7 +436,9 @@ impl Model {
         // End the global timer and print the run statistics
         timings.finish();
 
-        timings.print_summary_statistics(&self.network);
+        timings
+            .print_summary_statistics(&self.network)
+            .map_err(|source| ModelFinaliseError::TimingMismatchError { source })?;
 
         Ok(ModelResult {
             network_result,
@@ -448,7 +459,7 @@ impl Model {
         let network_result = self
             .network
             .finalise(
-                self.domain.scenarios.indices(),
+                self.domain.scenario.indices(),
                 state.state.all_metric_set_internal_states_mut(),
                 state.recorder_state,
             )
@@ -457,7 +468,9 @@ impl Model {
         // End the global timer and print the run statistics
         timings.finish();
 
-        timings.print_summary_statistics(&self.network);
+        timings
+            .print_summary_statistics(&self.network)
+            .map_err(|source| ModelFinaliseError::TimingMismatchError { source })?;
 
         Ok(ModelResult {
             network_result,
@@ -517,7 +530,7 @@ impl Model {
 
             timings
                 .run_duration
-                .complete_scenarios(self.domain.scenarios.indices().len());
+                .complete_scenarios(self.domain.scenario.indices().len());
         }
 
         Ok(())
@@ -569,7 +582,7 @@ impl Model {
 
             timings
                 .run_duration
-                .complete_scenarios(self.domain.scenarios.indices().len());
+                .complete_scenarios(self.domain.scenario.indices().len());
         }
 
         Ok(())
@@ -597,6 +610,43 @@ impl Model {
     {
         let result = py.detach(|| self.run_multi_scenario::<S>(settings))?;
         Ok(result)
+    }
+}
+
+#[derive(Debug, Error)]
+pub enum ModelBuilderError {
+    #[error("Error building network: {0}")]
+    NetworkBuildError(#[from] NetworkBuildError),
+}
+
+#[cfg(feature = "pyo3")]
+impl From<ModelBuilderError> for PyErr {
+    fn from(err: ModelBuilderError) -> PyErr {
+        PyRuntimeError::new_err(err.to_string())
+    }
+}
+
+pub struct ModelBuilder {
+    domain: ModelDomain,
+    network: NetworkBuilder,
+}
+
+impl ModelBuilder {
+    pub fn new(domain: ModelDomain, network: NetworkBuilder) -> Self {
+        Self { domain, network }
+    }
+
+    /// Get a reference to the [`NetworkBuilder`]
+    pub fn network_builder(&mut self) -> &mut NetworkBuilder {
+        &mut self.network
+    }
+
+    pub fn build(self) -> Result<Model, ModelBuilderError> {
+        let (network, _) = self.network.build(&self.domain, &HashMap::new())?;
+        Ok(Model {
+            domain: self.domain,
+            network,
+        })
     }
 }
 

@@ -13,10 +13,8 @@ use pyo3::{
     Bound, Python,
     prelude::{Py, PyAny, PyAnyMethods, PyModule},
 };
-#[cfg(feature = "core")]
-use pywr_core::parameters::ParameterType;
 #[cfg(all(feature = "core", feature = "pyo3"))]
-use pywr_core::parameters::{ParameterName, PyClassParameter, PyFuncParameter};
+use pywr_core::parameters::{ParameterName, PyClassParameterBuilder, PyFuncParameterBuilder};
 use pywr_schema_macros::{PywrVisitAll, skip_serializing_none};
 use schemars::JsonSchema;
 use serde_json::Value;
@@ -194,23 +192,23 @@ impl PythonParameter {
 
 #[cfg(all(feature = "core", not(feature = "pyo3")))]
 impl PythonParameter {
-    pub fn add_to_model(
+    pub fn add_to_network(
         &self,
-        _network: &mut pywr_core::network::Network,
+        _network: &mut pywr_core::network::NetworkBuilder,
         _args: &LoadArgs,
         _parent: Option<&str>,
-    ) -> Result<ParameterType, SchemaError> {
+    ) -> Result<(), SchemaError> {
         Err(SchemaError::FeatureNotEnabled("pyo3".to_string()))
     }
 }
 #[cfg(all(feature = "core", feature = "pyo3"))]
 impl PythonParameter {
-    pub fn add_to_model(
+    pub fn add_to_network(
         &self,
-        network: &mut pywr_core::network::Network,
+        network: &mut pywr_core::network::NetworkBuilder,
         args: &LoadArgs,
         parent: Option<&str>,
-    ) -> Result<ParameterType, SchemaError> {
+    ) -> Result<(), SchemaError> {
         Python::initialize();
 
         let object = Python::attach(|py| {
@@ -239,42 +237,54 @@ impl PythonParameter {
             None => HashMap::new(),
         };
 
-        let pt = match object {
+        match object {
             PyObj::Class(py_class) => {
-                let p = PyClassParameter::new(
+                let mut builder = PyClassParameterBuilder::new(
                     ParameterName::new(&self.meta.name, parent),
                     py_class,
                     py_args,
                     py_kwargs,
-                    &metrics,
-                    &indices,
                 );
 
-                match self.return_type {
-                    PythonReturnType::Float => network.add_parameter(Box::new(p))?.into(),
-                    PythonReturnType::Int => ParameterType::Index(network.add_index_parameter(Box::new(p))?),
-                    PythonReturnType::Dict => ParameterType::Multi(network.add_multi_value_parameter(Box::new(p))?),
+                for (k, m) in metrics.into_iter() {
+                    builder.metric(&k, m);
                 }
+
+                for (k, v) in indices.into_iter() {
+                    builder.index(&k, v);
+                }
+
+                match self.return_type {
+                    PythonReturnType::Float => network.parameters().f64(Box::new(builder)),
+                    PythonReturnType::Int => network.parameters().u64(Box::new(builder)),
+                    PythonReturnType::Dict => network.parameters().multi(Box::new(builder)),
+                };
             }
             PyObj::Function(py_function) => {
-                let p = PyFuncParameter::new(
+                let mut builder = PyFuncParameterBuilder::new(
                     ParameterName::new(&self.meta.name, parent),
                     py_function,
                     py_args,
                     py_kwargs,
-                    &metrics,
-                    &indices,
                 );
 
-                match self.return_type {
-                    PythonReturnType::Float => network.add_parameter(Box::new(p))?.into(),
-                    PythonReturnType::Int => ParameterType::Index(network.add_index_parameter(Box::new(p))?),
-                    PythonReturnType::Dict => ParameterType::Multi(network.add_multi_value_parameter(Box::new(p))?),
+                for (k, m) in metrics.into_iter() {
+                    builder.metric(&k, m);
                 }
+
+                for (k, v) in indices.into_iter() {
+                    builder.index(&k, v);
+                }
+
+                match self.return_type {
+                    PythonReturnType::Float => network.parameters().f64(Box::new(builder)),
+                    PythonReturnType::Int => network.parameters().u64(Box::new(builder)),
+                    PythonReturnType::Dict => network.parameters().multi(Box::new(builder)),
+                };
             }
         };
 
-        Ok(pt)
+        Ok(())
     }
 }
 
@@ -287,9 +297,10 @@ mod tests {
     use crate::timeseries::LoadedTimeseriesCollection;
     use pyo3::Python;
     use pywr_core::models::ModelDomain;
-    use pywr_core::network::Network;
-    use pywr_core::test_utils::default_time_domain;
+    use pywr_core::network::NetworkBuilder;
+    use pywr_core::test_utils::default_domain;
     use serde_json::json;
+    use std::collections::HashMap;
     use std::path::PathBuf;
 
     #[test]
@@ -322,9 +333,9 @@ mod tests {
         let param: PythonParameter = serde_json::from_str(data.as_str()).unwrap();
         // ... add it to an empty network
         // this should trigger loading the module and extracting the class
-        let domain: ModelDomain = default_time_domain().into();
+        let domain: ModelDomain = default_domain();
         let schema = NetworkSchema::default();
-        let mut network = Network::default();
+        let mut network = NetworkBuilder::default();
         let tables = LoadedTableCollection::from_schema(None, None).unwrap();
         let ts = LoadedTimeseriesCollection::default();
 
@@ -337,7 +348,9 @@ mod tests {
             inter_network_transfers: &[],
         };
 
-        param.add_to_model(&mut network, &args, None).unwrap();
+        param.add_to_network(&mut network, &args, None).unwrap();
+
+        let (network, _) = network.build(&domain, &HashMap::new()).unwrap();
 
         assert!(network.get_parameter_by_name(&"my-float-parameter".into()).is_some());
     }
@@ -373,9 +386,9 @@ mod tests {
         let param: PythonParameter = serde_json::from_str(data.as_str()).unwrap();
         // ... add it to an empty network
         // this should trigger loading the module and extracting the class
-        let domain: ModelDomain = default_time_domain().into();
+        let domain: ModelDomain = default_domain();
         let schema = NetworkSchema::default();
-        let mut network = Network::default();
+        let mut network = NetworkBuilder::default();
         let tables = LoadedTableCollection::from_schema(None, None).unwrap();
         let ts = LoadedTimeseriesCollection::default();
 
@@ -388,7 +401,9 @@ mod tests {
             inter_network_transfers: &[],
         };
 
-        param.add_to_model(&mut network, &args, None).unwrap();
+        param.add_to_network(&mut network, &args, None).unwrap();
+
+        let (network, _) = network.build(&domain, &HashMap::new()).unwrap();
 
         assert!(
             network

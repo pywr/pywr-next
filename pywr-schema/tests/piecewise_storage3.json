@@ -4,7 +4,7 @@
     "description": "A test of PiecewiseStorageNode with a monthly profile control curve.",
     "minimum_version": "0.1"
   },
-  "timestepper": {
+  "time": {
     "start": "2021-01-01",
     "end": "2021-08-31",
     "timestep": {

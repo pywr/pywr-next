@@ -1,22 +1,17 @@
+use crate::network::ResolutionMaps;
 use crate::parameters::errors::ConstCalculationError;
-use crate::parameters::{ConstParameter, Parameter, ParameterMeta, ParameterName, ParameterState};
+use crate::parameters::{
+    BuiltParameter, ConstParameter, MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder,
+    ParameterMeta, ParameterName, ParameterState,
+};
 use crate::scenario::ScenarioIndex;
 use crate::state::ConstParameterValues;
 
+#[derive(Debug)]
 pub struct ConstantScenarioParameter {
     meta: ParameterMeta,
     values: Vec<f64>,
     scenario_group_index: usize,
-}
-
-impl ConstantScenarioParameter {
-    pub fn new(name: ParameterName, values: Vec<f64>, scenario_group_index: usize) -> Self {
-        Self {
-            meta: ParameterMeta::new(name),
-            values,
-            scenario_group_index,
-        }
-    }
 }
 
 impl Parameter for ConstantScenarioParameter {
@@ -44,10 +39,57 @@ impl ConstParameter<f64> for ConstantScenarioParameter {
     }
 }
 
+#[derive(Debug)]
+pub struct ConstantScenarioParameterBuilder {
+    meta: ParameterMeta,
+    values: Vec<f64>,
+    scenario_group: String,
+}
+
+impl ConstantScenarioParameterBuilder {
+    pub fn new(name: ParameterName, values: Vec<f64>, scenario_group: &str) -> Self {
+        Self {
+            meta: ParameterMeta::new(name),
+            values,
+            scenario_group: scenario_group.to_string(),
+        }
+    }
+}
+
+impl ParameterBuilder<f64> for ConstantScenarioParameterBuilder {
+    fn name(&self) -> &ParameterName {
+        &self.meta.name
+    }
+
+    fn build(
+        self: Box<Self>,
+        resolution_maps: &ResolutionMaps,
+    ) -> Result<MaybeBuiltParameter<f64>, ParameterBuildError> {
+        let scenario_group_index = resolution_maps.domain.scenarios().group_index(&self.scenario_group)?;
+
+        let scenario_group_size = resolution_maps.domain.scenarios().group_size(&self.scenario_group)?;
+        if self.values.len() != scenario_group_size {
+            return Err(ParameterBuildError::ScenarioValuesLengthMismatch {
+                values: self.values.len(),
+                scenarios: scenario_group_size,
+                group: self.scenario_group.clone(),
+            });
+        }
+
+        let p = ConstantScenarioParameter {
+            meta: self.meta,
+            values: self.values,
+            scenario_group_index,
+        };
+
+        Ok(MaybeBuiltParameter::Built(BuiltParameter::Const(Box::new(p))))
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use crate::parameters::ConstParameter;
     use crate::parameters::constant_scenario::ConstantScenarioParameter;
+    use crate::parameters::{ConstParameter, ParameterMeta};
     use crate::scenario::{self, ScenarioGroupBuilder};
     use crate::state::ConstParameterValues;
     use float_cmp::assert_approx_eq;
@@ -62,7 +104,11 @@ mod tests {
             .build()
             .unwrap();
 
-        let p = ConstantScenarioParameter::new("my-parameter".into(), vec![3.0, 2.0, 1.0], 0);
+        let p = ConstantScenarioParameter {
+            meta: ParameterMeta::new("my-parameter".into()),
+            values: vec![3.0, 2.0, 1.0],
+            scenario_group_index: 0,
+        };
 
         let const_scenario_values = ConstParameterValues::default();
 
@@ -87,7 +133,11 @@ mod tests {
             .build()
             .unwrap();
 
-        let p = ConstantScenarioParameter::new("my-parameter".into(), vec![5.0, 4.0, 3.0, 2.0, 1.0], 0);
+        let p = ConstantScenarioParameter {
+            meta: ParameterMeta::new("my-parameter".into()),
+            values: vec![5.0, 4.0, 3.0, 2.0, 1.0],
+            scenario_group_index: 0,
+        };
 
         let const_scenario_values = ConstParameterValues::default();
 
@@ -112,7 +162,11 @@ mod tests {
             .build()
             .unwrap();
 
-        let p = ConstantScenarioParameter::new("my-parameter".into(), vec![5.0, 4.0, 3.0, 2.0, 1.0], 0);
+        let p = ConstantScenarioParameter {
+            meta: ParameterMeta::new("my-parameter".into()),
+            values: vec![5.0, 4.0, 3.0, 2.0, 1.0],
+            scenario_group_index: 0,
+        };
 
         let const_scenario_values = ConstParameterValues::default();
 

@@ -49,7 +49,7 @@ fn deserialise_test_model(model_path: &Path) -> ModelSchema {
 fn build_test_model(schema: &ModelSchema) -> ModelSchemaBuildError {
     let temp_dir = TempDir::new().unwrap();
     let data_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("invalid");
-    match schema.build_model(Some(&data_dir), Some(temp_dir.path())) {
+    match schema.create_model_builder(Some(&data_dir), Some(temp_dir.path())) {
         Ok(_) => panic!("Expected an error, but model built successfully!"),
         Err(e) => e,
     }

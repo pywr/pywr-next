@@ -1,27 +1,20 @@
-use super::{Parameter, ParameterName};
-use crate::metric::MetricF64;
-use crate::network::Network;
-use crate::parameters::errors::ParameterCalculationError;
+use super::{BuiltParameter, MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder, ParameterName};
+use crate::metric::{MetricF64, UnresolvedMetricF64};
+use crate::network::{Network, ResolutionMaps};
+use crate::parameters::errors::GeneralCalculationError;
 use crate::parameters::{GeneralParameter, ParameterMeta, ParameterState};
+use crate::resolve_metric_f64;
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
 use crate::timestep::Timestep;
 
+#[derive(Debug)]
 pub struct DivisionParameter {
     meta: ParameterMeta,
     numerator: MetricF64,
     denominator: MetricF64,
 }
 
-impl DivisionParameter {
-    pub fn new(name: ParameterName, numerator: MetricF64, denominator: MetricF64) -> Self {
-        Self {
-            meta: ParameterMeta::new(name),
-            numerator,
-            denominator,
-        }
-    }
-}
 impl Parameter for DivisionParameter {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
@@ -35,11 +28,11 @@ impl GeneralParameter<f64> for DivisionParameter {
         model: &Network,
         state: &State,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<Option<f64>, ParameterCalculationError> {
+    ) -> Result<Option<f64>, GeneralCalculationError> {
         let denominator = self.denominator.get_value(model, state)?;
 
         if denominator == 0.0 {
-            return Err(ParameterCalculationError::DivisionByZeroError);
+            return Err(GeneralCalculationError::DivisionByZeroError);
         }
 
         let numerator = self.numerator.get_value(model, state)?;
@@ -51,5 +44,44 @@ impl GeneralParameter<f64> for DivisionParameter {
         Self: Sized,
     {
         self
+    }
+}
+
+#[derive(Debug)]
+pub struct DivisionParameterBuilder {
+    meta: ParameterMeta,
+    numerator: UnresolvedMetricF64,
+    denominator: UnresolvedMetricF64,
+}
+
+impl DivisionParameterBuilder {
+    pub fn new(name: ParameterName, numerator: UnresolvedMetricF64, denominator: UnresolvedMetricF64) -> Self {
+        Self {
+            meta: ParameterMeta::new(name),
+            numerator,
+            denominator,
+        }
+    }
+}
+
+impl ParameterBuilder<f64> for DivisionParameterBuilder {
+    fn name(&self) -> &ParameterName {
+        &self.meta.name
+    }
+
+    fn build(
+        self: Box<Self>,
+        resolution_maps: &ResolutionMaps,
+    ) -> Result<MaybeBuiltParameter<f64>, ParameterBuildError> {
+        let numerator = resolve_metric_f64!(self, self.numerator, resolution_maps, "numerator");
+        let denominator = resolve_metric_f64!(self, self.denominator, resolution_maps, "denominator");
+
+        let p = DivisionParameter {
+            meta: self.meta,
+            numerator,
+            denominator,
+        };
+
+        Ok(MaybeBuiltParameter::Built(BuiltParameter::General(Box::new(p))))
     }
 }

@@ -1,34 +1,41 @@
-use crate::aggregated_node::{AggregatedNode, AggregatedNodeIndex, AggregatedNodeVec, Relationship};
-use crate::aggregated_storage_node::{AggregatedStorageNode, AggregatedStorageNodeIndex, AggregatedStorageNodeVec};
-use crate::edge::{Edge, EdgeIndex, EdgeVec};
-use crate::metric::{MetricF64, SimpleMetricF64};
-use crate::models::ModelDomain;
-use crate::node::{Node, NodeError, NodeVec, StorageInitialVolume};
+use crate::aggregated_node::{AggregatedNode, AggregatedNodeBuilder, AggregatedNodeBuilderError};
+use crate::aggregated_storage_node::{
+    AggregatedStorageNode, AggregatedStorageNodeBuilder, AggregatedStorageNodeBuilderError,
+};
+use crate::edge::Edge;
+use crate::models::{ModelDomain, MultiNetworkTransferIndex};
+use crate::node::{Node, NodeBuilder, NodeBuilderError, NodeError, UnresolvedNode};
 use crate::parameters::{
-    GeneralParameterIndex, GeneralParameterType, ParameterCalculationError, ParameterCollection,
-    ParameterCollectionConstCalculationError, ParameterCollectionError, ParameterCollectionSetupError,
-    ParameterCollectionSimpleCalculationError, ParameterIndex, ParameterName, ParameterStates, VariableConfig,
+    GeneralParameterIndex, GeneralParameterType, ParameterCollection, ParameterCollectionBuilder,
+    ParameterCollectionBuilderError, ParameterCollectionConstCalculationError, ParameterCollectionError,
+    ParameterCollectionGeneralCalculationError, ParameterCollectionIdMismatchError, ParameterCollectionSetupError,
+    ParameterCollectionSimpleCalculationError, ParameterIndex, ParameterName, ParameterStates, ParameterTiming,
+    ParameterTimings, VariableConfig,
 };
 use crate::recorders::{
-    MetricSet, MetricSetIndex, MetricSetSaveError, MetricSetState, RecorderAggregationError, RecorderFinalResult,
-    RecorderFinaliseError, RecorderInternalState, RecorderSaveError, RecorderSetupError,
+    MetricSet, MetricSetBuilder, MetricSetBuilderError, MetricSetSaveError, MetricSetState, RecorderAggregationError,
+    RecorderBuilder, RecorderBuilderError, RecorderFinalResult, RecorderFinaliseError, RecorderInternalState,
+    RecorderSaveError, RecorderSetupError,
 };
 use crate::scenario::ScenarioIndex;
 use crate::solvers::{
     MultiStateSolver, Solver, SolverFeatures, SolverSettings, SolverSetupError, SolverSolveError, SolverTimings,
 };
-use crate::state::{MultiValue, SetStateError, State, StateBuilder};
+use crate::state::{MultiValue, State, StateBuilder};
 use crate::timestep::Timestep;
 use crate::virtual_storage::{
-    VirtualStorage, VirtualStorageBuilder, VirtualStorageError, VirtualStorageIndex, VirtualStorageVec,
+    VirtualStorageError, VirtualStorageNode, VirtualStorageNodeBuilder, VirtualStorageNodeBuilderError,
 };
-use crate::{NodeIndex, RecorderIndex, parameters, recorders};
+use crate::{parameters, recorders};
 #[cfg(feature = "pyo3")]
 use pyo3::{PyResult, exceptions::PyKeyError, pyclass, pymethods};
 #[cfg(feature = "pyo3")]
 use pyo3_polars::PyDataFrame;
 use rayon::prelude::*;
 use std::collections::{HashMap, HashSet};
+use std::fmt;
+use std::fmt::{Display, Formatter};
+use std::ops::Deref;
 use std::slice::{Iter, IterMut};
 use std::sync::Arc;
 use std::time::Duration;
@@ -120,50 +127,20 @@ impl RunDuration {
     }
 }
 
-#[derive(Default, Copy, Clone)]
-pub struct ComponentTiming {
-    calculation: Duration,
-    after: Duration,
-}
-
-impl ComponentTiming {
-    /// Time spent in the calculation method of the component.
-    pub fn calculation(&self) -> Duration {
-        self.calculation
-    }
-
-    /// Time spent in the "after" method of the component.
-    pub fn after(&self) -> Duration {
-        self.after
-    }
-
-    /// Total time spent in calculation and after methods.
-    pub fn total(&self) -> Duration {
-        self.calculation + self.after
-    }
-}
-
 /// Collect timing information for component of a network.
 #[derive(Clone)]
 pub struct ComponentTimings {
-    /// Timing information for calculation of each component.
-    calculation: Option<Vec<ComponentTiming>>,
+    /// Timing information for parameters.
+    parameters: Option<ParameterTimings>,
     /// Total time spent in component calculations.
     total: Duration,
 }
 
 impl ComponentTimings {
-    pub fn new_with_components(num_components: usize) -> Self {
+    pub fn new(parameters: Option<ParameterTimings>) -> Self {
         Self {
-            calculation: Some(vec![ComponentTiming::default(); num_components]),
-            total: Duration::ZERO,
-        }
-    }
-
-    pub fn new_without_components() -> Self {
-        Self {
-            calculation: None,
-            total: Duration::ZERO,
+            parameters,
+            total: Default::default(),
         }
     }
 
@@ -173,35 +150,12 @@ impl ComponentTimings {
     pub fn slowest_components(
         &self,
         n: usize,
-        component_types: &[ComponentType],
-    ) -> Option<Vec<(ComponentType, ComponentTiming)>> {
-        self.calculation.as_ref().map(|calculation| {
-            let mut components: Vec<_> = calculation
-                .iter()
-                .zip(component_types)
-                .map(|(d, ct)| (*ct, *d))
-                .collect();
-            components.sort_by_key(|(_, duration)| duration.total());
-            components.iter().rev().take(n).map(|(ct, d)| (*ct, *d)).collect()
-        })
-    }
-
-    /// Add timing information for a component calculation.
-    pub fn add_component_calculation_timing(&mut self, idx: usize, duration: Duration) {
-        if let Some(calculation) = &mut self.calculation {
-            if let Some(c) = calculation.get_mut(idx) {
-                c.calculation += duration;
-            }
-        }
-    }
-
-    /// Add timing information for a component "after" calculation.
-    pub fn add_component_after_timing(&mut self, idx: usize, duration: Duration) {
-        if let Some(calculation) = &mut self.calculation {
-            if let Some(c) = calculation.get_mut(idx) {
-                c.after += duration;
-            }
-        }
+        collection: &ParameterCollection,
+    ) -> Result<Option<Vec<(ParameterName, ParameterTiming)>>, ParameterCollectionIdMismatchError> {
+        self.parameters
+            .as_ref()
+            .map(|p| p.slowest_parameters_named(n, collection))
+            .transpose()
     }
 }
 
@@ -216,8 +170,9 @@ pub struct NetworkTimings {
 
 impl NetworkTimings {
     pub fn new_with_component_timings(network: &Network) -> Self {
+        let parameter_timings = ParameterTimings::from_collection(&network.parameters);
         Self {
-            component_timings: ComponentTimings::new_with_components(network.resolve_order.len()),
+            component_timings: ComponentTimings::new(Some(parameter_timings)),
             recorder_saving: Duration::ZERO,
             solve: SolverTimings::default(),
         }
@@ -225,14 +180,18 @@ impl NetworkTimings {
 
     pub fn new_without_component_timings() -> Self {
         Self {
-            component_timings: ComponentTimings::new_without_components(),
+            component_timings: ComponentTimings::new(None),
             recorder_saving: Duration::ZERO,
             solve: SolverTimings::default(),
         }
     }
 
     /// Print a summary of the timings to the log.
-    pub fn print_table(&self, total_duration: f64, network: &Network) {
+    pub fn print_table(
+        &self,
+        total_duration: f64,
+        network: &Network,
+    ) -> Result<(), ParameterCollectionIdMismatchError> {
         info!(
             "{: <24} | {: <10.5}s ({:5.2}%)",
             "Components calcs",
@@ -288,23 +247,25 @@ impl NetworkTimings {
             100.0 * not_counted / total_duration,
         );
 
-        if let Some(slowest) = self.component_timings.slowest_components(10, &network.resolve_order) {
+        if let Some(slowest) = self.component_timings.slowest_components(10, &network.parameters)? {
             info!("Slowest components:");
             info!(
                 "  {: <24} | {: <10}  | {: <10}  | {: <10}  | {:5}",
                 "Component", "before", "after", "total", "% of total"
             );
-            for (ct, duration) in slowest {
+            for (name, duration) in slowest {
                 info!(
                     "  {: <24} | {: <10.5}s | {: <10.5}s | {: <10.5}s | {:5.2}%",
-                    ct.name(network),
-                    duration.calculation.as_secs_f64(),
-                    duration.after.as_secs_f64(),
+                    name.to_string(),
+                    duration.before().as_secs_f64(),
+                    duration.after().as_secs_f64(),
                     duration.total().as_secs_f64(),
                     100.0 * duration.total().as_secs_f64() / total_duration,
                 );
             }
         }
+
+        Ok(())
     }
 }
 
@@ -419,36 +380,8 @@ pub enum NetworkStepError {
     ParameterU64IndexNotFound(GeneralParameterIndex<u64>),
     #[error("General parameter Multi index '{0}' not found.")]
     ParameterMultiIndexNotFound(GeneralParameterIndex<MultiValue>),
-    #[error("Error calculating value for parameter `{name}`: {source}")]
-    ParameterCalculationError {
-        name: ParameterName,
-        #[source]
-        source: Box<ParameterCalculationError>,
-    },
-    #[error("Error performing `after` method on parameter `{name}`: {source}")]
-    ParameterAfterError {
-        name: ParameterName,
-        #[source]
-        source: Box<ParameterCalculationError>,
-    },
-    #[error("Error setting state for general F64 parameter `{name}`: {source}")]
-    ParameterF64SetStateError {
-        name: ParameterName,
-        #[source]
-        source: SetStateError<GeneralParameterIndex<f64>>,
-    },
-    #[error("Error setting state for general U64 parameter `{name}`: {source}")]
-    ParameterU64SetStateError {
-        name: ParameterName,
-        #[source]
-        source: SetStateError<GeneralParameterIndex<u64>>,
-    },
-    #[error("Error setting state for general Multi parameter `{name}`: {source}")]
-    ParameterMultiSetStateError {
-        name: ParameterName,
-        #[source]
-        source: SetStateError<GeneralParameterIndex<MultiValue>>,
-    },
+    #[error("Error computing general parameters: `{0}`")]
+    GeneralParameterCalculationError(#[from] Box<ParameterCollectionGeneralCalculationError>),
     #[error("Error saving metric set `{name}`: `{source}`")]
     MetricSetSaveError {
         name: String,
@@ -518,8 +451,6 @@ pub enum NetworkError {
         #[source]
         source: Box<NodeError>,
     },
-    #[error("Cannot connect a node to itself: `{name}`")]
-    NodeConnectToSelf { name: String, sub_name: Option<String> },
     #[error("Error in parameter collection: `{0}`")]
     ParameterCollectionError(#[from] ParameterCollectionError),
     #[error("Metric set `{0}` already exists")]
@@ -616,41 +547,40 @@ impl NetworkResult {
 /// to represent a discrete system. A network can be simulated using a model and a solver. The
 /// network is translated into a linear program using the [`Solver`] trait.
 ///
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct Network {
-    nodes: NodeVec,
-    edges: EdgeVec,
-    aggregated_nodes: AggregatedNodeVec,
-    aggregated_storage_nodes: AggregatedStorageNodeVec,
-    virtual_storage_nodes: VirtualStorageVec,
+    nodes: Vec<Node>,
+    edges: Vec<Edge>,
+    aggregated_nodes: Vec<AggregatedNode>,
+    aggregated_storage_nodes: Vec<AggregatedStorageNode>,
+    virtual_storage_nodes: Vec<VirtualStorageNode>,
     parameters: ParameterCollection,
     metric_sets: Vec<MetricSet>,
-    resolve_order: Vec<ComponentType>,
     recorders: Vec<Box<dyn recorders::Recorder>>,
 }
 
 impl Network {
-    pub fn nodes(&self) -> &NodeVec {
+    pub fn nodes(&self) -> &[Node] {
         &self.nodes
     }
 
-    pub fn edges(&self) -> &EdgeVec {
+    pub fn edges(&self) -> &[Edge] {
         &self.edges
     }
 
-    pub fn recorders(&self) -> &Vec<Box<dyn recorders::Recorder>> {
+    pub fn recorders(&self) -> &[Box<dyn recorders::Recorder>] {
         &self.recorders
     }
 
-    pub fn aggregated_nodes(&self) -> &AggregatedNodeVec {
+    pub fn aggregated_nodes(&self) -> &[AggregatedNode] {
         &self.aggregated_nodes
     }
 
-    pub fn aggregated_storage_nodes(&self) -> &AggregatedStorageNodeVec {
+    pub fn aggregated_storage_nodes(&self) -> &[AggregatedStorageNode] {
         &self.aggregated_storage_nodes
     }
 
-    pub fn virtual_storage_nodes(&self) -> &VirtualStorageVec {
+    pub fn virtual_storage_nodes(&self) -> &[VirtualStorageNode] {
         &self.virtual_storage_nodes
     }
 
@@ -1068,7 +998,7 @@ impl Network {
         scenario_index: &ScenarioIndex,
         state: &mut State,
         internal_states: &mut ParameterStates,
-        mut timings: Option<&mut ComponentTimings>,
+        timings: Option<&mut ComponentTimings>,
     ) -> Result<(), NetworkStepError> {
         // TODO reset parameter state to zero
 
@@ -1076,121 +1006,29 @@ impl Network {
         self.parameters
             .compute_simple(timestep, scenario_index, state, internal_states)?;
 
-        for (c_idx, c_type) in self.resolve_order.iter().enumerate() {
-            let start = Instant::now();
-
-            match c_type {
-                ComponentType::Node(idx) => {
-                    let n = self
-                        .nodes
-                        .get(idx)
-                        .ok_or_else(|| NetworkStepError::NodeIndexNotFound(*idx))?;
-
-                    n.before(timestep, state)
-                        .map_err(|source| NetworkStepError::NodeBeforeError {
-                            name: n.name().to_string(),
-                            source,
-                        })?;
-                }
-                ComponentType::VirtualStorageNode(idx) => {
-                    let n = self
-                        .virtual_storage_nodes
-                        .get(idx)
-                        .ok_or_else(|| NetworkStepError::VirtualStorageIndexNotFound(*idx))?;
-
-                    n.before(timestep, state)
-                        .map_err(|source| NetworkStepError::VirtualStorageBeforeError {
-                            name: n.name().to_string(),
-                            source,
-                        })?;
-                }
-                ComponentType::Parameter(p_type) => {
-                    match p_type {
-                        GeneralParameterType::Parameter(idx) => {
-                            // Find the parameter itself
-                            let p = self
-                                .parameters
-                                .get_general_f64(*idx)
-                                .ok_or_else(|| NetworkStepError::ParameterF64IndexNotFound(*idx))?;
-
-                            // ... and its internal state
-                            let internal_state = internal_states
-                                .get_general_mut_f64_state(*idx)
-                                .ok_or_else(|| NetworkStepError::ParameterF64IndexNotFound(*idx))?;
-
-                            let value = p
-                                .before(timestep, scenario_index, self, state, internal_state)
-                                .map_err(|source| NetworkStepError::ParameterCalculationError {
-                                    name: p.name().clone(),
-                                    source: Box::new(source),
-                                })?;
-
-                            state.set_parameter_value_before(*idx, value).map_err(|source| {
-                                NetworkStepError::ParameterF64SetStateError {
-                                    name: p.name().clone(),
-                                    source,
-                                }
-                            })?;
-                        }
-                        GeneralParameterType::Index(idx) => {
-                            let p = self
-                                .parameters
-                                .get_general_u64(*idx)
-                                .ok_or_else(|| NetworkStepError::ParameterU64IndexNotFound(*idx))?;
-
-                            // ... and its internal state
-                            let internal_state = internal_states
-                                .get_general_mut_u64_state(*idx)
-                                .ok_or_else(|| NetworkStepError::ParameterU64IndexNotFound(*idx))?;
-
-                            let value = p
-                                .before(timestep, scenario_index, self, state, internal_state)
-                                .map_err(|source| NetworkStepError::ParameterCalculationError {
-                                    name: p.name().clone(),
-                                    source: Box::new(source),
-                                })?;
-
-                            state.set_parameter_index_before(*idx, value).map_err(|source| {
-                                NetworkStepError::ParameterU64SetStateError {
-                                    name: p.name().clone(),
-                                    source,
-                                }
-                            })?;
-                        }
-                        GeneralParameterType::Multi(idx) => {
-                            let p = self
-                                .parameters
-                                .get_general_multi(idx)
-                                .ok_or_else(|| NetworkStepError::ParameterMultiIndexNotFound(*idx))?;
-
-                            // ... and its internal state
-                            let internal_state = internal_states
-                                .get_general_mut_multi_state(*idx)
-                                .ok_or_else(|| NetworkStepError::ParameterMultiIndexNotFound(*idx))?;
-
-                            let value = p
-                                .before(timestep, scenario_index, self, state, internal_state)
-                                .map_err(|source| NetworkStepError::ParameterCalculationError {
-                                    name: p.name().clone(),
-                                    source: Box::new(source),
-                                })?;
-                            // debug!("Current value of index parameter {}: {}", p.name(), value);
-                            state.set_multi_parameter_value_before(*idx, value).map_err(|source| {
-                                NetworkStepError::ParameterMultiSetStateError {
-                                    name: p.name().clone(),
-                                    source,
-                                }
-                            })?;
-                        }
-                    }
-                }
-            }
-
-            if let Some(timings) = timings.as_deref_mut() {
-                // Update the component timings
-                timings.add_component_calculation_timing(c_idx, start.elapsed());
-            }
+        // Next run "before" on nodes and virtual nodes
+        for n in &self.nodes {
+            n.before(timestep, state)
+                .map_err(|source| NetworkStepError::NodeBeforeError {
+                    name: n.name().to_string(),
+                    source,
+                })?;
         }
+
+        for vs in &self.virtual_storage_nodes {
+            vs.before(timestep, state)
+                .map_err(|source| NetworkStepError::VirtualStorageBeforeError {
+                    name: vs.name().to_string(),
+                    source,
+                })?;
+        }
+
+        let p_timings = timings.and_then(|timings| timings.parameters.as_mut());
+
+        // Now we can compute the general parameters that may depend on node state.
+        self.parameters
+            .compute_general(timestep, scenario_index, self, state, internal_states, p_timings)
+            .map_err(|source| NetworkStepError::GeneralParameterCalculationError(Box::new(source)))?;
 
         Ok(())
     }
@@ -1209,110 +1047,21 @@ impl Network {
         state: &mut State,
         internal_states: &mut ParameterStates,
         metric_set_states: &mut [MetricSetState],
-        mut timings: Option<&mut ComponentTimings>,
+        timings: Option<&mut ComponentTimings>,
     ) -> Result<(), NetworkStepError> {
         // TODO reset parameter state to zero
 
         self.parameters
             .after_simple(timestep, scenario_index, state, internal_states)?;
 
-        for (c_idx, c_type) in self.resolve_order.iter().enumerate() {
-            let start = Instant::now();
+        // No "after" on nodes and virtual nodes
 
-            match c_type {
-                ComponentType::Node(_) => {
-                    // Nodes do not have an "after" method.
-                }
-                ComponentType::VirtualStorageNode(_) => {
-                    // Nodes do not have an "after" method.;
-                }
-                ComponentType::Parameter(p_type) => {
-                    match p_type {
-                        GeneralParameterType::Parameter(idx) => {
-                            // Find the parameter itself
-                            let p = self
-                                .parameters
-                                .get_general_f64(*idx)
-                                .ok_or_else(|| NetworkStepError::ParameterF64IndexNotFound(*idx))?;
+        let p_timings = timings.and_then(|timings| timings.parameters.as_mut());
 
-                            // ... and its internal state
-                            let internal_state = internal_states
-                                .get_general_mut_f64_state(*idx)
-                                .ok_or_else(|| NetworkStepError::ParameterF64IndexNotFound(*idx))?;
-
-                            let value =
-                                p.after(timestep, scenario_index, self, state, internal_state)
-                                    .map_err(|source| NetworkStepError::ParameterAfterError {
-                                        name: p.name().clone(),
-                                        source: Box::new(source),
-                                    })?;
-
-                            state.set_parameter_value_after(*idx, value).map_err(|source| {
-                                NetworkStepError::ParameterF64SetStateError {
-                                    name: p.name().clone(),
-                                    source,
-                                }
-                            })?;
-                        }
-                        GeneralParameterType::Index(idx) => {
-                            let p = self
-                                .parameters
-                                .get_general_u64(*idx)
-                                .ok_or_else(|| NetworkStepError::ParameterU64IndexNotFound(*idx))?;
-
-                            // .. and its internal state
-                            let internal_state = internal_states
-                                .get_general_mut_u64_state(*idx)
-                                .ok_or_else(|| NetworkStepError::ParameterU64IndexNotFound(*idx))?;
-
-                            let value =
-                                p.after(timestep, scenario_index, self, state, internal_state)
-                                    .map_err(|source| NetworkStepError::ParameterAfterError {
-                                        name: p.name().clone(),
-                                        source: Box::new(source),
-                                    })?;
-
-                            state.set_parameter_index_after(*idx, value).map_err(|source| {
-                                NetworkStepError::ParameterU64SetStateError {
-                                    name: p.name().clone(),
-                                    source,
-                                }
-                            })?;
-                        }
-                        GeneralParameterType::Multi(idx) => {
-                            let p = self
-                                .parameters
-                                .get_general_multi(idx)
-                                .ok_or_else(|| NetworkStepError::ParameterMultiIndexNotFound(*idx))?;
-
-                            // .. and its internal state
-                            let internal_state = internal_states
-                                .get_general_mut_multi_state(*idx)
-                                .ok_or_else(|| NetworkStepError::ParameterMultiIndexNotFound(*idx))?;
-
-                            let value =
-                                p.after(timestep, scenario_index, self, state, internal_state)
-                                    .map_err(|source| NetworkStepError::ParameterAfterError {
-                                        name: p.name().clone(),
-                                        source: Box::new(source),
-                                    })?;
-
-                            state.set_multi_parameter_value_after(*idx, value).map_err(|source| {
-                                NetworkStepError::ParameterMultiSetStateError {
-                                    name: p.name().clone(),
-                                    source,
-                                }
-                            })?;
-                        }
-                    }
-                }
-            }
-
-            if let Some(timings) = timings.as_deref_mut() {
-                // Update the component timings
-                timings.add_component_after_timing(c_idx, start.elapsed());
-            }
-        }
+        // Now we can compute the general parameters that may depend on node state.
+        self.parameters
+            .after_general(timestep, scenario_index, self, state, internal_states, p_timings)
+            .map_err(|source| NetworkStepError::GeneralParameterCalculationError(Box::new(source)))?;
 
         // Finally, save new data to the metric set
         for (metric_set, ms_state) in self.metric_sets.iter().zip(metric_set_states.iter_mut()) {
@@ -1357,7 +1106,7 @@ impl Network {
 
     /// Get an [`Edge`] from an edge's index
     pub fn get_edge(&self, index: &EdgeIndex) -> Option<&Edge> {
-        self.edges.get(index)
+        self.edges.get(index.0)
     }
 
     /// Get an [`EdgeIndex`] from connecting node indices.
@@ -1374,12 +1123,12 @@ impl Network {
 
     /// Get a Node from a node's index
     pub fn get_node(&self, index: &NodeIndex) -> Option<&Node> {
-        self.nodes.get(index)
+        self.nodes.get(*index.deref())
     }
 
     /// Get a Node from a node's index
     pub fn get_node_mut(&mut self, index: &NodeIndex) -> Option<&mut Node> {
-        self.nodes.get_mut(index)
+        self.nodes.get_mut(*index.deref())
     }
 
     /// Get a Node from a node's name
@@ -1392,135 +1141,9 @@ impl Network {
         self.nodes.iter_mut().find(|n| n.full_name() == (name, sub_name))
     }
 
-    pub fn set_node_cost(
-        &mut self,
-        name: &str,
-        sub_name: Option<&str>,
-        value: Option<MetricF64>,
-    ) -> Result<(), NetworkError> {
-        let node = self
-            .get_mut_node_by_name(name, sub_name)
-            .ok_or(NetworkError::NodeNotFound {
-                name: name.to_string(),
-                sub_name: sub_name.map(|s| s.to_string()),
-            })?;
-
-        node.set_cost(value);
-        Ok(())
-    }
-
-    pub fn set_node_max_flow(
-        &mut self,
-        name: &str,
-        sub_name: Option<&str>,
-        value: Option<MetricF64>,
-    ) -> Result<(), NetworkError> {
-        let node = self
-            .get_mut_node_by_name(name, sub_name)
-            .ok_or(NetworkError::NodeNotFound {
-                name: name.to_string(),
-                sub_name: sub_name.map(|s| s.to_string()),
-            })?;
-
-        node.set_max_flow_constraint(value)
-            .map_err(|source| NetworkError::NodeSetAttributeError {
-                name: node.name().to_string(),
-                sub_name: node.sub_name().map(|s| s.to_string()),
-                attribute: "max_flow".to_string(),
-                source: Box::new(source),
-            })
-    }
-
-    pub fn set_node_min_flow(
-        &mut self,
-        name: &str,
-        sub_name: Option<&str>,
-        value: Option<MetricF64>,
-    ) -> Result<(), NetworkError> {
-        let node = self
-            .get_mut_node_by_name(name, sub_name)
-            .ok_or(NetworkError::NodeNotFound {
-                name: name.to_string(),
-                sub_name: sub_name.map(|s| s.to_string()),
-            })?;
-
-        node.set_min_flow_constraint(value)
-            .map_err(|source| NetworkError::NodeSetAttributeError {
-                name: node.name().to_string(),
-                sub_name: node.sub_name().map(|s| s.to_string()),
-                attribute: "min_flow".to_string(),
-                source: Box::new(source),
-            })
-    }
-    pub fn set_node_initial_volume(
-        &mut self,
-        name: &str,
-        sub_name: Option<&str>,
-        initial_volume: StorageInitialVolume,
-    ) -> Result<(), NetworkError> {
-        let node = self
-            .get_mut_node_by_name(name, sub_name)
-            .ok_or(NetworkError::NodeNotFound {
-                name: name.to_string(),
-                sub_name: sub_name.map(|s| s.to_string()),
-            })?;
-
-        node.set_initial_volume(initial_volume)
-            .map_err(|source| NetworkError::NodeSetAttributeError {
-                name: node.name().to_string(),
-                sub_name: node.sub_name().map(|s| s.to_string()),
-                attribute: "initial_volume".to_string(),
-                source: Box::new(source),
-            })
-    }
-
-    pub fn set_node_max_volume(
-        &mut self,
-        name: &str,
-        sub_name: Option<&str>,
-        value: Option<SimpleMetricF64>,
-    ) -> Result<(), NetworkError> {
-        let node = self
-            .get_mut_node_by_name(name, sub_name)
-            .ok_or(NetworkError::NodeNotFound {
-                name: name.to_string(),
-                sub_name: sub_name.map(|s| s.to_string()),
-            })?;
-
-        node.set_max_volume_constraint(value)
-            .map_err(|source| NetworkError::NodeSetAttributeError {
-                name: node.name().to_string(),
-                sub_name: node.sub_name().map(|s| s.to_string()),
-                attribute: "max_volume".to_string(),
-                source: Box::new(source),
-            })
-    }
-
-    pub fn set_node_min_volume(
-        &mut self,
-        name: &str,
-        sub_name: Option<&str>,
-        value: Option<SimpleMetricF64>,
-    ) -> Result<(), NetworkError> {
-        let node = self
-            .get_mut_node_by_name(name, sub_name)
-            .ok_or(NetworkError::NodeNotFound {
-                name: name.to_string(),
-                sub_name: sub_name.map(|s| s.to_string()),
-            })?;
-
-        node.set_min_volume_constraint(value)
-            .map_err(|source| NetworkError::NodeSetAttributeError {
-                name: node.name().to_string(),
-                sub_name: node.sub_name().map(|s| s.to_string()),
-                attribute: "min_volume".to_string(),
-                source: Box::new(source),
-            })
-    }
-
     /// Get an [`AggregatedNode`] from its index.
     pub fn get_aggregated_node(&self, index: &AggregatedNodeIndex) -> Option<&AggregatedNode> {
-        self.aggregated_nodes.get(index)
+        self.aggregated_nodes.get(index.0)
     }
 
     /// Get a `AggregatedNode` from a node's name
@@ -1545,60 +1168,9 @@ impl Network {
         self.get_aggregated_node_by_name(name, sub_name).map(|n| n.index())
     }
 
-    pub fn set_aggregated_node_max_flow(
-        &mut self,
-        name: &str,
-        sub_name: Option<&str>,
-        value: Option<MetricF64>,
-    ) -> Result<(), NetworkError> {
-        let node = self
-            .get_mut_aggregated_node_by_name(name, sub_name)
-            .ok_or(NetworkError::NodeNotFound {
-                name: name.to_string(),
-                sub_name: sub_name.map(|s| s.to_string()),
-            })?;
-
-        node.set_max_flow(value);
-        Ok(())
-    }
-
-    pub fn set_aggregated_node_min_flow(
-        &mut self,
-        name: &str,
-        sub_name: Option<&str>,
-        value: Option<MetricF64>,
-    ) -> Result<(), NetworkError> {
-        let node = self
-            .get_mut_aggregated_node_by_name(name, sub_name)
-            .ok_or(NetworkError::NodeNotFound {
-                name: name.to_string(),
-                sub_name: sub_name.map(|s| s.to_string()),
-            })?;
-
-        node.set_min_flow(value);
-        Ok(())
-    }
-
-    pub fn set_aggregated_node_relationship(
-        &mut self,
-        name: &str,
-        sub_name: Option<&str>,
-        relationship: Option<Relationship>,
-    ) -> Result<(), NetworkError> {
-        let node = self
-            .get_mut_aggregated_node_by_name(name, sub_name)
-            .ok_or(NetworkError::NodeNotFound {
-                name: name.to_string(),
-                sub_name: sub_name.map(|s| s.to_string()),
-            })?;
-
-        node.set_relationship(relationship);
-        Ok(())
-    }
-
     /// Get a `&AggregatedStorageNode` from a node's name
     pub fn get_aggregated_storage_node(&self, index: AggregatedStorageNodeIndex) -> Option<&AggregatedStorageNode> {
-        self.aggregated_storage_nodes.get(index)
+        self.aggregated_storage_nodes.get(index.0)
     }
 
     /// Get a `&AggregatedStorageNode` from a node's name
@@ -1633,12 +1205,12 @@ impl Network {
     }
 
     /// Get a `VirtualStorageNode` from a node's name
-    pub fn get_virtual_storage_node(&self, index: &VirtualStorageIndex) -> Option<&VirtualStorage> {
-        self.virtual_storage_nodes.get(index)
+    pub fn get_virtual_storage_node(&self, index: &VirtualStorageIndex) -> Option<&VirtualStorageNode> {
+        self.virtual_storage_nodes.get(index.0)
     }
 
     /// Get a `VirtualStorageNode` from a node's name
-    pub fn get_virtual_storage_node_by_name(&self, name: &str, sub_name: Option<&str>) -> Option<&VirtualStorage> {
+    pub fn get_virtual_storage_node_by_name(&self, name: &str, sub_name: Option<&str>) -> Option<&VirtualStorageNode> {
         self.virtual_storage_nodes
             .iter()
             .find(|&n| n.full_name() == (name, sub_name))
@@ -1649,7 +1221,7 @@ impl Network {
         &mut self,
         name: &str,
         sub_name: Option<&str>,
-    ) -> Option<&mut VirtualStorage> {
+    ) -> Option<&mut VirtualStorageNode> {
         self.virtual_storage_nodes
             .iter_mut()
             .find(|n| n.full_name() == (name, sub_name))
@@ -1662,57 +1234,6 @@ impl Network {
         sub_name: Option<&str>,
     ) -> Option<VirtualStorageIndex> {
         self.get_virtual_storage_node_by_name(name, sub_name).map(|n| n.index())
-    }
-
-    pub fn set_virtual_storage_cost(
-        &mut self,
-        name: &str,
-        sub_name: Option<&str>,
-        value: Option<MetricF64>,
-    ) -> Result<(), NetworkError> {
-        let node = self
-            .get_mut_virtual_storage_node_by_name(name, sub_name)
-            .ok_or(NetworkError::NodeNotFound {
-                name: name.to_string(),
-                sub_name: sub_name.map(|s| s.to_string()),
-            })?;
-
-        node.set_cost(value);
-        Ok(())
-    }
-
-    pub fn set_virtual_storage_max_volume(
-        &mut self,
-        name: &str,
-        sub_name: Option<&str>,
-        value: Option<SimpleMetricF64>,
-    ) -> Result<(), NetworkError> {
-        let node = self
-            .get_mut_virtual_storage_node_by_name(name, sub_name)
-            .ok_or(NetworkError::NodeNotFound {
-                name: name.to_string(),
-                sub_name: sub_name.map(|s| s.to_string()),
-            })?;
-
-        node.set_max_volume_constraint(value);
-        Ok(())
-    }
-
-    pub fn set_virtual_storage_min_volume(
-        &mut self,
-        name: &str,
-        sub_name: Option<&str>,
-        value: Option<SimpleMetricF64>,
-    ) -> Result<(), NetworkError> {
-        let node = self
-            .get_mut_virtual_storage_node_by_name(name, sub_name)
-            .ok_or(NetworkError::NodeNotFound {
-                name: name.to_string(),
-                sub_name: sub_name.map(|s| s.to_string()),
-            })?;
-
-        node.set_min_volume_constraint(value);
-        Ok(())
     }
 
     /// Get a `Parameter` from a parameter's name
@@ -1767,241 +1288,6 @@ impl Network {
             .map(RecorderIndex::new)
     }
 
-    /// Add a new Node::Input to the network.
-    pub fn add_input_node(&mut self, name: &str, sub_name: Option<&str>) -> Result<NodeIndex, NetworkError> {
-        // Check for name.
-        // TODO move this check to `NodeVec`
-        if self.get_node_by_name(name, sub_name).is_some() {
-            return Err(NetworkError::NodeAlreadyExists {
-                name: name.to_string(),
-                sub_name: sub_name.map(|s| s.to_string()),
-            });
-        }
-
-        // Now add the node to the network.
-        let node_index = self.nodes.push_new_input(name, sub_name);
-        // ... and add it to the resolve order.
-        self.resolve_order.push(ComponentType::Node(node_index));
-        Ok(node_index)
-    }
-
-    /// Add a new Node::Link to the network.
-    pub fn add_link_node(&mut self, name: &str, sub_name: Option<&str>) -> Result<NodeIndex, NetworkError> {
-        // Check for name.
-        // TODO move this check to `NodeVec`
-        if self.get_node_by_name(name, sub_name).is_some() {
-            return Err(NetworkError::NodeAlreadyExists {
-                name: name.to_string(),
-                sub_name: sub_name.map(|s| s.to_string()),
-            });
-        }
-
-        // Now add the node to the network.
-        let node_index = self.nodes.push_new_link(name, sub_name);
-        // ... and add it to the resolve order.
-        self.resolve_order.push(ComponentType::Node(node_index));
-        Ok(node_index)
-    }
-
-    /// Add a new Node::Link to the network.
-    pub fn add_output_node(&mut self, name: &str, sub_name: Option<&str>) -> Result<NodeIndex, NetworkError> {
-        // Check for name.
-        // TODO move this check to `NodeVec`
-        if self.get_node_by_name(name, sub_name).is_some() {
-            return Err(NetworkError::NodeAlreadyExists {
-                name: name.to_string(),
-                sub_name: sub_name.map(|s| s.to_string()),
-            });
-        }
-
-        // Now add the node to the network.
-        let node_index = self.nodes.push_new_output(name, sub_name);
-        // ... and add it to the resolve order.
-        self.resolve_order.push(ComponentType::Node(node_index));
-        Ok(node_index)
-    }
-
-    /// Add a new Node::Link to the network.
-    pub fn add_storage_node(
-        &mut self,
-        name: &str,
-        sub_name: Option<&str>,
-        initial_volume: StorageInitialVolume,
-        min_volume: Option<SimpleMetricF64>,
-        max_volume: Option<SimpleMetricF64>,
-    ) -> Result<NodeIndex, NetworkError> {
-        // Check for name.
-        // TODO move this check to `NodeVec`
-        if self.get_node_by_name(name, sub_name).is_some() {
-            return Err(NetworkError::NodeAlreadyExists {
-                name: name.to_string(),
-                sub_name: sub_name.map(|s| s.to_string()),
-            });
-        }
-
-        // Now add the node to the network.
-        let node_index = self
-            .nodes
-            .push_new_storage(name, sub_name, initial_volume, min_volume, max_volume);
-        // ... and add it to the resolve order.
-        self.resolve_order.push(ComponentType::Node(node_index));
-        Ok(node_index)
-    }
-
-    /// Add a new `aggregated_node::AggregatedNode` to the network.
-    pub fn add_aggregated_node(
-        &mut self,
-        name: &str,
-        sub_name: Option<&str>,
-        nodes: &[Vec<NodeIndex>],
-        relationship: Option<Relationship>,
-    ) -> Result<AggregatedNodeIndex, NetworkError> {
-        if self.get_aggregated_node_by_name(name, sub_name).is_some() {
-            return Err(NetworkError::NodeAlreadyExists {
-                name: name.to_string(),
-                sub_name: sub_name.map(|s| s.to_string()),
-            });
-        }
-
-        let node_index = self.aggregated_nodes.push_new(name, sub_name, nodes, relationship);
-        Ok(node_index)
-    }
-
-    /// Add a new `aggregated_storage_node::AggregatedStorageNode` to the network.
-    pub fn add_aggregated_storage_node(
-        &mut self,
-        name: &str,
-        sub_name: Option<&str>,
-        nodes: Vec<NodeIndex>,
-    ) -> Result<AggregatedStorageNodeIndex, NetworkError> {
-        if self.get_aggregated_storage_node_by_name(name, sub_name).is_some() {
-            return Err(NetworkError::NodeAlreadyExists {
-                name: name.to_string(),
-                sub_name: sub_name.map(|s| s.to_string()),
-            });
-        }
-
-        let node_index = self.aggregated_storage_nodes.push_new(name, sub_name, nodes);
-        Ok(node_index)
-    }
-
-    /// Add a new `VirtualStorage` to the network.
-    pub fn add_virtual_storage_node(
-        &mut self,
-        builder: VirtualStorageBuilder,
-    ) -> Result<VirtualStorageIndex, NetworkError> {
-        let vs_node_index = self.virtual_storage_nodes.push_new(builder)?;
-
-        let vs_node = self
-            .virtual_storage_nodes
-            .get(&vs_node_index)
-            .expect("VirtualStorageNode not found; this is a bug and should not be possible.");
-
-        // Link the virtual storage node to the nodes it is including
-        for node_idx in vs_node.nodes() {
-            let node = self
-                .nodes
-                .get_mut(node_idx)
-                .ok_or(NetworkError::NodeIndexNotFound { index: *node_idx })?;
-
-            node.add_virtual_storage(vs_node_index)
-                .map_err(|source| NetworkError::NodeError {
-                    name: node.name().to_string(),
-                    sub_name: node.sub_name().map(|s| s.to_string()),
-                    source: Box::new(source),
-                })?;
-        }
-
-        // Add to the resolve order.
-        self.resolve_order
-            .push(ComponentType::VirtualStorageNode(vs_node_index));
-
-        Ok(vs_node_index)
-    }
-
-    pub fn set_virtual_storage_node_cost(
-        &mut self,
-        name: &str,
-        sub_name: Option<&str>,
-        value: Option<MetricF64>,
-    ) -> Result<(), NetworkError> {
-        let node = self
-            .get_mut_virtual_storage_node_by_name(name, sub_name)
-            .ok_or_else(|| NetworkError::NodeNotFound {
-                name: name.to_string(),
-                sub_name: sub_name.map(|s| s.to_string()),
-            })?;
-        node.set_cost(value);
-        Ok(())
-    }
-
-    /// Add a [`parameters::GeneralParameter`] to the network
-    pub fn add_parameter(
-        &mut self,
-        parameter: Box<dyn parameters::GeneralParameter<f64>>,
-    ) -> Result<ParameterIndex<f64>, NetworkError> {
-        let parameter_index = self.parameters.add_general_f64(parameter)?;
-
-        // add it to the general resolve order (simple and constant parameters are resolved separately)
-        if let ParameterIndex::General(idx) = parameter_index {
-            self.resolve_order.push(ComponentType::Parameter(idx.into()));
-        }
-
-        Ok(parameter_index)
-    }
-
-    /// Add a [`parameters::SimpleParameter`] to the network
-    pub fn add_simple_parameter(
-        &mut self,
-        parameter: Box<dyn parameters::SimpleParameter<f64>>,
-    ) -> Result<ParameterIndex<f64>, NetworkError> {
-        Ok(self.parameters.add_simple_f64(parameter)?)
-    }
-
-    /// Add a [`parameters::SimpleParameter`] to the network
-    pub fn add_simple_index_parameter(
-        &mut self,
-        parameter: Box<dyn parameters::SimpleParameter<u64>>,
-    ) -> Result<ParameterIndex<u64>, NetworkError> {
-        Ok(self.parameters.add_simple_u64(parameter)?)
-    }
-
-    /// Add a [`parameters::ConstParameter`] to the network
-    pub fn add_const_parameter(
-        &mut self,
-        parameter: Box<dyn parameters::ConstParameter<f64>>,
-    ) -> Result<ParameterIndex<f64>, NetworkError> {
-        Ok(self.parameters.add_const_f64(parameter)?)
-    }
-
-    /// Add a `parameters::IndexParameter` to the network
-    pub fn add_index_parameter(
-        &mut self,
-        parameter: Box<dyn parameters::GeneralParameter<u64>>,
-    ) -> Result<ParameterIndex<u64>, NetworkError> {
-        let parameter_index = self.parameters.add_general_u64(parameter)?;
-        // add it to the general resolve order (simple and constant parameters are resolved separately)
-        if let ParameterIndex::General(idx) = parameter_index {
-            self.resolve_order.push(ComponentType::Parameter(idx.into()));
-        }
-
-        Ok(parameter_index)
-    }
-
-    /// Add a `parameters::MultiValueParameter` to the network
-    pub fn add_multi_value_parameter(
-        &mut self,
-        parameter: Box<dyn parameters::GeneralParameter<MultiValue>>,
-    ) -> Result<ParameterIndex<MultiValue>, NetworkError> {
-        let parameter_index = self.parameters.add_general_multi(parameter)?;
-        // add it to the general resolve order (simple and constant parameters are resolved separately)
-        if let ParameterIndex::General(idx) = parameter_index {
-            self.resolve_order.push(ComponentType::Parameter(idx.into()));
-        }
-
-        Ok(parameter_index)
-    }
-
     /// Add a [`MetricSet`] to the network.
     pub fn add_metric_set(&mut self, metric_set: MetricSet) -> Result<MetricSetIndex, NetworkError> {
         if self.get_metric_set_by_name(metric_set.name()).is_ok() {
@@ -2032,70 +1318,6 @@ impl Network {
             Some(idx) => Ok(MetricSetIndex::new(idx)),
             None => Err(NetworkError::MetricSetNotFound(name.to_string())),
         }
-    }
-
-    /// Add a `recorders::Recorder` to the network
-    pub fn add_recorder(&mut self, recorder: Box<dyn recorders::Recorder>) -> Result<RecorderIndex, NetworkError> {
-        // TODO reinstate this check
-        // if let Ok(idx) = self.get_recorder_by_name(&recorder.meta().name) {
-        //     return Err(PywrError::RecorderNameAlreadyExists(
-        //         recorder.meta().name.to_string(),
-        //         idx,
-        //     ));
-        // }
-
-        let recorder_index = RecorderIndex::new(self.recorders.len());
-        self.recorders.push(recorder);
-        Ok(recorder_index)
-    }
-
-    /// Connect two nodes together
-    pub fn connect_nodes(
-        &mut self,
-        from_node_index: NodeIndex,
-        to_node_index: NodeIndex,
-    ) -> Result<EdgeIndex, NetworkError> {
-        // The network can get in a bad state here if the edge is added to the `from_node`
-        // successfully, but fails on the `to_node`.
-        // Suggest to do a check before attempting to add.
-        let from_node = self
-            .nodes
-            .get_mut(&from_node_index)
-            .ok_or(NetworkError::NodeIndexNotFound { index: from_node_index })?;
-
-        // Self connections are not allowed.
-        if from_node_index == to_node_index {
-            return Err(NetworkError::NodeConnectToSelf {
-                name: from_node.name().to_string(),
-                sub_name: from_node.sub_name().map(|s| s.to_string()),
-            });
-        }
-
-        // Next edge index
-        let edge_index = self.edges.push(from_node_index, to_node_index);
-
-        from_node
-            .add_outgoing_edge(edge_index)
-            .map_err(|source| NetworkError::NodeError {
-                name: from_node.name().to_string(),
-                sub_name: from_node.sub_name().map(|s| s.to_string()),
-                source: Box::new(source),
-            })?;
-
-        let to_node = self
-            .nodes
-            .get_mut(&to_node_index)
-            .ok_or(NetworkError::NodeIndexNotFound { index: from_node_index })?;
-
-        to_node
-            .add_incoming_edge(edge_index)
-            .map_err(|source| NetworkError::NodeError {
-                name: to_node.name().to_string(),
-                sub_name: to_node.sub_name().map(|s| s.to_string()),
-                source: Box::new(source),
-            })?;
-
-        Ok(edge_index)
     }
 
     /// Set the variable values on the parameter `parameter_index`.
@@ -2333,15 +1555,689 @@ impl Network {
     }
 }
 
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+pub struct UnresolvedEdge {
+    from: UnresolvedNode,
+    to: UnresolvedNode,
+}
+
+impl UnresolvedEdge {
+    pub fn new(from: UnresolvedNode, to: UnresolvedNode) -> Self {
+        Self { from, to }
+    }
+}
+
+impl Display for UnresolvedEdge {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} -> {}", self.from, self.to)
+    }
+}
+
+/// An index to a regular node type.
+#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Debug, Hash)]
+pub struct NodeIndex(usize);
+
+impl Deref for NodeIndex {
+    type Target = usize;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl Display for NodeIndex {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Debug, Hash)]
+pub struct EdgeIndex(usize);
+
+impl Deref for EdgeIndex {
+    type Target = usize;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl Display for EdgeIndex {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Debug)]
+pub struct AggregatedNodeIndex(usize);
+
+impl Deref for AggregatedNodeIndex {
+    type Target = usize;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl Display for AggregatedNodeIndex {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Debug)]
+pub struct AggregatedStorageNodeIndex(usize);
+
+impl Deref for AggregatedStorageNodeIndex {
+    type Target = usize;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl Display for AggregatedStorageNodeIndex {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Debug, Hash)]
+pub struct VirtualStorageIndex(usize);
+
+impl Deref for VirtualStorageIndex {
+    type Target = usize;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl Display for VirtualStorageIndex {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub struct RecorderIndex(usize);
+
+impl RecorderIndex {
+    pub fn new(idx: usize) -> Self {
+        Self(idx)
+    }
+}
+
+impl Deref for RecorderIndex {
+    type Target = usize;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl Display for RecorderIndex {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Debug)]
+pub struct MetricSetIndex(usize);
+
+impl MetricSetIndex {
+    pub fn new(idx: usize) -> Self {
+        Self(idx)
+    }
+}
+
+impl Deref for MetricSetIndex {
+    type Target = usize;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl Display for MetricSetIndex {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+/// A helper struct for building a network. This struct contains look-ups and references
+/// for resolving names and other unresolved references during the build process.
+#[derive(Debug)]
+pub struct ResolutionMaps {
+    pub nodes: HashMap<UnresolvedNode, NodeIndex>,
+    /// The edges incoming to each node.
+    pub incoming_edges: HashMap<NodeIndex, Vec<EdgeIndex>>,
+    /// The edges outgoing from each node.
+    pub outgoing_edges: HashMap<NodeIndex, Vec<EdgeIndex>>,
+    pub parameters_f64: HashMap<ParameterName, ParameterIndex<f64>>,
+    pub parameters_u64: HashMap<ParameterName, ParameterIndex<u64>>,
+    pub parameters_multi: HashMap<ParameterName, ParameterIndex<MultiValue>>,
+    /// The index associated with the unresolved virtual storage node names.
+    pub virtual_storage_node: HashMap<UnresolvedNode, VirtualStorageIndex>,
+    /// The virtual storage nodes associated with each node index. This is used to resolve the
+    /// virtual storage nodes after the regular nodes have been resolved.
+    pub virtual_storage_associated_nodes: HashMap<NodeIndex, Vec<VirtualStorageIndex>>,
+    /// The index associated with the unresolved aggregated node names.
+    pub aggregated_nodes: HashMap<UnresolvedNode, AggregatedNodeIndex>,
+    /// The index associated with the unresolved aggregated storage node names.
+    pub aggregated_storage_nodes: HashMap<UnresolvedNode, AggregatedStorageNodeIndex>,
+    /// The index associated with each unresolved edge.
+    pub edges: HashMap<UnresolvedEdge, EdgeIndex>,
+    /// The model domain
+    pub domain: ModelDomain,
+    /// Inter-network transfer indices
+    pub inter_network_transfers: HashMap<String, MultiNetworkTransferIndex>,
+    /// The index associated wit heach metric set
+    pub metric_sets: HashMap<String, MetricSetIndex>,
+}
+
+impl ResolutionMaps {
+    pub fn new(domain: ModelDomain) -> Self {
+        Self {
+            nodes: Default::default(),
+            incoming_edges: Default::default(),
+            outgoing_edges: Default::default(),
+            parameters_f64: Default::default(),
+            parameters_u64: Default::default(),
+            parameters_multi: Default::default(),
+            virtual_storage_node: Default::default(),
+            virtual_storage_associated_nodes: Default::default(),
+            aggregated_nodes: Default::default(),
+            aggregated_storage_nodes: Default::default(),
+            edges: Default::default(),
+            domain,
+            inter_network_transfers: Default::default(),
+            metric_sets: Default::default(),
+        }
+    }
+}
+
+type NodeEdgeMap = HashMap<NodeIndex, Vec<EdgeIndex>>;
+
+/// Errors returned by [`NetworkBuilder`]
+#[derive(Debug, Error)]
+pub enum NetworkBuildError {
+    #[error("Duplicate node names found: {name}")]
+    DuplicateNodeName { name: UnresolvedNode },
+    #[error("Duplicate parameter names found: {name}")]
+    DuplicateParameterName { name: ParameterName },
+    #[error("Duplicate aggregated node names found: {name}")]
+    DuplicateAggregatedNodeName { name: UnresolvedNode },
+    #[error("Duplicate metric set names found: {name}")]
+    DuplicateMetricSetName { name: String },
+    #[error("Duplicate edge found: {edge}")]
+    DuplicateEdge { edge: Box<UnresolvedEdge> },
+    #[error("Node `{name}` not found while resolving edge: {edge}")]
+    NodeNotFoundForEdge {
+        name: UnresolvedNode,
+        edge: Box<UnresolvedEdge>,
+    },
+    #[error("Node `{name}` not found while resolving virtual storage: {virtual_storage}")]
+    NodeNotFoundForVirtualStorage {
+        name: UnresolvedNode,
+        virtual_storage: UnresolvedNode,
+    },
+    #[error("Error building node `{name}`: {source}")]
+    NodeBuilderError {
+        name: UnresolvedNode,
+        #[source]
+        source: Box<NodeBuilderError>,
+    },
+    #[error("Cannot connect a node to itself: `{name}`")]
+    NodeConnectToSelf { name: UnresolvedNode },
+    #[error("Error building aggregated node `{name}`: {source}")]
+    AggregatedNodeBuilderError {
+        name: UnresolvedNode,
+        #[source]
+        source: Box<AggregatedNodeBuilderError>,
+    },
+    #[error("Error building aggregated storage node `{name}`: {source}")]
+    AggregatedStorageNodeBuilderError {
+        name: UnresolvedNode,
+        #[source]
+        source: Box<AggregatedStorageNodeBuilderError>,
+    },
+    #[error("Error building virtual storage node `{name}`: {source}")]
+    VirtualStorageNodeBuilderError {
+        name: UnresolvedNode,
+        #[source]
+        source: Box<VirtualStorageNodeBuilderError>,
+    },
+    #[error("Error building recorder `{name}`: {source}")]
+    RecorderBuilderError {
+        name: String,
+        #[source]
+        source: Box<RecorderBuilderError>,
+    },
+    #[error("Error building metric set `{name}`: {source}")]
+    MetricSetBuilderError {
+        name: String,
+        #[source]
+        source: Box<MetricSetBuilderError>,
+    },
+    #[error("Parameter collection build error: {0}")]
+    ParameterCollectionBuildError(#[from] Box<ParameterCollectionBuilderError>),
+}
+
+/// A builder for [`Network`].
+///
+/// This is the only way to construct a [`Network`] instance.
+#[derive(Default, Debug)]
+pub struct NetworkBuilder {
+    nodes: Vec<NodeBuilder>,
+    virtual_storage_nodes: Vec<VirtualStorageNodeBuilder>,
+    edges: Vec<UnresolvedEdge>,
+    parameters: ParameterCollectionBuilder,
+    aggregated_nodes: Vec<AggregatedNodeBuilder>,
+    aggregated_storage_nodes: Vec<AggregatedStorageNodeBuilder>,
+    recorders: Vec<Box<dyn RecorderBuilder>>,
+    metric_sets: Vec<MetricSetBuilder>,
+}
+
+impl NetworkBuilder {
+    /// Add an input node to the network builder.
+    pub fn node(&mut self, node: NodeBuilder) -> &mut Self {
+        self.nodes.push(node);
+        self
+    }
+
+    /// Get a reference to an existing node builder by name and sub-name, if it exists.
+    pub fn node_builder(&mut self, name: &UnresolvedNode) -> Option<&mut NodeBuilder> {
+        self.nodes.iter_mut().find(|n| n.name() == name)
+    }
+
+    /// Add a virtual storage node to the network builder.
+    pub fn virtual_storage_node(&mut self, vs_node: VirtualStorageNodeBuilder) -> &mut Self {
+        self.virtual_storage_nodes.push(vs_node);
+        self
+    }
+
+    /// Connect two nodes together
+    pub fn connect<N1: Into<UnresolvedNode>, N2: Into<UnresolvedNode>>(&mut self, from: N1, to: N2) -> &mut Self {
+        self.edges.push(UnresolvedEdge {
+            from: from.into(),
+            to: to.into(),
+        });
+        self
+    }
+
+    /// Add an aggregated node to the network builder.
+    pub fn agg_node(&mut self, agg_node: AggregatedNodeBuilder) -> &mut Self {
+        self.aggregated_nodes.push(agg_node);
+        self
+    }
+
+    pub fn agg_storage_node(&mut self, agg_storage_node: AggregatedStorageNodeBuilder) -> &mut Self {
+        self.aggregated_storage_nodes.push(agg_storage_node);
+        self
+    }
+
+    pub fn parameters(&mut self) -> &mut ParameterCollectionBuilder {
+        &mut self.parameters
+    }
+
+    pub fn recorder(&mut self, recorder: Box<dyn RecorderBuilder>) -> &mut Self {
+        self.recorders.push(recorder);
+        self
+    }
+
+    pub fn metric_set(&mut self, metric_set: MetricSetBuilder) -> &mut Self {
+        self.metric_sets.push(metric_set);
+        self
+    }
+
+    fn node_index_map(&self) -> Result<HashMap<UnresolvedNode, NodeIndex>, NetworkBuildError> {
+        // Build the NodeIndex map checking for any duplicate node names.
+        let mut node_index_map: HashMap<UnresolvedNode, NodeIndex> = HashMap::with_capacity(self.nodes.len());
+
+        for (i, nb) in self.nodes.iter().enumerate() {
+            let unresolved_node = nb.name();
+            if node_index_map.contains_key(unresolved_node) {
+                return Err(NetworkBuildError::DuplicateNodeName {
+                    name: unresolved_node.clone(),
+                });
+            }
+            node_index_map.insert(unresolved_node.clone(), NodeIndex(i));
+        }
+
+        Ok(node_index_map)
+    }
+
+    fn edge_index_map(&self) -> Result<HashMap<UnresolvedEdge, EdgeIndex>, NetworkBuildError> {
+        let mut edge_index_map: HashMap<UnresolvedEdge, EdgeIndex> = HashMap::with_capacity(self.edges.len());
+
+        for (i, edge) in self.edges.iter().enumerate() {
+            let unresolved_edge = edge.clone();
+            if edge_index_map.contains_key(&unresolved_edge) {
+                return Err(NetworkBuildError::DuplicateEdge {
+                    edge: Box::new(unresolved_edge),
+                });
+            }
+            edge_index_map.insert(unresolved_edge, EdgeIndex(i));
+        }
+
+        Ok(edge_index_map)
+    }
+
+    fn node_edge_maps(
+        &self,
+        node_indices: &HashMap<UnresolvedNode, NodeIndex>,
+    ) -> Result<(NodeEdgeMap, NodeEdgeMap), NetworkBuildError> {
+        let mut incoming: NodeEdgeMap = HashMap::with_capacity(self.nodes.len());
+        let mut outgoing: NodeEdgeMap = HashMap::with_capacity(self.nodes.len());
+
+        for (i, edge) in self.edges.iter().enumerate() {
+            let ei = EdgeIndex(i);
+
+            let from_node_index =
+                node_indices
+                    .get(&edge.from)
+                    .ok_or_else(|| NetworkBuildError::NodeNotFoundForEdge {
+                        name: edge.from.clone(),
+                        edge: Box::new(edge.clone()),
+                    })?;
+
+            let to_node_index = node_indices
+                .get(&edge.to)
+                .ok_or_else(|| NetworkBuildError::NodeNotFoundForEdge {
+                    name: edge.to.clone(),
+                    edge: Box::new(edge.clone()),
+                })?;
+
+            // Self connections are forbidden.
+            if from_node_index == to_node_index {
+                return Err(NetworkBuildError::NodeConnectToSelf { name: edge.to.clone() });
+            }
+
+            outgoing.entry(*from_node_index).or_default().push(ei);
+            incoming.entry(*to_node_index).or_default().push(ei);
+        }
+
+        Ok((incoming, outgoing))
+    }
+
+    fn aggregated_node_map(&self) -> Result<HashMap<UnresolvedNode, AggregatedNodeIndex>, NetworkBuildError> {
+        let mut agg_node_index_map: HashMap<UnresolvedNode, AggregatedNodeIndex> =
+            HashMap::with_capacity(self.nodes.len());
+        for (i, nb) in self.aggregated_nodes.iter().enumerate() {
+            let unresolved_node = nb.name();
+            if agg_node_index_map.contains_key(unresolved_node) {
+                return Err(NetworkBuildError::DuplicateAggregatedNodeName {
+                    name: unresolved_node.clone(),
+                });
+            }
+
+            agg_node_index_map.insert(unresolved_node.clone(), AggregatedNodeIndex(i));
+        }
+
+        Ok(agg_node_index_map)
+    }
+
+    fn aggregated_storage_node_map(
+        &self,
+    ) -> Result<HashMap<UnresolvedNode, AggregatedStorageNodeIndex>, NetworkBuildError> {
+        let mut agg_node_index_map: HashMap<UnresolvedNode, AggregatedStorageNodeIndex> =
+            HashMap::with_capacity(self.nodes.len());
+        for (i, nb) in self.aggregated_storage_nodes.iter().enumerate() {
+            let unresolved_node = nb.name();
+            if agg_node_index_map.contains_key(unresolved_node) {
+                return Err(NetworkBuildError::DuplicateAggregatedNodeName {
+                    name: unresolved_node.clone(),
+                });
+            }
+
+            agg_node_index_map.insert(unresolved_node.clone(), AggregatedStorageNodeIndex(i));
+        }
+
+        Ok(agg_node_index_map)
+    }
+
+    fn virtual_storage_node_map(&self) -> Result<HashMap<UnresolvedNode, VirtualStorageIndex>, NetworkBuildError> {
+        let mut vs_node_index_map: HashMap<UnresolvedNode, VirtualStorageIndex> =
+            HashMap::with_capacity(self.nodes.len());
+        for (i, nb) in self.virtual_storage_nodes.iter().enumerate() {
+            let unresolved_node = nb.name();
+            if vs_node_index_map.contains_key(unresolved_node) {
+                return Err(NetworkBuildError::DuplicateAggregatedNodeName {
+                    name: unresolved_node.clone(),
+                });
+            }
+
+            vs_node_index_map.insert(unresolved_node.clone(), VirtualStorageIndex(i));
+        }
+
+        Ok(vs_node_index_map)
+    }
+
+    /// Compute a map of [`NodeIndex`] to the associated [`VirtualStorageNode`]s. This is used
+    /// to build the backward reference from nodes to VS nodes.
+    fn node_associated_vs_nodes(
+        &self,
+        node_indices: &HashMap<UnresolvedNode, NodeIndex>,
+    ) -> Result<HashMap<NodeIndex, Vec<VirtualStorageIndex>>, NetworkBuildError> {
+        let mut vs_associated_nodes: HashMap<NodeIndex, Vec<VirtualStorageIndex>> =
+            HashMap::with_capacity(self.nodes.len());
+        for (i, vs) in self.virtual_storage_nodes.iter().enumerate() {
+            let vi = VirtualStorageIndex(i);
+            for node in vs.nodes() {
+                let index = node_indices
+                    .get(node)
+                    .ok_or_else(|| NetworkBuildError::NodeNotFoundForVirtualStorage {
+                        name: node.clone(),
+                        virtual_storage: vs.name().clone(),
+                    })?;
+
+                vs_associated_nodes.entry(*index).or_default().push(vi);
+            }
+        }
+
+        Ok(vs_associated_nodes)
+    }
+
+    fn metric_set_map(&self) -> Result<HashMap<String, MetricSetIndex>, NetworkBuildError> {
+        let mut metric_set_map: HashMap<String, MetricSetIndex> = HashMap::with_capacity(self.nodes.len());
+        for (i, ms) in self.metric_sets.iter().enumerate() {
+            let msi = MetricSetIndex(i);
+
+            if metric_set_map.contains_key(ms.name()) {
+                return Err(NetworkBuildError::DuplicateMetricSetName {
+                    name: ms.name().to_string(),
+                });
+            }
+            metric_set_map.insert(ms.name().to_string(), msi);
+        }
+
+        Ok(metric_set_map)
+    }
+
+    fn build_resolution_map(
+        &self,
+        domain: &ModelDomain,
+        inter_network_transfer_map: &HashMap<String, MultiNetworkTransferIndex>,
+    ) -> Result<ResolutionMaps, NetworkBuildError> {
+        let nodes = self.node_index_map()?;
+        let edges = self.edge_index_map()?;
+        let (incoming_edges, outgoing_edges) = self.node_edge_maps(&nodes)?;
+        let aggregated_nodes = self.aggregated_node_map()?;
+        let aggregated_storage_nodes = self.aggregated_storage_node_map()?;
+        let virtual_storage_node = self.virtual_storage_node_map()?;
+        let virtual_storage_associated_nodes = self.node_associated_vs_nodes(&nodes)?;
+        let metric_sets = self.metric_set_map()?;
+
+        Ok(ResolutionMaps {
+            nodes,
+            incoming_edges,
+            outgoing_edges,
+            // Parameter maps start empty and are iteratively populated.
+            parameters_f64: Default::default(),
+            parameters_u64: Default::default(),
+            parameters_multi: Default::default(),
+            virtual_storage_node,
+            virtual_storage_associated_nodes,
+            aggregated_nodes,
+            aggregated_storage_nodes,
+            edges,
+            domain: domain.clone(), // TODO can this clone be removed; needs tying to the lifetime of the reference in `build`.
+            inter_network_transfers: inter_network_transfer_map.clone(),
+            metric_sets,
+        })
+    }
+
+    /// Build the network.
+    pub fn build(
+        self,
+        domain: &ModelDomain,
+        inter_network_transfer_map: &HashMap<String, MultiNetworkTransferIndex>,
+    ) -> Result<(Network, ResolutionMaps), NetworkBuildError> {
+        // Resolution map
+        let mut resolution_map = self.build_resolution_map(domain, inter_network_transfer_map)?;
+
+        // Iterative load the parameters
+        let parameters = self
+            .parameters
+            .build(&mut resolution_map)
+            .map_err(|source| NetworkBuildError::ParameterCollectionBuildError(Box::new(source)))?;
+
+        // Construct all the nodes
+        let mut nodes = Vec::with_capacity(self.nodes.len());
+        for node_builder in self.nodes.iter() {
+            let node = node_builder
+                .build(&resolution_map)
+                .map_err(|source| NetworkBuildError::NodeBuilderError {
+                    name: node_builder.name().clone(),
+                    source: Box::new(source),
+                })?;
+
+            nodes.push(node);
+        }
+
+        // Construct all the aggregated nodes
+        let mut aggregated_nodes = Vec::with_capacity(self.aggregated_nodes.len());
+        for agg_node_builder in self.aggregated_nodes.iter() {
+            let agg_node = agg_node_builder.build(&resolution_map).map_err(|source| {
+                NetworkBuildError::AggregatedNodeBuilderError {
+                    name: agg_node_builder.name().clone(),
+                    source: Box::new(source),
+                }
+            })?;
+
+            aggregated_nodes.push(agg_node);
+        }
+
+        // Construct all the aggregated storage nodes
+        let mut aggregated_storage_nodes = Vec::with_capacity(self.aggregated_storage_nodes.len());
+        for agg_storage_node_builder in self.aggregated_storage_nodes.iter() {
+            let agg_node = agg_storage_node_builder.build(&resolution_map).map_err(|source| {
+                NetworkBuildError::AggregatedStorageNodeBuilderError {
+                    name: agg_storage_node_builder.name().clone(),
+                    source: Box::new(source),
+                }
+            })?;
+
+            aggregated_storage_nodes.push(agg_node);
+        }
+
+        // Construct all virtual storage nodes
+        let mut virtual_storage_nodes = Vec::with_capacity(self.virtual_storage_nodes.len());
+        for vs_node_builder in self.virtual_storage_nodes.iter() {
+            let vs_node = vs_node_builder.build(&resolution_map).map_err(|source| {
+                NetworkBuildError::VirtualStorageNodeBuilderError {
+                    name: vs_node_builder.name().clone(),
+                    source: Box::new(source),
+                }
+            })?;
+
+            virtual_storage_nodes.push(vs_node);
+        }
+
+        // Construct all the edges
+        let mut edges = Vec::with_capacity(self.edges.len());
+        for (i, unresolved_edge) in self.edges.iter().enumerate() {
+            let index = EdgeIndex(i);
+            let from_node_index = resolution_map
+                .nodes
+                .get(&unresolved_edge.from)
+                .copied()
+                .ok_or_else(|| NetworkBuildError::NodeNotFoundForEdge {
+                    name: unresolved_edge.from.clone(),
+                    edge: Box::new(unresolved_edge.clone()),
+                })?;
+
+            let to_node_index = resolution_map.nodes.get(&unresolved_edge.to).copied().ok_or_else(|| {
+                NetworkBuildError::NodeNotFoundForEdge {
+                    name: unresolved_edge.to.clone(),
+                    edge: Box::new(unresolved_edge.clone()),
+                }
+            })?;
+
+            let edge = Edge {
+                index,
+                from_node_index,
+                to_node_index,
+            };
+
+            edges.push(edge);
+        }
+
+        let mut metric_sets = Vec::with_capacity(nodes.len());
+        for metric_set_builder in self.metric_sets {
+            let name = metric_set_builder.name().to_string();
+            let metric_set = metric_set_builder.build(&resolution_map).map_err(|source| {
+                NetworkBuildError::MetricSetBuilderError {
+                    name,
+                    source: Box::new(source),
+                }
+            })?;
+
+            metric_sets.push(metric_set);
+        }
+
+        // Construct all recorders
+        let mut recorders = Vec::with_capacity(self.recorders.len());
+        for recorder_builder in self.recorders.into_iter() {
+            let name = recorder_builder.name().to_string();
+            let recorder =
+                recorder_builder
+                    .build(&resolution_map)
+                    .map_err(|source| NetworkBuildError::RecorderBuilderError {
+                        name,
+                        source: Box::new(source),
+                    })?;
+
+            recorders.push(recorder);
+        }
+
+        let network = Network {
+            nodes,
+            edges,
+            aggregated_nodes,
+            aggregated_storage_nodes,
+            virtual_storage_nodes,
+            parameters,
+            metric_sets,
+            recorders,
+        };
+
+        Ok((network, resolution_map))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::metric::MetricF64;
-    use crate::network::Network;
-    use crate::parameters::{ActivationFunction, ControlCurveInterpolatedParameter, Parameter};
-    use crate::recorders::AssertionF64Recorder;
+    use crate::metric::{MetricF64ResolutionError, UnresolvedMetricF64};
+    use crate::models::ModelBuilder;
+    use crate::parameters::{ActivationFunction, ControlCurveInterpolatedParameterBuilder};
+    use crate::recorders::AssertionF64RecorderBuilder;
     use crate::solvers::{ClpSolver, ClpSolverSettings};
-    use crate::test_utils::{run_all_solvers, simple_model, simple_storage_model};
+    use crate::test_utils::{
+        default_domain, run_all_solvers, simple_model, simple_storage_model, simple_storage_network,
+    };
     use float_cmp::assert_approx_eq;
     use ndarray::{Array, Array2};
     use std::default::Default;
@@ -2349,25 +2245,28 @@ mod tests {
 
     #[test]
     fn test_simple_network() {
-        let mut network = Network::default();
+        let mut builder = NetworkBuilder::default();
 
-        let input_node = network.add_input_node("input", None).unwrap();
-        let link_node = network.add_link_node("link", None).unwrap();
-        let output_node = network.add_output_node("output", None).unwrap();
+        builder
+            .node(NodeBuilder::input("input"))
+            .node(NodeBuilder::link("link"))
+            .node(NodeBuilder::output("output"));
 
-        assert_eq!(*input_node.deref(), 0);
-        assert_eq!(*link_node.deref(), 1);
-        assert_eq!(*output_node.deref(), 2);
+        builder.connect("input", "link");
+        builder.connect("link", "output");
 
-        let edge = network.connect_nodes(input_node, link_node).unwrap();
-        assert_eq!(*edge.deref(), 0);
-        let edge = network.connect_nodes(link_node, output_node).unwrap();
-        assert_eq!(*edge.deref(), 1);
+        let domain = default_domain();
+        let (network, _) = builder.build(&domain, &HashMap::new()).unwrap();
 
         // Now assert the internal structure is as expected.
         let input_node = network.get_node_by_name("input", None).unwrap();
         let link_node = network.get_node_by_name("link", None).unwrap();
         let output_node = network.get_node_by_name("output", None).unwrap();
+
+        assert_eq!(*input_node.index().deref(), 0);
+        assert_eq!(*link_node.index().deref(), 1);
+        assert_eq!(*output_node.index().deref(), 2);
+
         assert_eq!(input_node.get_outgoing_edges().unwrap().len(), 1);
         assert_eq!(link_node.get_incoming_edges().unwrap().len(), 1);
         assert_eq!(link_node.get_outgoing_edges().unwrap().len(), 1);
@@ -2377,64 +2276,222 @@ mod tests {
     #[test]
     /// Test the duplicate node names are not permitted.
     fn test_duplicate_node_name() {
-        let mut network = Network::default();
+        let mut builder = NetworkBuilder::default();
 
-        network.add_input_node("my-node", None).unwrap();
+        builder
+            .node(NodeBuilder::input("my-node"))
+            .node(NodeBuilder::link("my-node"));
+
+        let domain = default_domain();
+        let result = builder.build(&domain, &HashMap::new());
+        assert!(
+            matches!(result, Err(NetworkBuildError::DuplicateNodeName { name, .. }) if name.to_string() == "my-node"
+            )
+        );
+
+        let mut builder = NetworkBuilder::default();
+        builder
+            .node(NodeBuilder::input("my-node"))
+            .node(NodeBuilder::input("my-node"));
+
+        assert!(
+            matches!(builder.build(&domain, &HashMap::new()), Err(NetworkBuildError::DuplicateNodeName { name, .. }) if name.to_string() == "my-node"
+            )
+        );
+
+        let mut builder = NetworkBuilder::default();
+        builder
+            .node(NodeBuilder::input("my-node"))
+            .node(NodeBuilder::link("my-other-node"))
+            .node(NodeBuilder::output("my-node"));
+        assert!(
+            matches!(builder.build(&domain, &HashMap::new()), Err(NetworkBuildError::DuplicateNodeName { name, .. }) if name.to_string() == "my-node"
+            )
+        );
         // Second add with the same name
-        assert!(matches!(
-            network.add_input_node("my-node", None),
-            Err(NetworkError::NodeAlreadyExists { name, .. }) if name == "my-node"));
+        let mut n1 = NodeBuilder::input("my-node");
+        n1.sub_name("sub1");
+        let mut n2 = NodeBuilder::input("my-node");
+        n2.sub_name("sub1");
 
-        network.add_input_node("my-node", Some("a")).unwrap();
-        // Second add with the same name
-        assert!(matches!(
-            network.add_input_node("my-node", Some("a")),
-            Err(NetworkError::NodeAlreadyExists { name, .. }) if name == "my-node"));
+        let mut builder = NetworkBuilder::default();
+        builder.node(n1).node(n2);
+        assert!(
+            matches!(builder.build(&domain, &HashMap::new()), Err(NetworkBuildError::DuplicateNodeName { name, .. }) if name.to_string() == "my-node[sub1]"
+            )
+        );
+    }
 
-        assert!(matches!(
-            network.add_link_node("my-node", None),
-            Err(NetworkError::NodeAlreadyExists { name, .. }) if name == "my-node"));
+    #[test]
+    /// Test connecting to yourself is forbidden.
+    fn test_self_connection() {
+        let mut builder = NetworkBuilder::default();
 
-        assert!(matches!(
-            network.add_output_node("my-node", None),
-            Err(NetworkError::NodeAlreadyExists { name, .. }) if name == "my-node"));
+        builder
+            .node(NodeBuilder::input("my-input"))
+            .node(NodeBuilder::link("my-link"))
+            .node(NodeBuilder::output("my-output"));
 
-        assert!(matches!(
-            network.add_storage_node(
-                "my-node",
-                None,
-                StorageInitialVolume::Absolute(10.0),
-                None,
-                Some(10.0.into())
-            ),
-            Err(NetworkError::NodeAlreadyExists { name, .. }) if name == "my-node"));
+        builder.connect("my-input", "my-link");
+        builder.connect("my-link", "my-link");
+        builder.connect("my-link", "my-output");
+
+        let domain = default_domain();
+        let result = builder.build(&domain, &HashMap::new());
+        assert!(
+            matches!(result, Err(NetworkBuildError::NodeConnectToSelf { name}) if name.to_string() == "my-link"
+            )
+        );
     }
 
     #[test]
     /// Test adding a constant parameter to a network.
     fn test_constant_parameter() {
-        let mut network = Network::default();
-        let _node_index = network.add_input_node("input", None).unwrap();
+        let mut builder = NetworkBuilder::default();
 
-        let input_max_flow = parameters::ConstantParameter::new("my-constant".into(), 10.0);
-        let parameter = network.add_const_parameter(Box::new(input_max_flow)).unwrap();
+        let mut input_node_builder = NodeBuilder::input("input");
+        // Add the reference to the constant parameter we have not yet added.
+        input_node_builder.max_flow(UnresolvedMetricF64::new_parameter_before("my-constant"));
+        builder.node(input_node_builder);
 
-        // assign the new parameter to one of the nodes.
-        let node = network.get_mut_node_by_name("input", None).unwrap();
-        node.set_max_flow_constraint(Some(parameter.into_metric_f64_before()))
-            .unwrap();
+        let output_node_builder = NodeBuilder::output("output");
+        builder.node(output_node_builder);
 
-        // Try to assign a constraint not defined for particular node type
-        assert!(matches!(
-            node.set_max_volume_constraint(Some(10.0.into())),
-            Err(NodeError::StorageConstraintsUndefined)
-        ));
+        builder.connect("input", "output");
+
+        let input_max_flow_builder = parameters::ConstantParameterBuilder::new("my-constant".into(), 10.0);
+        builder.parameters().f64(Box::new(input_max_flow_builder));
+
+        let domain = default_domain();
+        builder.build(&domain, &HashMap::new()).unwrap();
+    }
+
+    #[test]
+    /// Test the error response when a parameter is missing for a node's attribute.
+    fn test_missing_parameter_for_node_attr() {
+        let mut builder = NetworkBuilder::default();
+
+        let mut input_node_builder = NodeBuilder::input("input");
+        // Add the reference to the constant parameter we have not yet added.
+        input_node_builder.max_flow(UnresolvedMetricF64::new_parameter_before("this-is-missing"));
+        builder.node(input_node_builder);
+
+        let output_node_builder = NodeBuilder::output("output");
+        builder.node(output_node_builder);
+
+        builder.connect("input", "output");
+
+        let input_max_flow_builder = parameters::ConstantParameterBuilder::new("my-constant".into(), 10.0);
+        builder.parameters().f64(Box::new(input_max_flow_builder));
+
+        let domain = default_domain();
+
+        let build_err = builder
+            .build(&domain, &HashMap::new())
+            .expect_err("Builder should error.");
+
+        if let NetworkBuildError::NodeBuilderError {
+            name, source: node_err, ..
+        } = &build_err
+            && let NodeBuilderError::ResolveMetricF64Error {
+                attr,
+                source: metric_err,
+            } = node_err.deref()
+            && let MetricF64ResolutionError::ParameterNotFound { parameter } = metric_err
+        {
+            assert_eq!(name.to_string(), "input");
+            assert_eq!(attr, "max_flow");
+            assert_eq!(parameter.name(), "this-is-missing");
+        } else {
+            panic!("Incorrect error returned, expect ParameterNotFound: {build_err:?}");
+        }
+    }
+
+    #[test]
+    /// Test a parameter with a reference to a missing parameter.
+    fn test_missing_parameter() {
+        let mut builder = NetworkBuilder::default();
+
+        let input_node_builder = NodeBuilder::input("input");
+        builder.node(input_node_builder);
+
+        let output_node_builder = NodeBuilder::output("output");
+        builder.node(output_node_builder);
+
+        builder.connect("input", "output");
+
+        let broken_parameter = parameters::MaxParameterBuilder::new(
+            "my-max".into(),
+            UnresolvedMetricF64::new_parameter_before("this-is-missing"),
+            0.0,
+        );
+        builder.parameters().f64(Box::new(broken_parameter));
+
+        let domain = default_domain();
+
+        let build_err = builder
+            .build(&domain, &HashMap::new())
+            .expect_err("Builder should error.");
+
+        if let NetworkBuildError::ParameterCollectionBuildError(coll_err) = &build_err
+            && let ParameterCollectionBuilderError::ParameterNotFound { name } = coll_err.deref()
+        {
+            assert_eq!(name.to_string(), "this-is-missing");
+        } else {
+            panic!("Incorrect error returned, expected ParameterNotFound: {build_err:?}");
+        }
+    }
+
+    #[test]
+    /// Test the error return when there is a circular reference.
+    fn test_circular_parameter() {
+        let mut builder = NetworkBuilder::default();
+
+        let input_node_builder = NodeBuilder::input("input");
+        builder.node(input_node_builder);
+
+        let output_node_builder = NodeBuilder::output("output");
+        builder.node(output_node_builder);
+
+        builder.connect("input", "output");
+
+        let max_param = parameters::MaxParameterBuilder::new(
+            "my-max".into(),
+            UnresolvedMetricF64::new_parameter_before("my-other-max"),
+            0.0,
+        );
+        builder.parameters().f64(Box::new(max_param));
+
+        let max_param = parameters::MaxParameterBuilder::new(
+            "my-other-max".into(),
+            UnresolvedMetricF64::new_parameter_before("my-max"),
+            0.0,
+        );
+        builder.parameters().f64(Box::new(max_param));
+
+        let domain = default_domain();
+
+        let build_err = builder
+            .build(&domain, &HashMap::new())
+            .expect_err("Builder should error.");
+
+        if let NetworkBuildError::ParameterCollectionBuildError(coll_err) = &build_err
+            && let ParameterCollectionBuilderError::CircularParameterReference { names } = coll_err.deref()
+        {
+            // This is fine!
+            assert_eq!(names.len(), 2);
+            assert_eq!(names[0].name(), "my-max");
+            assert_eq!(names[1].name(), "my-other-max");
+        } else {
+            panic!("Incorrect error returned, expected CircularParameterReference: {build_err:?}");
+        }
     }
 
     #[test]
     fn test_step() {
         const NUM_SCENARIOS: usize = 2;
-        let model = simple_model(NUM_SCENARIOS, None);
+
+        let model = simple_model(NUM_SCENARIOS, None).build().unwrap();
 
         let mut timings = NetworkTimings::new_without_component_timings();
 
@@ -2447,6 +2504,7 @@ mod tests {
 
             for j in 0..NUM_SCENARIOS {
                 let state_j = state.network_state().states.get(j).unwrap();
+
                 let output_inflow = state_j
                     .get_network_state()
                     .get_node_in_flow(&output_node.index())
@@ -2459,32 +2517,43 @@ mod tests {
     #[test]
     /// Test running a simple model
     fn test_run() {
-        let mut model = simple_model(10, None);
+        let mut model_builder = simple_model(10, None);
+
+        let network = model_builder.network_builder();
 
         // Set-up assertion for "input" node
-        let idx = model.network().get_node_by_name("input", None).unwrap().index();
         let expected = Array::from_shape_fn((366, 10), |(i, j)| (1.0 + i as f64 + j as f64).min(12.0));
 
-        let recorder =
-            AssertionF64Recorder::new("input-flow", MetricF64::NodeOutFlow(idx), expected.clone(), None, None);
-        model.network_mut().add_recorder(Box::new(recorder)).unwrap();
+        let recorder = AssertionF64RecorderBuilder::new(
+            "input-flow",
+            UnresolvedMetricF64::NodeOutFlow("input".into()),
+            expected.clone(),
+        );
+        network.recorder(Box::new(recorder));
 
-        let idx = model.network().get_node_by_name("link", None).unwrap().index();
-        let recorder =
-            AssertionF64Recorder::new("link-flow", MetricF64::NodeOutFlow(idx), expected.clone(), None, None);
-        model.network_mut().add_recorder(Box::new(recorder)).unwrap();
+        let recorder = AssertionF64RecorderBuilder::new(
+            "link-flow",
+            UnresolvedMetricF64::NodeOutFlow("link".into()),
+            expected.clone(),
+        );
+        network.recorder(Box::new(recorder));
 
-        let idx = model.network().get_node_by_name("output", None).unwrap().index();
-        let recorder = AssertionF64Recorder::new("output-flow", MetricF64::NodeInFlow(idx), expected, None, None);
-        model.network_mut().add_recorder(Box::new(recorder)).unwrap();
+        let recorder = AssertionF64RecorderBuilder::new(
+            "output-flow",
+            UnresolvedMetricF64::NodeInFlow("output".into()),
+            expected,
+        );
+        network.recorder(Box::new(recorder));
 
-        let idx = model
-            .network()
-            .get_parameter_index_by_name(&"total-demand".into())
-            .unwrap();
         let expected = Array2::from_elem((366, 10), 12.0);
-        let recorder = AssertionF64Recorder::new("total-demand", idx.into_metric_f64_before(), expected, None, None);
-        model.network_mut().add_recorder(Box::new(recorder)).unwrap();
+        let recorder = AssertionF64RecorderBuilder::new(
+            "total-demand",
+            UnresolvedMetricF64::new_parameter_before("total-demand"),
+            expected,
+        );
+        network.recorder(Box::new(recorder));
+
+        let model = model_builder.build().unwrap();
 
         // Test all solvers
         run_all_solvers(&model, &[], &[], &[]);
@@ -2492,23 +2561,28 @@ mod tests {
 
     #[test]
     fn test_run_storage() {
-        let mut model = simple_storage_model();
-
-        let network = model.network_mut();
-
-        let idx = network.get_node_by_name("output", None).unwrap().index();
+        let mut network = simple_storage_network();
 
         let expected = Array2::from_shape_fn((15, 10), |(i, _j)| if i < 10 { 10.0 } else { 0.0 });
 
-        let recorder = AssertionF64Recorder::new("output-flow", MetricF64::NodeInFlow(idx), expected, None, None);
-        network.add_recorder(Box::new(recorder)).unwrap();
-
-        let idx = network.get_node_by_name("reservoir", None).unwrap().index();
+        let recorder = AssertionF64RecorderBuilder::new(
+            "output-flow",
+            UnresolvedMetricF64::NodeInFlow("output".into()),
+            expected,
+        );
+        network.recorder(Box::new(recorder));
 
         let expected = Array2::from_shape_fn((15, 10), |(i, _j)| (90.0 - 10.0 * i as f64).max(0.0));
 
-        let recorder = AssertionF64Recorder::new("reservoir-volume", MetricF64::NodeVolume(idx), expected, None, None);
-        network.add_recorder(Box::new(recorder)).unwrap();
+        let recorder = AssertionF64RecorderBuilder::new(
+            "reservoir-volume",
+            UnresolvedMetricF64::NodeVolume("reservoir".into()),
+            expected,
+        );
+        network.recorder(Box::new(recorder));
+
+        let domain = default_domain();
+        let model = ModelBuilder::new(domain, network).build().unwrap();
 
         // Test all solvers
         run_all_solvers(&model, &[], &[], &[]);
@@ -2520,34 +2594,37 @@ mod tests {
     /// parameter may required a value for the initial time-step based on the initial volume.
     #[test]
     fn test_storage_proportional_volume() {
-        let mut model = simple_storage_model();
-        let network = model.network_mut();
-        let idx = network.get_node_by_name("reservoir", None).unwrap().index();
+        let mut model_builder = simple_storage_model();
+        let network = model_builder.network_builder();
 
         // These are the expected values for the proportional volume at the end of the time-step
         let expected = Array2::from_shape_fn((15, 10), |(i, _j)| (90.0 - 10.0 * i as f64).max(0.0) / 100.0);
-        let recorder = AssertionF64Recorder::new(
+        let recorder = AssertionF64RecorderBuilder::new(
             "reservoir-proportion-volume",
-            MetricF64::NodeProportionalVolume(idx),
+            UnresolvedMetricF64::NodeProportionalVolume("reservoir".into()),
             expected,
-            None,
-            None,
         );
-        network.add_recorder(Box::new(recorder)).unwrap();
+        network.recorder(Box::new(recorder));
 
         // Set-up a control curve that uses the proportional volume
         // This should be use the initial proportion (100%) on the first time-step, and then the previous day's end value
-        let cc = ControlCurveInterpolatedParameter::new(
+        let mut cc = ControlCurveInterpolatedParameterBuilder::new(
             "interp".into(),
-            MetricF64::NodeProportionalVolume(idx),
-            vec![],
-            vec![100.0.into(), 0.0.into()],
+            UnresolvedMetricF64::NodeProportionalVolume("reservoir".into()),
         );
-        let p_idx = network.add_parameter(Box::new(cc)).unwrap();
+        cc.value(100.0.into()).value(0.0.into());
+        network.parameters().f64(Box::new(cc));
+
         let expected = Array2::from_shape_fn((15, 10), |(i, _j)| (100.0 - 10.0 * i as f64).max(0.0));
 
-        let recorder = AssertionF64Recorder::new("reservoir-cc", p_idx.into_metric_f64_before(), expected, None, None);
-        network.add_recorder(Box::new(recorder)).unwrap();
+        let recorder = AssertionF64RecorderBuilder::new(
+            "reservoir-cc",
+            UnresolvedMetricF64::new_parameter_before("interp"),
+            expected,
+        );
+        network.recorder(Box::new(recorder));
+
+        let model = model_builder.build().unwrap();
 
         // Test all solvers
         run_all_solvers(&model, &[], &[], &[]);
@@ -2556,41 +2633,44 @@ mod tests {
     #[test]
     /// Test the variable API
     fn test_variable_api() {
-        let mut model = simple_model(1, None);
+        let mut model_builder = simple_model(1, None);
 
         let variable = ActivationFunction::Unit { min: 0.0, max: 10.0 };
-        let input_max_flow = parameters::ConstantParameter::new("my-constant".into(), 10.0);
+        let my_constant: ParameterName = "my-constant".into();
+        let input_max_flow = parameters::ConstantParameterBuilder::new(my_constant.clone(), 10.0);
 
-        assert!(input_max_flow.can_be_f64_variable());
-
-        let input_max_flow_idx = model
-            .network_mut()
-            .add_const_parameter(Box::new(input_max_flow))
-            .unwrap();
+        model_builder
+            .network_builder()
+            .parameters()
+            .f64(Box::new(input_max_flow));
 
         // assign the new parameter to one of the nodes.
-        let node = model.network_mut().get_mut_node_by_name("input", None).unwrap();
-        node.set_max_flow_constraint(Some(input_max_flow_idx.into_metric_f64_before()))
-            .unwrap();
+        let input_node_ref = "input".into();
+        let node_builder = model_builder.network_builder().node_builder(&input_node_ref).unwrap();
+        node_builder.max_flow(UnresolvedMetricF64::new_parameter_before("my-constant"));
+
+        let model = model_builder.build().unwrap();
 
         let mut state = model.setup::<ClpSolver>(&ClpSolverSettings::default()).unwrap();
 
+        let input_max_flow_idx = model.network().get_parameter_index_by_name(&my_constant).unwrap();
+
         // Initially the variable value should be unset
         let variable_values = model
-            .network_mut()
+            .network()
             .get_f64_parameter_variable_values(input_max_flow_idx, state.network_state())
             .unwrap();
         assert_eq!(variable_values, vec![None]);
 
         // Update the variable values
         model
-            .network_mut()
+            .network()
             .set_f64_parameter_variable_values(input_max_flow_idx, &[5.0], &variable, state.network_state_mut())
             .unwrap();
 
         // After update the variable value should match what was set
         let variable_values = model
-            .network_mut()
+            .network()
             .get_f64_parameter_variable_values(input_max_flow_idx, state.network_state())
             .unwrap();
 

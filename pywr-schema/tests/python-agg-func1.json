@@ -4,7 +4,7 @@
     "description": "A simple example showing how to use a Python function to aggregate data.",
     "minimum_version": "0.1"
   },
-  "timestepper": {
+  "time": {
     "start": "2015-01-01",
     "end": "2015-01-03",
     "timestep": {

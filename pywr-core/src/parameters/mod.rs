@@ -34,60 +34,70 @@ mod vector;
 
 use std::any::Any;
 // Re-imports
-use crate::metric::{ConstantMetricF64, ConstantMetricU64, MetricF64, MetricU64, SimpleMetricF64, SimpleMetricU64};
-use crate::network::Network;
-use crate::scenario::ScenarioIndex;
+use crate::metric::{
+    ConstantMetricF64, ConstantMetricU64, MetricF64, MetricF64Error, MetricF64ResolutionError, MetricU64,
+    MetricU64ResolutionError, SimpleMetricF64, SimpleMetricU64,
+};
+use crate::network::{Network, ResolutionMaps};
+use crate::scenario::{ScenarioGroupNotFound, ScenarioIndex};
 use crate::state::{
     ConstParameterValues, MultiValue, ParameterReturnValue, SetStateError, SimpleParameterValues, State,
 };
 use crate::timestep::Timestep;
 pub use activation_function::ActivationFunction;
-pub use aggregated::AggregatedParameter;
-pub use aggregated_index::AggregatedIndexParameter;
-pub use array::{Array1Parameter, Array2Parameter};
-pub use asymmetric::AsymmetricSwitchIndexParameter;
-pub use constant::ConstantParameter;
-pub use constant_scenario::ConstantScenarioParameter;
+pub use aggregated::{AggregatedParameter, AggregatedParameterBuilder};
+pub use aggregated_index::{AggregatedIndexParameter, AggregatedIndexParameterBuilder};
+pub use array::{Array1Parameter, Array1ParameterBuilder, Array2Parameter, Array2ParameterBuilder};
+pub use asymmetric::{AsymmetricSwitchIndexParameter, AsymmetricSwitchIndexParameterBuilder};
+pub use constant::{ConstantParameter, ConstantParameterBuilder};
+pub use constant_scenario::{ConstantScenarioParameter, ConstantScenarioParameterBuilder};
 pub use control_curves::{
-    ApportionParameter, ControlCurveIndexParameter, ControlCurveInterpolatedParameter, ControlCurveParameter,
-    PiecewiseInterpolatedParameter, VolumeBetweenControlCurvesParameter,
+    ApportionParameter, ApportionParameterBuilder, ControlCurveIndexParameter, ControlCurveIndexParameterBuilder,
+    ControlCurveInterpolatedParameter, ControlCurveInterpolatedParameterBuilder, ControlCurveParameter,
+    ControlCurveParameterBuilder, PiecewiseInterpolatedParameter, PiecewiseInterpolatedParameterBuilder,
+    VolumeBetweenControlCurvesParameter, VolumeBetweenControlCurvesParameterBuilder,
 };
-pub use deficit::DeficitParameter;
-pub use delay::DelayParameter;
-pub use difference::DifferenceParameter;
-pub use discount_factor::DiscountFactorParameter;
-pub use division::DivisionParameter;
+pub use deficit::{DeficitParameter, DeficitParameterBuilder};
+pub use delay::{DelayParameter, DelayParameterBuilder};
+pub use difference::{DifferenceParameter, DifferenceParameterBuilder};
+pub use discount_factor::{DiscountFactorParameter, DiscountFactorParameterBuilder};
+pub use division::{DivisionParameter, DivisionParameterBuilder};
 use errors::{ConstCalculationError, SimpleCalculationError};
-pub use errors::{ParameterCalculationError, ParameterSetupError};
-pub use hydropower::{HydropowerTargetData, HydropowerTargetParameter};
-pub use indexed_array::IndexedArrayParameter;
+pub use errors::{GeneralCalculationError, ParameterSetupError};
+pub use hydropower::{HydropowerTargetData, HydropowerTargetParameter, HydropowerTargetParameterBuilder};
+pub use indexed_array::{IndexedArrayParameter, IndexedArrayParameterBuilder};
 pub use interpolate::{InterpolationError, interpolate, linear_interpolation};
-pub use interpolated::InterpolatedParameter;
-pub use max::MaxParameter;
-pub use min::MinParameter;
-pub use multi_threshold::MultiThresholdParameter;
-pub use muskingum::{MuskingumInitialCondition, MuskingumParameter};
-pub use negative::NegativeParameter;
-pub use negativemax::NegativeMaxParameter;
-pub use negativemin::NegativeMinParameter;
-pub use offset::OffsetParameter;
-pub use polynomial::Polynomial1DParameter;
+pub use interpolated::{InterpolatedParameter, InterpolatedParameterBuilder};
+pub use max::{MaxParameter, MaxParameterBuilder};
+pub use min::{MinParameter, MinParameterBuilder};
+pub use multi_threshold::{MultiThresholdParameter, MultiThresholdParameterBuilder};
+pub use muskingum::{MuskingumInitialCondition, MuskingumParameter, MuskingumParameterBuilder};
+use ndarray::ShapeError;
+pub use negative::{NegativeParameter, NegativeParameterBuilder};
+pub use negativemax::{NegativeMaxParameter, NegativeMaxParameterBuilder};
+pub use negativemin::{NegativeMinParameter, NegativeMinParameterBuilder};
+pub use offset::{OffsetParameter, OffsetParameterBuilder};
+pub use polynomial::{Polynomial1DParameter, Polynomial1DParameterBuilder};
 pub use profiles::{
-    DailyProfileParameter, DiurnalProfileParameter, MonthlyInterpDay, MonthlyProfileParameter, RadialBasisFunction,
-    RbfProfileParameter, RbfProfileVariableConfig, UniformDrawdownProfileParameter, WeeklyInterpDay,
-    WeeklyProfileError, WeeklyProfileParameter, WeeklyProfileValues,
+    DailyProfileParameter, DailyProfileParameterBuilder, DiurnalProfileParameter, DiurnalProfileParameterBuilder,
+    MonthlyInterpDay, MonthlyProfileParameter, MonthlyProfileParameterBuilder, RadialBasisFunction,
+    RbfProfileParameter, RbfProfileParameterBuilder, RbfProfileVariableConfig, UniformDrawdownProfileParameter,
+    UniformDrawdownProfileParameterBuilder, WeeklyInterpDay, WeeklyProfileError, WeeklyProfileParameter,
+    WeeklyProfileParameterBuilder, WeeklyProfileValues,
 };
 #[cfg(feature = "pyo3")]
-pub use py::{ParameterInfo, PyClassParameter, PyFuncParameter};
-pub use rolling::RollingParameter;
+pub use py::{ParameterInfo, PyClassParameter, PyClassParameterBuilder, PyFuncParameter, PyFuncParameterBuilder};
+pub use rolling::{RollingParameter, RollingParameterBuilder};
 use std::fmt;
-use std::fmt::{Display, Formatter};
+use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::marker::PhantomData;
 use std::ops::Deref;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{Duration, Instant};
 use thiserror::Error;
-pub use threshold::{Predicate, ThresholdParameter};
-pub use vector::VectorParameter;
+pub use threshold::{Predicate, ThresholdParameter, ThresholdParameterBuilder};
+pub use vector::{VectorParameter, VectorParameterBuilder};
 
 /// Simple parameter index.
 ///
@@ -117,7 +127,7 @@ impl<T> PartialEq<Self> for ConstParameterIndex<T> {
 impl<T> Eq for ConstParameterIndex<T> {}
 
 impl<T> ConstParameterIndex<T> {
-    pub fn new(idx: usize) -> Self {
+    fn new(idx: usize) -> Self {
         Self {
             idx,
             phantom: PhantomData,
@@ -167,7 +177,7 @@ impl<T> PartialEq<Self> for SimpleParameterIndex<T> {
 impl<T> Eq for SimpleParameterIndex<T> {}
 
 impl<T> SimpleParameterIndex<T> {
-    pub fn new(idx: usize) -> Self {
+    fn new(idx: usize) -> Self {
         Self {
             idx,
             phantom: PhantomData,
@@ -218,7 +228,7 @@ impl<T> PartialEq<Self> for GeneralParameterIndex<T> {
 impl<T> Eq for GeneralParameterIndex<T> {}
 
 impl<T> GeneralParameterIndex<T> {
-    pub fn new(idx: usize) -> Self {
+    fn new(idx: usize) -> Self {
         Self {
             idx,
             phantom: PhantomData,
@@ -396,7 +406,7 @@ impl ParameterIndex<MultiValue> {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ParameterName {
     name: String,
     // Optional sub-name for parameters that are part of multi-parameter groups
@@ -455,7 +465,7 @@ impl From<&str> for ParameterName {
 /// Meta data common to all parameters.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ParameterMeta {
-    name: ParameterName,
+    pub name: ParameterName,
 }
 
 impl ParameterMeta {
@@ -653,7 +663,7 @@ pub fn downcast_variable_config_ref<T: 'static>(variable_config: &dyn VariableCo
 /// A trait that defines a component that produces a value each time-step.
 ///
 /// The trait is generic over the type of the value produced.
-pub trait Parameter: Send + Sync {
+pub trait Parameter: Send + Sync + Debug {
     fn meta(&self) -> &ParameterMeta;
     fn name(&self) -> &ParameterName {
         &self.meta().name
@@ -709,7 +719,7 @@ pub trait GeneralParameter<T>: Parameter {
         #[allow(unused_variables)] model: &Network,
         #[allow(unused_variables)] state: &State,
         #[allow(unused_variables)] internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<Option<T>, ParameterCalculationError> {
+    ) -> Result<Option<T>, GeneralCalculationError> {
         Ok(None)
     }
 
@@ -720,7 +730,7 @@ pub trait GeneralParameter<T>: Parameter {
         #[allow(unused_variables)] model: &Network,
         #[allow(unused_variables)] state: &State,
         #[allow(unused_variables)] internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<Option<T>, ParameterCalculationError> {
+    ) -> Result<Option<T>, GeneralCalculationError> {
         Ok(None)
     }
 
@@ -729,6 +739,325 @@ pub trait GeneralParameter<T>: Parameter {
     }
 
     fn as_parameter(&self) -> &dyn Parameter;
+}
+
+#[derive(Debug, Error)]
+pub enum ParameterBuildError {
+    #[error("Scenario group not found: {}", .0.name)]
+    ScenarioGroupNotFound(#[from] ScenarioGroupNotFound),
+    #[error(
+        "Number of values ({values}) does not match the size ({scenarios}) of the specified scenario group '{group}'."
+    )]
+    ScenarioValuesLengthMismatch {
+        values: usize,
+        scenarios: usize,
+        group: String,
+    },
+    #[error("Error subsetting array with dimensions {array_shape:?} with subset {subset:?}: {source}")]
+    ArraySubSetError {
+        array_shape: Vec<usize>,
+        subset: Vec<usize>,
+        #[source]
+        source: ShapeError,
+    },
+    #[error("Could not resolve f64 metric for `{attr}` attribute: {source}")]
+    ResolveMetricF64Error {
+        attr: String,
+        #[source]
+        source: MetricF64ResolutionError,
+    },
+    #[error("Could not resolve u64 metric for `{attr}` attribute: {source}")]
+    ResolveMetricU64Error {
+        attr: String,
+        #[source]
+        source: MetricU64ResolutionError,
+    },
+    #[error("Could not simplify f64 metric for `{attr}`: {source}")]
+    CouldNotSimplifyMetricF64 {
+        attr: String,
+        #[source]
+        source: MetricF64Error,
+    },
+    #[error("Could not compute day of the year; invalid date: day: {day}, month: {day}")]
+    InvalidDayOfYear { day: u32, month: u32 },
+}
+
+pub enum BuiltParameter<T> {
+    General(Box<dyn GeneralParameter<T>>),
+    Simple(Box<dyn SimpleParameter<T>>),
+    Const(Box<dyn ConstParameter<T>>),
+}
+
+pub enum MaybeBuiltParameter<T> {
+    Built(BuiltParameter<T>),
+    Retry {
+        builder: Box<dyn ParameterBuilder<T>>,
+        parameter_not_found: ParameterName,
+    },
+}
+
+impl<T> From<BuiltParameter<T>> for MaybeBuiltParameter<T> {
+    fn from(built: BuiltParameter<T>) -> Self {
+        Self::Built(built)
+    }
+}
+
+pub trait ParameterBuilder<T>: Debug {
+    /// The name of the parameter
+    fn name(&self) -> &ParameterName;
+    /// Construct a parameter from the builder.
+    ///
+    /// If the construction requires a parameter that is not yet available. This method
+    /// should return the builder via one of the parameter not found variants of
+    /// [`ParameterBuildError`] error. This will allow the parameter collection builder to retry
+    /// the build.
+    fn build(self: Box<Self>, resolution_maps: &ResolutionMaps) -> Result<MaybeBuiltParameter<T>, ParameterBuildError>;
+}
+
+/// Resolve a single `UnresolvedMetricF64` into a `MetricF64` inside a
+/// `ParameterBuilder::build` implementation.
+///
+/// On `ParameterNotFound`, the macro early-returns `Ok(MaybeBuiltParameter::Retry($self))`
+/// so the builder can be retried after more parameters are added. Any other
+/// `MetricF64ResolutionError` is wrapped in `ParameterBuildError::ResolveMetricF64Error`
+/// (tagged with `$attr`) and early-returned.
+///
+/// # Example
+/// ```ignore
+/// let metric = resolve_metric_f64!(self, self.metric, resolution_maps, "metric");
+/// ```
+#[macro_export]
+macro_rules! resolve_metric_f64 {
+    ($self:ident, $unresolved:expr, $maps:expr, $attr:expr $(,)?) => {
+        match $unresolved.resolve($maps) {
+            Ok(m) => m,
+            Err(err) => {
+                return if let $crate::metric::MetricF64ResolutionError::ParameterNotFound { parameter } = err {
+                    Ok($crate::parameters::MaybeBuiltParameter::Retry {
+                        builder: $self,
+                        parameter_not_found: parameter,
+                    })
+                } else {
+                    Err($crate::parameters::ParameterBuildError::ResolveMetricF64Error {
+                        attr: ($attr).to_string(),
+                        source: err,
+                    })
+                };
+            }
+        }
+    };
+}
+
+/// Resolve a single `UnresolvedMetricU64` into a `MetricU64` inside a
+/// `ParameterBuilder::build` implementation.
+///
+/// On `ParameterNotFound`, the macro early-returns `Ok(MaybeBuiltParameter::Retry($self))`
+/// so the builder can be retried after more parameters are added. Any other
+/// `MetricU64ResolutionError` is wrapped in `ParameterBuildError::ResolveMetricU64Error`
+/// (tagged with `$attr`) and early-returned.
+///
+/// # Example
+/// ```ignore
+/// let metric = resolve_metric_u64!(self, self.metric, resolution_maps, "metric");
+/// ```
+#[macro_export]
+macro_rules! resolve_metric_u64 {
+    ($self:ident, $unresolved:expr, $maps:expr, $attr:expr $(,)?) => {
+        match $unresolved.resolve($maps) {
+            Ok(m) => m,
+            Err(err) => {
+                return if let $crate::metric::MetricU64ResolutionError::ParameterNotFound { parameter } = err {
+                    Ok($crate::parameters::MaybeBuiltParameter::Retry {
+                        builder: $self,
+                        parameter_not_found: parameter,
+                    })
+                } else {
+                    Err($crate::parameters::ParameterBuildError::ResolveMetricU64Error {
+                        attr: ($attr).to_string(),
+                        source: err,
+                    })
+                };
+            }
+        }
+    };
+}
+
+/// Resolve a single `Option<UnresolvedMetricF64>` into a `Option<MetricF64>` inside a
+/// `ParameterBuilder::build` implementation.
+///
+/// On `ParameterNotFound`, the macro early-returns `Ok(MaybeBuiltParameter::Retry($self))`
+/// so the builder can be retried after more parameters are added. Any other
+/// `MetricF64ResolutionError` is wrapped in `ParameterBuildError::ResolveMetricF64Error`
+/// (tagged with `$attr`) and early-returned.
+///
+#[macro_export]
+macro_rules! resolve_optional_metric_f64 {
+    ($self:ident, $unresolved:expr, $maps:expr, $attr:expr $(,)?) => {
+        match $unresolved {
+            Some(u) => match u.resolve($maps) {
+                Ok(m) => Some(m),
+                Err(err) => {
+                    return if let $crate::metric::MetricF64ResolutionError::ParameterNotFound { parameter } = err {
+                        Ok($crate::parameters::MaybeBuiltParameter::Retry {
+                            builder: $self,
+                            parameter_not_found: parameter,
+                        })
+                    } else {
+                        Err($crate::parameters::ParameterBuildError::ResolveMetricF64Error {
+                            attr: ($attr).to_string(),
+                            source: err,
+                        })
+                    };
+                }
+            },
+            None => None,
+        }
+    };
+}
+
+/// Resolve a slice/`Vec` of `UnresolvedMetricF64` into a `Vec<MetricF64>` inside a
+/// `ParameterBuilder::build` implementation. Same retry / error semantics as
+/// [`resolve_metric_f64!`].
+///
+/// `$unresolved` must be something that can be iterated as `&UnresolvedMetricF64`
+/// and on which `.len()` is callable (e.g. `&self.values`, `self.control_curves.as_slice()`).
+///
+/// # Example
+/// ```ignore
+/// let control_curves =
+///     resolve_metric_f64_vec!(self, &self.control_curves, resolution_maps, "control_curves");
+/// ```
+#[macro_export]
+macro_rules! resolve_metric_f64_vec {
+    ($self:ident, $unresolved:expr, $maps:expr, $attr:expr $(,)?) => {{
+        let unresolved = $unresolved;
+        let mut resolved = Vec::with_capacity(unresolved.len());
+        for m in unresolved.iter() {
+            match m.resolve($maps) {
+                Ok(m) => resolved.push(m),
+                Err(err) => {
+                    return if let $crate::metric::MetricF64ResolutionError::ParameterNotFound { parameter } = err {
+                        Ok($crate::parameters::MaybeBuiltParameter::Retry {
+                            builder: $self,
+                            parameter_not_found: parameter,
+                        })
+                    } else {
+                        Err($crate::parameters::ParameterBuildError::ResolveMetricF64Error {
+                            attr: ($attr).to_string(),
+                            source: err,
+                        })
+                    };
+                }
+            }
+        }
+        resolved
+    }};
+}
+
+/// Resolve a slice/`Vec` of `UnresolvedMetricU64` into a `Vec<MetricU64>` inside a
+/// `ParameterBuilder::build` implementation. Same retry / error semantics as
+/// [`resolve_metric_u64!`].
+///
+/// `$unresolved` must be something that can be iterated as `&UnresolvedMetricU64`
+/// and on which `.len()` is callable (e.g. `&self.values`, `self.indices.as_slice()`).
+///
+#[macro_export]
+macro_rules! resolve_metric_u64_vec {
+    ($self:ident, $unresolved:expr, $maps:expr, $attr:expr $(,)?) => {{
+        let unresolved = $unresolved;
+        let mut resolved = Vec::with_capacity(unresolved.len());
+        for m in unresolved.iter() {
+            match m.resolve($maps) {
+                Ok(m) => resolved.push(m),
+                Err(err) => {
+                    return if let $crate::metric::MetricU64ResolutionError::ParameterNotFound { parameter } = err {
+                        Ok($crate::parameters::MaybeBuiltParameter::Retry {
+                            builder: $self,
+                            parameter_not_found: parameter,
+                        })
+                    } else {
+                        Err($crate::parameters::ParameterBuildError::ResolveMetricU64Error {
+                            attr: ($attr).to_string(),
+                            source: err,
+                        })
+                    };
+                }
+            }
+        }
+        resolved
+    }};
+}
+
+/// Resolve a `HashMap<String, UnresolvedMetricF64`> into a `HashMap<String, MetricF64>` inside a
+/// `ParameterBuilder::build` implementation. Same retry / error semantics as
+/// [`resolve_metric_f64!`].
+///
+/// `$unresolved` must be something that can be iterated as `(&String, &UnresolvedMetricF64)`
+/// and on which `.len()` is callable.
+///
+#[macro_export]
+macro_rules! resolve_metric_f64_hashmap {
+    ($self:ident, $unresolved:expr, $maps:expr, $attr:expr $(,)?) => {{
+        let unresolved = $unresolved;
+        let mut resolved = HashMap::with_capacity(unresolved.len());
+        for (k, m) in unresolved.iter() {
+            match m.resolve($maps) {
+                Ok(m) => {
+                    resolved.insert(k.clone(), m);
+                }
+                Err(err) => {
+                    return if let $crate::metric::MetricF64ResolutionError::ParameterNotFound { parameter } = err {
+                        Ok($crate::parameters::MaybeBuiltParameter::Retry {
+                            builder: $self,
+                            parameter_not_found: parameter,
+                        })
+                    } else {
+                        Err($crate::parameters::ParameterBuildError::ResolveMetricF64Error {
+                            attr: ($attr).to_string(),
+                            source: err,
+                        })
+                    };
+                }
+            }
+        }
+        resolved
+    }};
+}
+
+/// Resolve a `HashMap<String, UnresolvedMetricU64`> into a `HashMap<String, MetricU64>` inside a
+/// `ParameterBuilder::build` implementation. Same retry / error semantics as
+/// [`resolve_metric_u64!`].
+///
+/// `$unresolved` must be something that can be iterated as `(&String, &UnresolvedMetricU64)`
+/// and on which `.len()` is callable.
+///
+#[macro_export]
+macro_rules! resolve_metric_u64_hashmap {
+    ($self:ident, $unresolved:expr, $maps:expr, $attr:expr $(,)?) => {{
+        let unresolved = $unresolved;
+        let mut resolved = HashMap::with_capacity(unresolved.len());
+        for (k, m) in unresolved.iter() {
+            match m.resolve($maps) {
+                Ok(m) => {
+                    resolved.insert(k.clone(), m);
+                }
+                Err(err) => {
+                    return if let $crate::metric::MetricU64ResolutionError::ParameterNotFound { parameter } = err {
+                        Ok($crate::parameters::MaybeBuiltParameter::Retry {
+                            builder: $self,
+                            parameter_not_found: parameter,
+                        })
+                    } else {
+                        Err($crate::parameters::ParameterBuildError::ResolveMetricU64Error {
+                            attr: ($attr).to_string(),
+                            source: err,
+                        })
+                    };
+                }
+            }
+        }
+        resolved
+    }};
 }
 
 /// A trait that defines a component that produces a value each time-step.
@@ -774,7 +1103,7 @@ pub trait ConstParameter<T>: Parameter {
     fn as_parameter(&self) -> &dyn Parameter;
 }
 
-#[derive(Hash, PartialEq, Eq, Clone, Copy)]
+#[derive(Debug, Hash, PartialEq, Eq, Clone, Copy)]
 pub enum GeneralParameterType {
     Parameter(GeneralParameterIndex<f64>),
     Index(GeneralParameterIndex<u64>),
@@ -799,6 +1128,7 @@ impl From<GeneralParameterIndex<MultiValue>> for GeneralParameterType {
     }
 }
 
+#[derive(Debug)]
 pub enum SimpleParameterType {
     Parameter(SimpleParameterIndex<f64>),
     Index(SimpleParameterIndex<u64>),
@@ -823,6 +1153,7 @@ impl From<SimpleParameterIndex<MultiValue>> for SimpleParameterType {
     }
 }
 
+#[derive(Debug)]
 pub enum ConstParameterType {
     Parameter(ConstParameterIndex<f64>),
     Index(ConstParameterIndex<u64>),
@@ -1009,8 +1340,189 @@ pub enum ParameterCollectionSimpleCalculationError {
     },
 }
 
+// Unique ID for each parameter collection.
+static PARAMETER_COLLECTION_ID: AtomicU64 = AtomicU64::new(0);
+
+#[derive(Debug, Error)]
+#[error("Parameter collection ID mismatch: expected {expected}, actual {actual}: {context}")]
+pub struct ParameterCollectionIdMismatchError {
+    expected: u64,
+    actual: u64,
+    context: String,
+}
+
+#[derive(Default, Copy, Clone)]
+pub struct ParameterTiming {
+    before: Duration,
+    after: Duration,
+}
+
+impl ParameterTiming {
+    /// Time spent in the before method of the component.
+    pub fn before(&self) -> Duration {
+        self.before
+    }
+
+    /// Time spent in the "after" method of the component.
+    pub fn after(&self) -> Duration {
+        self.after
+    }
+
+    /// Total time spent in calculation and after methods.
+    pub fn total(&self) -> Duration {
+        self.before + self.after
+    }
+}
+
+/// Timing accumulator for parameters
+#[derive(Clone)]
+pub struct ParameterTimings {
+    general_f64: Vec<ParameterTiming>,
+    general_u64: Vec<ParameterTiming>,
+    general_multi: Vec<ParameterTiming>,
+    id: u64,
+}
+
+impl ParameterTimings {
+    pub fn from_collection(collection: &ParameterCollection) -> Self {
+        Self {
+            general_f64: vec![ParameterTiming::default(); collection.general_f64.len()],
+            general_u64: vec![ParameterTiming::default(); collection.general_u64.len()],
+            general_multi: vec![ParameterTiming::default(); collection.general_multi.len()],
+            id: collection.id,
+        }
+    }
+
+    /// Return the `n` slowest f64 parameter indices and their timings.
+    fn slowest_f64(&self, n: usize) -> Vec<(GeneralParameterIndex<f64>, ParameterTiming)> {
+        let mut timings = self
+            .general_f64
+            .iter()
+            .enumerate()
+            .map(|(idx, timing)| (GeneralParameterIndex::new(idx), *timing))
+            .collect::<Vec<_>>();
+
+        timings.sort_by_key(|(_, timing)| timing.total());
+
+        timings.into_iter().rev().take(n).collect()
+    }
+
+    /// Return the `n` slowest u64 parameter indices and their timings.
+    fn slowest_u64(&self, n: usize) -> Vec<(GeneralParameterIndex<u64>, ParameterTiming)> {
+        let mut timings = self
+            .general_u64
+            .iter()
+            .enumerate()
+            .map(|(idx, timing)| (GeneralParameterIndex::new(idx), *timing))
+            .collect::<Vec<_>>();
+
+        timings.sort_by_key(|(_, timing)| timing.total());
+
+        timings.into_iter().rev().take(n).collect()
+    }
+
+    /// Return the `n` slowest multi parameter indices and their timings.
+    fn slowest_multi(&self, n: usize) -> Vec<(GeneralParameterIndex<MultiValue>, ParameterTiming)> {
+        let mut timings = self
+            .general_multi
+            .iter()
+            .enumerate()
+            .map(|(idx, timing)| (GeneralParameterIndex::new(idx), *timing))
+            .collect::<Vec<_>>();
+
+        timings.sort_by_key(|(_, timing)| timing.total());
+
+        timings.into_iter().rev().take(n).collect()
+    }
+    pub fn slowest_parameters(&self, n: usize) -> Vec<(GeneralParameterType, ParameterTiming)> {
+        let f64 = self
+            .slowest_f64(n)
+            .into_iter()
+            .map(|(idx, timing)| (GeneralParameterType::from(idx), timing));
+
+        let u64 = self
+            .slowest_u64(n)
+            .into_iter()
+            .map(|(idx, timing)| (GeneralParameterType::from(idx), timing));
+
+        let multi = self
+            .slowest_multi(n)
+            .into_iter()
+            .map(|(idx, timing)| (GeneralParameterType::from(idx), timing));
+
+        let mut all = f64
+            .chain(u64)
+            .chain(multi)
+            .collect::<Vec<(GeneralParameterType, ParameterTiming)>>();
+        all.sort_by_key(|(_, timing)| timing.total());
+        all.into_iter().rev().take(n).collect()
+    }
+
+    pub fn slowest_parameters_named(
+        &self,
+        n: usize,
+        collection: &ParameterCollection,
+    ) -> Result<Vec<(ParameterName, ParameterTiming)>, ParameterCollectionIdMismatchError> {
+        if self.id != collection.id {
+            return Err(ParameterCollectionIdMismatchError{
+                expected: collection.id,
+                actual: self.id,
+                context: "ParameterTimings and ParameterCollection must have the same ID to ensure that the indices are correct.".to_string(),
+            });
+        }
+
+        // SAFETY: The id of the timings must match the id of the collection to ensure that the
+        // indices are correct. This is checked above and should be guaranteed by construction.
+        let slowest = unsafe {
+            self.slowest_parameters(n)
+                .into_iter()
+                .map(|(idx, timing)| (collection.get_general_unchecked(idx).name().clone(), timing))
+                .collect()
+        };
+
+        Ok(slowest)
+    }
+}
+
+#[derive(Error, Debug)]
+#[error("Error calculating general parameter '{name}': {source}")]
+pub enum ParameterCollectionGeneralCalculationError {
+    #[error("General parameter F64 index '{0}' not found in collection")]
+    F64IndexNotFound(GeneralParameterIndex<f64>),
+    #[error("General parameter U64 index '{0}' not found in collection")]
+    U64IndexNotFound(GeneralParameterIndex<u64>),
+    #[error("General parameter Multi index '{0}' not found in collection")]
+    MultiIndexNotFound(GeneralParameterIndex<MultiValue>),
+    #[error("Error calculating general parameter '{name}': {source}")]
+    CalculationError {
+        name: ParameterName,
+        #[source]
+        source: Box<GeneralCalculationError>,
+    },
+    #[error("Error setting state for general F64 parameter '{name}': {source}")]
+    F64SetStateError {
+        name: ParameterName,
+        #[source]
+        source: SetStateError<GeneralParameterIndex<f64>>,
+    },
+    #[error("Error setting state for general U64 parameter '{name}': {source}")]
+    U64SetStateError {
+        name: ParameterName,
+        #[source]
+        source: SetStateError<GeneralParameterIndex<u64>>,
+    },
+    #[error("Error setting state for general Multi parameter '{name}': {source}")]
+    MultiSetStateError {
+        name: ParameterName,
+        #[source]
+        source: SetStateError<GeneralParameterIndex<MultiValue>>,
+    },
+    #[error("The timing data was created with from a different parameter collection. ")]
+    TimingsFromAnotherCollection,
+}
+
 /// A collection of parameters that return different types.
-#[derive(Default)]
+#[derive(Debug)]
 pub struct ParameterCollection {
     constant_f64: Vec<Box<dyn ConstParameter<f64>>>,
     constant_u64: Vec<Box<dyn ConstParameter<u64>>>,
@@ -1022,11 +1534,31 @@ pub struct ParameterCollection {
     simple_multi: Vec<Box<dyn SimpleParameter<MultiValue>>>,
     simple_resolve_order: Vec<SimpleParameterType>,
 
-    // There is no resolve order for general parameters as they are resolved at a model
-    // level with other component types (e.g. nodes).
     general_f64: Vec<Box<dyn GeneralParameter<f64>>>,
     general_u64: Vec<Box<dyn GeneralParameter<u64>>>,
     general_multi: Vec<Box<dyn GeneralParameter<MultiValue>>>,
+    general_resolve_order: Vec<GeneralParameterType>,
+    id: u64,
+}
+
+impl Default for ParameterCollection {
+    fn default() -> Self {
+        Self {
+            constant_f64: Vec::new(),
+            constant_u64: Vec::new(),
+            constant_multi: Vec::new(),
+            constant_resolve_order: Vec::new(),
+            simple_f64: Vec::new(),
+            simple_u64: Vec::new(),
+            simple_multi: Vec::new(),
+            simple_resolve_order: Vec::new(),
+            general_f64: Vec::new(),
+            general_u64: Vec::new(),
+            general_multi: Vec::new(),
+            general_resolve_order: Vec::new(),
+            id: PARAMETER_COLLECTION_ID.fetch_add(1, Ordering::Relaxed),
+        }
+    }
 }
 
 impl ParameterCollection {
@@ -1197,70 +1729,64 @@ impl ParameterCollection {
             || self.get_multi_index_by_name(name).is_some()
     }
 
-    /// Add a [`GeneralParameter<f64>`] parameter to the collection.
-    ///
-    /// This function will add attempt to simplify the parameter and add it to the simple or
-    /// constant parameter list. If the parameter cannot be simplified it will be added to the
-    /// general parameter list.
-    pub fn add_general_f64(
-        &mut self,
-        parameter: Box<dyn GeneralParameter<f64>>,
-    ) -> Result<ParameterIndex<f64>, ParameterCollectionError> {
-        if self.has_name(parameter.name()) {
-            return Err(ParameterCollectionError::NameAlreadyExists(
-                parameter.meta().name.to_string(),
-            ));
-        }
-
-        match parameter.try_into_simple() {
-            Some(simple) => self.add_simple_f64(simple),
-            None => {
-                let index = GeneralParameterIndex::new(self.general_f64.len());
-                self.general_f64.push(parameter);
-                Ok(index.into())
+    unsafe fn get_general_unchecked(&self, index: GeneralParameterType) -> &dyn Parameter {
+        unsafe {
+            match index {
+                GeneralParameterType::Parameter(idx) => self.general_f64.get_unchecked(idx.idx).as_parameter(),
+                GeneralParameterType::Index(idx) => self.general_u64.get_unchecked(idx.idx).as_parameter(),
+                GeneralParameterType::Multi(idx) => self.general_multi.get_unchecked(idx.idx).as_parameter(),
             }
         }
     }
 
-    pub fn add_simple_f64(
-        &mut self,
-        parameter: Box<dyn SimpleParameter<f64>>,
-    ) -> Result<ParameterIndex<f64>, ParameterCollectionError> {
-        if self.has_name(parameter.name()) {
-            return Err(ParameterCollectionError::NameAlreadyExists(
-                parameter.meta().name.to_string(),
-            ));
-        }
+    /// Push a new general parameter to the collection.
+    ///
+    /// The new parameter will be simplified as much as possible.
+    ///
+    /// SAFETY: This must remain a private function to maintain the indexing guarantees.
+    fn push_general_f64(&mut self, p: Box<dyn GeneralParameter<f64>>) -> ParameterIndex<f64> {
+        match p.try_into_simple() {
+            Some(p) => self.push_simple_f64(p),
+            None => {
+                let index = GeneralParameterIndex::new(self.general_f64.len());
 
-        match parameter.try_into_const() {
-            Some(constant) => self.add_const_f64(constant),
+                self.general_resolve_order.push(GeneralParameterType::Parameter(index));
+                self.general_f64.push(p);
+
+                ParameterIndex::General(index)
+            }
+        }
+    }
+
+    /// Push a new simple parameter to the collection.
+    ///
+    /// The new parameter will be simplified as much as possible.
+    ///
+    /// SAFETY: This must remain a private function to maintain the indexing guarantees.
+    fn push_simple_f64(&mut self, p: Box<dyn SimpleParameter<f64>>) -> ParameterIndex<f64> {
+        match p.try_into_const() {
+            Some(p) => self.push_const_f64(p),
             None => {
                 let index = SimpleParameterIndex::new(self.simple_f64.len());
 
-                self.simple_f64.push(parameter);
                 self.simple_resolve_order.push(SimpleParameterType::Parameter(index));
+                self.simple_f64.push(p);
 
-                Ok(index.into())
+                ParameterIndex::Simple(index)
             }
         }
     }
 
-    pub fn add_const_f64(
-        &mut self,
-        parameter: Box<dyn ConstParameter<f64>>,
-    ) -> Result<ParameterIndex<f64>, ParameterCollectionError> {
-        if self.has_name(parameter.name()) {
-            return Err(ParameterCollectionError::NameAlreadyExists(
-                parameter.meta().name.to_string(),
-            ));
-        }
-
+    /// Push a new const parameter to the collection.
+    ///
+    /// SAFETY: This must remain a private function to maintain the indexing guarantees.
+    fn push_const_f64(&mut self, p: Box<dyn ConstParameter<f64>>) -> ParameterIndex<f64> {
         let index = ConstParameterIndex::new(self.constant_f64.len());
 
-        self.constant_f64.push(parameter);
-        self.constant_resolve_order.push(ConstParameterType::Parameter(index));
+        self.constant_resolve_order.push(ConstParameterType::from(index));
+        self.constant_f64.push(p);
 
-        Ok(index.into())
+        ParameterIndex::Const(index)
     }
 
     pub fn get_f64(&self, index: ParameterIndex<f64>) -> Option<&dyn Parameter> {
@@ -1306,65 +1832,54 @@ impl ParameterCollection {
         }
     }
 
-    pub fn add_general_u64(
-        &mut self,
-        parameter: Box<dyn GeneralParameter<u64>>,
-    ) -> Result<ParameterIndex<u64>, ParameterCollectionError> {
-        if self.has_name(parameter.name()) {
-            return Err(ParameterCollectionError::NameAlreadyExists(
-                parameter.meta().name.to_string(),
-            ));
-        }
-
-        match parameter.try_into_simple() {
-            Some(simple) => self.add_simple_u64(simple),
+    /// Push a new general parameter to the collection.
+    ///
+    /// The new parameter will be simplified as much as possible.
+    ///
+    /// SAFETY: This must remain a private function to maintain the indexing guarantees.
+    fn push_general_u64(&mut self, p: Box<dyn GeneralParameter<u64>>) -> ParameterIndex<u64> {
+        match p.try_into_simple() {
+            Some(p) => self.push_simple_u64(p),
             None => {
                 let index = GeneralParameterIndex::new(self.general_u64.len());
-                self.general_u64.push(parameter);
-                Ok(index.into())
+
+                self.general_resolve_order.push(GeneralParameterType::Index(index));
+                self.general_u64.push(p);
+
+                ParameterIndex::General(index)
             }
         }
     }
 
-    pub fn add_simple_u64(
-        &mut self,
-        parameter: Box<dyn SimpleParameter<u64>>,
-    ) -> Result<ParameterIndex<u64>, ParameterCollectionError> {
-        if self.has_name(parameter.name()) {
-            return Err(ParameterCollectionError::NameAlreadyExists(
-                parameter.meta().name.to_string(),
-            ));
-        }
-
-        match parameter.try_into_const() {
-            Some(constant) => self.add_const_u64(constant),
+    /// Push a new simple parameter to the collection.
+    ///
+    /// The new parameter will be simplified as much as possible.
+    ///
+    /// SAFETY: This must remain a private function to maintain the indexing guarantees.
+    fn push_simple_u64(&mut self, p: Box<dyn SimpleParameter<u64>>) -> ParameterIndex<u64> {
+        match p.try_into_const() {
+            Some(p) => self.push_const_u64(p),
             None => {
                 let index = SimpleParameterIndex::new(self.simple_u64.len());
 
-                self.simple_u64.push(parameter);
                 self.simple_resolve_order.push(SimpleParameterType::Index(index));
+                self.simple_u64.push(p);
 
-                Ok(index.into())
+                ParameterIndex::Simple(index)
             }
         }
     }
 
-    pub fn add_const_u64(
-        &mut self,
-        parameter: Box<dyn ConstParameter<u64>>,
-    ) -> Result<ParameterIndex<u64>, ParameterCollectionError> {
-        if self.has_name(parameter.name()) {
-            return Err(ParameterCollectionError::NameAlreadyExists(
-                parameter.meta().name.to_string(),
-            ));
-        }
-
+    /// Push a new const parameter to the collection.
+    ///
+    /// SAFETY: This must remain a private function to maintain the indexing guarantees.
+    fn push_const_u64(&mut self, p: Box<dyn ConstParameter<u64>>) -> ParameterIndex<u64> {
         let index = ConstParameterIndex::new(self.constant_u64.len());
 
-        self.constant_u64.push(parameter);
-        self.constant_resolve_order.push(ConstParameterType::Index(index));
+        self.constant_resolve_order.push(ConstParameterType::from(index));
+        self.constant_u64.push(p);
 
-        Ok(index.into())
+        ParameterIndex::Const(index)
     }
 
     pub fn get_u64(&self, index: ParameterIndex<u64>) -> Option<&dyn Parameter> {
@@ -1410,61 +1925,56 @@ impl ParameterCollection {
         }
     }
 
-    pub fn add_general_multi(
-        &mut self,
-        parameter: Box<dyn GeneralParameter<MultiValue>>,
-    ) -> Result<ParameterIndex<MultiValue>, ParameterCollectionError> {
-        if self.has_name(parameter.name()) {
-            return Err(ParameterCollectionError::NameAlreadyExists(
-                parameter.meta().name.to_string(),
-            ));
-        }
-
-        match parameter.try_into_simple() {
-            Some(simple) => self.add_simple_multi(simple).map(|idx| idx.into()),
+    /// Push a new general parameter to the collection.
+    ///
+    /// The new parameter will be simplified as much as possible.
+    ///
+    /// SAFETY: This must remain a private function to maintain the indexing guarantees.
+    fn push_general_multi(&mut self, p: Box<dyn GeneralParameter<MultiValue>>) -> ParameterIndex<MultiValue> {
+        match p.try_into_simple() {
+            Some(p) => self.push_simple_multi(p),
             None => {
                 let index = GeneralParameterIndex::new(self.general_multi.len());
-                self.general_multi.push(parameter);
-                Ok(index.into())
+
+                self.general_resolve_order.push(GeneralParameterType::Multi(index));
+                self.general_multi.push(p);
+
+                ParameterIndex::General(index)
             }
         }
     }
 
-    pub fn add_simple_multi(
-        &mut self,
-        parameter: Box<dyn SimpleParameter<MultiValue>>,
-    ) -> Result<SimpleParameterIndex<MultiValue>, ParameterCollectionError> {
-        if self.has_name(parameter.name()) {
-            return Err(ParameterCollectionError::NameAlreadyExists(
-                parameter.meta().name.to_string(),
-            ));
+    /// Push a new simple parameter to the collection.
+    ///
+    /// The new parameter will be simplified as much as possible.
+    ///
+    /// SAFETY: This must remain a private function to maintain the indexing guarantees.
+    fn push_simple_multi(&mut self, p: Box<dyn SimpleParameter<MultiValue>>) -> ParameterIndex<MultiValue> {
+        match p.try_into_const() {
+            Some(p) => self.push_const_multi(p),
+            None => {
+                let index = SimpleParameterIndex::new(self.simple_multi.len());
+
+                self.simple_resolve_order.push(SimpleParameterType::Multi(index));
+                self.simple_multi.push(p);
+
+                ParameterIndex::Simple(index)
+            }
         }
-
-        let index = SimpleParameterIndex::new(self.simple_multi.len());
-
-        self.simple_multi.push(parameter);
-        self.simple_resolve_order.push(SimpleParameterType::Multi(index));
-
-        Ok(index)
     }
 
-    pub fn add_const_multi(
-        &mut self,
-        parameter: Box<dyn ConstParameter<MultiValue>>,
-    ) -> Result<ConstParameterIndex<MultiValue>, ParameterCollectionError> {
-        if self.has_name(parameter.name()) {
-            return Err(ParameterCollectionError::NameAlreadyExists(
-                parameter.meta().name.to_string(),
-            ));
-        }
-
+    /// Push a new const parameter to the collection.
+    ///
+    /// SAFETY: This must remain a private function to maintain the indexing guarantees.
+    fn push_const_multi(&mut self, p: Box<dyn ConstParameter<MultiValue>>) -> ParameterIndex<MultiValue> {
         let index = ConstParameterIndex::new(self.constant_multi.len());
 
-        self.constant_multi.push(parameter);
-        self.constant_resolve_order.push(ConstParameterType::Multi(index));
+        self.constant_resolve_order.push(ConstParameterType::from(index));
+        self.constant_multi.push(p);
 
-        Ok(index)
+        ParameterIndex::Const(index)
     }
+
     pub fn get_multi(&self, index: &ParameterIndex<MultiValue>) -> Option<&dyn Parameter> {
         match index {
             ParameterIndex::Const(idx) => self.constant_multi.get(*idx.deref()).map(|p| p.as_parameter()),
@@ -1509,6 +2019,245 @@ impl ParameterCollection {
                 .map(ConstParameterIndex::new)
                 .map(|idx| idx.into())
         }
+    }
+
+    pub fn compute_general(
+        &self,
+        timestep: &Timestep,
+        scenario_index: &ScenarioIndex,
+        network: &Network,
+        state: &mut State,
+        internal_states: &mut ParameterStates,
+        mut timings: Option<&mut ParameterTimings>,
+    ) -> Result<(), ParameterCollectionGeneralCalculationError> {
+        if let Some(timings) = timings.as_deref() {
+            if timings.id != self.id {
+                return Err(ParameterCollectionGeneralCalculationError::TimingsFromAnotherCollection);
+            }
+        }
+
+        for p in &self.general_resolve_order {
+            let start = Instant::now();
+            match p {
+                GeneralParameterType::Parameter(idx) => {
+                    // Find the parameter itself
+                    let p = self
+                        .general_f64
+                        .get(*idx.deref())
+                        .ok_or(ParameterCollectionGeneralCalculationError::F64IndexNotFound(*idx))?;
+                    // .. and its internal state
+                    let internal_state = internal_states
+                        .get_general_mut_f64_state(*idx)
+                        .ok_or(ParameterCollectionGeneralCalculationError::F64IndexNotFound(*idx))?;
+
+                    let value = p
+                        .before(timestep, scenario_index, network, state, internal_state)
+                        .map_err(|source| ParameterCollectionGeneralCalculationError::CalculationError {
+                            name: p.name().clone(),
+                            source: Box::new(source),
+                        })?;
+
+                    state
+                        .set_general_parameter_value_before(*idx, value)
+                        .map_err(|source| ParameterCollectionGeneralCalculationError::F64SetStateError {
+                            name: p.name().clone(),
+                            source,
+                        })?;
+
+                    if let Some(timings) = timings.as_deref_mut() {
+                        unsafe {
+                            timings.general_f64.get_unchecked_mut(*idx.deref()).before += start.elapsed();
+                        }
+                    }
+                }
+                GeneralParameterType::Index(idx) => {
+                    // Find the parameter itself
+                    let p = self
+                        .general_u64
+                        .get(*idx.deref())
+                        .ok_or(ParameterCollectionGeneralCalculationError::U64IndexNotFound(*idx))?;
+                    // ... and its internal state
+                    let internal_state = internal_states
+                        .get_general_mut_u64_state(*idx)
+                        .ok_or(ParameterCollectionGeneralCalculationError::U64IndexNotFound(*idx))?;
+
+                    let value = p
+                        .before(timestep, scenario_index, network, state, internal_state)
+                        .map_err(|source| ParameterCollectionGeneralCalculationError::CalculationError {
+                            name: p.name().clone(),
+                            source: Box::new(source),
+                        })?;
+
+                    state
+                        .set_general_parameter_index_before(*idx, value)
+                        .map_err(|source| ParameterCollectionGeneralCalculationError::U64SetStateError {
+                            name: p.name().clone(),
+                            source,
+                        })?;
+
+                    if let Some(timings) = timings.as_deref_mut() {
+                        unsafe {
+                            timings.general_u64.get_unchecked_mut(*idx.deref()).before += start.elapsed();
+                        }
+                    }
+                }
+                GeneralParameterType::Multi(idx) => {
+                    // Find the parameter itself
+                    let p = self
+                        .general_multi
+                        .get(*idx.deref())
+                        .ok_or(ParameterCollectionGeneralCalculationError::MultiIndexNotFound(*idx))?;
+                    // ... and its internal state
+                    let internal_state = internal_states
+                        .get_general_mut_multi_state(*idx)
+                        .ok_or(ParameterCollectionGeneralCalculationError::MultiIndexNotFound(*idx))?;
+
+                    let value = p
+                        .before(timestep, scenario_index, network, state, internal_state)
+                        .map_err(|source| ParameterCollectionGeneralCalculationError::CalculationError {
+                            name: p.name().clone(),
+                            source: Box::new(source),
+                        })?;
+
+                    state
+                        .set_general_multi_parameter_value_before(*idx, value)
+                        .map_err(
+                            |source| ParameterCollectionGeneralCalculationError::MultiSetStateError {
+                                name: p.name().clone(),
+                                source,
+                            },
+                        )?;
+
+                    if let Some(timings) = timings.as_deref_mut() {
+                        unsafe {
+                            timings.general_multi.get_unchecked_mut(*idx.deref()).before += start.elapsed();
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Perform the after step for general parameters.
+    pub fn after_general(
+        &self,
+        timestep: &Timestep,
+        scenario_index: &ScenarioIndex,
+        network: &Network,
+        state: &mut State,
+        internal_states: &mut ParameterStates,
+        mut timings: Option<&mut ParameterTimings>,
+    ) -> Result<(), ParameterCollectionGeneralCalculationError> {
+        if let Some(timings) = timings.as_deref() {
+            if timings.id != self.id {
+                return Err(ParameterCollectionGeneralCalculationError::TimingsFromAnotherCollection);
+            }
+        }
+
+        for p in &self.general_resolve_order {
+            let start = Instant::now();
+            match p {
+                GeneralParameterType::Parameter(idx) => {
+                    // Find the parameter itself
+                    let p = self
+                        .general_f64
+                        .get(*idx.deref())
+                        .ok_or(ParameterCollectionGeneralCalculationError::F64IndexNotFound(*idx))?;
+                    // .. and its internal state
+                    let internal_state = internal_states
+                        .get_general_mut_f64_state(*idx)
+                        .ok_or(ParameterCollectionGeneralCalculationError::F64IndexNotFound(*idx))?;
+
+                    let value = p
+                        .after(timestep, scenario_index, network, state, internal_state)
+                        .map_err(|source| ParameterCollectionGeneralCalculationError::CalculationError {
+                            name: p.name().clone(),
+                            source: Box::new(source),
+                        })?;
+
+                    state.set_general_parameter_value_after(*idx, value).map_err(|source| {
+                        ParameterCollectionGeneralCalculationError::F64SetStateError {
+                            name: p.name().clone(),
+                            source,
+                        }
+                    })?;
+
+                    if let Some(timings) = timings.as_deref_mut() {
+                        unsafe {
+                            timings.general_f64.get_unchecked_mut(*idx.deref()).after += start.elapsed();
+                        }
+                    }
+                }
+                GeneralParameterType::Index(idx) => {
+                    // Find the parameter itself
+                    let p = self
+                        .general_u64
+                        .get(*idx.deref())
+                        .ok_or(ParameterCollectionGeneralCalculationError::U64IndexNotFound(*idx))?;
+                    // .. and its internal state
+                    let internal_state = internal_states
+                        .get_general_mut_u64_state(*idx)
+                        .ok_or(ParameterCollectionGeneralCalculationError::U64IndexNotFound(*idx))?;
+
+                    let value = p
+                        .after(timestep, scenario_index, network, state, internal_state)
+                        .map_err(|source| ParameterCollectionGeneralCalculationError::CalculationError {
+                            name: p.name().clone(),
+                            source: Box::new(source),
+                        })?;
+
+                    state.set_general_parameter_index_after(*idx, value).map_err(|source| {
+                        ParameterCollectionGeneralCalculationError::U64SetStateError {
+                            name: p.name().clone(),
+                            source,
+                        }
+                    })?;
+
+                    if let Some(timings) = timings.as_deref_mut() {
+                        unsafe {
+                            timings.general_u64.get_unchecked_mut(*idx.deref()).after += start.elapsed();
+                        }
+                    }
+                }
+                GeneralParameterType::Multi(idx) => {
+                    // Find the parameter itself
+                    let p = self
+                        .general_multi
+                        .get(*idx.deref())
+                        .ok_or(ParameterCollectionGeneralCalculationError::MultiIndexNotFound(*idx))?;
+                    // .. and its internal state
+                    let internal_state = internal_states
+                        .get_general_mut_multi_state(*idx)
+                        .ok_or(ParameterCollectionGeneralCalculationError::MultiIndexNotFound(*idx))?;
+
+                    let value = p
+                        .after(timestep, scenario_index, network, state, internal_state)
+                        .map_err(|source| ParameterCollectionGeneralCalculationError::CalculationError {
+                            name: p.name().clone(),
+                            source: Box::new(source),
+                        })?;
+
+                    state
+                        .set_general_multi_parameter_value_after(*idx, value)
+                        .map_err(
+                            |source| ParameterCollectionGeneralCalculationError::MultiSetStateError {
+                                name: p.name().clone(),
+                                source,
+                            },
+                        )?;
+
+                    if let Some(timings) = timings.as_deref_mut() {
+                        unsafe {
+                            timings.general_multi.get_unchecked_mut(*idx.deref()).after += start.elapsed();
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(())
     }
 
     pub fn compute_simple(
@@ -1793,17 +2542,282 @@ impl ParameterCollection {
     }
 }
 
+#[derive(Debug, Error)]
+pub enum ParameterCollectionBuilderError {
+    #[error("Duplicate parameter `{name}` found.")]
+    DuplicateParameterName { name: ParameterName },
+    #[error("Error building parameter `{name}`: {source}")]
+    ParameterBuildError {
+        name: ParameterName,
+        #[source]
+        source: Box<ParameterBuildError>,
+    },
+    #[error("Circular (or self) parameter references found: {names:?}")]
+    CircularParameterReference { names: Vec<ParameterName> },
+    #[error("Parameter not found: {name}.")]
+    ParameterNotFound { name: ParameterName },
+}
+
+/// A builder for [`ParameterCollection`] that allows adding parameters without worrying about the
+/// internal structure of the collection.
+#[derive(Default, Debug)]
+pub struct ParameterCollectionBuilder {
+    pub f64: Vec<Box<dyn ParameterBuilder<f64>>>,
+    pub u64: Vec<Box<dyn ParameterBuilder<u64>>>,
+    pub multi: Vec<Box<dyn ParameterBuilder<MultiValue>>>,
+}
+
+impl ParameterCollectionBuilder {
+    pub fn f64(&mut self, value: Box<dyn ParameterBuilder<f64>>) -> &mut Self {
+        self.f64.push(value);
+        self
+    }
+
+    pub fn u64(&mut self, value: Box<dyn ParameterBuilder<u64>>) -> &mut Self {
+        self.u64.push(value);
+        self
+    }
+
+    pub fn multi(&mut self, value: Box<dyn ParameterBuilder<MultiValue>>) -> &mut Self {
+        self.multi.push(value);
+        self
+    }
+
+    /// Returns true if the builder is empty.
+    fn is_empty(&self) -> bool {
+        self.f64.is_empty() && self.u64.is_empty() && self.multi.is_empty()
+    }
+
+    /// Total number of parameter builders in the collection builder.
+    fn len(&self) -> usize {
+        self.f64.len() + self.u64.len() + self.multi.len()
+    }
+
+    /// Returns true if the builder contains a parameter with the `name`.
+    pub fn contains_name(&self, name: &ParameterName) -> bool {
+        self.f64.iter().any(|p| p.name() == name)
+            || self.u64.iter().any(|p| p.name() == name)
+            || self.multi.iter().any(|p| p.name() == name)
+    }
+
+    pub fn build(
+        mut self,
+        resolution_maps: &mut ResolutionMaps,
+    ) -> Result<ParameterCollection, ParameterCollectionBuilderError> {
+        let mut collection = ParameterCollection::default();
+
+        let mut num_unbuilt = self.len();
+
+        while !self.is_empty() {
+            let mut failed_f64 = Vec::new();
+            let mut failed_u64 = Vec::new();
+            let mut failed_multi = Vec::new();
+
+            for p in self.f64.into_iter() {
+                let name = p.name().clone();
+
+                if collection.has_name(&name) {
+                    return Err(ParameterCollectionBuilderError::DuplicateParameterName { name });
+                }
+
+                match p.build(resolution_maps) {
+                    Ok(maybe) => {
+                        match maybe {
+                            MaybeBuiltParameter::Built(built) => {
+                                // Parameter successfully built. Let's add it to the collection, resolve order and resolution map.
+                                let idx = match built {
+                                    BuiltParameter::General(p) => collection.push_general_f64(p),
+                                    BuiltParameter::Simple(p) => collection.push_simple_f64(p),
+                                    BuiltParameter::Const(p) => collection.push_const_f64(p),
+                                };
+
+                                resolution_maps.parameters_f64.insert(name, idx);
+                            }
+                            MaybeBuiltParameter::Retry {
+                                builder,
+                                parameter_not_found,
+                            } => {
+                                failed_f64.push((builder, parameter_not_found));
+                            }
+                        }
+                    }
+                    Err(source) => {
+                        return Err(ParameterCollectionBuilderError::ParameterBuildError {
+                            name,
+                            source: Box::new(source),
+                        });
+                    }
+                }
+            }
+
+            for p in self.u64.into_iter() {
+                let name = p.name().clone();
+
+                if collection.has_name(&name) {
+                    return Err(ParameterCollectionBuilderError::DuplicateParameterName { name });
+                }
+
+                match p.build(resolution_maps) {
+                    Ok(maybe) => {
+                        match maybe {
+                            MaybeBuiltParameter::Built(built) => {
+                                // Parameter successfully built. Let's add it to the collection, resolve order and resolution map.
+                                let idx = match built {
+                                    BuiltParameter::General(p) => collection.push_general_u64(p),
+                                    BuiltParameter::Simple(p) => collection.push_simple_u64(p),
+                                    BuiltParameter::Const(p) => collection.push_const_u64(p),
+                                };
+
+                                resolution_maps.parameters_u64.insert(name, idx);
+                            }
+                            MaybeBuiltParameter::Retry {
+                                builder,
+                                parameter_not_found,
+                            } => {
+                                failed_u64.push((builder, parameter_not_found));
+                            }
+                        }
+                    }
+                    Err(source) => {
+                        return Err(ParameterCollectionBuilderError::ParameterBuildError {
+                            name,
+                            source: Box::new(source),
+                        });
+                    }
+                }
+            }
+
+            for p in self.multi.into_iter() {
+                let name = p.name().clone();
+
+                if collection.has_name(&name) {
+                    return Err(ParameterCollectionBuilderError::DuplicateParameterName { name });
+                }
+
+                match p.build(resolution_maps) {
+                    Ok(maybe) => {
+                        match maybe {
+                            MaybeBuiltParameter::Built(built) => {
+                                // Parameter successfully built. Let's add it to the collection, resolve order and resolution map.
+                                let idx = match built {
+                                    BuiltParameter::General(p) => collection.push_general_multi(p),
+                                    BuiltParameter::Simple(p) => collection.push_simple_multi(p),
+                                    BuiltParameter::Const(p) => collection.push_const_multi(p),
+                                };
+
+                                resolution_maps.parameters_multi.insert(name, idx);
+                            }
+                            MaybeBuiltParameter::Retry {
+                                builder,
+                                parameter_not_found,
+                            } => {
+                                failed_multi.push((builder, parameter_not_found));
+                            }
+                        }
+                    }
+                    Err(source) => {
+                        return Err(ParameterCollectionBuilderError::ParameterBuildError {
+                            name,
+                            source: Box::new(source),
+                        });
+                    }
+                }
+            }
+
+            let new_total = failed_f64.len() + failed_u64.len() + failed_multi.len();
+
+            if num_unbuilt == new_total {
+                let (failed_names, missing_names): (Vec<_>, Vec<_>) = failed_f64
+                    .into_iter()
+                    .map(|(b, pn)| (b.name().clone(), pn))
+                    .chain(
+                        failed_u64
+                            .into_iter()
+                            .map(|(b, pn)| (b.name().clone(), pn))
+                            .chain(failed_multi.into_iter().map(|(b, pn)| (b.name().clone(), pn))),
+                    )
+                    .unzip();
+
+                // If any of the missing names are not in the failed names, then we have legitimate
+                // missing parameter (or typo).
+                for missing in missing_names {
+                    if !failed_names.contains(&missing) {
+                        return Err(ParameterCollectionBuilderError::ParameterNotFound { name: missing });
+                    }
+                }
+                // Otherwise all the missing names are other failed parameters and this is a circular
+                // or self reference.
+                return Err(ParameterCollectionBuilderError::CircularParameterReference { names: failed_names });
+            } else {
+                // Keep the builders for the next iteration, but we no longer need the missing parameter names.
+                self.f64 = failed_f64.into_iter().map(|(b, _)| b).collect();
+                self.u64 = failed_u64.into_iter().map(|(b, _)| b).collect();
+                self.multi = failed_multi.into_iter().map(|(b, _)| b).collect();
+
+                num_unbuilt = new_total;
+            }
+        }
+
+        Ok(collection)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        ConstParameter, GeneralParameter, Parameter, ParameterCalculationError, ParameterCollection, ParameterMeta,
+        BuiltParameter, ConstParameter, GeneralCalculationError, GeneralParameter, MaybeBuiltParameter, Parameter,
+        ParameterBuildError, ParameterBuilder, ParameterCollectionBuilder, ParameterMeta, ParameterName,
         ParameterState, SimpleParameter,
     };
+    use crate::network::ResolutionMaps;
     use crate::parameters::errors::{ConstCalculationError, SimpleCalculationError};
     use crate::scenario::ScenarioIndex;
     use crate::state::{ConstParameterValues, MultiValue};
+    use crate::test_utils::default_domain;
+
+    #[derive(Debug)]
+    struct TestParameterBuilder {
+        meta: ParameterMeta,
+    }
+
+    impl Default for TestParameterBuilder {
+        fn default() -> Self {
+            Self {
+                meta: ParameterMeta::new("test-parameter".into()),
+            }
+        }
+    }
+
+    impl ParameterBuilder<f64> for TestParameterBuilder {
+        fn name(&self) -> &ParameterName {
+            &self.meta.name
+        }
+
+        fn build(
+            self: Box<Self>,
+            _resolution_maps: &ResolutionMaps,
+        ) -> Result<MaybeBuiltParameter<f64>, ParameterBuildError> {
+            let p = TestParameter { meta: self.meta };
+            Ok(MaybeBuiltParameter::Built(BuiltParameter::Const(Box::new(p))))
+        }
+    }
+
+    impl ParameterBuilder<u64> for TestParameterBuilder {
+        fn name(&self) -> &ParameterName {
+            &self.meta.name
+        }
+
+        fn build(
+            self: Box<Self>,
+            _resolution_maps: &ResolutionMaps,
+        ) -> Result<MaybeBuiltParameter<u64>, ParameterBuildError> {
+            let p = TestParameter { meta: self.meta };
+            Ok(MaybeBuiltParameter::Built(BuiltParameter::Const(Box::new(p))))
+        }
+    }
 
     /// Parameter for testing purposes
+    #[derive(Debug)]
     struct TestParameter {
         meta: ParameterMeta,
     }
@@ -1898,7 +2912,7 @@ mod tests {
             _model: &crate::network::Network,
             _state: &crate::state::State,
             _internal_state: &mut Option<Box<dyn ParameterState>>,
-        ) -> Result<Option<T>, ParameterCalculationError> {
+        ) -> Result<Option<T>, GeneralCalculationError> {
             Ok(Some(T::from(1)))
         }
 
@@ -1915,7 +2929,7 @@ mod tests {
             _model: &crate::network::Network,
             _state: &crate::state::State,
             _internal_state: &mut Option<Box<dyn ParameterState>>,
-        ) -> Result<Option<MultiValue>, ParameterCalculationError> {
+        ) -> Result<Option<MultiValue>, GeneralCalculationError> {
             Ok(Some(MultiValue::default()))
         }
 
@@ -1927,39 +2941,25 @@ mod tests {
     /// Test naming constraints on parameter collection.
     #[test]
     fn test_parameter_collection_name_constraints() {
-        let mut collection = ParameterCollection::default();
+        let mut collection = ParameterCollectionBuilder::default();
 
-        let ret = collection.add_const_f64(Box::new(TestParameter::default()));
-        assert!(ret.is_ok());
+        collection.f64(Box::new(TestParameterBuilder::default()));
+        collection.f64(Box::new(TestParameterBuilder::default()));
 
-        assert!(collection.has_name(&"test-parameter".into()));
+        assert!(collection.build(&mut ResolutionMaps::new(default_domain())).is_err());
 
-        // Try to add a parameter with the same name
-        let ret = collection.add_const_f64(Box::new(TestParameter::default()));
-        assert!(ret.is_err());
+        let mut collection = ParameterCollectionBuilder::default();
 
-        let ret = collection.add_simple_f64(Box::new(TestParameter::default()));
-        assert!(ret.is_err());
+        collection.u64(Box::new(TestParameterBuilder::default()));
+        collection.u64(Box::new(TestParameterBuilder::default()));
 
-        let ret = collection.add_general_f64(Box::new(TestParameter::default()));
-        assert!(ret.is_err());
+        assert!(collection.build(&mut ResolutionMaps::new(default_domain())).is_err());
 
-        let ret = collection.add_const_u64(Box::new(TestParameter::default()));
-        assert!(ret.is_err());
+        let mut collection = ParameterCollectionBuilder::default();
 
-        let ret = collection.add_simple_u64(Box::new(TestParameter::default()));
-        assert!(ret.is_err());
+        collection.f64(Box::new(TestParameterBuilder::default()));
+        collection.u64(Box::new(TestParameterBuilder::default()));
 
-        let ret = collection.add_general_u64(Box::new(TestParameter::default()));
-        assert!(ret.is_err());
-
-        let ret = collection.add_const_multi(Box::new(TestParameter::default()));
-        assert!(ret.is_err());
-
-        let ret = collection.add_simple_multi(Box::new(TestParameter::default()));
-        assert!(ret.is_err());
-
-        let ret = collection.add_general_multi(Box::new(TestParameter::default()));
-        assert!(ret.is_err());
+        assert!(collection.build(&mut ResolutionMaps::new(default_domain())).is_err());
     }
 }

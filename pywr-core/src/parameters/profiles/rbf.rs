@@ -1,7 +1,9 @@
+use crate::network::ResolutionMaps;
 use crate::parameters::errors::{ParameterSetupError, SimpleCalculationError};
 use crate::parameters::{
-    Parameter, ParameterMeta, ParameterName, ParameterState, SimpleParameter, VariableConfig, VariableParameter,
-    VariableParameterError, downcast_internal_state_mut, downcast_internal_state_ref, downcast_variable_config_ref,
+    BuiltParameter, MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder, ParameterMeta,
+    ParameterName, ParameterState, SimpleParameter, VariableConfig, VariableParameter, VariableParameterError,
+    downcast_internal_state_mut, downcast_internal_state_ref, downcast_variable_config_ref,
 };
 use crate::scenario::ScenarioIndex;
 use crate::state::SimpleParameterValues;
@@ -38,6 +40,7 @@ impl RbfProfileVariableConfig {
 
 /// A parameter that interpolates between a set of points using a radial basis function to
 /// create a daily profile.
+#[derive(Debug)]
 pub struct RbfProfileParameter {
     meta: ParameterMeta,
     points: Vec<(u32, f64)>,
@@ -97,16 +100,6 @@ impl RbfProfileInternalState {
         };
 
         self.profile = interpolate_rbf_profile(&points, function);
-    }
-}
-
-impl RbfProfileParameter {
-    pub fn new(name: ParameterName, points: Vec<(u32, f64)>, function: RadialBasisFunction) -> Self {
-        Self {
-            meta: ParameterMeta::new(name),
-            points,
-            function,
-        }
     }
 }
 
@@ -299,6 +292,7 @@ impl VariableParameter<u32> for RbfProfileParameter {
 }
 
 /// Radial basis functions for interpolation.
+#[derive(Debug)]
 pub enum RadialBasisFunction {
     Linear,
     Cubic,
@@ -383,6 +377,42 @@ fn interpolate_rbf_profile(points: &[(u32, f64)], function: &RadialBasisFunction
     let profile = [start, &[end[0]], end].concat();
 
     profile.try_into().unwrap()
+}
+
+#[derive(Debug)]
+pub struct RbfProfileParameterBuilder {
+    meta: ParameterMeta,
+    points: Vec<(u32, f64)>,
+    function: RadialBasisFunction,
+}
+
+impl RbfProfileParameterBuilder {
+    pub fn new(name: ParameterName, points: Vec<(u32, f64)>, function: RadialBasisFunction) -> Self {
+        Self {
+            meta: ParameterMeta::new(name),
+            points,
+            function,
+        }
+    }
+}
+
+impl ParameterBuilder<f64> for RbfProfileParameterBuilder {
+    fn name(&self) -> &ParameterName {
+        &self.meta.name
+    }
+
+    fn build(
+        self: Box<Self>,
+        _resolution_maps: &ResolutionMaps,
+    ) -> Result<MaybeBuiltParameter<f64>, ParameterBuildError> {
+        let p = RbfProfileParameter {
+            meta: self.meta,
+            points: self.points,
+            function: self.function,
+        };
+
+        Ok(MaybeBuiltParameter::Built(BuiltParameter::Simple(Box::new(p))))
+    }
 }
 
 #[cfg(test)]

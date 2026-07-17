@@ -17,13 +17,20 @@ use chrono::{NaiveDate, NaiveDateTime};
 use pyo3::Python;
 #[cfg(feature = "pyo3")]
 use pyo3::{Bound, PyErr, PyResult, exceptions::PyRuntimeError, pyclass, pymethods, types::PyType};
+#[cfg(all(feature = "core", feature = "pyo3"))]
+use pywr_core::models::Model;
 #[cfg(feature = "core")]
 use pywr_core::{
-    models::{Model, ModelDomain, MultiNetworkModel, MultiNetworkModelError},
+    models::{
+        ModelBuilder, ModelDomainBuilder, ModelDomainBuilderError, MultiNetworkEntryBuilder, MultiNetworkModelBuilder,
+        MultiNetworkModelBuilderError, MultiNetworkTransferBuilder,
+    },
     timestep::TimestepDuration,
 };
 use pywr_schema_macros::skip_serializing_none;
 use schemars::JsonSchema;
+#[cfg(feature = "core")]
+use std::collections::HashMap;
 use std::num::NonZeroU64;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
@@ -117,13 +124,13 @@ impl From<pywr_v1_schema::model::DateType> for Date {
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema)]
-pub struct Timestepper {
+pub struct TimeDomain {
     pub start: Date,
     pub end: Date,
     pub timestep: Timestep,
 }
 
-impl Default for Timestepper {
+impl Default for TimeDomain {
     fn default() -> Self {
         Self {
             start: Date::Date(NaiveDate::from_ymd_opt(2000, 1, 1).expect("Invalid date")),
@@ -133,7 +140,7 @@ impl Default for Timestepper {
     }
 }
 
-impl From<pywr_v1_schema::model::Timestepper> for Timestepper {
+impl From<pywr_v1_schema::model::Timestepper> for TimeDomain {
     fn from(v1: pywr_v1_schema::model::Timestepper) -> Self {
         Self {
             start: v1.start.into(),
@@ -144,8 +151,8 @@ impl From<pywr_v1_schema::model::Timestepper> for Timestepper {
 }
 
 #[cfg(feature = "core")]
-impl From<Timestepper> for pywr_core::timestep::Timestepper {
-    fn from(ts: Timestepper) -> Self {
+impl From<TimeDomain> for pywr_core::timestep::TimeDomainBuilder {
+    fn from(ts: TimeDomain) -> Self {
         let timestep = match ts.timestep {
             Timestep::Hours { hours } => TimestepDuration::Hours(hours),
             Timestep::Days { days } => TimestepDuration::Days(days),
@@ -213,7 +220,7 @@ pub struct ScenarioGroup {
 
 #[cfg(feature = "core")]
 impl TryInto<pywr_core::scenario::ScenarioGroup> for ScenarioGroup {
-    type Error = pywr_core::scenario::ScenarioError;
+    type Error = pywr_core::scenario::ScenarioDomainBuilderError;
 
     fn try_into(self) -> Result<pywr_core::scenario::ScenarioGroup, Self::Error> {
         let mut builder = pywr_core::scenario::ScenarioGroupBuilder::new(&self.name, self.size);
@@ -365,7 +372,7 @@ impl TryFrom<Vec<pywr_v1_schema::model::Scenario>> for ScenarioDomain {
 
 #[cfg(feature = "core")]
 impl TryInto<pywr_core::scenario::ScenarioDomainBuilder> for ScenarioDomain {
-    type Error = pywr_core::scenario::ScenarioError;
+    type Error = pywr_core::scenario::ScenarioDomainBuilderError;
 
     fn try_into(self) -> Result<pywr_core::scenario::ScenarioDomainBuilder, Self::Error> {
         let mut builder = pywr_core::scenario::ScenarioDomainBuilder::default();
@@ -402,7 +409,7 @@ impl From<ModelSchemaReadError> for PyErr {
 #[cfg(feature = "core")]
 pub enum ModelSchemaBuildError {
     #[error("Failed to construct scenario builder: {0}")]
-    ScenarioBuilderError(#[from] pywr_core::scenario::ScenarioError),
+    ScenarioBuilderError(#[from] pywr_core::scenario::ScenarioDomainBuilderError),
     #[error("Failed to construct model domain: {0}")]
     CoreModelDomainError(#[from] pywr_core::models::ModelDomainError),
     #[error("Failed to construct the network: {source}")]
@@ -410,6 +417,8 @@ pub enum ModelSchemaBuildError {
         #[source]
         source: Box<NetworkSchemaBuildError>,
     },
+    #[error("Error building model domain: {0}")]
+    CoreModelDomainBuilderError(#[from] ModelDomainBuilderError),
 }
 
 #[cfg(all(feature = "core", feature = "pyo3"))]
@@ -461,7 +470,7 @@ impl From<ModelSchemaBuildError> for PyErr {
 #[cfg_attr(feature = "pyo3", pyclass(skip_from_py_object))]
 pub struct ModelSchema {
     pub metadata: Metadata,
-    pub timestepper: Timestepper,
+    pub time: TimeDomain,
     pub scenarios: Option<ScenarioDomain>,
     pub network: NetworkSchema,
 }
@@ -501,7 +510,7 @@ impl ModelSchema {
                 description: None,
                 minimum_version: None,
             },
-            timestepper: Timestepper {
+            time: TimeDomain {
                 start: *start,
                 end: *end,
                 timestep: Timestep::default(),
@@ -519,31 +528,36 @@ impl ModelSchema {
         Ok(serde_json::from_str(data.as_str())?)
     }
 
+    /// Create a [`pywr_core::models::ModelBuilder`] from the schema.
     #[cfg(feature = "core")]
-    pub fn build_model(
+    pub fn create_model_builder(
         &self,
         data_path: Option<&Path>,
         output_path: Option<&Path>,
-    ) -> Result<Model, ModelSchemaBuildError> {
-        let timestepper = self.timestepper.clone().into();
+    ) -> Result<ModelBuilder, ModelSchemaBuildError> {
+        let time_domain_builder = self.time.clone().into();
 
         let scenario_builder = match &self.scenarios {
             Some(scenarios) => scenarios.clone().try_into()?,
             None => pywr_core::scenario::ScenarioDomainBuilder::default(),
         };
 
-        let domain = ModelDomain::try_from(timestepper, scenario_builder)?;
+        let mut domain_builder = ModelDomainBuilder::new(time_domain_builder);
+        domain_builder.scenario(scenario_builder);
 
-        let (network, _tables, _ts) = self
-            .network
-            .build_network(&domain, data_path, output_path, &[])
+        let domain = domain_builder.build()?;
+
+        let mut network_builder = pywr_core::network::NetworkBuilder::default();
+
+        self.network
+            .add_to_network(&mut network_builder, &domain, data_path, output_path, &[])
             .map_err(|source| ModelSchemaBuildError::NetworkBuildError {
                 source: Box::new(source),
             })?;
 
-        let model = Model::new(domain, network);
+        let model_builder = ModelBuilder::new(domain, network_builder);
 
-        Ok(model)
+        Ok(model_builder)
     }
 
     /// Convert a v1 model to a v2 model.
@@ -557,7 +571,7 @@ impl ModelSchema {
         let mut errors = Vec::new();
 
         let metadata = v1.metadata.into();
-        let timestepper = v1.timestepper.into();
+        let time = v1.timestepper.into();
         let scenarios = match v1.scenarios.map(|s| s.try_into()) {
             Some(Ok(scenarios)) => Some(scenarios),
             Some(Err(err)) => {
@@ -573,7 +587,7 @@ impl ModelSchema {
         (
             Self {
                 metadata,
-                timestepper,
+                time,
                 scenarios,
                 network,
             },
@@ -627,7 +641,8 @@ impl ModelSchema {
     #[cfg(feature = "core")]
     #[pyo3(name="build", signature = (data_path=None, output_path=None))]
     fn build_py(&mut self, data_path: Option<PathBuf>, output_path: Option<PathBuf>) -> PyResult<Model> {
-        let model = self.build_model(data_path.as_deref(), output_path.as_deref())?;
+        let builder = self.create_model_builder(data_path.as_deref(), output_path.as_deref())?;
+        let model = builder.build()?;
         Ok(model)
     }
 }
@@ -652,9 +667,9 @@ pub struct MultiNetworkEntry {
 #[cfg(feature = "core")]
 pub enum MultiNetworkModelSchemaBuildError {
     #[error("Failed to construct scenario builder: {0}")]
-    ScenarioBuilderError(#[from] pywr_core::scenario::ScenarioError),
-    #[error("Failed to construct model domain: {0}")]
-    CoreModelDomainError(#[from] pywr_core::models::ModelDomainError),
+    ScenarioBuilderError(#[from] pywr_core::scenario::ScenarioDomainBuilderError),
+    #[error("Error building model domain: {0}")]
+    CoreModelDomainBuilderError(#[from] ModelDomainBuilderError),
     #[error("Failed to construct the network `{name}`: {source}")]
     NetworkBuildError {
         name: String,
@@ -673,11 +688,10 @@ pub enum MultiNetworkModelSchemaBuildError {
         #[source]
         source: Box<SchemaError>,
     },
-    #[error("Failed to add network `{name}` to the model: {source}")]
-    AddNetworkError {
-        name: String,
+    #[error("Failed to build the model: {source}")]
+    ModelBuildError {
         #[source]
-        source: MultiNetworkModelError,
+        source: Box<MultiNetworkModelBuilderError>,
     },
 }
 
@@ -770,7 +784,7 @@ impl From<MultiNetworkModelSchemaBuildError> for PyErr {
 #[cfg_attr(feature = "pyo3", pyclass(skip_from_py_object))]
 pub struct MultiNetworkModelSchema {
     pub metadata: Metadata,
-    pub timestepper: Timestepper,
+    pub time: TimeDomain,
     pub scenarios: Option<ScenarioDomain>,
     pub networks: Vec<MultiNetworkEntry>,
 }
@@ -791,7 +805,7 @@ impl MultiNetworkModelSchema {
                 description: None,
                 minimum_version: None,
             },
-            timestepper: Timestepper {
+            time: TimeDomain {
                 start: *start,
                 end: *end,
                 timestep: Timestep::default(),
@@ -809,30 +823,35 @@ impl MultiNetworkModelSchema {
     }
 
     #[cfg(feature = "core")]
-    pub fn build_model(
+    pub fn create_model_builder(
         &self,
         data_path: Option<&Path>,
         output_path: Option<&Path>,
-    ) -> Result<MultiNetworkModel, MultiNetworkModelSchemaBuildError> {
-        let timestepper = self.timestepper.clone().into();
+    ) -> Result<MultiNetworkModelBuilder, MultiNetworkModelSchemaBuildError> {
+        let time_builder = self.time.clone().into();
 
         let scenario_builder = match &self.scenarios {
             Some(scenarios) => scenarios.clone().try_into()?,
             None => pywr_core::scenario::ScenarioDomainBuilder::default(),
         };
 
-        let domain = ModelDomain::try_from(timestepper, scenario_builder)?;
-        let mut networks = Vec::with_capacity(self.networks.len());
-        let mut inter_network_transfers = Vec::new();
+        let mut domain_builder = ModelDomainBuilder::new(time_builder);
+        domain_builder.scenario(scenario_builder);
+        let domain = domain_builder.build()?;
+
+        let mut network_entry_builders = Vec::with_capacity(self.networks.len());
+        let mut network_builder_map = HashMap::with_capacity(self.networks.len());
         let mut schemas: Vec<(NetworkSchema, LoadedTableCollection, LoadedTimeseriesCollection)> =
             Vec::with_capacity(self.networks.len());
 
         // First load all the networks
         // These will contain any parameters that are referenced by the inter-model transfers
         // Because of potential circular references, we need to load all the networks first.
-        for network_entry in &self.networks {
+        for (i, network_entry) in self.networks.iter().enumerate() {
             // Load the network itself
-            let (network, schema, tables, timeseries) = match &network_entry.network {
+            let mut network_builder = pywr_core::network::NetworkBuilder::default();
+
+            let (schema, tables, timeseries) = match &network_entry.network {
                 NetworkSchemaRef::Path(path) => {
                     let pth = if let Some(dp) = data_path {
                         if path.is_relative() {
@@ -847,50 +866,58 @@ impl MultiNetworkModelSchema {
                     let network_schema = NetworkSchema::from_path(&pth)
                         .map_err(|source| MultiNetworkModelSchemaBuildError::NetworkReadError { path: pth, source })?;
 
-                    let (net, tables, timeseries) = network_schema
-                        .build_network(&domain, data_path, output_path, &network_entry.transfers)
+                    let (tables, timeseries) = network_schema
+                        .add_to_network(
+                            &mut network_builder,
+                            &domain,
+                            data_path,
+                            output_path,
+                            &network_entry.transfers,
+                        )
                         .map_err(|source| MultiNetworkModelSchemaBuildError::NetworkBuildError {
                             name: network_entry.name.clone(),
                             source: Box::new(source),
                         })?;
 
-                    (net, network_schema, tables, timeseries)
+                    (network_schema, tables, timeseries)
                 }
                 NetworkSchemaRef::Inline(network_schema) => {
-                    let (net, tables, timeseries) = network_schema
-                        .build_network(&domain, data_path, output_path, &network_entry.transfers)
+                    let (tables, timeseries) = network_schema
+                        .add_to_network(
+                            &mut network_builder,
+                            &domain,
+                            data_path,
+                            output_path,
+                            &network_entry.transfers,
+                        )
                         .map_err(|source| MultiNetworkModelSchemaBuildError::NetworkBuildError {
                             name: network_entry.name.clone(),
                             source: Box::new(source),
                         })?;
 
-                    (net, network_schema.clone(), tables, timeseries)
+                    (network_schema.clone(), tables, timeseries)
                 }
             };
 
             schemas.push((schema, tables, timeseries));
-            networks.push((network_entry.name.clone(), network));
+
+            network_entry_builders.push(network_builder);
+            network_builder_map.insert(network_entry.name.clone(), i);
         }
 
-        // Now load the inter-model transfers
-        for (to_network_idx, network_entry) in self.networks.iter().enumerate() {
+        // Now load the inter-model transfer builders.
+        let mut transfer_builders = Vec::with_capacity(self.networks.len());
+        for network_entry in &self.networks {
+            let mut t_builders = Vec::with_capacity(network_entry.transfers.len());
             for transfer in &network_entry.transfers {
                 // Load the metric from the "from" network
-
-                let (from_network_idx, from_network) = networks
-                    .iter_mut()
-                    .enumerate()
-                    .find_map(|(idx, (name, net))| {
-                        if name.as_str() == transfer.from_network.as_str() {
-                            Some((idx, net))
-                        } else {
-                            None
-                        }
-                    })
-                    .ok_or_else(|| MultiNetworkModelSchemaBuildError::AddTransferError {
+                let from_network_idx = *network_builder_map.get(&transfer.from_network).ok_or_else(|| {
+                    MultiNetworkModelSchemaBuildError::AddTransferError {
                         name: transfer.name.clone(),
                         source: Box::new(SchemaError::NetworkNotFound(transfer.from_network.clone())),
-                    })?;
+                    }
+                })?;
+                let from_network = &mut network_entry_builders[from_network_idx];
 
                 // The transfer metric will fail to load if it is defined as an inter-model transfer itself.
                 let (from_schema, from_tables, from_timeseries) = &schemas[from_network_idx];
@@ -911,24 +938,35 @@ impl MultiNetworkModelSchema {
                     }
                 })?;
 
-                inter_network_transfers.push((from_network_idx, from_metric, to_network_idx, transfer.initial_value));
+                let mut transfer_builder =
+                    MultiNetworkTransferBuilder::new(&transfer.name, &transfer.from_network, from_metric);
+                if let Some(iv) = transfer.initial_value {
+                    transfer_builder.initial_value(iv);
+                }
+
+                t_builders.push(transfer_builder);
             }
+
+            transfer_builders.push(t_builders);
         }
 
         // Now construct the model from the loaded components
-        let mut model = MultiNetworkModel::new(domain);
+        let mut model_builder = MultiNetworkModelBuilder::new(domain);
 
-        for (name, network) in networks {
-            model
-                .add_network(&name, network)
-                .map_err(|source| MultiNetworkModelSchemaBuildError::AddNetworkError { name, source })?;
+        for (network_entry, (network_builder, t_builders)) in self
+            .networks
+            .iter()
+            .zip(network_entry_builders.into_iter().zip(transfer_builders))
+        {
+            let mut entry_builder = MultiNetworkEntryBuilder::new(&network_entry.name, network_builder);
+            for t in t_builders {
+                entry_builder.transfer(t);
+            }
+
+            model_builder.network(entry_builder);
         }
 
-        for (from_network_idx, from_metric, to_network_idx, initial_value) in inter_network_transfers {
-            model.add_inter_network_transfer(from_network_idx, from_metric, to_network_idx, initial_value);
-        }
-
-        Ok(model)
+        Ok(model_builder)
     }
 }
 
@@ -972,7 +1010,8 @@ impl MultiNetworkModelSchema {
         data_path: Option<PathBuf>,
         output_path: Option<PathBuf>,
     ) -> PyResult<pywr_core::models::MultiNetworkModel> {
-        let model = self.build_model(data_path.as_deref(), output_path.as_deref())?;
+        let builder = self.create_model_builder(data_path.as_deref(), output_path.as_deref())?;
+        let model = builder.build()?;
         Ok(model)
     }
 }
@@ -980,7 +1019,7 @@ impl MultiNetworkModelSchema {
 #[cfg(test)]
 mod tests {
     use super::{ModelSchema, ScenarioDomain};
-    use crate::model::Timestepper;
+    use crate::model::TimeDomain;
     use crate::visit::VisitPaths;
     use std::fs;
     use std::fs::read_to_string;
@@ -1012,7 +1051,7 @@ mod tests {
         }
         "#;
 
-        let timestep: Timestepper = serde_json::from_str(timestepper_str).unwrap();
+        let timestep: TimeDomain = serde_json::from_str(timestepper_str).unwrap();
 
         match timestep.start {
             super::Date::Date(date) => {
@@ -1042,7 +1081,7 @@ mod tests {
         }
         "#;
 
-        let timestep: Timestepper = serde_json::from_str(timestepper_str).unwrap();
+        let timestep: TimeDomain = serde_json::from_str(timestepper_str).unwrap();
 
         match timestep.start {
             super::Date::DateTime(date_time) => {
@@ -1095,7 +1134,7 @@ mod tests {
 
         // Expect this to file as the path has been updated to a missing file.
         #[cfg(feature = "core")]
-        if schema.build_model(model_fn.parent(), None).is_ok() {
+        if schema.create_model_builder(model_fn.parent(), None).is_ok() {
             let str = serde_json::to_string_pretty(&schema).unwrap();
             panic!("Expected an error due to missing file: {str}");
         }
@@ -1126,9 +1165,9 @@ mod core_tests {
     use crate::metric::{Metric, ParameterReference};
     use crate::parameters::{AggregatedParameter, ConstantParameter, Parameter, ParameterMeta};
     use ndarray::{Array1, Array2, Axis};
-    use pywr_core::{
-        metric::MetricF64, recorders::AssertionF64Recorder, solvers::ClpSolver, test_utils::run_all_solvers,
-    };
+    use pywr_core::metric::UnresolvedMetricF64;
+    use pywr_core::recorders::AssertionF64RecorderBuilder;
+    use pywr_core::{solvers::ClpSolver, test_utils::run_all_solvers};
     use std::fs::read_to_string;
     use std::path::PathBuf;
 
@@ -1140,25 +1179,24 @@ mod core_tests {
     fn test_simple1_run() {
         let data = model_str();
         let schema: ModelSchema = serde_json::from_str(&data).unwrap();
-        let mut model = schema.build_model(None, None).unwrap();
+        let mut model_builder = schema.create_model_builder(None, None).unwrap();
 
-        let network = model.network_mut();
-        assert_eq!(network.nodes().len(), 3);
-        assert_eq!(network.edges().len(), 2);
-
-        let demand1_idx = network.get_node_index_by_name("demand1", None).unwrap();
+        let network_builder = model_builder.network_builder();
 
         let expected_values: Array1<f64> = [10.0; 365].to_vec().into();
         let expected_values: Array2<f64> = expected_values.insert_axis(Axis(1));
 
-        let rec = AssertionF64Recorder::new(
+        let rec = AssertionF64RecorderBuilder::new(
             "assert-demand1",
-            MetricF64::NodeInFlow(demand1_idx),
+            UnresolvedMetricF64::NodeInFlow("demand1".into()),
             expected_values,
-            None,
-            None,
         );
-        network.add_recorder(Box::new(rec)).unwrap();
+        network_builder.recorder(Box::new(rec));
+
+        let model = model_builder.build().unwrap();
+        let network = model.network();
+        assert_eq!(network.nodes().len(), 3);
+        assert_eq!(network.edges().len(), 2);
 
         // Test all solvers
         run_all_solvers(&model, &[], &[], &[]);
@@ -1226,7 +1264,8 @@ mod core_tests {
         }
 
         // TODO this could assert a specific type of error
-        assert!(schema.build_model(None, None).is_err());
+        let builder = schema.create_model_builder(None, None).unwrap();
+        assert!(builder.build().is_err());
     }
 
     /// Test that a model loads if the aggregated parameter is defined before its dependencies.
@@ -1278,7 +1317,7 @@ mod core_tests {
             ]);
         }
         // TODO this could assert a specific type of error
-        let _ = schema.build_model(None, None).unwrap();
+        let _ = schema.create_model_builder(None, None).unwrap();
     }
 
     /// Test the multi1 model
@@ -1288,45 +1327,41 @@ mod core_tests {
         model_fn.push("tests/multi1/model.json");
 
         let schema = MultiNetworkModelSchema::from_path(model_fn.as_path()).unwrap();
-        let mut model = schema.build_model(model_fn.parent(), None).unwrap();
+        let mut builder = schema.create_model_builder(model_fn.parent(), None).unwrap();
 
         // Add some recorders for the expected outputs
-        let network_1_idx = model
-            .get_network_index_by_name("network1")
-            .expect("network 1 not found");
-        let network_1 = model.network_mut(network_1_idx).expect("network 1 not found");
-        let demand1_idx = network_1.get_node_index_by_name("demand1", None).unwrap();
+        let network_1 = builder
+            .entry_builder("network1")
+            .expect("network 1 not found")
+            .network_builder();
 
         let expected_values: Array1<f64> = [10.0; 365].to_vec().into();
         let expected_values: Array2<f64> = expected_values.insert_axis(Axis(1));
 
-        let rec = AssertionF64Recorder::new(
+        let rec = AssertionF64RecorderBuilder::new(
             "assert-demand1",
-            MetricF64::NodeInFlow(demand1_idx),
+            UnresolvedMetricF64::NodeInFlow("demand1".into()),
             expected_values,
-            None,
-            None,
         );
-        network_1.add_recorder(Box::new(rec)).unwrap();
+        network_1.recorder(Box::new(rec));
 
         // Inflow to demand2 should be 10.0 via the transfer from network1 (demand1)
-        let network_2_idx = model
-            .get_network_index_by_name("network2")
-            .expect("network 1 not found");
-        let network_2 = model.network_mut(network_2_idx).expect("network 2 not found");
-        let demand1_idx = network_2.get_node_index_by_name("demand2", None).unwrap();
+        let network_2 = builder
+            .entry_builder("network2")
+            .expect("network 2 not found")
+            .network_builder();
 
         let expected_values: Array1<f64> = [10.0; 365].to_vec().into();
         let expected_values: Array2<f64> = expected_values.insert_axis(Axis(1));
 
-        let rec = AssertionF64Recorder::new(
+        let rec = AssertionF64RecorderBuilder::new(
             "assert-demand2",
-            MetricF64::NodeInFlow(demand1_idx),
+            UnresolvedMetricF64::NodeInFlow("demand2".into()),
             expected_values,
-            None,
-            None,
         );
-        network_2.add_recorder(Box::new(rec)).unwrap();
+        network_2.recorder(Box::new(rec));
+
+        let model = builder.build().unwrap();
 
         model.run::<ClpSolver>(&Default::default()).unwrap();
     }
@@ -1338,46 +1373,42 @@ mod core_tests {
         model_fn.push("tests/multi2/model.json");
 
         let schema = MultiNetworkModelSchema::from_path(model_fn.as_path()).unwrap();
-        let mut model = schema.build_model(model_fn.parent(), None).unwrap();
+        let mut builder = schema.create_model_builder(model_fn.parent(), None).unwrap();
 
         // Add some recorders for the expected outputs
         // inflow1 should be set to a max of 20.0 from the "demand" parameter in network2
-        let network_1_idx = model
-            .get_network_index_by_name("network1")
-            .expect("network 1 not found");
-        let network_1 = model.network_mut(network_1_idx).expect("network 1 not found");
-        let demand1_idx = network_1.get_node_index_by_name("demand1", None).unwrap();
+        let network_1 = builder
+            .entry_builder("network1")
+            .expect("network 1 not found")
+            .network_builder();
 
         let expected_values: Array1<f64> = [10.0; 365].to_vec().into();
         let expected_values: Array2<f64> = expected_values.insert_axis(Axis(1));
 
-        let rec = AssertionF64Recorder::new(
+        let rec = AssertionF64RecorderBuilder::new(
             "assert-demand1",
-            MetricF64::NodeInFlow(demand1_idx),
+            UnresolvedMetricF64::NodeInFlow("demand1".into()),
             expected_values,
-            None,
-            None,
         );
-        network_1.add_recorder(Box::new(rec)).unwrap();
+        network_1.recorder(Box::new(rec));
 
         // Inflow to demand2 should be 10.0 via the transfer from network1 (demand1)
-        let network_2_idx = model
-            .get_network_index_by_name("network2")
-            .expect("network 1 not found");
-        let network_2 = model.network_mut(network_2_idx).expect("network 2 not found");
-        let demand1_idx = network_2.get_node_index_by_name("demand2", None).unwrap();
+        let network_2 = builder
+            .entry_builder("network2")
+            .expect("network 2 not found")
+            .network_builder();
 
         let expected_values: Array1<f64> = [10.0; 365].to_vec().into();
         let expected_values: Array2<f64> = expected_values.insert_axis(Axis(1));
 
-        let rec = AssertionF64Recorder::new(
+        let rec = AssertionF64RecorderBuilder::new(
             "assert-demand2",
-            MetricF64::NodeInFlow(demand1_idx),
+            UnresolvedMetricF64::NodeInFlow("demand2".into()),
             expected_values,
-            None,
-            None,
         );
-        network_2.add_recorder(Box::new(rec)).unwrap();
+        network_2.recorder(Box::new(rec));
+
+        let model = builder.build().unwrap();
 
         model.run::<ClpSolver>(&Default::default()).unwrap();
     }

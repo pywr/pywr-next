@@ -1,16 +1,15 @@
 mod flow;
 mod storage;
 
-use crate::edge::{Edge, EdgeIndex};
+use crate::edge::Edge;
 use crate::metric::SimpleMetricF64Error;
 use crate::models::MultiNetworkTransferIndex;
-use crate::network::Network;
-use crate::node::{Node, NodeIndex};
+use crate::network::{EdgeIndex, Network, NodeIndex, VirtualStorageIndex};
+use crate::node::Node;
 use crate::parameters::{
     ConstParameterIndex, GeneralParameterIndex, ParameterCollection, ParameterCollectionSize, SimpleParameterIndex,
 };
 use crate::timestep::Timestep;
-use crate::virtual_storage::VirtualStorageIndex;
 use flow::FlowState;
 #[cfg(feature = "pyo3")]
 use pyo3::{
@@ -481,7 +480,7 @@ impl NetworkState {
                         Some(s) => {
                             let node = model
                                 .nodes()
-                                .get(idx)
+                                .get(*idx.deref())
                                 .ok_or(NetworkStateError::NodeIndexNotFound(*idx))?;
                             match node {
                                 Node::Input(_) => Ok(factor * s.get_out_flow()),
@@ -772,33 +771,33 @@ impl State {
         &mut self.network
     }
 
-    pub fn get_parameter_value(
+    pub fn get_general_parameter_value(
         &self,
         idx: GeneralParameterIndex<f64>,
         return_value: ParameterReturnValue,
     ) -> Result<f64, StateError> {
         match return_value {
-            ParameterReturnValue::Before => self.get_parameter_value_before(idx),
-            ParameterReturnValue::After => self.get_parameter_value_after(idx),
-            ParameterReturnValue::BeforeOrElseAfter => match self.get_parameter_value_before(idx) {
+            ParameterReturnValue::Before => self.get_general_parameter_value_before(idx),
+            ParameterReturnValue::After => self.get_general_parameter_value_after(idx),
+            ParameterReturnValue::BeforeOrElseAfter => match self.get_general_parameter_value_before(idx) {
                 Ok(v) => Ok(v),
-                Err(_) => self.get_parameter_value_after(idx),
+                Err(_) => self.get_general_parameter_value_after(idx),
             },
-            ParameterReturnValue::AfterOrElseBefore => match self.get_parameter_value_after(idx) {
+            ParameterReturnValue::AfterOrElseBefore => match self.get_general_parameter_value_after(idx) {
                 Ok(v) => Ok(v),
-                Err(_) => self.get_parameter_value_before(idx),
+                Err(_) => self.get_general_parameter_value_before(idx),
             },
         }
     }
 
-    fn get_parameter_value_before(&self, idx: GeneralParameterIndex<f64>) -> Result<f64, StateError> {
+    fn get_general_parameter_value_before(&self, idx: GeneralParameterIndex<f64>) -> Result<f64, StateError> {
         self.parameters_before
             .general
             .get_value(*idx)
             .ok_or(StateError::GeneralParameterIndexNotFound(idx))
     }
 
-    fn get_parameter_value_after(&self, idx: GeneralParameterIndex<f64>) -> Result<f64, StateError> {
+    fn get_general_parameter_value_after(&self, idx: GeneralParameterIndex<f64>) -> Result<f64, StateError> {
         self.parameters_after
             .general
             .get_value(*idx)
@@ -806,7 +805,7 @@ impl State {
     }
 
     /// Set the "before" value of a general parameter.
-    pub fn set_parameter_value_before(
+    pub fn set_general_parameter_value_before(
         &mut self,
         idx: GeneralParameterIndex<f64>,
         value: Option<f64>,
@@ -827,7 +826,7 @@ impl State {
     }
 
     /// Set the "after" value of a general parameter.
-    pub fn set_parameter_value_after(
+    pub fn set_general_parameter_value_after(
         &mut self,
         idx: GeneralParameterIndex<f64>,
         value: Option<f64>,
@@ -886,40 +885,40 @@ impl State {
         Ok(())
     }
 
-    pub fn get_parameter_index(
+    pub fn get_general_parameter_index(
         &self,
         idx: GeneralParameterIndex<u64>,
         return_value: ParameterReturnValue,
     ) -> Result<u64, StateError> {
         match return_value {
-            ParameterReturnValue::Before => self.get_parameter_index_before(idx),
-            ParameterReturnValue::After => self.get_parameter_index_after(idx),
-            ParameterReturnValue::BeforeOrElseAfter => match self.get_parameter_index_before(idx) {
+            ParameterReturnValue::Before => self.get_general_parameter_index_before(idx),
+            ParameterReturnValue::After => self.get_general_parameter_index_after(idx),
+            ParameterReturnValue::BeforeOrElseAfter => match self.get_general_parameter_index_before(idx) {
                 Ok(v) => Ok(v),
-                Err(_) => self.get_parameter_index_after(idx),
+                Err(_) => self.get_general_parameter_index_after(idx),
             },
-            ParameterReturnValue::AfterOrElseBefore => match self.get_parameter_index_after(idx) {
+            ParameterReturnValue::AfterOrElseBefore => match self.get_general_parameter_index_after(idx) {
                 Ok(v) => Ok(v),
-                Err(_) => self.get_parameter_index_before(idx),
+                Err(_) => self.get_general_parameter_index_before(idx),
             },
         }
     }
 
-    fn get_parameter_index_before(&self, idx: GeneralParameterIndex<u64>) -> Result<u64, StateError> {
+    fn get_general_parameter_index_before(&self, idx: GeneralParameterIndex<u64>) -> Result<u64, StateError> {
         self.parameters_before
             .general
             .get_index(*idx)
             .ok_or(StateError::GeneralIndexParameterIndexNotFound(idx))
     }
 
-    fn get_parameter_index_after(&self, idx: GeneralParameterIndex<u64>) -> Result<u64, StateError> {
+    fn get_general_parameter_index_after(&self, idx: GeneralParameterIndex<u64>) -> Result<u64, StateError> {
         self.parameters_after
             .general
             .get_index(*idx)
             .ok_or(StateError::GeneralIndexParameterIndexNotFound(idx))
     }
 
-    pub fn set_parameter_index_before(
+    pub fn set_general_parameter_index_before(
         &mut self,
         idx: GeneralParameterIndex<u64>,
         value: Option<u64>,
@@ -935,7 +934,7 @@ impl State {
         Ok(())
     }
 
-    pub fn set_parameter_index_after(
+    pub fn set_general_parameter_index_after(
         &mut self,
         idx: GeneralParameterIndex<u64>,
         value: Option<u64>,
@@ -998,26 +997,26 @@ impl State {
         Ok(())
     }
 
-    pub fn get_multi_parameter_value(
+    pub fn get_general_multi_parameter_value(
         &self,
         idx: GeneralParameterIndex<MultiValue>,
         key: &str,
         return_value: ParameterReturnValue,
     ) -> Result<f64, StateError> {
         match return_value {
-            ParameterReturnValue::Before => self.get_multi_parameter_value_before(idx, key),
-            ParameterReturnValue::After => self.get_multi_parameter_value_after(idx, key),
-            ParameterReturnValue::BeforeOrElseAfter => match self.get_multi_parameter_value_before(idx, key) {
+            ParameterReturnValue::Before => self.get_general_multi_parameter_value_before(idx, key),
+            ParameterReturnValue::After => self.get_general_multi_parameter_value_after(idx, key),
+            ParameterReturnValue::BeforeOrElseAfter => match self.get_general_multi_parameter_value_before(idx, key) {
                 Ok(v) => Ok(v),
-                Err(_) => self.get_multi_parameter_value_after(idx, key),
+                Err(_) => self.get_general_multi_parameter_value_after(idx, key),
             },
-            ParameterReturnValue::AfterOrElseBefore => match self.get_multi_parameter_value_after(idx, key) {
+            ParameterReturnValue::AfterOrElseBefore => match self.get_general_multi_parameter_value_after(idx, key) {
                 Ok(v) => Ok(v),
-                Err(_) => self.get_multi_parameter_value_before(idx, key),
+                Err(_) => self.get_general_multi_parameter_value_before(idx, key),
             },
         }
     }
-    fn get_multi_parameter_value_before(
+    fn get_general_multi_parameter_value_before(
         &self,
         idx: GeneralParameterIndex<MultiValue>,
         key: &str,
@@ -1036,7 +1035,7 @@ impl State {
             .copied()
     }
 
-    fn get_multi_parameter_value_after(
+    fn get_general_multi_parameter_value_after(
         &self,
         idx: GeneralParameterIndex<MultiValue>,
         key: &str,
@@ -1055,27 +1054,27 @@ impl State {
             .copied()
     }
 
-    pub fn get_multi_parameter_index(
+    pub fn get_general_multi_parameter_index(
         &self,
         idx: GeneralParameterIndex<MultiValue>,
         key: &str,
         return_value: ParameterReturnValue,
     ) -> Result<u64, StateError> {
         match return_value {
-            ParameterReturnValue::Before => self.get_multi_parameter_index_before(idx, key),
-            ParameterReturnValue::After => self.get_multi_parameter_index_after(idx, key),
-            ParameterReturnValue::BeforeOrElseAfter => match self.get_multi_parameter_index_before(idx, key) {
+            ParameterReturnValue::Before => self.get_general_multi_parameter_index_before(idx, key),
+            ParameterReturnValue::After => self.get_general_multi_parameter_index_after(idx, key),
+            ParameterReturnValue::BeforeOrElseAfter => match self.get_general_multi_parameter_index_before(idx, key) {
                 Ok(v) => Ok(v),
-                Err(_) => self.get_multi_parameter_index_after(idx, key),
+                Err(_) => self.get_general_multi_parameter_index_after(idx, key),
             },
-            ParameterReturnValue::AfterOrElseBefore => match self.get_multi_parameter_index_after(idx, key) {
+            ParameterReturnValue::AfterOrElseBefore => match self.get_general_multi_parameter_index_after(idx, key) {
                 Ok(v) => Ok(v),
-                Err(_) => self.get_multi_parameter_index_before(idx, key),
+                Err(_) => self.get_general_multi_parameter_index_before(idx, key),
             },
         }
     }
 
-    fn get_multi_parameter_index_before(
+    fn get_general_multi_parameter_index_before(
         &self,
         idx: GeneralParameterIndex<MultiValue>,
         key: &str,
@@ -1094,7 +1093,7 @@ impl State {
             .copied()
     }
 
-    fn get_multi_parameter_index_after(
+    fn get_general_multi_parameter_index_after(
         &self,
         idx: GeneralParameterIndex<MultiValue>,
         key: &str,
@@ -1113,7 +1112,7 @@ impl State {
             .copied()
     }
 
-    pub fn set_multi_parameter_value_before(
+    pub fn set_general_multi_parameter_value_before(
         &mut self,
         idx: GeneralParameterIndex<MultiValue>,
         value: Option<MultiValue>,
@@ -1133,7 +1132,7 @@ impl State {
         Ok(())
     }
 
-    pub fn set_multi_parameter_value_after(
+    pub fn set_general_multi_parameter_value_after(
         &mut self,
         idx: GeneralParameterIndex<MultiValue>,
         value: Option<MultiValue>,

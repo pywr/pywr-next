@@ -4,7 +4,7 @@
     "description": "Ensure that the correct flow is removed from the virtual storage node when using a PiecewiseLinkNode.",
     "minimum_version": "0.1"
   },
-  "timestepper": {
+  "time": {
     "start": "2015-01-01",
     "end": "2015-01-03",
     "timestep": {

@@ -111,28 +111,26 @@ fn slice_end(df: DataFrame, time_col: &str, domain: &TimeDomain) -> Result<DataF
 
 #[cfg(test)]
 mod tests {
+    use crate::timeseries::align_and_resample::align_and_resample;
     use chrono::{NaiveDate, NaiveDateTime};
     use polars::prelude::*;
+    use pywr_core::models::ModelDomainBuilder;
     use pywr_core::{
-        models::ModelDomain,
-        scenario::{ScenarioDomain, ScenarioDomainBuilder},
-        timestep::{TimeDomain, TimestepDuration, Timestepper},
+        scenario::ScenarioDomainBuilder,
+        timestep::{TimeDomainBuilder, TimestepDuration},
     };
     use std::num::NonZeroU64;
-
-    use crate::timeseries::align_and_resample::align_and_resample;
 
     #[test]
     fn test_downsample_and_slice() {
         let start = NaiveDateTime::parse_from_str("2021-01-07 00:00:00", "%Y-%m-%d %H:%M:%S").unwrap();
         let end = NaiveDateTime::parse_from_str("2021-01-20 00:00:00", "%Y-%m-%d %H:%M:%S").unwrap();
         let timestep = TimestepDuration::Days(NonZeroU64::new(7).unwrap());
-        let timestepper = Timestepper::new(start, end, timestep);
-        let time_domain = TimeDomain::try_from(timestepper).unwrap();
-
-        let scenario_domain: ScenarioDomain = ScenarioDomainBuilder::default().build().unwrap();
-
-        let domain = ModelDomain::new(time_domain, scenario_domain);
+        let time_builder = TimeDomainBuilder::new(start, end, timestep);
+        let scenario_builder = ScenarioDomainBuilder::default();
+        let mut domain_builder = ModelDomainBuilder::new(time_builder);
+        domain_builder.scenario(scenario_builder);
+        let domain = domain_builder.build().unwrap();
 
         let time = date_range(
             "time".into(),
@@ -182,11 +180,11 @@ mod tests {
         let start = NaiveDateTime::parse_from_str("2021-01-01 00:00:00", "%Y-%m-%d %H:%M:%S").unwrap();
         let end = NaiveDateTime::parse_from_str("2021-01-14 00:00:00", "%Y-%m-%d %H:%M:%S").unwrap();
         let timestep = TimestepDuration::Days(NonZeroU64::new(1).unwrap());
-        let timestepper = Timestepper::new(start, end, timestep);
-        let time_domain = TimeDomain::try_from(timestepper).unwrap();
-
-        let scenario_domain: ScenarioDomain = ScenarioDomainBuilder::default().build().unwrap();
-        let domain = ModelDomain::new(time_domain, scenario_domain);
+        let time_builder = TimeDomainBuilder::new(start, end, timestep);
+        let scenario_builder = ScenarioDomainBuilder::default();
+        let mut domain_builder = ModelDomainBuilder::new(time_builder);
+        domain_builder.scenario(scenario_builder);
+        let domain = domain_builder.build().unwrap();
 
         let time = date_range(
             "time".into(),
@@ -222,11 +220,11 @@ mod tests {
         let start = NaiveDateTime::parse_from_str("2021-01-01 00:00:00", "%Y-%m-%d %H:%M:%S").unwrap();
         let end = NaiveDateTime::parse_from_str("2021-01-03 00:00:00", "%Y-%m-%d %H:%M:%S").unwrap();
         let timestep = TimestepDuration::Days(NonZeroU64::new(1).unwrap());
-        let timestepper = Timestepper::new(start, end, timestep);
-        let time_domain = TimeDomain::try_from(timestepper).unwrap();
-
-        let scenario_domain: ScenarioDomain = ScenarioDomainBuilder::default().build().unwrap();
-        let domain = ModelDomain::new(time_domain, scenario_domain);
+        let time_builder = TimeDomainBuilder::new(start, end, timestep);
+        let scenario_builder = ScenarioDomainBuilder::default();
+        let mut domain_builder = ModelDomainBuilder::new(time_builder);
+        domain_builder.scenario(scenario_builder);
+        let domain = domain_builder.build().unwrap();
 
         let time = date_range(
             "time".into(),

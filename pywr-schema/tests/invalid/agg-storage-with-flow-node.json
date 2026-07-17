@@ -4,7 +4,7 @@
     "description": "Test that this model is invalid because it uses a flow node with aggregated storage.",
     "minimum_version": "0.1"
   },
-  "timestepper": {
+  "time": {
     "start": "2015-01-01",
     "end": "2015-01-10",
     "timestep": {

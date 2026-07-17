@@ -1,11 +1,11 @@
 use crate::agg_funcs::{AggFuncError, AggFuncF64};
 use crate::models::ModelDomain;
-use crate::network::Network;
+use crate::network::{MetricSetIndex, Network, ResolutionMaps};
 use crate::recorders::aggregator::PeriodValue;
 use crate::recorders::{
-    MetricSetIndex, MetricSetState, Recorder, RecorderAggregationError, RecorderDataFrameError, RecorderFinalResult,
-    RecorderFinaliseError, RecorderInternalState, RecorderMeta, RecorderSaveError, RecorderSetupError,
-    downcast_internal_state, downcast_internal_state_mut,
+    MetricSetState, Recorder, RecorderAggregationError, RecorderBuilder, RecorderBuilderError, RecorderDataFrameError,
+    RecorderFinalResult, RecorderFinaliseError, RecorderInternalState, RecorderMeta, RecorderSaveError,
+    RecorderSetupError, downcast_internal_state, downcast_internal_state_mut,
 };
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
@@ -27,7 +27,7 @@ pub enum AggregationError {
     AggFuncError(#[from] AggFuncError),
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Aggregation {
     scenario: Option<AggFuncF64>,
     time: Option<AggFuncF64>,
@@ -281,7 +281,7 @@ impl RecorderFinalResult for MemoryRecorderResult {
     }
 }
 
-#[derive(Default, Copy, Clone)]
+#[derive(Debug, Default, Copy, Clone)]
 pub enum AggregationOrder {
     #[default]
     MetricTimeScenario,
@@ -296,22 +296,12 @@ pub enum AggregationOrder {
 ///
 /// Users should be aware that this recorder can consume a large amount of memory if the number of
 /// scenarios, time steps, and metrics is large.
+#[derive(Debug)]
 pub struct MemoryRecorder {
     meta: RecorderMeta,
     metric_set_idx: MetricSetIndex,
     aggregation: Aggregation,
     order: AggregationOrder,
-}
-
-impl MemoryRecorder {
-    pub fn new(name: &str, metric_set_idx: MetricSetIndex, aggregation: Aggregation, order: AggregationOrder) -> Self {
-        Self {
-            meta: RecorderMeta::new(name),
-            metric_set_idx,
-            aggregation,
-            order,
-        }
-    }
 }
 
 impl Recorder for MemoryRecorder {
@@ -399,15 +389,57 @@ impl Recorder for MemoryRecorder {
     }
 }
 
+#[derive(Debug)]
+pub struct MemoryRecorderBuilder {
+    meta: RecorderMeta,
+    metric_set: String,
+    aggregation: Aggregation,
+    order: AggregationOrder,
+}
+
+impl MemoryRecorderBuilder {
+    pub fn new(name: &str, metric_set: &str, aggregation: Aggregation, order: AggregationOrder) -> Self {
+        Self {
+            meta: RecorderMeta::new(name),
+            metric_set: metric_set.to_string(),
+            aggregation,
+            order,
+        }
+    }
+}
+
+impl RecorderBuilder for MemoryRecorderBuilder {
+    fn name(&self) -> &str {
+        &self.meta.name
+    }
+
+    fn build(self: Box<Self>, resolution_maps: &ResolutionMaps) -> Result<Box<dyn Recorder>, RecorderBuilderError> {
+        let metric_set_idx = resolution_maps.metric_sets.get(&self.metric_set).ok_or_else(|| {
+            RecorderBuilderError::MetricSetNotFound {
+                name: self.metric_set.clone(),
+            }
+        })?;
+
+        let r = MemoryRecorder {
+            meta: self.meta,
+            metric_set_idx: *metric_set_idx,
+            aggregation: self.aggregation,
+            order: self.order,
+        };
+
+        Ok(Box::new(r))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{Aggregation, InternalState, MemoryRecorderResult};
     use crate::agg_funcs::AggFuncF64;
-    use crate::models::ModelDomain;
+    use crate::models::ModelDomainBuilder;
     use crate::recorders::RecorderMeta;
     use crate::recorders::aggregator::PeriodValue;
     use crate::scenario::{ScenarioDomainBuilder, ScenarioGroupBuilder};
-    use crate::test_utils::default_timestepper;
+    use crate::test_utils::default_time_domain_builder;
     use float_cmp::assert_approx_eq;
     use rand::{RngExt, SeedableRng};
     use rand_chacha::ChaCha8Rng;
@@ -419,7 +451,10 @@ mod tests {
         let scenario_group = ScenarioGroupBuilder::new("test-scenario", 2).build().unwrap();
         scenario_builder = scenario_builder.with_group(scenario_group).unwrap();
 
-        let domain = ModelDomain::try_from(default_timestepper(), scenario_builder).unwrap();
+        let mut domain_builder = ModelDomainBuilder::new(default_time_domain_builder());
+        domain_builder.scenario(scenario_builder);
+
+        let domain = domain_builder.build().unwrap();
 
         let num_metrics = 3;
         let mut state = InternalState::new(domain.scenarios().len());

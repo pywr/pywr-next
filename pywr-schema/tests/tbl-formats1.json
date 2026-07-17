@@ -4,7 +4,7 @@
     "description": "Examples of using data tables to define values in a model.",
     "minimum_version": "0.1"
   },
-  "timestepper": {
+  "time": {
     "start": "2015-01-01",
     "end": "2015-01-02",
     "timestep": {

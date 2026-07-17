@@ -1,16 +1,17 @@
 use crate::error::ComponentConversionError;
-use crate::error::SchemaError;
 use crate::metric::{Metric, NodeComponentReference};
-#[cfg(feature = "core")]
-use crate::network::LoadArgs;
 use crate::node_attribute_subset_enum;
-#[cfg(feature = "core")]
-use crate::nodes::NodeAttribute;
 use crate::nodes::NodeMeta;
 use crate::parameters::Parameter;
 use crate::v1::{ConversionData, TryFromV1, try_convert_node_attr, try_convert_node_meta, try_convert_parameter_attr};
 #[cfg(feature = "core")]
-use pywr_core::metric::MetricF64;
+use crate::{error::SchemaError, network::LoadArgs, nodes::NodeAttribute};
+#[cfg(feature = "core")]
+use pywr_core::{
+    aggregated_node::{ExclusivityBuilder, RelationshipBuilder},
+    metric::UnresolvedMetricF64,
+    node::UnresolvedNode,
+};
 use pywr_schema_macros::PywrVisitAll;
 use pywr_schema_macros::skip_serializing_none;
 use pywr_v1_schema::nodes::{AggregatedNode as AggregatedNodeV1, AggregatedStorageNode as AggregatedStorageNodeV1};
@@ -114,17 +115,6 @@ pub struct AggregatedNode {
 impl AggregatedNode {
     const DEFAULT_ATTRIBUTE: AggregatedNodeAttribute = AggregatedNodeAttribute::Outflow;
 
-    pub fn input_connectors(&self) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
-        // Not connectable
-        // TODO this should be a trait? And error if you try to connect to a non-connectable node.
-        Ok(vec![])
-    }
-
-    pub fn output_connectors(&self) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
-        // Not connectable
-        Ok(vec![])
-    }
-
     pub fn default_attribute(&self) -> AggregatedNodeAttribute {
         Self::DEFAULT_ATTRIBUTE
     }
@@ -132,107 +122,108 @@ impl AggregatedNode {
 
 #[cfg(feature = "core")]
 impl AggregatedNode {
-    pub fn add_to_model(&self, network: &mut pywr_core::network::Network, args: &LoadArgs) -> Result<(), SchemaError> {
-        let nodes: Vec<Vec<_>> = self
-            .nodes
-            .iter()
-            .map(|node_ref| {
-                let node = args
-                    .schema
-                    .get_node_by_name(&node_ref.name)
-                    .ok_or_else(|| SchemaError::NodeNotFound {
-                        name: node_ref.name.to_string(),
-                    })?;
-
-                node.node_indices_for_flow_constraints(network, node_ref.component)
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-
-        // We initialise with no factors, but will update them in the `set_constraints` method
-        // once all the parameters are loaded.
-        network.add_aggregated_node(self.meta.name.as_str(), None, nodes.as_slice(), None)?;
-        Ok(())
+    fn name(&self) -> UnresolvedNode {
+        UnresolvedNode::new(&self.meta.name, None)
     }
 
-    pub fn set_constraints(
+    pub fn add_to_network(
         &self,
-        network: &mut pywr_core::network::Network,
+        network: &mut pywr_core::network::NetworkBuilder,
         args: &LoadArgs,
     ) -> Result<(), SchemaError> {
+        // Create the aggregated node builder
+        let mut agg_node = pywr_core::AggregatedNodeBuilder::new(self.name());
+
+        // Add the nodes
+        for node_ref in &self.nodes {
+            let node = args
+                .schema
+                .get_node_by_name(&node_ref.name)
+                .ok_or_else(|| SchemaError::NodeNotFound {
+                    name: node_ref.name.to_string(),
+                })?;
+
+            // Add each node's nodes to the aggregated node.
+            agg_node.nodes(node.nodes_for_flow_constraints(node_ref.component)?);
+        }
+
         if let Some(max_flow) = &self.max_flow {
             let value = max_flow.load(network, args, Some(&self.meta.name))?;
-            network.set_aggregated_node_max_flow(self.meta.name.as_str(), None, value.into())?;
+            agg_node.max_flow(value);
         }
 
         if let Some(min_flow) = &self.min_flow {
             let value = min_flow.load(network, args, Some(&self.meta.name))?;
-            network.set_aggregated_node_min_flow(self.meta.name.as_str(), None, value.into())?;
+            agg_node.min_flow(value);
         }
 
         if let Some(relationship) = &self.relationship {
-            let r = match relationship {
+            let r: Box<dyn RelationshipBuilder> = match relationship {
                 Relationship::Proportion { factors } => {
-                    pywr_core::aggregated_node::Relationship::new_proportion_factors(
-                        &factors
-                            .iter()
-                            .map(|f| f.load(network, args, Some(&self.meta.name)))
-                            .collect::<Result<Vec<_>, _>>()?,
-                    )
+                    let mut r = pywr_core::aggregated_node::ProportionalFactorsBuilder::default();
+
+                    for factor in factors {
+                        r.factor(factor.load(network, args, Some(&self.meta.name))?);
+                    }
+
+                    Box::new(r)
                 }
-                Relationship::Ratio { factors } => pywr_core::aggregated_node::Relationship::new_ratio_factors(
-                    &factors
-                        .iter()
-                        .map(|f| f.load(network, args, Some(&self.meta.name)))
-                        .collect::<Result<Vec<_>, _>>()?,
-                ),
+                Relationship::Ratio { factors } => {
+                    let mut r = pywr_core::aggregated_node::RatioFactorsBuilder::default();
+
+                    for factor in factors {
+                        r.factor(factor.load(network, args, Some(&self.meta.name))?);
+                    }
+
+                    Box::new(r)
+                }
                 Relationship::Coefficients { factors, rhs } => {
-                    let rhs_value = match rhs {
-                        Some(r) => Some(r.load(network, args, Some(&self.meta.name))?),
-                        None => None,
-                    };
-                    pywr_core::aggregated_node::Relationship::new_coefficient_factors(
-                        &factors
-                            .iter()
-                            .map(|f| f.load(network, args, Some(&self.meta.name)))
-                            .collect::<Result<Vec<_>, _>>()?,
-                        rhs_value,
-                    )
+                    let mut r = pywr_core::aggregated_node::CoefficientFactorsBuilder::default();
+
+                    for factor in factors {
+                        r.factor(factor.load(network, args, Some(&self.meta.name))?);
+                    }
+
+                    if let Some(rhs_value) = rhs {
+                        let rhs = rhs_value.load(network, args, Some(&self.meta.name))?;
+                        r.rhs(rhs);
+                    }
+
+                    Box::new(r)
                 }
                 Relationship::Exclusive { min_active, max_active } => {
-                    pywr_core::aggregated_node::Relationship::new_exclusive(
-                        min_active.unwrap_or(0),
-                        max_active.unwrap_or(1),
-                    )
+                    let mut r = ExclusivityBuilder::default();
+
+                    if let Some(min_active) = min_active {
+                        r.min_active(*min_active);
+                    }
+
+                    if let Some(max_active) = max_active {
+                        r.max_active(*max_active);
+                    }
+                    Box::new(r)
                 }
             };
 
-            network.set_aggregated_node_relationship(self.meta.name.as_str(), None, Some(r))?;
+            agg_node.relationship(r);
         }
 
+        network.agg_node(agg_node);
         Ok(())
     }
 
-    pub fn create_metric(
-        &self,
-        network: &pywr_core::network::Network,
-        attribute: Option<NodeAttribute>,
-    ) -> Result<MetricF64, SchemaError> {
+    pub fn create_metric(&self, attribute: Option<NodeAttribute>) -> Result<UnresolvedMetricF64, SchemaError> {
         // Use the default attribute if none is specified
         let attr = match attribute {
             Some(attr) => attr.try_into()?,
             None => Self::DEFAULT_ATTRIBUTE,
         };
 
-        let idx = network
-            .get_aggregated_node_index_by_name(self.meta.name.as_str(), None)
-            .ok_or_else(|| SchemaError::CoreNodeNotFound {
-                name: self.meta.name.clone(),
-                sub_name: None,
-            })?;
+        let name = self.name();
 
         let metric = match attr {
-            AggregatedNodeAttribute::Outflow => MetricF64::AggregatedNodeOutFlow(idx),
-            AggregatedNodeAttribute::Inflow => MetricF64::AggregatedNodeInFlow(idx),
+            AggregatedNodeAttribute::Outflow => UnresolvedMetricF64::AggregatedNodeOutFlow(name),
+            AggregatedNodeAttribute::Inflow => UnresolvedMetricF64::AggregatedNodeInFlow(name),
         };
 
         Ok(metric)
@@ -321,17 +312,6 @@ pub struct AggregatedStorageNode {
 impl AggregatedStorageNode {
     const DEFAULT_ATTRIBUTE: AggregatedStorageNodeAttribute = AggregatedStorageNodeAttribute::Volume;
 
-    pub fn input_connectors(&self) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
-        // Not connectable
-        // TODO this should be a trait? And error if you try to connect to a non-connectable node.
-        Ok(vec![])
-    }
-
-    pub fn output_connectors(&self) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
-        // Not connectable
-        Ok(vec![])
-    }
-
     pub fn default_attribute(&self) -> AggregatedStorageNodeAttribute {
         Self::DEFAULT_ATTRIBUTE
     }
@@ -339,7 +319,15 @@ impl AggregatedStorageNode {
 
 #[cfg(feature = "core")]
 impl AggregatedStorageNode {
-    pub fn add_to_model(&self, network: &mut pywr_core::network::Network, args: &LoadArgs) -> Result<(), SchemaError> {
+    fn name(&self) -> UnresolvedNode {
+        UnresolvedNode::new(&self.meta.name, None)
+    }
+
+    pub fn add_to_network(
+        &self,
+        network: &mut pywr_core::network::NetworkBuilder,
+        args: &LoadArgs,
+    ) -> Result<(), SchemaError> {
         let nodes = self
             .storage_nodes
             .iter()
@@ -351,38 +339,37 @@ impl AggregatedStorageNode {
                         name: node_ref.name.to_string(),
                     })?;
 
-                node.node_indices_for_storage_constraints(network)
+                node.nodes_for_storage_constraints()
             })
             .collect::<Result<Vec<_>, _>>()?
             .into_iter()
             .flatten()
-            .collect();
+            .collect::<Vec<_>>();
 
-        network.add_aggregated_storage_node(self.meta.name.as_str(), None, nodes)?;
+        let mut agg_storage_node = pywr_core::AggregatedStorageNodeBuilder::new(self.name());
+
+        for node in nodes {
+            agg_storage_node.node(node);
+        }
+
+        network.agg_storage_node(agg_storage_node);
         Ok(())
     }
 
-    pub fn create_metric(
-        &self,
-        network: &mut pywr_core::network::Network,
-        attribute: Option<NodeAttribute>,
-    ) -> Result<MetricF64, SchemaError> {
+    pub fn create_metric(&self, attribute: Option<NodeAttribute>) -> Result<UnresolvedMetricF64, SchemaError> {
         // Use the default attribute if none is specified
         let attr = match attribute {
             Some(attr) => attr.try_into()?,
             None => Self::DEFAULT_ATTRIBUTE,
         };
 
-        let idx = network
-            .get_aggregated_storage_node_index_by_name(self.meta.name.as_str(), None)
-            .ok_or_else(|| SchemaError::CoreNodeNotFound {
-                name: self.meta.name.clone(),
-                sub_name: None,
-            })?;
+        let name = self.name();
 
         let metric = match attr {
-            AggregatedStorageNodeAttribute::Volume => MetricF64::AggregatedNodeVolume(idx),
-            AggregatedStorageNodeAttribute::ProportionalVolume => MetricF64::AggregatedNodeProportionalVolume(idx),
+            AggregatedStorageNodeAttribute::Volume => UnresolvedMetricF64::AggregatedStorageNodeVolume(name),
+            AggregatedStorageNodeAttribute::ProportionalVolume => {
+                UnresolvedMetricF64::AggregatedStorageNodeProportionalVolume(name)
+            }
         };
 
         Ok(metric)

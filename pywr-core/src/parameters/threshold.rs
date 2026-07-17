@@ -1,14 +1,17 @@
 use crate::FLOAT_EQ_TOLERANCE;
-use crate::metric::MetricF64;
-use crate::network::Network;
-use crate::parameters::errors::{ParameterCalculationError, ParameterSetupError};
+use crate::metric::{MetricF64, UnresolvedMetricF64};
+use crate::network::{Network, ResolutionMaps};
+use crate::parameters::errors::{GeneralCalculationError, ParameterSetupError};
 use crate::parameters::{
-    GeneralParameter, Parameter, ParameterMeta, ParameterName, ParameterState, downcast_internal_state_mut,
+    BuiltParameter, GeneralParameter, MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder,
+    ParameterMeta, ParameterName, ParameterState, downcast_internal_state_mut,
 };
+use crate::resolve_metric_f64;
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
 use crate::timestep::Timestep;
 
+#[derive(Debug)]
 pub enum Predicate {
     LessThan,
     GreaterThan,
@@ -34,30 +37,13 @@ impl Predicate {
     }
 }
 
+#[derive(Debug)]
 pub struct ThresholdParameter {
     meta: ParameterMeta,
     metric: MetricF64,
     threshold: MetricF64,
     predicate: Predicate,
     ratchet: bool,
-}
-
-impl ThresholdParameter {
-    pub fn new(
-        name: ParameterName,
-        metric: MetricF64,
-        threshold: MetricF64,
-        predicate: Predicate,
-        ratchet: bool,
-    ) -> Self {
-        Self {
-            meta: ParameterMeta::new(name),
-            metric,
-            threshold,
-            predicate,
-            ratchet,
-        }
-    }
 }
 
 impl Parameter for ThresholdParameter {
@@ -84,7 +70,7 @@ impl GeneralParameter<u64> for ThresholdParameter {
         model: &Network,
         state: &State,
         internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<Option<u64>, ParameterCalculationError> {
+    ) -> Result<Option<u64>, GeneralCalculationError> {
         // Downcast the internal state to the correct type
         let previously_activated = downcast_internal_state_mut::<bool>(internal_state);
 
@@ -111,5 +97,61 @@ impl GeneralParameter<u64> for ThresholdParameter {
         Self: Sized,
     {
         self
+    }
+}
+
+#[derive(Debug)]
+pub struct ThresholdParameterBuilder {
+    meta: ParameterMeta,
+    metric: UnresolvedMetricF64,
+    threshold: UnresolvedMetricF64,
+    predicate: Predicate,
+    ratchet: bool,
+}
+
+impl ThresholdParameterBuilder {
+    pub fn new(
+        name: ParameterName,
+        metric: UnresolvedMetricF64,
+        threshold: UnresolvedMetricF64,
+        predicate: Predicate,
+    ) -> Self {
+        Self {
+            meta: ParameterMeta::new(name),
+            metric,
+            threshold,
+            predicate,
+            ratchet: false,
+        }
+    }
+
+    /// Enable ratchet
+    pub fn ratchet(&mut self) -> &mut Self {
+        self.ratchet = true;
+        self
+    }
+}
+
+impl ParameterBuilder<u64> for ThresholdParameterBuilder {
+    fn name(&self) -> &ParameterName {
+        &self.meta.name
+    }
+
+    fn build(
+        self: Box<Self>,
+        resolution_maps: &ResolutionMaps,
+    ) -> Result<MaybeBuiltParameter<u64>, ParameterBuildError> {
+        let metric = resolve_metric_f64!(self, self.metric, resolution_maps, "metric");
+        let threshold = resolve_metric_f64!(self, self.threshold, resolution_maps, "threshold");
+
+        let p = ThresholdParameter {
+            meta: self.meta,
+            metric,
+            threshold,
+            predicate: self.predicate,
+            ratchet: self.ratchet,
+        };
+
+        Ok(MaybeBuiltParameter::Built(BuiltParameter::General(Box::new(p))))
     }
 }

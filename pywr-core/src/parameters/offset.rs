@@ -1,15 +1,17 @@
-use crate::metric::MetricF64;
-use crate::network::Network;
-use crate::parameters::errors::ParameterCalculationError;
+use crate::metric::{MetricF64, UnresolvedMetricF64};
+use crate::network::{Network, ResolutionMaps};
+use crate::parameters::errors::GeneralCalculationError;
 use crate::parameters::{
-    ActivationFunction, GeneralParameter, Parameter, ParameterMeta, ParameterName, ParameterState, VariableConfig,
-    VariableParameter, VariableParameterError, downcast_internal_state_mut, downcast_internal_state_ref,
-    downcast_variable_config_ref,
+    ActivationFunction, BuiltParameter, GeneralParameter, MaybeBuiltParameter, Parameter, ParameterBuildError,
+    ParameterBuilder, ParameterMeta, ParameterName, ParameterState, VariableConfig, VariableParameter,
+    VariableParameterError, downcast_internal_state_mut, downcast_internal_state_ref, downcast_variable_config_ref,
 };
+use crate::resolve_metric_f64;
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
 use crate::timestep::Timestep;
 
+#[derive(Debug)]
 pub struct OffsetParameter {
     meta: ParameterMeta,
     metric: MetricF64,
@@ -20,14 +22,6 @@ pub struct OffsetParameter {
 type InternalValue = Option<f64>;
 
 impl OffsetParameter {
-    pub fn new(name: ParameterName, metric: MetricF64, offset: f64) -> Self {
-        Self {
-            meta: ParameterMeta::new(name),
-            metric,
-            offset,
-        }
-    }
-
     /// Return the current value.
     ///
     /// If the internal state is None, the value is returned directly. Otherwise, the internal value must
@@ -60,7 +54,7 @@ impl GeneralParameter<f64> for OffsetParameter {
         model: &Network,
         state: &State,
         internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<Option<f64>, ParameterCalculationError> {
+    ) -> Result<Option<f64>, GeneralCalculationError> {
         let offset = self.offset(internal_state);
         // Current value
         let x = self.metric.get_value(model, state)?;
@@ -118,5 +112,43 @@ impl VariableParameter<f64> for OffsetParameter {
     fn get_upper_bounds(&self, variable_config: &dyn VariableConfig) -> Option<Vec<f64>> {
         let activation_function = downcast_variable_config_ref::<ActivationFunction>(variable_config);
         Some(vec![activation_function.upper_bound()])
+    }
+}
+
+#[derive(Debug)]
+pub struct OffsetParameterBuilder {
+    meta: ParameterMeta,
+    metric: UnresolvedMetricF64,
+    offset: f64,
+}
+
+impl OffsetParameterBuilder {
+    pub fn new(name: ParameterName, metric: UnresolvedMetricF64, offset: f64) -> Self {
+        Self {
+            meta: ParameterMeta::new(name),
+            metric,
+            offset,
+        }
+    }
+}
+
+impl ParameterBuilder<f64> for OffsetParameterBuilder {
+    fn name(&self) -> &ParameterName {
+        &self.meta.name
+    }
+
+    fn build(
+        self: Box<Self>,
+        resolution_maps: &ResolutionMaps,
+    ) -> Result<MaybeBuiltParameter<f64>, ParameterBuildError> {
+        let metric = resolve_metric_f64!(self, self.metric, resolution_maps, "metric");
+
+        let p = OffsetParameter {
+            meta: self.meta,
+            metric,
+            offset: self.offset,
+        };
+
+        Ok(MaybeBuiltParameter::Built(BuiltParameter::General(Box::new(p))))
     }
 }

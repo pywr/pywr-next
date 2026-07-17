@@ -1,15 +1,21 @@
 use crate::agg_funcs::{AggFuncF64, AggFuncU64};
-use crate::metric::{MetricF64, MetricF64Error, MetricU64, MetricU64Error, SimpleMetricF64, SimpleMetricU64};
-use crate::network::Network;
-use crate::parameters::errors::{ParameterCalculationError, ParameterSetupError, SimpleCalculationError};
+use crate::metric::{
+    MetricF64, MetricF64Error, MetricU64, MetricU64Error, SimpleMetricF64, SimpleMetricU64, UnresolvedMetricF64,
+    UnresolvedMetricU64,
+};
+use crate::network::{Network, ResolutionMaps};
+use crate::parameters::errors::{GeneralCalculationError, ParameterSetupError, SimpleCalculationError};
 use crate::parameters::{
-    GeneralParameter, Parameter, ParameterMeta, ParameterName, ParameterState, SimpleParameter,
-    downcast_internal_state_mut, downcast_internal_state_ref,
+    BuiltParameter, GeneralParameter, MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder,
+    ParameterMeta, ParameterName, ParameterState, SimpleParameter, downcast_internal_state_mut,
+    downcast_internal_state_ref,
 };
 use crate::scenario::ScenarioIndex;
 use crate::state::{SimpleParameterValues, State};
 use crate::timestep::Timestep;
+use crate::{resolve_metric_f64, resolve_metric_u64};
 use std::collections::VecDeque;
+use std::fmt::Debug;
 
 /// A rolling parameter that computes an aggregated value over a specified window of metric
 /// values.
@@ -19,6 +25,7 @@ use std::collections::VecDeque;
 /// previous metric values are included in the calculation. If an `initial_value` is provided,
 /// it will be used as the return value until `min_values` number of metric values have been
 /// processed.
+#[derive(Debug)]
 pub struct RollingParameter<M, T, AF> {
     meta: ParameterMeta,
     metric: M,
@@ -26,40 +33,6 @@ pub struct RollingParameter<M, T, AF> {
     initial_value: T,
     min_values: usize,
     agg_func: AF,
-}
-
-impl<M, T, AF> RollingParameter<M, T, AF>
-where
-    M: Send + Sync,
-    T: Send + Sync,
-    AF: Send + Sync,
-{
-    /// Creates a new `RollingParameter`.
-    ///
-    /// # Arguments
-    /// * `name` - The name of the parameter.
-    /// * `metric` - The metric to aggregate over.
-    /// * `window_size` - The size of the rolling window.
-    /// * `initial_value` - The initial value to return before enough values are collected.
-    /// * `min_values` - The minimum number of values required before aggregation starts.
-    /// * `agg_func` - The aggregation function to use (e.g., sum, mean).
-    pub fn new(
-        name: ParameterName,
-        metric: M,
-        window_size: usize,
-        initial_value: T,
-        min_values: usize,
-        agg_func: AF,
-    ) -> Self {
-        Self {
-            meta: ParameterMeta::new(name),
-            metric,
-            window_size,
-            initial_value,
-            min_values,
-            agg_func,
-        }
-    }
 }
 
 impl TryInto<RollingParameter<SimpleMetricF64, f64, AggFuncF64>> for &RollingParameter<MetricF64, f64, AggFuncF64> {
@@ -94,8 +67,8 @@ impl TryInto<RollingParameter<SimpleMetricU64, u64, AggFuncU64>> for &RollingPar
 
 impl<M, AF> Parameter for RollingParameter<M, f64, AF>
 where
-    M: Send + Sync,
-    AF: Send + Sync,
+    M: Send + Sync + Debug,
+    AF: Send + Sync + Debug,
 {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
@@ -114,8 +87,8 @@ where
 
 impl<M, AF> Parameter for RollingParameter<M, u64, AF>
 where
-    M: Send + Sync,
-    AF: Send + Sync,
+    M: Send + Sync + Debug,
+    AF: Send + Sync + Debug,
 {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
@@ -140,7 +113,7 @@ impl GeneralParameter<f64> for RollingParameter<MetricF64, f64, AggFuncF64> {
         _model: &Network,
         _state: &State,
         internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<Option<f64>, ParameterCalculationError> {
+    ) -> Result<Option<f64>, GeneralCalculationError> {
         // Downcast the internal state to the correct type
         let memory = downcast_internal_state_ref::<VecDeque<f64>>(internal_state);
 
@@ -159,7 +132,7 @@ impl GeneralParameter<f64> for RollingParameter<MetricF64, f64, AggFuncF64> {
         model: &Network,
         state: &State,
         internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<Option<f64>, ParameterCalculationError> {
+    ) -> Result<Option<f64>, GeneralCalculationError> {
         // Downcast the internal state to the correct type
         let memory = downcast_internal_state_mut::<VecDeque<f64>>(internal_state);
 
@@ -249,7 +222,7 @@ impl GeneralParameter<u64> for RollingParameter<MetricU64, u64, AggFuncU64> {
         _model: &Network,
         _state: &State,
         internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<Option<u64>, ParameterCalculationError> {
+    ) -> Result<Option<u64>, GeneralCalculationError> {
         // Downcast the internal state to the correct type
         let memory = downcast_internal_state_ref::<VecDeque<u64>>(internal_state);
 
@@ -268,7 +241,7 @@ impl GeneralParameter<u64> for RollingParameter<MetricU64, u64, AggFuncU64> {
         model: &Network,
         state: &State,
         internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<Option<u64>, ParameterCalculationError> {
+    ) -> Result<Option<u64>, GeneralCalculationError> {
         // Downcast the internal state to the correct type
         let memory = downcast_internal_state_mut::<VecDeque<u64>>(internal_state);
 
@@ -350,26 +323,118 @@ impl SimpleParameter<u64> for RollingParameter<SimpleMetricU64, u64, AggFuncU64>
     }
 }
 
+#[derive(Debug)]
+pub struct RollingParameterBuilder<M, T, AF> {
+    meta: ParameterMeta,
+    metric: M,
+    window_size: usize,
+    initial_value: T,
+    min_values: usize,
+    agg_func: AF,
+}
+
+impl<M, T, AF> RollingParameterBuilder<M, T, AF> {
+    /// Creates a new `RollingParameter`.
+    ///
+    /// # Arguments
+    /// * `name` - The name of the parameter.
+    /// * `metric` - The metric to aggregate over.
+    /// * `window_size` - The size of the rolling window.
+    /// * `initial_value` - The initial value to return before enough values are collected.
+    /// * `min_values` - The minimum number of values required before aggregation starts.
+    /// * `agg_func` - The aggregation function to use (e.g., sum, mean).
+    pub fn new(
+        name: ParameterName,
+        metric: M,
+        window_size: usize,
+        initial_value: T,
+        min_values: usize,
+        agg_func: AF,
+    ) -> Self {
+        Self {
+            meta: ParameterMeta::new(name),
+            metric,
+            window_size,
+            initial_value,
+            min_values,
+            agg_func,
+        }
+    }
+}
+
+impl ParameterBuilder<f64> for RollingParameterBuilder<UnresolvedMetricF64, f64, AggFuncF64> {
+    fn name(&self) -> &ParameterName {
+        &self.meta.name
+    }
+
+    fn build(
+        self: Box<Self>,
+        resolution_maps: &ResolutionMaps,
+    ) -> Result<MaybeBuiltParameter<f64>, ParameterBuildError> {
+        let metric = resolve_metric_f64!(self, self.metric, resolution_maps, "metric");
+
+        let p = RollingParameter {
+            meta: self.meta,
+            metric,
+            window_size: self.window_size,
+            initial_value: self.initial_value,
+            min_values: self.min_values,
+            agg_func: self.agg_func,
+        };
+
+        let bp = BuiltParameter::General(Box::new(p));
+        Ok(MaybeBuiltParameter::Built(bp))
+    }
+}
+
+impl ParameterBuilder<u64> for RollingParameterBuilder<UnresolvedMetricU64, u64, AggFuncU64> {
+    fn name(&self) -> &ParameterName {
+        &self.meta.name
+    }
+
+    fn build(
+        self: Box<Self>,
+        resolution_maps: &ResolutionMaps,
+    ) -> Result<MaybeBuiltParameter<u64>, ParameterBuildError> {
+        let metric = resolve_metric_u64!(self, self.metric, resolution_maps, "metric");
+
+        let p = RollingParameter {
+            meta: self.meta,
+            metric,
+            window_size: self.window_size,
+            initial_value: self.initial_value,
+            min_values: self.min_values,
+            agg_func: self.agg_func,
+        };
+
+        let bp = BuiltParameter::General(Box::new(p));
+        Ok(MaybeBuiltParameter::Built(bp))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::parameters::Array1Parameter;
+    use crate::parameters::Array1ParameterBuilder;
     use crate::test_utils::{run_and_assert_parameter, run_and_assert_parameter_u64, simple_model};
     use ndarray::{Array1, Array2, Axis};
 
     #[test]
     /// Test `RollingParameter` returns the correct f64 value.
     fn test_rolling_f64() {
-        let mut model = simple_model(1, None);
+        let mut model_builder = simple_model(1, None);
 
-        let metric = Array1Parameter::new("my-metric".into(), Array1::from(Array1::linspace(1.0, 21.0, 21)), None);
-        let metric_idx: MetricF64 = model
-            .network_mut()
-            .add_simple_parameter(Box::new(metric))
-            .unwrap()
-            .into_metric_f64_before();
+        let metric = Array1ParameterBuilder::new("my-metric".into(), Array1::from(Array1::linspace(1.0, 21.0, 21)));
+        model_builder.network_builder().parameters().f64(Box::new(metric));
 
-        let parameter = RollingParameter::new("my-parameter".into(), metric_idx, 3, 0.0, 3, AggFuncF64::Mean);
+        let parameter = RollingParameterBuilder::new(
+            "my-parameter".into(),
+            UnresolvedMetricF64::new_parameter_before("my-metric"),
+            3,
+            0.0,
+            3,
+            AggFuncF64::Mean,
+        );
 
         // Before the first three values are collected, the parameter should return the initial value.
         let expected_values: Array1<f64> = [
@@ -382,24 +447,27 @@ mod tests {
 
         let expected_values: Array2<f64> = expected_values.insert_axis(Axis(1));
 
-        run_and_assert_parameter(&mut model, Box::new(parameter), expected_values, None, Some(1e-12));
+        run_and_assert_parameter(model_builder, Box::new(parameter), expected_values, None, Some(1e-12));
     }
 
     #[test]
     /// Test `RollingParameter` returns the correct u64 value.
     fn test_rolling_u64() {
-        let mut model = simple_model(1, None);
+        let mut model_builder = simple_model(1, None);
 
         let values: Array1<u64> = Array1::from(Array1::linspace(1.0, 21.0, 21).map(|x| *x as u64));
 
-        let metric = Array1Parameter::new("my-metric".into(), values, None);
-        let metric_idx: MetricU64 = model
-            .network_mut()
-            .add_simple_index_parameter(Box::new(metric))
-            .unwrap()
-            .into_metric_u64_before();
+        let metric = Array1ParameterBuilder::new("my-metric".into(), values.clone());
+        model_builder.network_builder().parameters().u64(Box::new(metric));
 
-        let parameter = RollingParameter::new("my-parameter".into(), metric_idx, 3, 0, 3, AggFuncU64::Max);
+        let parameter = RollingParameterBuilder::new(
+            "my-parameter".into(),
+            UnresolvedMetricU64::new_parameter_before("my-metric"),
+            3,
+            0,
+            3,
+            AggFuncU64::Max,
+        );
 
         // Before the first three values are collected, the parameter should return the initial value.
         let expected_values: Array1<u64> = [
@@ -412,6 +480,6 @@ mod tests {
 
         let expected_values: Array2<u64> = expected_values.insert_axis(Axis(1));
 
-        run_and_assert_parameter_u64(&mut model, Box::new(parameter), expected_values);
+        run_and_assert_parameter_u64(model_builder, Box::new(parameter), expected_values);
     }
 }

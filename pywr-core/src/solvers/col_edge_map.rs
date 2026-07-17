@@ -1,4 +1,4 @@
-use crate::edge::EdgeIndex;
+use crate::network::EdgeIndex;
 use std::collections::BTreeMap;
 use std::ops::Deref;
 

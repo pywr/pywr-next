@@ -1,15 +1,16 @@
-use crate::error::SchemaError;
 use crate::error::{ComponentConversionError, ConversionError};
-#[cfg(feature = "core")]
-use crate::network::LoadArgs;
-#[cfg(feature = "core")]
-use crate::nodes::{NodeAttribute, NodeComponent};
-use crate::nodes::{NodeMeta, NodeSlot};
+use crate::nodes::NodeMeta;
 use crate::parameters::{ConstantValue, Parameter};
+#[cfg(feature = "core")]
+use crate::{
+    error::SchemaError,
+    network::LoadArgs,
+    nodes::{NodeAttribute, NodeComponent, NodeSlot},
+};
 use crate::v1::try_convert_node_meta;
 use crate::{mermaid, node_attribute_subset_enum, node_component_subset_enum};
 #[cfg(feature = "core")]
-use pywr_core::{metric::MetricF64, parameters::ParameterName};
+use pywr_core::{metric::UnresolvedMetricF64, node::UnresolvedNode, parameters::ParameterName};
 use pywr_schema_macros::{PywrVisitAll, skip_serializing_none};
 use pywr_v1_schema::nodes::DelayNode as DelayNodeV1;
 use schemars::JsonSchema;
@@ -62,38 +63,6 @@ impl DelayNode {
     const DEFAULT_ATTRIBUTE: DelayNodeAttribute = DelayNodeAttribute::Outflow;
     const DEFAULT_COMPONENT: DelayNodeComponent = DelayNodeComponent::Outflow;
 
-    fn output_sub_name() -> Option<&'static str> {
-        Some("inflow")
-    }
-
-    fn input_sub_name() -> Option<&'static str> {
-        Some("outflow")
-    }
-
-    pub fn input_connectors(&self, slot: Option<&NodeSlot>) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
-        if let Some(slot) = slot {
-            Err(SchemaError::InputNodeSlotNotSupported { slot: slot.clone() })
-        } else {
-            // Inflow goes to the output node
-            Ok(vec![(
-                self.meta.name.as_str(),
-                Self::output_sub_name().map(|s| s.to_string()),
-            )])
-        }
-    }
-
-    pub fn output_connectors(&self, slot: Option<&NodeSlot>) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
-        if let Some(slot) = slot {
-            Err(SchemaError::OutputNodeSlotNotSupported { slot: slot.clone() })
-        } else {
-            // Outflow goes from the input node
-            Ok(vec![(
-                self.meta.name.as_str(),
-                Self::input_sub_name().map(|s| s.to_string()),
-            )])
-        }
-    }
-
     pub fn default_attribute(&self) -> DelayNodeAttribute {
         Self::DEFAULT_ATTRIBUTE
     }
@@ -105,76 +74,80 @@ impl DelayNode {
 
 #[cfg(feature = "core")]
 impl DelayNode {
-    pub fn node_indices_for_flow_constraints(
+    fn output_sub_name(&self) -> UnresolvedNode {
+        UnresolvedNode::new(&self.meta.name, Some("inflow"))
+    }
+
+    fn input_sub_name(&self) -> UnresolvedNode {
+        UnresolvedNode::new(&self.meta.name, Some("outflow"))
+    }
+
+    pub fn input_connectors(&self, slot: Option<&NodeSlot>) -> Result<Vec<UnresolvedNode>, SchemaError> {
+        if let Some(slot) = slot {
+            Err(SchemaError::InputNodeSlotNotSupported { slot: slot.clone() })
+        } else {
+            // Inflow goes to the output node
+            Ok(vec![self.output_sub_name()])
+        }
+    }
+
+    pub fn output_connectors(&self, slot: Option<&NodeSlot>) -> Result<Vec<UnresolvedNode>, SchemaError> {
+        if let Some(slot) = slot {
+            Err(SchemaError::OutputNodeSlotNotSupported { slot: slot.clone() })
+        } else {
+            // Outflow goes from the input node
+            Ok(vec![self.input_sub_name()])
+        }
+    }
+    pub fn nodes_for_flow_constraints(
         &self,
-        network: &pywr_core::network::Network,
         component: Option<NodeComponent>,
-    ) -> Result<Vec<pywr_core::node::NodeIndex>, SchemaError> {
+    ) -> Result<Vec<UnresolvedNode>, SchemaError> {
         // Use the default component if none is specified
         let component = match component {
             Some(c) => c.try_into()?,
             None => Self::DEFAULT_COMPONENT,
         };
 
-        let idx = match component {
-            DelayNodeComponent::Inflow => network
-                .get_node_index_by_name(self.meta.name.as_str(), Self::output_sub_name())
-                .ok_or_else(|| SchemaError::CoreNodeNotFound {
-                    name: self.meta.name.clone(),
-                    sub_name: Self::output_sub_name().map(String::from),
-                })?,
-            DelayNodeComponent::Outflow => network
-                .get_node_index_by_name(self.meta.name.as_str(), Self::input_sub_name())
-                .ok_or_else(|| SchemaError::CoreNodeNotFound {
-                    name: self.meta.name.clone(),
-                    sub_name: Self::input_sub_name().map(String::from),
-                })?,
+        let node = match component {
+            DelayNodeComponent::Inflow => self.output_sub_name(),
+            DelayNodeComponent::Outflow => self.input_sub_name(),
         };
 
-        Ok(vec![idx])
+        Ok(vec![node])
     }
-    pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
-        network.add_output_node(self.meta.name.as_str(), Self::output_sub_name())?;
-        network.add_input_node(self.meta.name.as_str(), Self::input_sub_name())?;
-
-        Ok(())
-    }
-
-    pub fn set_constraints(
+    pub fn add_to_model(
         &self,
-        network: &mut pywr_core::network::Network,
+        network: &mut pywr_core::network::NetworkBuilder,
         args: &LoadArgs,
     ) -> Result<(), SchemaError> {
+        let output_node = pywr_core::node::NodeBuilder::output(self.output_sub_name());
+        let mut input_node = pywr_core::node::NodeBuilder::input(self.input_sub_name());
+
         // Create the delay parameter using the node's name as the parent identifier
         let name = ParameterName::new("delay", Some(self.meta.name.as_str()));
-        let output_idx = network
-            .get_node_index_by_name(self.meta.name.as_str(), Self::output_sub_name())
-            .ok_or_else(|| SchemaError::CoreNodeNotFound {
-                name: self.meta.name.clone(),
-                sub_name: Self::output_sub_name().map(String::from),
-            })?;
-        let metric = MetricF64::NodeInFlow(output_idx);
-        let p = pywr_core::parameters::DelayParameter::new(
-            name,
+
+        let metric = UnresolvedMetricF64::NodeInFlow(output_node.name().clone());
+        let p = pywr_core::parameters::DelayParameterBuilder::new(
+            name.clone(),
             metric,
             self.delay.load(args.tables)?,
             self.initial_value.load(args.tables)?,
         );
-        let delay_idx = network.add_parameter(Box::new(p))?;
+        network.parameters().f64(Box::new(p));
 
         // Apply it as a constraint on the input node.
-        let metric: MetricF64 = delay_idx.into_metric_f64_before();
-        network.set_node_max_flow(self.meta.name.as_str(), Self::input_sub_name(), metric.clone().into())?;
-        network.set_node_min_flow(self.meta.name.as_str(), Self::input_sub_name(), metric.into())?;
+        let metric = UnresolvedMetricF64::new_parameter_before(name);
+        input_node.min_flow(metric.clone());
+        input_node.max_flow(metric);
+
+        network.node(output_node);
+        network.node(input_node);
 
         Ok(())
     }
 
-    pub fn create_metric(
-        &self,
-        network: &pywr_core::network::Network,
-        attribute: Option<NodeAttribute>,
-    ) -> Result<MetricF64, SchemaError> {
+    pub fn create_metric(&self, attribute: Option<NodeAttribute>) -> Result<UnresolvedMetricF64, SchemaError> {
         // Use the default attribute if none is specified
         let attr = match attribute {
             Some(attr) => attr.try_into()?,
@@ -182,24 +155,8 @@ impl DelayNode {
         };
 
         let metric = match attr {
-            DelayNodeAttribute::Outflow => {
-                let idx = network
-                    .get_node_index_by_name(self.meta.name.as_str(), Self::input_sub_name())
-                    .ok_or_else(|| SchemaError::CoreNodeNotFound {
-                        name: self.meta.name.clone(),
-                        sub_name: Self::input_sub_name().map(String::from),
-                    })?;
-                MetricF64::NodeOutFlow(idx)
-            }
-            DelayNodeAttribute::Inflow => {
-                let idx = network
-                    .get_node_index_by_name(self.meta.name.as_str(), Self::output_sub_name())
-                    .ok_or_else(|| SchemaError::CoreNodeNotFound {
-                        name: self.meta.name.clone(),
-                        sub_name: Self::output_sub_name().map(String::from),
-                    })?;
-                MetricF64::NodeInFlow(idx)
-            }
+            DelayNodeAttribute::Outflow => UnresolvedMetricF64::NodeOutFlow(self.input_sub_name()),
+            DelayNodeAttribute::Inflow => UnresolvedMetricF64::NodeInFlow(self.output_sub_name()),
         };
 
         Ok(metric)

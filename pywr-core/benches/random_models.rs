@@ -16,7 +16,7 @@ use pywr_core::solvers::{ClpSolver, ClpSolverSettings, ClpSolverSettingsBuilder}
 use pywr_core::solvers::{HighsSolver, HighsSolverSettings};
 #[cfg(feature = "ipm-simd")]
 use pywr_core::solvers::{SimdIpmF64Solver, SimdIpmSolverSettings, SimdIpmSolverSettingsBuilder};
-use pywr_core::test_utils::make_random_model;
+use pywr_core::test_utils::make_random_model_builder;
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 #[cfg(feature = "ipm-ocl")]
@@ -44,7 +44,9 @@ fn random_benchmark(
                 // Make a consistent random number generator
                 // ChaCha8 should be consistent across builds and platforms
                 let mut rng = ChaCha8Rng::seed_from_u64(0);
-                let model = make_random_model(n_sys, density, n_sc, &mut rng).unwrap();
+                let model = make_random_model_builder(n_sys, density, n_sc, &mut rng)
+                    .build()
+                    .expect("Failed to build random model!");
                 let num_timesteps = model.domain().time().timesteps().len();
 
                 // This is the number of time-steps

@@ -1,7 +1,7 @@
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
 #[cfg(feature = "core")]
-use pywr_core::recorders::{CsvLongFmtOutput, CsvWideFmtOutput, Recorder};
+use pywr_core::recorders::{CsvLongFmtOutputBuilder, CsvWideFmtOutputBuilder, RecorderBuilder};
 use pywr_schema_macros::{PywrVisitPaths, skip_serializing_none};
 use schemars::JsonSchema;
 #[cfg(feature = "core")]
@@ -54,9 +54,9 @@ pub struct CsvOutput {
 
 #[cfg(feature = "core")]
 impl CsvOutput {
-    pub fn add_to_model(
+    pub fn add_to_network(
         &self,
-        network: &mut pywr_core::network::Network,
+        network: &mut pywr_core::network::NetworkBuilder,
         output_path: Option<&Path>,
     ) -> Result<(), SchemaError> {
         let filename = match (output_path, self.filename.is_relative()) {
@@ -64,11 +64,10 @@ impl CsvOutput {
             _ => self.filename.to_path_buf(),
         };
 
-        let recorder: Box<dyn Recorder> = match self.format {
+        let recorder: Box<dyn RecorderBuilder> = match self.format {
             CsvFormat::Wide => match &self.metric_set {
                 CsvMetricSet::Single(metric_set) => {
-                    let metric_set_idx = network.get_metric_set_index_by_name(metric_set)?;
-                    Box::new(CsvWideFmtOutput::new(&self.name, filename, metric_set_idx))
+                    Box::new(CsvWideFmtOutputBuilder::new(&self.name, filename, metric_set))
                 }
                 CsvMetricSet::Multiple(_) => {
                     return Err(SchemaError::MissingMetricSet(
@@ -77,24 +76,25 @@ impl CsvOutput {
                 }
             },
             CsvFormat::Long => {
-                let metric_set_indices = match &self.metric_set {
-                    CsvMetricSet::Single(metric_set) => vec![network.get_metric_set_index_by_name(metric_set)?],
-                    CsvMetricSet::Multiple(metric_sets) => metric_sets
-                        .iter()
-                        .map(|ms| network.get_metric_set_index_by_name(ms))
-                        .collect::<Result<Vec<_>, _>>()?,
-                };
+                let mut builder =
+                    CsvLongFmtOutputBuilder::new(&self.name, filename, self.decimal_places.and_then(NonZeroU32::new));
 
-                Box::new(CsvLongFmtOutput::new(
-                    &self.name,
-                    filename,
-                    &metric_set_indices,
-                    self.decimal_places.and_then(NonZeroU32::new),
-                ))
+                match &self.metric_set {
+                    CsvMetricSet::Single(metric_set) => {
+                        builder.metric_set(metric_set);
+                    }
+                    CsvMetricSet::Multiple(metric_sets) => {
+                        for metric_set in metric_sets {
+                            builder.metric_set(metric_set);
+                        }
+                    }
+                }
+
+                Box::new(builder)
             }
         };
 
-        network.add_recorder(recorder)?;
+        network.recorder(recorder);
 
         Ok(())
     }
