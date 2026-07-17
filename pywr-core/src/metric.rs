@@ -171,6 +171,7 @@ pub enum MetricF64 {
     NodeInFlow(NodeIndex),
     NodeOutFlow(NodeIndex),
     NodeMaxFlow(NodeIndex),
+    NodeDeficit(NodeIndex),
     NodeVolume(NodeIndex),
     NodeProportionalVolume(NodeIndex),
     NodeMaxVolume(NodeIndex),
@@ -222,6 +223,11 @@ impl MetricF64 {
                 .ok_or(MetricF64Error::NodeIndexNotFound(*idx))?
                 .get_max_flow(network, state)
                 .map_err(|e| MetricF64Error::NodeError(Box::new(e)))?),
+            MetricF64::NodeDeficit(idx) => {
+                let actual_flow = MetricF64::NodeInFlow(*idx).get_value(network, state)?;
+                let max_flow = MetricF64::NodeInFlow(*idx).get_value(network, state)?;
+                Ok((max_flow - actual_flow).max(0.0))
+            }
             MetricF64::NodeVolume(idx) => Ok(state.get_network_state().get_node_volume(idx)?),
             MetricF64::NodeProportionalVolume(idx) => {
                 Ok(state.get_network_state().get_node_proportional_volume(idx)?)
