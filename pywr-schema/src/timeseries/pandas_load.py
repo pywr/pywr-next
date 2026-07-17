@@ -9,9 +9,9 @@ def load_pandas(path: str, index_col: Union[str, int], **kwargs) -> pl.DataFrame
 
     This function is used by the `load` function of the `PandasDataset` in the Rust extension.
     """
-    suffix = Path(path).suffix.lower()
+    suffix = "".join(Path(path).suffixes).lower()
     match suffix:
-        case ".csv":
+        case ".csv" | ".csv.gz":
             df = pd.read_csv(path, index_col=index_col, parse_dates=True, **kwargs)
         case ".xlsx":
             df = pd.read_excel(path, index_col=index_col, **kwargs)
