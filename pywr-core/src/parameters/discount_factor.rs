@@ -2,8 +2,9 @@ use crate::metric::{MetricF64, UnresolvedMetricF64};
 use crate::network::ResolutionMaps;
 use crate::parameters::errors::GeneralCalculationError;
 use crate::parameters::{
-    BuiltParameter, GeneralParameter, GeneralParameterContext, MaybeBuiltParameter, Parameter, ParameterBuildError,
-    ParameterBuilder, ParameterMeta, ParameterName, ParameterState,
+    BuiltParameter, GeneralBeforeParameter, GeneralParameter, GeneralParameterContext, GeneralParameterEntry,
+    MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder, ParameterMeta, ParameterName,
+    ParameterState,
 };
 use crate::resolve_metric_f64;
 use chrono::Datelike;
@@ -20,24 +21,26 @@ impl Parameter for DiscountFactorParameter {
         &self.meta
     }
 }
-impl GeneralParameter<f64> for DiscountFactorParameter {
-    fn before(
-        &self,
-        ctx: GeneralParameterContext<'_>,
-        _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<Option<f64>, GeneralCalculationError> {
-        let year = ctx.timestep.date.year() - self.base_year;
-        let rate = self.discount_rate.get_value(ctx.network, ctx.state)?;
-
-        let factor = 1.0 / (1.0 + rate).powi(year);
-        Ok(Some(factor))
-    }
-
+impl GeneralParameter for DiscountFactorParameter {
     fn as_parameter(&self) -> &dyn Parameter
     where
         Self: Sized,
     {
         self
+    }
+}
+
+impl GeneralBeforeParameter<f64> for DiscountFactorParameter {
+    fn before(
+        &self,
+        ctx: GeneralParameterContext<'_>,
+        _internal_state: &mut Option<Box<dyn ParameterState>>,
+    ) -> Result<f64, GeneralCalculationError> {
+        let year = ctx.timestep.date.year() - self.base_year;
+        let rate = self.discount_rate.get_value(ctx.network, ctx.state)?;
+
+        let factor = 1.0 / (1.0 + rate).powi(year);
+        Ok(factor)
     }
 }
 
@@ -74,8 +77,8 @@ impl ParameterBuilder<f64> for DiscountFactorParameterBuilder {
             base_year: self.base_year,
         };
 
-        let bp = BuiltParameter::General(Box::new(p));
-        Ok(MaybeBuiltParameter::Built(bp))
+        let bp = BuiltParameter::General(GeneralParameterEntry::before(p));
+        Ok(bp.into())
     }
 }
 

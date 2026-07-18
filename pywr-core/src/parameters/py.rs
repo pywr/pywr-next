@@ -1,6 +1,7 @@
 use super::{
-    BuiltParameter, GeneralParameter, GeneralParameterContext, MaybeBuiltParameter, Parameter, ParameterBuildError,
-    ParameterBuilder, ParameterMeta, ParameterName, ParameterState, Timestep,
+    BuiltParameter, GeneralAfterParameter, GeneralBeforeParameter, GeneralParameter, GeneralParameterContext,
+    GeneralParameterEntry, MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder, ParameterMeta,
+    ParameterName, ParameterState, Timestep,
 };
 use crate::metric::{MetricF64, MetricU64, UnresolvedMetricF64, UnresolvedMetricU64};
 use crate::network::{Network, ResolutionMaps};
@@ -211,7 +212,7 @@ impl PyClassParameter {
         method: &str,
         ctx: GeneralParameterContext<'_>,
         internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<Option<T>, GeneralCalculationError>
+    ) -> Result<T, GeneralCalculationError>
     where
         T: for<'a, 'py> FromPyObject<'a, 'py>,
     {
@@ -228,7 +229,7 @@ impl PyClassParameter {
         // Safe to unwrap as we just ensured it is Some.
         let info = internal.info_obj.as_ref().unwrap();
 
-        let value: Option<T> = Python::attach(|py| {
+        let value: T = Python::attach(|py| {
             if internal.user_obj.getattr(py, method).is_ok() {
                 let info_bind = info.bind(py);
                 {
@@ -256,15 +257,18 @@ impl PyClassParameter {
                         object: self.class.to_string(),
                         py_error: Box::new(py_error),
                     })?
-                    .extract(py)
-                    .map_err(Into::into)
+                    .extract::<T>(py)
                     .map_err(|py_error| GeneralCalculationError::PythonError {
                         name: self.common.meta.name.to_string(),
                         object: self.class.to_string(),
-                        py_error: Box::new(py_error),
+                        py_error: Box::new(py_error.into()),
                     })
             } else {
-                Ok(None)
+                Err(GeneralCalculationError::PhaseNotEnabled {
+                    ty: "PyClassParameter".to_string(),
+                    phase: method.to_string(), // This is the method name, which corresponds to the phase (before/after)
+                    message: format!("The method `{method}` is not implemented in the Python class."),
+                })
             }
         })?;
 
@@ -286,23 +290,7 @@ impl Parameter for PyClassParameter {
     }
 }
 
-impl GeneralParameter<f64> for PyClassParameter {
-    fn before(
-        &self,
-        ctx: GeneralParameterContext<'_>,
-        internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<Option<f64>, GeneralCalculationError> {
-        self.call_method("before", ctx, internal_state)
-    }
-
-    fn after(
-        &self,
-        ctx: GeneralParameterContext<'_>,
-        internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<Option<f64>, GeneralCalculationError> {
-        self.call_method("after", ctx, internal_state)
-    }
-
+impl GeneralParameter for PyClassParameter {
     fn as_parameter(&self) -> &dyn Parameter
     where
         Self: Sized,
@@ -311,53 +299,60 @@ impl GeneralParameter<f64> for PyClassParameter {
     }
 }
 
-impl GeneralParameter<u64> for PyClassParameter {
+impl GeneralBeforeParameter<f64> for PyClassParameter {
     fn before(
         &self,
         ctx: GeneralParameterContext<'_>,
         internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<Option<u64>, GeneralCalculationError> {
+    ) -> Result<f64, GeneralCalculationError> {
         self.call_method("before", ctx, internal_state)
     }
-
+}
+impl GeneralAfterParameter<f64> for PyClassParameter {
     fn after(
         &self,
         ctx: GeneralParameterContext<'_>,
         internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<Option<u64>, GeneralCalculationError> {
+    ) -> Result<f64, GeneralCalculationError> {
         self.call_method("after", ctx, internal_state)
-    }
-
-    fn as_parameter(&self) -> &dyn Parameter
-    where
-        Self: Sized,
-    {
-        self
     }
 }
 
-impl GeneralParameter<MultiValue> for PyClassParameter {
+impl GeneralBeforeParameter<u64> for PyClassParameter {
     fn before(
         &self,
         ctx: GeneralParameterContext<'_>,
         internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<Option<MultiValue>, GeneralCalculationError> {
+    ) -> Result<u64, GeneralCalculationError> {
         self.call_method("before", ctx, internal_state)
     }
-
+}
+impl GeneralAfterParameter<u64> for PyClassParameter {
     fn after(
         &self,
         ctx: GeneralParameterContext<'_>,
         internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<Option<MultiValue>, GeneralCalculationError> {
+    ) -> Result<u64, GeneralCalculationError> {
         self.call_method("after", ctx, internal_state)
     }
+}
 
-    fn as_parameter(&self) -> &dyn Parameter
-    where
-        Self: Sized,
-    {
-        self
+impl GeneralBeforeParameter<MultiValue> for PyClassParameter {
+    fn before(
+        &self,
+        ctx: GeneralParameterContext<'_>,
+        internal_state: &mut Option<Box<dyn ParameterState>>,
+    ) -> Result<MultiValue, GeneralCalculationError> {
+        self.call_method("before", ctx, internal_state)
+    }
+}
+impl GeneralAfterParameter<MultiValue> for PyClassParameter {
+    fn after(
+        &self,
+        ctx: GeneralParameterContext<'_>,
+        internal_state: &mut Option<Box<dyn ParameterState>>,
+    ) -> Result<MultiValue, GeneralCalculationError> {
+        self.call_method("after", ctx, internal_state)
     }
 }
 
@@ -406,12 +401,30 @@ impl ParameterBuilder<f64> for PyClassParameterBuilder {
             indices,
         };
 
+        let (has_before, has_after) = Python::attach(|py| {
+            let has_before = self.class.getattr(py, "before").is_ok();
+            let has_after = self.class.getattr(py, "after").is_ok();
+            (has_before, has_after)
+        });
+
         let p = PyClassParameter {
             class: self.class,
             common,
         };
 
-        Ok(MaybeBuiltParameter::Built(BuiltParameter::General(Box::new(p))))
+        let entry = match (has_before, has_after) {
+            (true, true) => GeneralParameterEntry::both(p),
+            (true, false) => GeneralParameterEntry::before(p),
+            (false, true) => GeneralParameterEntry::after(p),
+            (false, false) => {
+                return Err(ParameterBuildError::NoCalculationPhase {
+                    detail: "PyClassParameterBuilder must have at least one of `before` or `after` methods defined."
+                        .into(),
+                });
+            }
+        };
+
+        Ok(BuiltParameter::General(entry).into())
     }
 }
 
@@ -435,12 +448,30 @@ impl ParameterBuilder<u64> for PyClassParameterBuilder {
             indices,
         };
 
+        let (has_before, has_after) = Python::attach(|py| {
+            let has_before = self.class.getattr(py, "before").is_ok();
+            let has_after = self.class.getattr(py, "after").is_ok();
+            (has_before, has_after)
+        });
+
         let p = PyClassParameter {
             class: self.class,
             common,
         };
 
-        Ok(MaybeBuiltParameter::Built(BuiltParameter::General(Box::new(p))))
+        let entry = match (has_before, has_after) {
+            (true, true) => GeneralParameterEntry::both(p),
+            (true, false) => GeneralParameterEntry::before(p),
+            (false, true) => GeneralParameterEntry::after(p),
+            (false, false) => {
+                return Err(ParameterBuildError::NoCalculationPhase {
+                    detail: "PyClassParameterBuilder must have at least one of `before` or `after` methods defined."
+                        .into(),
+                });
+            }
+        };
+
+        Ok(BuiltParameter::General(entry).into())
     }
 }
 
@@ -464,12 +495,30 @@ impl ParameterBuilder<MultiValue> for PyClassParameterBuilder {
             indices,
         };
 
+        let (has_before, has_after) = Python::attach(|py| {
+            let has_before = self.class.getattr(py, "before").is_ok();
+            let has_after = self.class.getattr(py, "after").is_ok();
+            (has_before, has_after)
+        });
+
         let p = PyClassParameter {
             class: self.class,
             common,
         };
 
-        Ok(MaybeBuiltParameter::Built(BuiltParameter::General(Box::new(p))))
+        let entry = match (has_before, has_after) {
+            (true, true) => GeneralParameterEntry::both(p),
+            (true, false) => GeneralParameterEntry::before(p),
+            (false, true) => GeneralParameterEntry::after(p),
+            (false, false) => {
+                return Err(ParameterBuildError::NoCalculationPhase {
+                    detail: "PyClassParameterBuilder must have at least one of `before` or `after` methods defined."
+                        .into(),
+                });
+            }
+        };
+
+        Ok(BuiltParameter::General(entry).into())
     }
 }
 
@@ -601,15 +650,7 @@ impl Parameter for PyFuncParameter {
         self.setup()
     }
 }
-impl GeneralParameter<f64> for PyFuncParameter {
-    fn before(
-        &self,
-        ctx: GeneralParameterContext<'_>,
-        internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<Option<f64>, GeneralCalculationError> {
-        self.compute(ctx, internal_state)
-    }
-
+impl GeneralParameter for PyFuncParameter {
     fn as_parameter(&self) -> &dyn Parameter
     where
         Self: Sized,
@@ -618,37 +659,33 @@ impl GeneralParameter<f64> for PyFuncParameter {
     }
 }
 
-impl GeneralParameter<u64> for PyFuncParameter {
+impl GeneralBeforeParameter<f64> for PyFuncParameter {
     fn before(
         &self,
         ctx: GeneralParameterContext<'_>,
         internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<Option<u64>, GeneralCalculationError> {
+    ) -> Result<f64, GeneralCalculationError> {
         self.compute(ctx, internal_state)
-    }
-
-    fn as_parameter(&self) -> &dyn Parameter
-    where
-        Self: Sized,
-    {
-        self
     }
 }
 
-impl GeneralParameter<MultiValue> for PyFuncParameter {
+impl GeneralBeforeParameter<u64> for PyFuncParameter {
     fn before(
         &self,
         ctx: GeneralParameterContext<'_>,
         internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<Option<MultiValue>, GeneralCalculationError> {
+    ) -> Result<u64, GeneralCalculationError> {
         self.compute(ctx, internal_state)
     }
+}
 
-    fn as_parameter(&self) -> &dyn Parameter
-    where
-        Self: Sized,
-    {
-        self
+impl GeneralBeforeParameter<MultiValue> for PyFuncParameter {
+    fn before(
+        &self,
+        ctx: GeneralParameterContext<'_>,
+        internal_state: &mut Option<Box<dyn ParameterState>>,
+    ) -> Result<MultiValue, GeneralCalculationError> {
+        self.compute(ctx, internal_state)
     }
 }
 
@@ -702,7 +739,7 @@ impl ParameterBuilder<f64> for PyFuncParameterBuilder {
             common,
         };
 
-        Ok(MaybeBuiltParameter::Built(BuiltParameter::General(Box::new(p))))
+        Ok(BuiltParameter::General(GeneralParameterEntry::before(p)).into())
     }
 }
 
@@ -731,7 +768,7 @@ impl ParameterBuilder<u64> for PyFuncParameterBuilder {
             common,
         };
 
-        Ok(MaybeBuiltParameter::Built(BuiltParameter::General(Box::new(p))))
+        Ok(BuiltParameter::General(GeneralParameterEntry::before(p)).into())
     }
 }
 
@@ -760,7 +797,7 @@ impl ParameterBuilder<MultiValue> for PyFuncParameterBuilder {
             common,
         };
 
-        Ok(MaybeBuiltParameter::Built(BuiltParameter::General(Box::new(p))))
+        Ok(BuiltParameter::General(GeneralParameterEntry::before(p)).into())
     }
 }
 
@@ -773,6 +810,7 @@ mod tests {
     use chrono::Datelike;
     use float_cmp::assert_approx_eq;
     use pyo3::ffi::c_str;
+    use std::assert_matches;
     use std::ffi::CStr;
 
     enum CounterParameterType {
@@ -889,9 +927,8 @@ class MyParameter:
                     state: &state,
                 };
 
-                let before_value: Option<f64> = GeneralParameter::before(&param, ctx, internal).unwrap();
-
-                let after_value: Option<f64> = GeneralParameter::after(&param, ctx, internal).unwrap();
+                let before_value = GeneralBeforeParameter::before(&param, ctx, internal);
+                let after_value = GeneralAfterParameter::after(&param, ctx, internal);
 
                 match counter_parameter_type {
                     CounterParameterType::BeforeOnly => {
@@ -900,7 +937,7 @@ class MyParameter:
                             before_value.expect("Expected a value from before()"),
                             ((ts.index + 1) * si.simulation_id() + ts.date.day() as usize) as f64
                         );
-                        assert!(after_value.is_none(), "Expected no value from after()");
+                        assert_matches!(after_value, Err(GeneralCalculationError::PhaseNotEnabled { .. }));
                     }
                     CounterParameterType::BeforeAfter => {
                         assert_approx_eq!(
@@ -915,7 +952,7 @@ class MyParameter:
                         );
                     }
                     CounterParameterType::AfterOnly => {
-                        assert!(before_value.is_none(), "Expected no value from before()");
+                        assert_matches!(before_value, Err(GeneralCalculationError::PhaseNotEnabled { .. }));
                         assert_approx_eq!(
                             f64,
                             after_value.expect("Expected a value from after()"),
@@ -1000,9 +1037,7 @@ class MyParameter:
                     state: &state,
                 };
 
-                let value = GeneralParameter::<MultiValue>::before(&param, ctx, internal)
-                    .unwrap()
-                    .unwrap();
+                let value = GeneralBeforeParameter::<MultiValue>::before(&param, ctx, internal).unwrap();
 
                 assert_approx_eq!(f64, *value.get_value("a-float").unwrap(), std::f64::consts::PI);
 
@@ -1076,7 +1111,7 @@ def my_function(info, count, **kwargs):
                     state: &state,
                 };
 
-                let value = GeneralParameter::before(&param, ctx, internal).unwrap().unwrap();
+                let value = GeneralBeforeParameter::before(&param, ctx, internal).unwrap();
 
                 assert_approx_eq!(f64, value, (2 + si.simulation_id() + ts.date.day() as usize) as f64);
             }

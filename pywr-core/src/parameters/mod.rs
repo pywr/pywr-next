@@ -93,6 +93,7 @@ use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::marker::PhantomData;
 use std::ops::Deref;
+use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 use thiserror::Error;
@@ -717,31 +718,128 @@ pub struct GeneralParameterContext<'a> {
     pub state: &'a State,
 }
 
-/// A trait that defines a component that produces a value each time-step.
+/// A trait that defines a component that may produce a value each time-step, and may have an
+/// internal state that is updated each time-step.
 ///
-/// The trait is generic over the type of the value produced.
-pub trait GeneralParameter<T>: Parameter {
+/// See [`GeneralBeforeParameter`] and [`GeneralAfterParameter`] for more specific traits that define
+/// the behaviour of parameters that produce values before or after the network is updated.
+pub trait GeneralParameter: Parameter {
+    fn as_parameter(&self) -> &dyn Parameter;
+}
+
+/// A trait that defines a component that produces a value before the network is updated each time-step.
+pub trait GeneralBeforeParameter<T>: GeneralParameter {
     fn before(
         &self,
-        #[allow(unused_variables)] context: GeneralParameterContext<'_>,
-        #[allow(unused_variables)] internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<Option<T>, GeneralCalculationError> {
-        Ok(None)
-    }
+        context: GeneralParameterContext<'_>,
+        internal_state: &mut Option<Box<dyn ParameterState>>,
+    ) -> Result<T, GeneralCalculationError>;
+}
 
+/// A trait that defines a component that produces a value after the network is updated each time-step.
+pub trait GeneralAfterParameter<T>: GeneralParameter {
     fn after(
         &self,
-        #[allow(unused_variables)] context: GeneralParameterContext<'_>,
-        #[allow(unused_variables)] internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<Option<T>, GeneralCalculationError> {
-        Ok(None)
+        context: GeneralParameterContext<'_>,
+        internal_state: &mut Option<Box<dyn ParameterState>>,
+    ) -> Result<T, GeneralCalculationError>;
+}
+
+/// A trait that defines a component that performs an action after the network is updated each
+/// time-step, but does not produce a value.
+pub trait GeneralAfterParameterHook<T>: GeneralParameter {
+    fn after(
+        &self,
+        context: GeneralParameterContext<'_>,
+        internal_state: &mut Option<Box<dyn ParameterState>>,
+    ) -> Result<(), GeneralCalculationError>;
+}
+
+#[derive(Debug)]
+enum GeneralAfterOperation<T> {
+    Value(Arc<dyn GeneralAfterParameter<T>>),
+    Hook(Arc<dyn GeneralAfterParameterHook<T>>),
+}
+
+#[derive(Debug)]
+pub struct GeneralParameterEntry<T> {
+    parameter: Arc<dyn GeneralParameter>,
+    before: Option<Arc<dyn GeneralBeforeParameter<T>>>,
+    after: Option<GeneralAfterOperation<T>>,
+}
+
+impl<T: 'static> GeneralParameterEntry<T> {
+    pub fn before<P>(parameter: P) -> Self
+    where
+        P: GeneralBeforeParameter<T> + 'static,
+    {
+        let parameter = Arc::new(parameter);
+        Self {
+            parameter: parameter.clone(),
+            before: Some(parameter),
+            after: None,
+        }
     }
 
-    fn try_into_simple(&self) -> Option<Box<dyn SimpleParameter<T>>> {
-        None
+    pub fn after<P>(parameter: P) -> Self
+    where
+        P: GeneralAfterParameter<T> + 'static,
+    {
+        let parameter = Arc::new(parameter);
+        Self {
+            parameter: parameter.clone(),
+            before: None,
+            after: Some(GeneralAfterOperation::Value(parameter)),
+        }
     }
 
-    fn as_parameter(&self) -> &dyn Parameter;
+    pub fn both<P>(parameter: P) -> Self
+    where
+        P: GeneralBeforeParameter<T> + GeneralAfterParameter<T> + 'static,
+    {
+        let parameter = Arc::new(parameter);
+        Self {
+            parameter: parameter.clone(),
+            before: Some(parameter.clone()),
+            after: Some(GeneralAfterOperation::Value(parameter)),
+        }
+    }
+
+    pub fn before_with_after_hook<P>(parameter: P) -> Self
+    where
+        P: GeneralBeforeParameter<T> + GeneralAfterParameterHook<T> + 'static,
+    {
+        let parameter = Arc::new(parameter);
+        Self {
+            parameter: parameter.clone(),
+            before: Some(parameter.clone()),
+            after: Some(GeneralAfterOperation::Hook(parameter)),
+        }
+    }
+
+    fn setup(
+        &self,
+        timesteps: &[Timestep],
+        scenario_index: &ScenarioIndex,
+    ) -> Result<Option<Box<dyn ParameterState>>, ParameterSetupError> {
+        self.parameter.setup(timesteps, scenario_index)
+    }
+
+    pub fn name(&self) -> &ParameterName {
+        self.parameter.name()
+    }
+
+    fn as_parameter(&self) -> &dyn Parameter {
+        self.parameter.as_parameter()
+    }
+
+    fn has_before(&self) -> bool {
+        self.before.is_some()
+    }
+
+    fn has_after(&self) -> bool {
+        self.after.is_some()
+    }
 }
 
 #[derive(Debug, Error)]
@@ -783,11 +881,13 @@ pub enum ParameterBuildError {
     },
     #[error("Could not compute day of the year; invalid date: day: {day}, month: {day}")]
     InvalidDayOfYear { day: u32, month: u32 },
+    #[error("Parameter is configured without a valid calculation phase: {detail}")]
+    NoCalculationPhase { detail: String },
 }
 
 pub enum BuiltParameter<T> {
-    General(Box<dyn GeneralParameter<T>>),
-    Simple(Box<dyn SimpleParameter<T>>),
+    General(GeneralParameterEntry<T>),
+    Simple(SimpleParameterEntry<T>),
     Const(Box<dyn ConstParameter<T>>),
 }
 
@@ -1071,28 +1171,123 @@ pub struct SimpleParameterContext<'a> {
     pub values: &'a SimpleParameterValues<'a>,
 }
 
-/// A trait that defines a component that produces a value each time-step.
+/// A trait that defines a component that may produce a value each time-step, and may have an
+/// internal state that is updated each time-step.
 ///
-/// The trait is generic over the type of the value produced.
-pub trait SimpleParameter<T>: Parameter {
+/// See [`SimpleBeforeParameter`] and [`SimpleAfterParameter`] for more specific traits that define
+/// the behaviour of parameters that produce values before or after the network is updated.
+pub trait SimpleParameter: Parameter {
+    fn as_parameter(&self) -> &dyn Parameter;
+}
+
+pub trait SimpleBeforeParameter<T>: SimpleParameter {
     fn before(
         &self,
         context: SimpleParameterContext<'_>,
         internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<Option<T>, SimpleCalculationError>;
+    ) -> Result<T, SimpleCalculationError>;
+}
 
+pub trait SimpleAfterParameter<T>: SimpleParameter {
     fn after(
         &self,
-        #[allow(unused_variables)] context: SimpleParameterContext<'_>,
-        #[allow(unused_variables)] internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<Option<T>, SimpleCalculationError> {
-        Ok(None)
+        context: SimpleParameterContext<'_>,
+        internal_state: &mut Option<Box<dyn ParameterState>>,
+    ) -> Result<T, SimpleCalculationError>;
+}
+
+pub trait SimpleAfterParameterHook<T>: SimpleParameter {
+    fn after(
+        &self,
+        context: SimpleParameterContext<'_>,
+        internal_state: &mut Option<Box<dyn ParameterState>>,
+    ) -> Result<(), SimpleCalculationError>;
+}
+
+#[derive(Debug)]
+enum SimpleAfterOperation<T> {
+    Value(Arc<dyn SimpleAfterParameter<T>>),
+    Hook(Arc<dyn SimpleAfterParameterHook<T>>),
+}
+
+#[derive(Debug)]
+pub struct SimpleParameterEntry<T> {
+    parameter: Arc<dyn SimpleParameter>,
+    before: Option<Arc<dyn SimpleBeforeParameter<T>>>,
+    after: Option<SimpleAfterOperation<T>>,
+}
+
+impl<T: 'static> SimpleParameterEntry<T> {
+    pub fn before<P>(parameter: P) -> Self
+    where
+        P: SimpleBeforeParameter<T> + 'static,
+    {
+        let parameter = Arc::new(parameter);
+        Self {
+            parameter: parameter.clone(),
+            before: Some(parameter),
+            after: None,
+        }
     }
 
-    fn as_parameter(&self) -> &dyn Parameter;
+    pub fn after<P>(parameter: P) -> Self
+    where
+        P: SimpleAfterParameter<T> + 'static,
+    {
+        let parameter = Arc::new(parameter);
+        Self {
+            parameter: parameter.clone(),
+            before: None,
+            after: Some(SimpleAfterOperation::Value(parameter)),
+        }
+    }
 
-    fn try_into_const(&self) -> Option<Box<dyn ConstParameter<T>>> {
-        None
+    pub fn both<P>(parameter: P) -> Self
+    where
+        P: SimpleBeforeParameter<T> + SimpleAfterParameter<T> + 'static,
+    {
+        let parameter = Arc::new(parameter);
+        Self {
+            parameter: parameter.clone(),
+            before: Some(parameter.clone()),
+            after: Some(SimpleAfterOperation::Value(parameter)),
+        }
+    }
+
+    pub fn before_with_after_hook<P>(parameter: P) -> Self
+    where
+        P: SimpleBeforeParameter<T> + SimpleAfterParameterHook<T> + 'static,
+    {
+        let parameter = Arc::new(parameter);
+        Self {
+            parameter: parameter.clone(),
+            before: Some(parameter.clone()),
+            after: Some(SimpleAfterOperation::Hook(parameter)),
+        }
+    }
+
+    fn setup(
+        &self,
+        timesteps: &[Timestep],
+        scenario_index: &ScenarioIndex,
+    ) -> Result<Option<Box<dyn ParameterState>>, ParameterSetupError> {
+        self.parameter.setup(timesteps, scenario_index)
+    }
+
+    pub fn name(&self) -> &ParameterName {
+        self.parameter.name()
+    }
+
+    fn as_parameter(&self) -> &dyn Parameter {
+        self.parameter.as_parameter()
+    }
+
+    fn has_before(&self) -> bool {
+        self.before.is_some()
+    }
+
+    fn has_after(&self) -> bool {
+        self.after.is_some()
     }
 }
 
@@ -1345,6 +1540,10 @@ pub enum ParameterCollectionSimpleCalculationError {
         #[source]
         source: SetStateError<SimpleParameterIndex<MultiValue>>,
     },
+    #[error("Before is not implemented for simple parameter '{name}'.")]
+    BeforeNotImplemented { name: ParameterName },
+    #[error("After is not implemented for simple parameter '{name}'.")]
+    AfterNotImplemented { name: ParameterName },
 }
 
 // Unique ID for each parameter collection.
@@ -1526,6 +1725,10 @@ pub enum ParameterCollectionGeneralCalculationError {
     },
     #[error("The timing data was created with from a different parameter collection. ")]
     TimingsFromAnotherCollection,
+    #[error("Before is not implemented for general parameter '{name}'.")]
+    BeforeNotImplemented { name: ParameterName },
+    #[error("After is not implemented for general parameter '{name}'.")]
+    AfterNotImplemented { name: ParameterName },
 }
 
 /// A collection of parameters that return different types.
@@ -1536,15 +1739,17 @@ pub struct ParameterCollection {
     constant_multi: Vec<Box<dyn ConstParameter<MultiValue>>>,
     constant_resolve_order: Vec<ConstParameterType>,
 
-    simple_f64: Vec<Box<dyn SimpleParameter<f64>>>,
-    simple_u64: Vec<Box<dyn SimpleParameter<u64>>>,
-    simple_multi: Vec<Box<dyn SimpleParameter<MultiValue>>>,
-    simple_resolve_order: Vec<SimpleParameterType>,
+    simple_f64: Vec<SimpleParameterEntry<f64>>,
+    simple_u64: Vec<SimpleParameterEntry<u64>>,
+    simple_multi: Vec<SimpleParameterEntry<MultiValue>>,
+    simple_before_order: Vec<SimpleParameterType>,
+    simple_after_order: Vec<SimpleParameterType>,
 
-    general_f64: Vec<Box<dyn GeneralParameter<f64>>>,
-    general_u64: Vec<Box<dyn GeneralParameter<u64>>>,
-    general_multi: Vec<Box<dyn GeneralParameter<MultiValue>>>,
-    general_resolve_order: Vec<GeneralParameterType>,
+    general_f64: Vec<GeneralParameterEntry<f64>>,
+    general_u64: Vec<GeneralParameterEntry<u64>>,
+    general_multi: Vec<GeneralParameterEntry<MultiValue>>,
+    general_before_order: Vec<GeneralParameterType>,
+    general_after_order: Vec<GeneralParameterType>,
     id: u64,
 }
 
@@ -1558,11 +1763,13 @@ impl Default for ParameterCollection {
             simple_f64: Vec::new(),
             simple_u64: Vec::new(),
             simple_multi: Vec::new(),
-            simple_resolve_order: Vec::new(),
+            simple_before_order: Vec::new(),
+            simple_after_order: Vec::new(),
             general_f64: Vec::new(),
             general_u64: Vec::new(),
             general_multi: Vec::new(),
-            general_resolve_order: Vec::new(),
+            general_before_order: Vec::new(),
+            general_after_order: Vec::new(),
             id: PARAMETER_COLLECTION_ID.fetch_add(1, Ordering::Relaxed),
         }
     }
@@ -1591,10 +1798,12 @@ impl ParameterCollection {
         let f64_states = self
             .general_f64
             .iter()
-            .map(|p| {
-                p.setup(timesteps, scenario_index)
+            .map(|entry| {
+                entry
+                    .parameter
+                    .setup(timesteps, scenario_index)
                     .map_err(|source| ParameterCollectionSetupError {
-                        name: Box::new(p.name().clone()),
+                        name: Box::new(entry.name().clone()),
                         source: Box::new(source),
                     })
             })
@@ -1603,10 +1812,11 @@ impl ParameterCollection {
         let usize_states = self
             .general_u64
             .iter()
-            .map(|p| {
-                p.setup(timesteps, scenario_index)
+            .map(|entry| {
+                entry
+                    .setup(timesteps, scenario_index)
                     .map_err(|source| ParameterCollectionSetupError {
-                        name: Box::new(p.name().clone()),
+                        name: Box::new(entry.name().clone()),
                         source: Box::new(source),
                     })
             })
@@ -1751,37 +1961,38 @@ impl ParameterCollection {
     /// The new parameter will be simplified as much as possible.
     ///
     /// SAFETY: This must remain a private function to maintain the indexing guarantees.
-    fn push_general_f64(&mut self, p: Box<dyn GeneralParameter<f64>>) -> ParameterIndex<f64> {
-        match p.try_into_simple() {
-            Some(p) => self.push_simple_f64(p),
-            None => {
-                let index = GeneralParameterIndex::new(self.general_f64.len());
+    fn push_general_f64(&mut self, entry: GeneralParameterEntry<f64>) -> ParameterIndex<f64> {
+        let index = GeneralParameterIndex::new(self.general_f64.len());
 
-                self.general_resolve_order.push(GeneralParameterType::Parameter(index));
-                self.general_f64.push(p);
-
-                ParameterIndex::General(index)
-            }
+        if entry.has_before() {
+            self.general_before_order.push(index.into());
         }
+
+        if entry.has_after() {
+            self.general_after_order.push(index.into());
+        }
+
+        self.general_f64.push(entry);
+
+        ParameterIndex::General(index)
     }
 
     /// Push a new simple parameter to the collection.
     ///
-    /// The new parameter will be simplified as much as possible.
-    ///
     /// SAFETY: This must remain a private function to maintain the indexing guarantees.
-    fn push_simple_f64(&mut self, p: Box<dyn SimpleParameter<f64>>) -> ParameterIndex<f64> {
-        match p.try_into_const() {
-            Some(p) => self.push_const_f64(p),
-            None => {
-                let index = SimpleParameterIndex::new(self.simple_f64.len());
+    fn push_simple_f64(&mut self, entry: SimpleParameterEntry<f64>) -> ParameterIndex<f64> {
+        let index = SimpleParameterIndex::new(self.simple_f64.len());
 
-                self.simple_resolve_order.push(SimpleParameterType::Parameter(index));
-                self.simple_f64.push(p);
-
-                ParameterIndex::Simple(index)
-            }
+        if entry.has_before() {
+            self.simple_before_order.push(index.into());
         }
+
+        if entry.has_after() {
+            self.simple_after_order.push(index.into());
+        }
+        self.simple_f64.push(entry);
+
+        ParameterIndex::Simple(index)
     }
 
     /// Push a new const parameter to the collection.
@@ -1804,8 +2015,8 @@ impl ParameterCollection {
         }
     }
 
-    pub fn get_general_f64(&self, index: GeneralParameterIndex<f64>) -> Option<&dyn GeneralParameter<f64>> {
-        self.general_f64.get(*index.deref()).map(|p| p.as_ref())
+    pub fn get_general_f64(&self, index: GeneralParameterIndex<f64>) -> Option<&GeneralParameterEntry<f64>> {
+        self.general_f64.get(*index.deref())
     }
 
     pub fn get_f64_by_name(&self, name: &ParameterName) -> Option<&dyn Parameter> {
@@ -1841,21 +2052,20 @@ impl ParameterCollection {
 
     /// Push a new general parameter to the collection.
     ///
-    /// The new parameter will be simplified as much as possible.
-    ///
     /// SAFETY: This must remain a private function to maintain the indexing guarantees.
-    fn push_general_u64(&mut self, p: Box<dyn GeneralParameter<u64>>) -> ParameterIndex<u64> {
-        match p.try_into_simple() {
-            Some(p) => self.push_simple_u64(p),
-            None => {
-                let index = GeneralParameterIndex::new(self.general_u64.len());
+    fn push_general_u64(&mut self, entry: GeneralParameterEntry<u64>) -> ParameterIndex<u64> {
+        let index = GeneralParameterIndex::new(self.general_u64.len());
 
-                self.general_resolve_order.push(GeneralParameterType::Index(index));
-                self.general_u64.push(p);
-
-                ParameterIndex::General(index)
-            }
+        if entry.has_before() {
+            self.general_before_order.push(index.into());
         }
+
+        if entry.has_after() {
+            self.general_after_order.push(index.into());
+        }
+        self.general_u64.push(entry);
+
+        ParameterIndex::General(index)
     }
 
     /// Push a new simple parameter to the collection.
@@ -1863,18 +2073,19 @@ impl ParameterCollection {
     /// The new parameter will be simplified as much as possible.
     ///
     /// SAFETY: This must remain a private function to maintain the indexing guarantees.
-    fn push_simple_u64(&mut self, p: Box<dyn SimpleParameter<u64>>) -> ParameterIndex<u64> {
-        match p.try_into_const() {
-            Some(p) => self.push_const_u64(p),
-            None => {
-                let index = SimpleParameterIndex::new(self.simple_u64.len());
+    fn push_simple_u64(&mut self, entry: SimpleParameterEntry<u64>) -> ParameterIndex<u64> {
+        let index = SimpleParameterIndex::new(self.simple_u64.len());
 
-                self.simple_resolve_order.push(SimpleParameterType::Index(index));
-                self.simple_u64.push(p);
-
-                ParameterIndex::Simple(index)
-            }
+        if entry.has_before() {
+            self.simple_before_order.push(index.into());
         }
+
+        if entry.has_after() {
+            self.simple_after_order.push(index.into());
+        }
+        self.simple_u64.push(entry);
+
+        ParameterIndex::Simple(index)
     }
 
     /// Push a new const parameter to the collection.
@@ -1897,8 +2108,8 @@ impl ParameterCollection {
         }
     }
 
-    pub fn get_general_u64(&self, index: GeneralParameterIndex<u64>) -> Option<&dyn GeneralParameter<u64>> {
-        self.general_u64.get(*index.deref()).map(|p| p.as_ref())
+    pub fn get_general_u64(&self, index: GeneralParameterIndex<u64>) -> Option<&GeneralParameterEntry<u64>> {
+        self.general_u64.get(*index.deref())
     }
 
     pub fn get_u64_by_name(&self, name: &ParameterName) -> Option<&dyn Parameter> {
@@ -1937,18 +2148,19 @@ impl ParameterCollection {
     /// The new parameter will be simplified as much as possible.
     ///
     /// SAFETY: This must remain a private function to maintain the indexing guarantees.
-    fn push_general_multi(&mut self, p: Box<dyn GeneralParameter<MultiValue>>) -> ParameterIndex<MultiValue> {
-        match p.try_into_simple() {
-            Some(p) => self.push_simple_multi(p),
-            None => {
-                let index = GeneralParameterIndex::new(self.general_multi.len());
+    fn push_general_multi(&mut self, entry: GeneralParameterEntry<MultiValue>) -> ParameterIndex<MultiValue> {
+        let index = GeneralParameterIndex::new(self.general_multi.len());
 
-                self.general_resolve_order.push(GeneralParameterType::Multi(index));
-                self.general_multi.push(p);
-
-                ParameterIndex::General(index)
-            }
+        if entry.has_before() {
+            self.general_before_order.push(index.into());
         }
+
+        if entry.has_after() {
+            self.general_after_order.push(index.into());
+        }
+        self.general_multi.push(entry);
+
+        ParameterIndex::General(index)
     }
 
     /// Push a new simple parameter to the collection.
@@ -1956,18 +2168,19 @@ impl ParameterCollection {
     /// The new parameter will be simplified as much as possible.
     ///
     /// SAFETY: This must remain a private function to maintain the indexing guarantees.
-    fn push_simple_multi(&mut self, p: Box<dyn SimpleParameter<MultiValue>>) -> ParameterIndex<MultiValue> {
-        match p.try_into_const() {
-            Some(p) => self.push_const_multi(p),
-            None => {
-                let index = SimpleParameterIndex::new(self.simple_multi.len());
+    fn push_simple_multi(&mut self, entry: SimpleParameterEntry<MultiValue>) -> ParameterIndex<MultiValue> {
+        let index = SimpleParameterIndex::new(self.simple_multi.len());
 
-                self.simple_resolve_order.push(SimpleParameterType::Multi(index));
-                self.simple_multi.push(p);
-
-                ParameterIndex::Simple(index)
-            }
+        if entry.has_before() {
+            self.simple_before_order.push(index.into());
         }
+
+        if entry.has_after() {
+            self.simple_after_order.push(index.into());
+        }
+        self.simple_multi.push(entry);
+
+        ParameterIndex::Simple(index)
     }
 
     /// Push a new const parameter to the collection.
@@ -1993,8 +2206,8 @@ impl ParameterCollection {
     pub fn get_general_multi(
         &self,
         index: &GeneralParameterIndex<MultiValue>,
-    ) -> Option<&dyn GeneralParameter<MultiValue>> {
-        self.general_multi.get(*index.deref()).map(|p| p.as_ref())
+    ) -> Option<&GeneralParameterEntry<MultiValue>> {
+        self.general_multi.get(*index.deref())
     }
 
     pub fn get_multi_by_name(&self, name: &ParameterName) -> Option<&dyn Parameter> {
@@ -2028,7 +2241,7 @@ impl ParameterCollection {
         }
     }
 
-    pub fn compute_general(
+    pub fn before_general(
         &self,
         timestep: &Timestep,
         scenario_index: &ScenarioIndex,
@@ -2043,19 +2256,26 @@ impl ParameterCollection {
             }
         }
 
-        for p in &self.general_resolve_order {
+        for p in &self.general_before_order {
             let start = Instant::now();
             match p {
                 GeneralParameterType::Parameter(idx) => {
                     // Find the parameter itself
-                    let p = self
+                    let entry = self
                         .general_f64
                         .get(*idx.deref())
                         .ok_or(ParameterCollectionGeneralCalculationError::F64IndexNotFound(*idx))?;
+
                     // .. and its internal state
                     let internal_state = internal_states
                         .get_general_mut_f64_state(*idx)
                         .ok_or(ParameterCollectionGeneralCalculationError::F64IndexNotFound(*idx))?;
+
+                    let p = entry.before.as_ref().ok_or(
+                        ParameterCollectionGeneralCalculationError::BeforeNotImplemented {
+                            name: entry.name().clone(),
+                        },
+                    )?;
 
                     let ctx = GeneralParameterContext {
                         timestep,
@@ -2066,7 +2286,7 @@ impl ParameterCollection {
 
                     let value = p.before(ctx, internal_state).map_err(|source| {
                         ParameterCollectionGeneralCalculationError::CalculationError {
-                            name: p.name().clone(),
+                            name: entry.name().clone(),
                             source: Box::new(source),
                         }
                     })?;
@@ -2074,7 +2294,7 @@ impl ParameterCollection {
                     state
                         .set_general_parameter_value_before(*idx, value)
                         .map_err(|source| ParameterCollectionGeneralCalculationError::F64SetStateError {
-                            name: p.name().clone(),
+                            name: entry.name().clone(),
                             source,
                         })?;
 
@@ -2086,7 +2306,7 @@ impl ParameterCollection {
                 }
                 GeneralParameterType::Index(idx) => {
                     // Find the parameter itself
-                    let p = self
+                    let entry = self
                         .general_u64
                         .get(*idx.deref())
                         .ok_or(ParameterCollectionGeneralCalculationError::U64IndexNotFound(*idx))?;
@@ -2094,6 +2314,12 @@ impl ParameterCollection {
                     let internal_state = internal_states
                         .get_general_mut_u64_state(*idx)
                         .ok_or(ParameterCollectionGeneralCalculationError::U64IndexNotFound(*idx))?;
+
+                    let p = entry.before.as_ref().ok_or(
+                        ParameterCollectionGeneralCalculationError::BeforeNotImplemented {
+                            name: entry.name().clone(),
+                        },
+                    )?;
 
                     let ctx = GeneralParameterContext {
                         timestep,
@@ -2124,7 +2350,7 @@ impl ParameterCollection {
                 }
                 GeneralParameterType::Multi(idx) => {
                     // Find the parameter itself
-                    let p = self
+                    let entry = self
                         .general_multi
                         .get(*idx.deref())
                         .ok_or(ParameterCollectionGeneralCalculationError::MultiIndexNotFound(*idx))?;
@@ -2132,6 +2358,12 @@ impl ParameterCollection {
                     let internal_state = internal_states
                         .get_general_mut_multi_state(*idx)
                         .ok_or(ParameterCollectionGeneralCalculationError::MultiIndexNotFound(*idx))?;
+
+                    let p = entry.before.as_ref().ok_or(
+                        ParameterCollectionGeneralCalculationError::BeforeNotImplemented {
+                            name: entry.name().clone(),
+                        },
+                    )?;
 
                     let ctx = GeneralParameterContext {
                         timestep,
@@ -2184,12 +2416,12 @@ impl ParameterCollection {
             }
         }
 
-        for p in &self.general_resolve_order {
+        for p in &self.general_after_order {
             let start = Instant::now();
             match p {
                 GeneralParameterType::Parameter(idx) => {
                     // Find the parameter itself
-                    let p = self
+                    let entry = self
                         .general_f64
                         .get(*idx.deref())
                         .ok_or(ParameterCollectionGeneralCalculationError::F64IndexNotFound(*idx))?;
@@ -2198,6 +2430,12 @@ impl ParameterCollection {
                         .get_general_mut_f64_state(*idx)
                         .ok_or(ParameterCollectionGeneralCalculationError::F64IndexNotFound(*idx))?;
 
+                    let op = entry.after.as_ref().ok_or(
+                        ParameterCollectionGeneralCalculationError::AfterNotImplemented {
+                            name: entry.name().clone(),
+                        },
+                    )?;
+
                     let ctx = GeneralParameterContext {
                         timestep,
                         scenario_index,
@@ -2205,19 +2443,31 @@ impl ParameterCollection {
                         state,
                     };
 
-                    let value = p.after(ctx, internal_state).map_err(|source| {
-                        ParameterCollectionGeneralCalculationError::CalculationError {
-                            name: p.name().clone(),
-                            source: Box::new(source),
-                        }
-                    })?;
+                    match op {
+                        GeneralAfterOperation::Value(p) => {
+                            let value = p.after(ctx, internal_state).map_err(|source| {
+                                ParameterCollectionGeneralCalculationError::CalculationError {
+                                    name: entry.name().clone(),
+                                    source: Box::new(source),
+                                }
+                            })?;
 
-                    state.set_general_parameter_value_after(*idx, value).map_err(|source| {
-                        ParameterCollectionGeneralCalculationError::F64SetStateError {
-                            name: p.name().clone(),
-                            source,
+                            state.set_general_parameter_value_after(*idx, value).map_err(|source| {
+                                ParameterCollectionGeneralCalculationError::F64SetStateError {
+                                    name: entry.name().clone(),
+                                    source,
+                                }
+                            })?;
                         }
-                    })?;
+                        GeneralAfterOperation::Hook(p) => {
+                            p.after(ctx, internal_state).map_err(|source| {
+                                ParameterCollectionGeneralCalculationError::CalculationError {
+                                    name: entry.name().clone(),
+                                    source: Box::new(source),
+                                }
+                            })?;
+                        }
+                    }
 
                     if let Some(timings) = timings.as_deref_mut() {
                         unsafe {
@@ -2227,7 +2477,7 @@ impl ParameterCollection {
                 }
                 GeneralParameterType::Index(idx) => {
                     // Find the parameter itself
-                    let p = self
+                    let entry = self
                         .general_u64
                         .get(*idx.deref())
                         .ok_or(ParameterCollectionGeneralCalculationError::U64IndexNotFound(*idx))?;
@@ -2236,6 +2486,12 @@ impl ParameterCollection {
                         .get_general_mut_u64_state(*idx)
                         .ok_or(ParameterCollectionGeneralCalculationError::U64IndexNotFound(*idx))?;
 
+                    let op = entry.after.as_ref().ok_or(
+                        ParameterCollectionGeneralCalculationError::AfterNotImplemented {
+                            name: entry.name().clone(),
+                        },
+                    )?;
+
                     let ctx = GeneralParameterContext {
                         timestep,
                         scenario_index,
@@ -2243,19 +2499,31 @@ impl ParameterCollection {
                         state,
                     };
 
-                    let value = p.after(ctx, internal_state).map_err(|source| {
-                        ParameterCollectionGeneralCalculationError::CalculationError {
-                            name: p.name().clone(),
-                            source: Box::new(source),
-                        }
-                    })?;
+                    match op {
+                        GeneralAfterOperation::Value(p) => {
+                            let value = p.after(ctx, internal_state).map_err(|source| {
+                                ParameterCollectionGeneralCalculationError::CalculationError {
+                                    name: entry.name().clone(),
+                                    source: Box::new(source),
+                                }
+                            })?;
 
-                    state.set_general_parameter_index_after(*idx, value).map_err(|source| {
-                        ParameterCollectionGeneralCalculationError::U64SetStateError {
-                            name: p.name().clone(),
-                            source,
+                            state.set_general_parameter_index_after(*idx, value).map_err(|source| {
+                                ParameterCollectionGeneralCalculationError::U64SetStateError {
+                                    name: entry.name().clone(),
+                                    source,
+                                }
+                            })?;
                         }
-                    })?;
+                        GeneralAfterOperation::Hook(p) => {
+                            p.after(ctx, internal_state).map_err(|source| {
+                                ParameterCollectionGeneralCalculationError::CalculationError {
+                                    name: entry.name().clone(),
+                                    source: Box::new(source),
+                                }
+                            })?;
+                        }
+                    }
 
                     if let Some(timings) = timings.as_deref_mut() {
                         unsafe {
@@ -2265,7 +2533,7 @@ impl ParameterCollection {
                 }
                 GeneralParameterType::Multi(idx) => {
                     // Find the parameter itself
-                    let p = self
+                    let entry = self
                         .general_multi
                         .get(*idx.deref())
                         .ok_or(ParameterCollectionGeneralCalculationError::MultiIndexNotFound(*idx))?;
@@ -2274,6 +2542,12 @@ impl ParameterCollection {
                         .get_general_mut_multi_state(*idx)
                         .ok_or(ParameterCollectionGeneralCalculationError::MultiIndexNotFound(*idx))?;
 
+                    let op = entry.after.as_ref().ok_or(
+                        ParameterCollectionGeneralCalculationError::AfterNotImplemented {
+                            name: entry.name().clone(),
+                        },
+                    )?;
+
                     let ctx = GeneralParameterContext {
                         timestep,
                         scenario_index,
@@ -2281,21 +2555,33 @@ impl ParameterCollection {
                         state,
                     };
 
-                    let value = p.after(ctx, internal_state).map_err(|source| {
-                        ParameterCollectionGeneralCalculationError::CalculationError {
-                            name: p.name().clone(),
-                            source: Box::new(source),
-                        }
-                    })?;
+                    match op {
+                        GeneralAfterOperation::Value(p) => {
+                            let value = p.after(ctx, internal_state).map_err(|source| {
+                                ParameterCollectionGeneralCalculationError::CalculationError {
+                                    name: entry.name().clone(),
+                                    source: Box::new(source),
+                                }
+                            })?;
 
-                    state
-                        .set_general_multi_parameter_value_after(*idx, value)
-                        .map_err(
-                            |source| ParameterCollectionGeneralCalculationError::MultiSetStateError {
-                                name: p.name().clone(),
-                                source,
-                            },
-                        )?;
+                            state
+                                .set_general_multi_parameter_value_after(*idx, value)
+                                .map_err(
+                                    |source| ParameterCollectionGeneralCalculationError::MultiSetStateError {
+                                        name: entry.name().clone(),
+                                        source,
+                                    },
+                                )?;
+                        }
+                        GeneralAfterOperation::Hook(p) => {
+                            p.after(ctx, internal_state).map_err(|source| {
+                                ParameterCollectionGeneralCalculationError::CalculationError {
+                                    name: entry.name().clone(),
+                                    source: Box::new(source),
+                                }
+                            })?;
+                        }
+                    }
 
                     if let Some(timings) = timings.as_deref_mut() {
                         unsafe {
@@ -2309,18 +2595,18 @@ impl ParameterCollection {
         Ok(())
     }
 
-    pub fn compute_simple(
+    pub fn before_simple(
         &self,
         timestep: &Timestep,
         scenario_index: &ScenarioIndex,
         state: &mut State,
         internal_states: &mut ParameterStates,
     ) -> Result<(), ParameterCollectionSimpleCalculationError> {
-        for p in &self.simple_resolve_order {
+        for p in &self.simple_before_order {
             match p {
                 SimpleParameterType::Parameter(idx) => {
                     // Find the parameter itself
-                    let p = self
+                    let entry = self
                         .simple_f64
                         .get(*idx.deref())
                         .ok_or(ParameterCollectionSimpleCalculationError::F64IndexNotFound(*idx))?;
@@ -2328,6 +2614,12 @@ impl ParameterCollection {
                     let internal_state = internal_states
                         .get_simple_mut_f64_state(*idx)
                         .ok_or(ParameterCollectionSimpleCalculationError::F64IndexNotFound(*idx))?;
+
+                    let p = entry.before.as_ref().ok_or(
+                        ParameterCollectionSimpleCalculationError::BeforeNotImplemented {
+                            name: entry.name().clone(),
+                        },
+                    )?;
 
                     let ctx = SimpleParameterContext {
                         timestep,
@@ -2337,21 +2629,21 @@ impl ParameterCollection {
 
                     let value = p.before(ctx, internal_state).map_err(|source| {
                         ParameterCollectionSimpleCalculationError::CalculationError {
-                            name: p.name().clone(),
+                            name: entry.name().clone(),
                             source,
                         }
                     })?;
 
                     state.set_simple_parameter_value_before(*idx, value).map_err(|source| {
                         ParameterCollectionSimpleCalculationError::F64SetStateError {
-                            name: p.name().clone(),
+                            name: entry.name().clone(),
                             source,
                         }
                     })?;
                 }
                 SimpleParameterType::Index(idx) => {
                     // Find the parameter itself
-                    let p = self
+                    let entry = self
                         .simple_u64
                         .get(*idx.deref())
                         .ok_or(ParameterCollectionSimpleCalculationError::U64IndexNotFound(*idx))?;
@@ -2359,6 +2651,12 @@ impl ParameterCollection {
                     let internal_state = internal_states
                         .get_simple_mut_u64_state(*idx)
                         .ok_or(ParameterCollectionSimpleCalculationError::U64IndexNotFound(*idx))?;
+
+                    let p = entry.before.as_ref().ok_or(
+                        ParameterCollectionSimpleCalculationError::BeforeNotImplemented {
+                            name: entry.name().clone(),
+                        },
+                    )?;
 
                     let ctx = SimpleParameterContext {
                         timestep,
@@ -2382,7 +2680,7 @@ impl ParameterCollection {
                 }
                 SimpleParameterType::Multi(idx) => {
                     // Find the parameter itself
-                    let p = self
+                    let entry = self
                         .simple_multi
                         .get(*idx.deref())
                         .ok_or(ParameterCollectionSimpleCalculationError::MultiIndexNotFound(*idx))?;
@@ -2390,6 +2688,12 @@ impl ParameterCollection {
                     let internal_state = internal_states
                         .get_simple_mut_multi_state(*idx)
                         .ok_or(ParameterCollectionSimpleCalculationError::MultiIndexNotFound(*idx))?;
+
+                    let p = entry.before.as_ref().ok_or(
+                        ParameterCollectionSimpleCalculationError::BeforeNotImplemented {
+                            name: entry.name().clone(),
+                        },
+                    )?;
 
                     let ctx = SimpleParameterContext {
                         timestep,
@@ -2425,11 +2729,11 @@ impl ParameterCollection {
         state: &mut State,
         internal_states: &mut ParameterStates,
     ) -> Result<(), ParameterCollectionSimpleCalculationError> {
-        for p in &self.simple_resolve_order {
+        for p in &self.simple_after_order {
             match p {
                 SimpleParameterType::Parameter(idx) => {
                     // Find the parameter itself
-                    let p = self
+                    let entry = self
                         .simple_f64
                         .get(*idx.deref())
                         .ok_or(ParameterCollectionSimpleCalculationError::F64IndexNotFound(*idx))?;
@@ -2438,22 +2742,49 @@ impl ParameterCollection {
                         .get_simple_mut_f64_state(*idx)
                         .ok_or(ParameterCollectionSimpleCalculationError::F64IndexNotFound(*idx))?;
 
+                    let op =
+                        entry
+                            .after
+                            .as_ref()
+                            .ok_or(ParameterCollectionSimpleCalculationError::AfterNotImplemented {
+                                name: entry.name().clone(),
+                            })?;
+
                     let ctx = SimpleParameterContext {
                         timestep,
                         scenario_index,
                         values: &state.get_simple_parameter_values(),
                     };
 
-                    p.after(ctx, internal_state).map_err(|source| {
-                        ParameterCollectionSimpleCalculationError::CalculationError {
-                            name: p.name().clone(),
-                            source,
+                    match op {
+                        SimpleAfterOperation::Value(p) => {
+                            let value = p.after(ctx, internal_state).map_err(|source| {
+                                ParameterCollectionSimpleCalculationError::CalculationError {
+                                    name: entry.name().clone(),
+                                    source,
+                                }
+                            })?;
+
+                            state.set_simple_parameter_value_after(*idx, value).map_err(|source| {
+                                ParameterCollectionSimpleCalculationError::F64SetStateError {
+                                    name: entry.name().clone(),
+                                    source,
+                                }
+                            })?;
                         }
-                    })?;
+                        SimpleAfterOperation::Hook(p) => {
+                            p.after(ctx, internal_state).map_err(|source| {
+                                ParameterCollectionSimpleCalculationError::CalculationError {
+                                    name: entry.name().clone(),
+                                    source,
+                                }
+                            })?;
+                        }
+                    }
                 }
                 SimpleParameterType::Index(idx) => {
                     // Find the parameter itself
-                    let p = self
+                    let entry = self
                         .simple_u64
                         .get(*idx.deref())
                         .ok_or(ParameterCollectionSimpleCalculationError::U64IndexNotFound(*idx))?;
@@ -2462,22 +2793,49 @@ impl ParameterCollection {
                         .get_simple_mut_u64_state(*idx)
                         .ok_or(ParameterCollectionSimpleCalculationError::U64IndexNotFound(*idx))?;
 
+                    let op =
+                        entry
+                            .after
+                            .as_ref()
+                            .ok_or(ParameterCollectionSimpleCalculationError::AfterNotImplemented {
+                                name: entry.name().clone(),
+                            })?;
+
                     let ctx = SimpleParameterContext {
                         timestep,
                         scenario_index,
                         values: &state.get_simple_parameter_values(),
                     };
 
-                    p.after(ctx, internal_state).map_err(|source| {
-                        ParameterCollectionSimpleCalculationError::CalculationError {
-                            name: p.name().clone(),
-                            source,
+                    match op {
+                        SimpleAfterOperation::Value(p) => {
+                            let value = p.after(ctx, internal_state).map_err(|source| {
+                                ParameterCollectionSimpleCalculationError::CalculationError {
+                                    name: entry.name().clone(),
+                                    source,
+                                }
+                            })?;
+
+                            state.set_simple_parameter_index_after(*idx, value).map_err(|source| {
+                                ParameterCollectionSimpleCalculationError::U64SetStateError {
+                                    name: entry.name().clone(),
+                                    source,
+                                }
+                            })?;
                         }
-                    })?;
+                        SimpleAfterOperation::Hook(p) => {
+                            p.after(ctx, internal_state).map_err(|source| {
+                                ParameterCollectionSimpleCalculationError::CalculationError {
+                                    name: entry.name().clone(),
+                                    source,
+                                }
+                            })?;
+                        }
+                    }
                 }
                 SimpleParameterType::Multi(idx) => {
                     // Find the parameter itself
-                    let p = self
+                    let entry = self
                         .simple_multi
                         .get(*idx.deref())
                         .ok_or(ParameterCollectionSimpleCalculationError::MultiIndexNotFound(*idx))?;
@@ -2486,18 +2844,45 @@ impl ParameterCollection {
                         .get_simple_mut_multi_state(*idx)
                         .ok_or(ParameterCollectionSimpleCalculationError::MultiIndexNotFound(*idx))?;
 
+                    let op =
+                        entry
+                            .after
+                            .as_ref()
+                            .ok_or(ParameterCollectionSimpleCalculationError::AfterNotImplemented {
+                                name: entry.name().clone(),
+                            })?;
+
                     let ctx = SimpleParameterContext {
                         timestep,
                         scenario_index,
                         values: &state.get_simple_parameter_values(),
                     };
 
-                    p.after(ctx, internal_state).map_err(|source| {
-                        ParameterCollectionSimpleCalculationError::CalculationError {
-                            name: p.name().clone(),
-                            source,
+                    match op {
+                        SimpleAfterOperation::Value(p) => {
+                            let value = p.after(ctx, internal_state).map_err(|source| {
+                                ParameterCollectionSimpleCalculationError::CalculationError {
+                                    name: entry.name().clone(),
+                                    source,
+                                }
+                            })?;
+
+                            state
+                                .set_simple_multi_parameter_value_after(*idx, value)
+                                .map_err(|source| ParameterCollectionSimpleCalculationError::MultiSetStateError {
+                                    name: entry.name().clone(),
+                                    source,
+                                })?;
                         }
-                    })?;
+                        SimpleAfterOperation::Hook(p) => {
+                            p.after(ctx, internal_state).map_err(|source| {
+                                ParameterCollectionSimpleCalculationError::CalculationError {
+                                    name: entry.name().clone(),
+                                    source,
+                                }
+                            })?;
+                        }
+                    }
                 }
             }
         }
@@ -2817,9 +3202,10 @@ impl ParameterCollectionBuilder {
 #[cfg(test)]
 mod tests {
     use super::{
-        BuiltParameter, ConstParameter, GeneralCalculationError, GeneralParameter, GeneralParameterContext,
-        MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder, ParameterCollectionBuilder,
-        ParameterMeta, ParameterName, ParameterState, SimpleParameter, SimpleParameterContext,
+        BuiltParameter, ConstParameter, GeneralBeforeParameter, GeneralCalculationError, GeneralParameter,
+        GeneralParameterContext, MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder,
+        ParameterCollectionBuilder, ParameterMeta, ParameterName, ParameterState, SimpleBeforeParameter,
+        SimpleParameter, SimpleParameterContext,
     };
     use crate::network::ResolutionMaps;
     use crate::parameters::errors::{ConstCalculationError, SimpleCalculationError};
@@ -2919,7 +3305,13 @@ mod tests {
             self
         }
     }
-    impl<T> SimpleParameter<T> for TestParameter
+    impl SimpleParameter for TestParameter {
+        fn as_parameter(&self) -> &dyn Parameter {
+            self
+        }
+    }
+
+    impl<T> SimpleBeforeParameter<T> for TestParameter
     where
         T: From<u8>,
     {
@@ -2927,29 +3319,27 @@ mod tests {
             &self,
             _ctx: SimpleParameterContext<'_>,
             _internal_state: &mut Option<Box<dyn ParameterState>>,
-        ) -> Result<Option<T>, SimpleCalculationError> {
-            Ok(Some(T::from(1)))
-        }
-
-        fn as_parameter(&self) -> &dyn Parameter {
-            self
+        ) -> Result<T, SimpleCalculationError> {
+            Ok(T::from(1))
         }
     }
 
-    impl SimpleParameter<MultiValue> for TestParameter {
+    impl SimpleBeforeParameter<MultiValue> for TestParameter {
         fn before(
             &self,
             _ctx: SimpleParameterContext<'_>,
             _internal_state: &mut Option<Box<dyn ParameterState>>,
-        ) -> Result<Option<MultiValue>, SimpleCalculationError> {
-            Ok(Some(MultiValue::default()))
+        ) -> Result<MultiValue, SimpleCalculationError> {
+            Ok(MultiValue::default())
         }
-
+    }
+    impl GeneralParameter for TestParameter {
         fn as_parameter(&self) -> &dyn Parameter {
             self
         }
     }
-    impl<T> GeneralParameter<T> for TestParameter
+
+    impl<T> GeneralBeforeParameter<T> for TestParameter
     where
         T: From<u8>,
     {
@@ -2957,26 +3347,18 @@ mod tests {
             &self,
             _ctx: GeneralParameterContext<'_>,
             _internal_state: &mut Option<Box<dyn ParameterState>>,
-        ) -> Result<Option<T>, GeneralCalculationError> {
-            Ok(Some(T::from(1)))
-        }
-
-        fn as_parameter(&self) -> &dyn Parameter {
-            self
+        ) -> Result<T, GeneralCalculationError> {
+            Ok(T::from(1))
         }
     }
 
-    impl GeneralParameter<MultiValue> for TestParameter {
+    impl GeneralBeforeParameter<MultiValue> for TestParameter {
         fn before(
             &self,
             _ctx: GeneralParameterContext<'_>,
             _internal_state: &mut Option<Box<dyn ParameterState>>,
-        ) -> Result<Option<MultiValue>, GeneralCalculationError> {
-            Ok(Some(MultiValue::default()))
-        }
-
-        fn as_parameter(&self) -> &dyn Parameter {
-            self
+        ) -> Result<MultiValue, GeneralCalculationError> {
+            Ok(MultiValue::default())
         }
     }
 

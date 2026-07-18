@@ -2,8 +2,9 @@ use crate::metric::{MetricF64, UnresolvedMetricF64};
 use crate::network::ResolutionMaps;
 use crate::parameters::errors::GeneralCalculationError;
 use crate::parameters::{
-    BuiltParameter, GeneralParameter, GeneralParameterContext, MaybeBuiltParameter, Parameter, ParameterBuildError,
-    ParameterBuilder, ParameterMeta, ParameterName, ParameterState,
+    BuiltParameter, GeneralBeforeParameter, GeneralParameter, GeneralParameterContext, GeneralParameterEntry,
+    MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder, ParameterMeta, ParameterName,
+    ParameterState,
 };
 use crate::resolve_metric_f64;
 
@@ -22,12 +23,21 @@ impl Parameter for Polynomial1DParameter {
     }
 }
 
-impl GeneralParameter<f64> for Polynomial1DParameter {
+impl GeneralParameter for Polynomial1DParameter {
+    fn as_parameter(&self) -> &dyn Parameter
+    where
+        Self: Sized,
+    {
+        self
+    }
+}
+
+impl GeneralBeforeParameter<f64> for Polynomial1DParameter {
     fn before(
         &self,
         ctx: GeneralParameterContext<'_>,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<Option<f64>, GeneralCalculationError> {
+    ) -> Result<f64, GeneralCalculationError> {
         // Current value
         let x = self.metric.get_value(ctx.network, ctx.state)?;
         let x = x * self.scale + self.offset;
@@ -37,14 +47,7 @@ impl GeneralParameter<f64> for Polynomial1DParameter {
             .iter()
             .enumerate()
             .fold(0.0, |y, (i, c)| y + c * x.powi(i as i32));
-        Ok(Some(y))
-    }
-
-    fn as_parameter(&self) -> &dyn Parameter
-    where
-        Self: Sized,
-    {
-        self
+        Ok(y)
     }
 }
 
@@ -98,6 +101,6 @@ impl ParameterBuilder<f64> for Polynomial1DParameterBuilder {
             offset: self.offset,
         };
 
-        Ok(MaybeBuiltParameter::Built(BuiltParameter::General(Box::new(p))))
+        Ok(BuiltParameter::General(GeneralParameterEntry::before(p)).into())
     }
 }

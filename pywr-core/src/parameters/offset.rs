@@ -2,10 +2,10 @@ use crate::metric::{MetricF64, UnresolvedMetricF64};
 use crate::network::ResolutionMaps;
 use crate::parameters::errors::GeneralCalculationError;
 use crate::parameters::{
-    ActivationFunction, BuiltParameter, GeneralParameter, GeneralParameterContext, MaybeBuiltParameter, Parameter,
-    ParameterBuildError, ParameterBuilder, ParameterMeta, ParameterName, ParameterState, VariableConfig,
-    VariableParameter, VariableParameterError, downcast_internal_state_mut, downcast_internal_state_ref,
-    downcast_variable_config_ref,
+    ActivationFunction, BuiltParameter, GeneralBeforeParameter, GeneralParameter, GeneralParameterContext,
+    GeneralParameterEntry, MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder, ParameterMeta,
+    ParameterName, ParameterState, VariableConfig, VariableParameter, VariableParameterError,
+    downcast_internal_state_mut, downcast_internal_state_ref, downcast_variable_config_ref,
 };
 use crate::resolve_metric_f64;
 
@@ -44,18 +44,7 @@ impl Parameter for OffsetParameter {
         Some(self)
     }
 }
-impl GeneralParameter<f64> for OffsetParameter {
-    fn before(
-        &self,
-        ctx: GeneralParameterContext<'_>,
-        internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<Option<f64>, GeneralCalculationError> {
-        let offset = self.offset(internal_state);
-        // Current value
-        let x = self.metric.get_value(ctx.network, ctx.state)?;
-        Ok(Some(x + offset))
-    }
-
+impl GeneralParameter for OffsetParameter {
     fn as_parameter(&self) -> &dyn Parameter
     where
         Self: Sized,
@@ -63,7 +52,18 @@ impl GeneralParameter<f64> for OffsetParameter {
         self
     }
 }
-
+impl GeneralBeforeParameter<f64> for OffsetParameter {
+    fn before(
+        &self,
+        ctx: GeneralParameterContext<'_>,
+        internal_state: &mut Option<Box<dyn ParameterState>>,
+    ) -> Result<f64, GeneralCalculationError> {
+        let offset = self.offset(internal_state);
+        // Current value
+        let x = self.metric.get_value(ctx.network, ctx.state)?;
+        Ok(x + offset)
+    }
+}
 impl VariableParameter<f64> for OffsetParameter {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
@@ -144,6 +144,6 @@ impl ParameterBuilder<f64> for OffsetParameterBuilder {
             offset: self.offset,
         };
 
-        Ok(MaybeBuiltParameter::Built(BuiltParameter::General(Box::new(p))))
+        Ok(BuiltParameter::General(GeneralParameterEntry::before(p)).into())
     }
 }

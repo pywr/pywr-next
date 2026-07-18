@@ -3,8 +3,9 @@ use crate::network::ResolutionMaps;
 use crate::parameters::errors::GeneralCalculationError;
 use crate::parameters::interpolate::interpolate;
 use crate::parameters::{
-    BuiltParameter, GeneralParameter, GeneralParameterContext, MaybeBuiltParameter, Parameter, ParameterBuildError,
-    ParameterBuilder, ParameterMeta, ParameterName, ParameterState,
+    BuiltParameter, GeneralBeforeParameter, GeneralParameter, GeneralParameterContext, GeneralParameterEntry,
+    MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder, ParameterMeta, ParameterName,
+    ParameterState,
 };
 use crate::{resolve_metric_f64, resolve_metric_f64_vec};
 
@@ -22,12 +23,21 @@ impl Parameter for ControlCurveInterpolatedParameter {
     }
 }
 
-impl GeneralParameter<f64> for ControlCurveInterpolatedParameter {
+impl GeneralParameter for ControlCurveInterpolatedParameter {
+    fn as_parameter(&self) -> &dyn Parameter
+    where
+        Self: Sized,
+    {
+        self
+    }
+}
+
+impl GeneralBeforeParameter<f64> for ControlCurveInterpolatedParameter {
     fn before(
         &self,
         ctx: GeneralParameterContext<'_>,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<Option<f64>, GeneralCalculationError> {
+    ) -> Result<f64, GeneralCalculationError> {
         // Current value
         let x = self.metric.get_value(ctx.network, ctx.state)?;
 
@@ -39,7 +49,7 @@ impl GeneralParameter<f64> for ControlCurveInterpolatedParameter {
                 let lower_value = self.values[idx + 1].get_value(ctx.network, ctx.state)?;
                 let upper_value = self.values[idx].get_value(ctx.network, ctx.state)?;
 
-                return Ok(Some(interpolate(x, cc_value, cc_prev, lower_value, upper_value)));
+                return Ok(interpolate(x, cc_value, cc_prev, lower_value, upper_value));
             }
 
             cc_prev = cc_value
@@ -51,14 +61,7 @@ impl GeneralParameter<f64> for ControlCurveInterpolatedParameter {
         let lower_value = self.values[n - 1].get_value(ctx.network, ctx.state)?;
         let upper_value = self.values[n - 2].get_value(ctx.network, ctx.state)?;
 
-        Ok(Some(interpolate(x, cc_value, cc_prev, lower_value, upper_value)))
-    }
-
-    fn as_parameter(&self) -> &dyn Parameter
-    where
-        Self: Sized,
-    {
-        self
+        Ok(interpolate(x, cc_value, cc_prev, lower_value, upper_value))
     }
 }
 
@@ -111,7 +114,7 @@ impl ParameterBuilder<f64> for ControlCurveInterpolatedParameterBuilder {
             values,
         };
 
-        let bp = BuiltParameter::General(Box::new(p));
+        let bp = BuiltParameter::General(GeneralParameterEntry::before(p));
         Ok(bp.into())
     }
 }

@@ -1,6 +1,7 @@
 use super::{
-    BuiltParameter, GeneralParameterContext, MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder,
-    ParameterName, SimpleParameter, SimpleParameterContext,
+    BuiltParameter, GeneralBeforeParameter, GeneralParameterContext, GeneralParameterEntry, MaybeBuiltParameter,
+    Parameter, ParameterBuildError, ParameterBuilder, ParameterName, SimpleBeforeParameter, SimpleParameter,
+    SimpleParameterContext, SimpleParameterEntry,
 };
 use crate::metric::{MetricF64, SimpleMetricF64, UnresolvedMetricF64};
 use crate::network::ResolutionMaps;
@@ -33,12 +34,21 @@ where
         &self.meta
     }
 }
-impl GeneralParameter<f64> for DifferenceParameter<MetricF64> {
+impl GeneralParameter for DifferenceParameter<MetricF64> {
+    fn as_parameter(&self) -> &dyn Parameter
+    where
+        Self: Sized,
+    {
+        self
+    }
+}
+
+impl GeneralBeforeParameter<f64> for DifferenceParameter<MetricF64> {
     fn before(
         &self,
         ctx: GeneralParameterContext<'_>,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<Option<f64>, GeneralCalculationError> {
+    ) -> Result<f64, GeneralCalculationError> {
         let a = self.a.get_value(ctx.network, ctx.state)?;
         let b = self.b.get_value(ctx.network, ctx.state)?;
         let min = self
@@ -52,52 +62,31 @@ impl GeneralParameter<f64> for DifferenceParameter<MetricF64> {
             .map(|m| m.get_value(ctx.network, ctx.state))
             .transpose()?;
 
-        Ok(Some(difference(a, b, min, max)))
+        Ok(difference(a, b, min, max))
     }
+}
 
+impl SimpleParameter for DifferenceParameter<SimpleMetricF64> {
     fn as_parameter(&self) -> &dyn Parameter
     where
         Self: Sized,
     {
         self
     }
-
-    fn try_into_simple(&self) -> Option<Box<dyn SimpleParameter<f64>>> {
-        // We can make a simple version if all metrics can be simplified
-        let a: SimpleMetricF64 = self.a.clone().try_into().ok()?;
-        let b: SimpleMetricF64 = self.b.clone().try_into().ok()?;
-        let min: Option<SimpleMetricF64> = self.min.as_ref().map(|m| m.clone().try_into()).transpose().ok()?;
-        let max: Option<SimpleMetricF64> = self.max.as_ref().map(|m| m.clone().try_into()).transpose().ok()?;
-
-        Some(Box::new(DifferenceParameter::<SimpleMetricF64> {
-            meta: self.meta.clone(),
-            a,
-            b,
-            min,
-            max,
-        }))
-    }
 }
 
-impl SimpleParameter<f64> for DifferenceParameter<SimpleMetricF64> {
+impl SimpleBeforeParameter<f64> for DifferenceParameter<SimpleMetricF64> {
     fn before(
         &self,
         ctx: SimpleParameterContext<'_>,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<Option<f64>, SimpleCalculationError> {
+    ) -> Result<f64, SimpleCalculationError> {
         let a = self.a.get_value(ctx.values)?;
         let b = self.b.get_value(ctx.values)?;
         let min = self.min.as_ref().map(|m| m.get_value(ctx.values)).transpose()?;
         let max = self.max.as_ref().map(|m| m.get_value(ctx.values)).transpose()?;
 
-        Ok(Some(difference(a, b, min, max)))
-    }
-
-    fn as_parameter(&self) -> &dyn Parameter
-    where
-        Self: Sized,
-    {
-        self
+        Ok(difference(a, b, min, max))
     }
 }
 
@@ -168,6 +157,25 @@ impl ParameterBuilder<f64> for DifferenceParameterBuilder {
             None => None,
         };
 
+        {
+            // We can make a simple version if all metrics can be simplified
+            let a: Result<SimpleMetricF64, _> = a.clone().try_into();
+            let b: Result<SimpleMetricF64, _> = b.clone().try_into();
+            let min: Result<Option<SimpleMetricF64>, _> = min.as_ref().map(|m| m.clone().try_into()).transpose();
+            let max: Result<Option<SimpleMetricF64>, _> = max.as_ref().map(|m| m.clone().try_into()).transpose();
+
+            if let (Ok(a), Ok(b), Ok(min), Ok(max)) = (a, b, min, max) {
+                let p = DifferenceParameter {
+                    meta: self.meta,
+                    a,
+                    b,
+                    min,
+                    max,
+                };
+                return Ok(BuiltParameter::Simple(SimpleParameterEntry::before(p)).into());
+            }
+        }
+
         let p = DifferenceParameter {
             meta: self.meta,
             a,
@@ -176,7 +184,7 @@ impl ParameterBuilder<f64> for DifferenceParameterBuilder {
             max,
         };
 
-        Ok(MaybeBuiltParameter::Built(BuiltParameter::General(Box::new(p))))
+        Ok(BuiltParameter::General(GeneralParameterEntry::before(p)).into())
     }
 }
 

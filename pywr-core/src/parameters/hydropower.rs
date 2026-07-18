@@ -2,8 +2,9 @@ use crate::metric::{MetricF64, UnresolvedMetricF64};
 use crate::network::{Network, ResolutionMaps};
 use crate::parameters::errors::GeneralCalculationError;
 use crate::parameters::{
-    BuiltParameter, GeneralParameter, GeneralParameterContext, MaybeBuiltParameter, Parameter, ParameterBuildError,
-    ParameterBuilder, ParameterMeta, ParameterName, ParameterState,
+    BuiltParameter, GeneralAfterParameter, GeneralBeforeParameter, GeneralParameter, GeneralParameterContext,
+    GeneralParameterEntry, MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder, ParameterMeta,
+    ParameterName, ParameterState,
 };
 use crate::resolve_optional_metric_f64;
 use crate::state::State;
@@ -56,21 +57,29 @@ impl Parameter for HydropowerTargetParameter {
     }
 }
 
-impl GeneralParameter<f64> for HydropowerTargetParameter {
+impl GeneralParameter for HydropowerTargetParameter {
+    fn as_parameter(&self) -> &dyn Parameter
+    where
+        Self: Sized,
+    {
+        self
+    }
+}
+
+impl GeneralBeforeParameter<f64> for HydropowerTargetParameter {
     fn before(
         &self,
         ctx: GeneralParameterContext<'_>,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<Option<f64>, GeneralCalculationError> {
+    ) -> Result<f64, GeneralCalculationError> {
         let head = self.head(ctx.network, ctx.state)?;
-
-        // apply the minimum head threshold
-        if head <= self.turbine_min_head {
-            return Ok(Some(0.0));
-        }
 
         // Get the flow from the current node
         if let Some(target) = &self.target {
+            // apply the minimum head threshold
+            if head <= self.turbine_min_head {
+                return Ok(0.0);
+            }
             let power = target.get_value(ctx.network, ctx.state)?;
             let mut q = inverse_hydropower_calculation(
                 power,
@@ -94,18 +103,22 @@ impl GeneralParameter<f64> for HydropowerTargetParameter {
                     message: "The calculated flow is negative".into(),
                 });
             }
-            Ok(Some(q))
+            Ok(q)
         } else {
-            // No target flow therefore can not calculate a flow
-            Ok(None)
+            Err(GeneralCalculationError::PhaseNotEnabled {
+                ty: "HydropowerTargetParameter".into(),
+                phase: "before".into(),
+                message: "HydropowerTargetParameter must have a `target` defined for the before phase.".into(),
+            })
         }
     }
-
+}
+impl GeneralAfterParameter<f64> for HydropowerTargetParameter {
     fn after(
         &self,
         ctx: GeneralParameterContext<'_>,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<Option<f64>, GeneralCalculationError> {
+    ) -> Result<f64, GeneralCalculationError> {
         if let Some(actual_flow) = &self.actual_flow {
             let flow = actual_flow.get_value(ctx.network, ctx.state)?;
             // Calculate the head (the head may be negative)
@@ -113,28 +126,24 @@ impl GeneralParameter<f64> for HydropowerTargetParameter {
 
             // apply the minimum head threshold
             if head <= self.turbine_min_head {
-                return Ok(Some(0.0));
+                return Ok(0.0);
             }
 
-            Ok(Some(hydropower_calculation(
+            Ok(hydropower_calculation(
                 flow,
                 head,
                 self.turbine_efficiency,
                 self.flow_unit_conversion,
                 self.energy_unit_conversion,
                 self.water_density,
-            )))
+            ))
         } else {
-            // No actual flow therefore can not calculate power
-            Ok(None)
+            Err(GeneralCalculationError::PhaseNotEnabled {
+                ty: "HydropowerTargetParameter".into(),
+                phase: "after".into(),
+                message: "HydropowerTargetParameter must have an `actual_flow` defined for the after phase.".into(),
+            })
         }
-    }
-
-    fn as_parameter(&self) -> &dyn Parameter
-    where
-        Self: Sized,
-    {
-        self
     }
 }
 
@@ -204,6 +213,21 @@ impl ParameterBuilder<f64> for HydropowerTargetParameterBuilder {
             energy_unit_conversion: self.energy_unit_conversion,
         };
 
-        Ok(MaybeBuiltParameter::Built(BuiltParameter::General(Box::new(p))))
+        // Determine which calculation phase(s) the parameter will be used in
+        // based on whether the target and actual flow are provided.
+        // If neither is provided, return an error.
+        let entry = match (p.target.is_some(), p.actual_flow.is_some()) {
+            (true, true) => GeneralParameterEntry::both(p),
+            (true, false) => GeneralParameterEntry::before(p),
+            (false, true) => GeneralParameterEntry::after(p),
+            (false, false) => {
+                return Err(ParameterBuildError::NoCalculationPhase {
+                    detail: "HydropowerTargetParameter must have at least one of `target` or `actual_flow` defined."
+                        .into(),
+                });
+            }
+        };
+
+        Ok(BuiltParameter::General(entry).into())
     }
 }

@@ -3,8 +3,9 @@ use crate::network::ResolutionMaps;
 use crate::parameters::errors::GeneralCalculationError;
 use crate::parameters::interpolate::interpolate;
 use crate::parameters::{
-    BuiltParameter, GeneralParameter, GeneralParameterContext, MaybeBuiltParameter, Parameter, ParameterBuildError,
-    ParameterBuilder, ParameterMeta, ParameterName, ParameterState,
+    BuiltParameter, GeneralBeforeParameter, GeneralParameter, GeneralParameterContext, GeneralParameterEntry,
+    MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder, ParameterMeta, ParameterName,
+    ParameterState,
 };
 use crate::{resolve_metric_f64, resolve_metric_f64_vec};
 
@@ -23,12 +24,21 @@ impl Parameter for PiecewiseInterpolatedParameter {
         &self.meta
     }
 }
-impl GeneralParameter<f64> for PiecewiseInterpolatedParameter {
+impl GeneralParameter for PiecewiseInterpolatedParameter {
+    fn as_parameter(&self) -> &dyn Parameter
+    where
+        Self: Sized,
+    {
+        self
+    }
+}
+
+impl GeneralBeforeParameter<f64> for PiecewiseInterpolatedParameter {
     fn before(
         &self,
         ctx: GeneralParameterContext<'_>,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<Option<f64>, GeneralCalculationError> {
+    ) -> Result<f64, GeneralCalculationError> {
         // Current value
         let x = self.metric.get_value(ctx.network, ctx.state)?;
 
@@ -44,7 +54,7 @@ impl GeneralParameter<f64> for PiecewiseInterpolatedParameter {
                         index: idx,
                         length: self.values.len(),
                     })?;
-                return Ok(Some(interpolate(x, cc_value, cc_previous_value, v[1], v[0])));
+                return Ok(interpolate(x, cc_value, cc_previous_value, v[1], v[0]));
             }
             cc_previous_value = cc_value;
         }
@@ -56,14 +66,7 @@ impl GeneralParameter<f64> for PiecewiseInterpolatedParameter {
                 index: 0,
                 length: self.values.len(),
             })?;
-        Ok(Some(interpolate(x, self.minimum, cc_previous_value, v[1], v[0])))
-    }
-
-    fn as_parameter(&self) -> &dyn Parameter
-    where
-        Self: Sized,
-    {
-        self
+        Ok(interpolate(x, self.minimum, cc_previous_value, v[1], v[0]))
     }
 }
 
@@ -124,7 +127,7 @@ impl ParameterBuilder<f64> for PiecewiseInterpolatedParameterBuilder {
             minimum: self.minimum,
         };
 
-        let bp = BuiltParameter::General(Box::new(p));
+        let bp = BuiltParameter::General(GeneralParameterEntry::before(p));
         Ok(bp.into())
     }
 }

@@ -2,8 +2,9 @@ use crate::metric::{MetricF64, UnresolvedMetricF64};
 use crate::network::ResolutionMaps;
 use crate::parameters::errors::GeneralCalculationError;
 use crate::parameters::{
-    BuiltParameter, GeneralParameter, GeneralParameterContext, MaybeBuiltParameter, Parameter, ParameterBuildError,
-    ParameterBuilder, ParameterMeta, ParameterName, ParameterState,
+    BuiltParameter, GeneralBeforeParameter, GeneralParameter, GeneralParameterContext, GeneralParameterEntry,
+    MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder, ParameterMeta, ParameterName,
+    ParameterState,
 };
 use crate::{resolve_metric_f64, resolve_metric_f64_vec};
 
@@ -20,28 +21,31 @@ impl Parameter for ControlCurveIndexParameter {
     }
 }
 
-impl GeneralParameter<u64> for ControlCurveIndexParameter {
+impl GeneralParameter for ControlCurveIndexParameter {
+    fn as_parameter(&self) -> &dyn Parameter
+    where
+        Self: Sized,
+    {
+        self
+    }
+}
+
+impl GeneralBeforeParameter<u64> for ControlCurveIndexParameter {
     fn before(
         &self,
         ctx: GeneralParameterContext<'_>,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<Option<u64>, GeneralCalculationError> {
+    ) -> Result<u64, GeneralCalculationError> {
         // Current value
         let x = self.metric.get_value(ctx.network, ctx.state)?;
 
         for (idx, control_curve) in self.control_curves.iter().enumerate() {
             let cc_value = control_curve.get_value(ctx.network, ctx.state)?;
             if x >= cc_value {
-                return Ok(Some(idx as u64));
+                return Ok(idx as u64);
             }
         }
-        Ok(Some(self.control_curves.len() as u64))
-    }
-    fn as_parameter(&self) -> &dyn Parameter
-    where
-        Self: Sized,
-    {
-        self
+        Ok(self.control_curves.len() as u64)
     }
 }
 
@@ -85,6 +89,6 @@ impl ParameterBuilder<u64> for ControlCurveIndexParameterBuilder {
             control_curves,
         };
 
-        Ok(MaybeBuiltParameter::Built(BuiltParameter::General(Box::new(p))))
+        Ok(BuiltParameter::General(GeneralParameterEntry::before(p)).into())
     }
 }

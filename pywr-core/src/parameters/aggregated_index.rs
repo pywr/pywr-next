@@ -1,11 +1,16 @@
 /// AggregatedIndexParameter
 ///
 use super::{
-    BuiltParameter, ConstParameter, GeneralParameterContext, MaybeBuiltParameter, Parameter, ParameterBuildError,
-    ParameterBuilder, ParameterName, ParameterState, SimpleParameter, SimpleParameterContext,
+    BuiltParameter, ConstParameter, GeneralAfterParameter, GeneralBeforeParameter, GeneralParameterContext,
+    GeneralParameterEntry, MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder, ParameterName,
+    ParameterState, SimpleAfterParameter, SimpleBeforeParameter, SimpleParameter, SimpleParameterContext,
+    SimpleParameterEntry,
 };
 use crate::agg_funcs::AggFuncU64;
-use crate::metric::{ConstantMetricU64, MetricU64, SimpleMetricU64, UnresolvedMetricU64};
+use crate::metric::{
+    ConstantMetricU64, MetricU64, SimpleMetricU64, UnresolvedMetricU64, try_into_constant_metrics_u64,
+    try_into_simple_metrics_u64,
+};
 use crate::network::ResolutionMaps;
 use crate::parameters::errors::{ConstCalculationError, GeneralCalculationError, SimpleCalculationError};
 use crate::parameters::{GeneralParameter, ParameterMeta};
@@ -30,81 +35,85 @@ where
     }
 }
 
-impl GeneralParameter<u64> for AggregatedIndexParameter<MetricU64> {
+impl GeneralParameter for AggregatedIndexParameter<MetricU64> {
+    fn as_parameter(&self) -> &dyn Parameter
+    where
+        Self: Sized,
+    {
+        self
+    }
+}
+
+impl GeneralBeforeParameter<u64> for AggregatedIndexParameter<MetricU64> {
     fn before(
         &self,
         ctx: GeneralParameterContext<'_>,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<Option<u64>, GeneralCalculationError> {
+    ) -> Result<u64, GeneralCalculationError> {
         let values = self
             .metrics
             .iter()
             .map(|p| p.get_value(ctx.network, ctx.state))
             .collect::<Result<Vec<_>, _>>()?;
 
-        Ok(Some(self.agg_func.calc_iter_u64(&values)?))
+        Ok(self.agg_func.calc_iter_u64(&values)?)
     }
+}
 
+impl GeneralAfterParameter<u64> for AggregatedIndexParameter<MetricU64> {
+    fn after(
+        &self,
+        ctx: GeneralParameterContext<'_>,
+        _internal_state: &mut Option<Box<dyn ParameterState>>,
+    ) -> Result<u64, GeneralCalculationError> {
+        let values = self
+            .metrics
+            .iter()
+            .map(|p| p.get_value(ctx.network, ctx.state))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(self.agg_func.calc_iter_u64(&values)?)
+    }
+}
+
+impl SimpleParameter for AggregatedIndexParameter<SimpleMetricU64> {
     fn as_parameter(&self) -> &dyn Parameter
     where
         Self: Sized,
     {
         self
     }
-
-    fn try_into_simple(&self) -> Option<Box<dyn SimpleParameter<u64>>> {
-        // We can make a simple version if all metrics can be simplified
-        let metrics: Vec<SimpleMetricU64> = self
-            .metrics
-            .clone()
-            .into_iter()
-            .map(|m| m.try_into().ok())
-            .collect::<Option<Vec<_>>>()?;
-
-        Some(Box::new(AggregatedIndexParameter::<SimpleMetricU64> {
-            meta: self.meta.clone(),
-            metrics,
-            agg_func: self.agg_func.clone(),
-        }))
-    }
 }
 
-impl SimpleParameter<u64> for AggregatedIndexParameter<SimpleMetricU64> {
+impl SimpleBeforeParameter<u64> for AggregatedIndexParameter<SimpleMetricU64> {
     fn before(
         &self,
         ctx: SimpleParameterContext<'_>,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<Option<u64>, SimpleCalculationError> {
+    ) -> Result<u64, SimpleCalculationError> {
         let values = self
             .metrics
             .iter()
             .map(|p| p.get_value(ctx.values))
             .collect::<Result<Vec<_>, _>>()?;
 
-        Ok(Some(self.agg_func.calc_iter_u64(&values)?))
+        Ok(self.agg_func.calc_iter_u64(&values)?)
     }
+}
 
-    fn as_parameter(&self) -> &dyn Parameter
-    where
-        Self: Sized,
-    {
-        self
-    }
-
-    fn try_into_const(&self) -> Option<Box<dyn ConstParameter<u64>>> {
-        // We can make a constant version if all metrics can be simplified to constants
-        let metrics: Vec<ConstantMetricU64> = self
+impl SimpleAfterParameter<u64> for AggregatedIndexParameter<SimpleMetricU64> {
+    fn after(
+        &self,
+        ctx: SimpleParameterContext<'_>,
+        _internal_state: &mut Option<Box<dyn ParameterState>>,
+    ) -> Result<u64, SimpleCalculationError> {
+        let values = self
             .metrics
-            .clone()
-            .into_iter()
-            .map(|m| m.try_into().ok())
-            .collect::<Option<Vec<_>>>()?;
+            .iter()
+            .map(|p| p.get_value(ctx.values))
+            .collect::<Result<Vec<_>, _>>()?;
 
-        Some(Box::new(AggregatedIndexParameter::<ConstantMetricU64> {
-            meta: self.meta.clone(),
-            metrics,
-            agg_func: self.agg_func.clone(),
-        }))
+        Ok(self.agg_func.calc_iter_u64(&values)?)
     }
 }
 
@@ -165,13 +174,39 @@ impl ParameterBuilder<u64> for AggregatedIndexParameterBuilder {
     ) -> Result<MaybeBuiltParameter<u64>, ParameterBuildError> {
         let metrics = resolve_metric_u64_vec!(self, &self.metrics, resolution_maps, "metrics");
 
-        let p = AggregatedIndexParameter {
-            meta: self.meta,
-            metrics,
-            agg_func: self.agg_func,
-        };
+        let meta = self.meta;
+        let agg_func = self.agg_func;
 
-        let bp = BuiltParameter::General(Box::new(p));
-        Ok(bp.into())
+        // Try the narrowest dependency class first.
+        if let Some(metrics) = try_into_constant_metrics_u64(&metrics) {
+            return Ok(
+                BuiltParameter::Const(Box::new(AggregatedIndexParameter::<ConstantMetricU64> {
+                    meta,
+                    metrics,
+                    agg_func,
+                }))
+                .into(),
+            );
+        }
+
+        if let Some(metrics) = try_into_simple_metrics_u64(&metrics) {
+            return Ok(BuiltParameter::Simple(SimpleParameterEntry::both(
+                AggregatedIndexParameter::<SimpleMetricU64> {
+                    meta,
+                    metrics,
+                    agg_func,
+                },
+            ))
+            .into());
+        }
+
+        Ok(
+            BuiltParameter::General(GeneralParameterEntry::both(AggregatedIndexParameter::<MetricU64> {
+                meta,
+                metrics,
+                agg_func,
+            }))
+            .into(),
+        )
     }
 }

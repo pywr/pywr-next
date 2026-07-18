@@ -2,8 +2,9 @@ use crate::metric::{MetricF64, UnresolvedMetricF64};
 use crate::network::ResolutionMaps;
 use crate::parameters::errors::GeneralCalculationError;
 use crate::parameters::{
-    BuiltParameter, GeneralParameter, GeneralParameterContext, MaybeBuiltParameter, Parameter, ParameterBuildError,
-    ParameterBuilder, ParameterMeta, ParameterName, ParameterState,
+    BuiltParameter, GeneralBeforeParameter, GeneralParameter, GeneralParameterContext, GeneralParameterEntry,
+    MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder, ParameterMeta, ParameterName,
+    ParameterState,
 };
 use crate::{resolve_metric_f64, resolve_metric_f64_vec};
 
@@ -21,12 +22,21 @@ impl Parameter for ControlCurveParameter {
     }
 }
 
-impl GeneralParameter<f64> for ControlCurveParameter {
+impl GeneralParameter for ControlCurveParameter {
+    fn as_parameter(&self) -> &dyn Parameter
+    where
+        Self: Sized,
+    {
+        self
+    }
+}
+
+impl GeneralBeforeParameter<f64> for ControlCurveParameter {
     fn before(
         &self,
         ctx: GeneralParameterContext<'_>,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<Option<f64>, GeneralCalculationError> {
+    ) -> Result<f64, GeneralCalculationError> {
         // Current value
         let x = self.metric.get_value(ctx.network, ctx.state)?;
 
@@ -41,7 +51,7 @@ impl GeneralParameter<f64> for ControlCurveParameter {
                         index: idx,
                         length: self.values.len(),
                     })?;
-                return Ok(Some(value.get_value(ctx.network, ctx.state)?));
+                return Ok(value.get_value(ctx.network, ctx.state)?);
             }
         }
 
@@ -54,14 +64,7 @@ impl GeneralParameter<f64> for ControlCurveParameter {
                 length: self.values.len(),
             })?;
 
-        Ok(Some(value.get_value(ctx.network, ctx.state)?))
-    }
-
-    fn as_parameter(&self) -> &dyn Parameter
-    where
-        Self: Sized,
-    {
-        self
+        Ok(value.get_value(ctx.network, ctx.state)?)
     }
 }
 
@@ -116,6 +119,6 @@ impl ParameterBuilder<f64> for ControlCurveParameterBuilder {
             values,
         };
 
-        Ok(MaybeBuiltParameter::Built(BuiltParameter::General(Box::new(p))))
+        Ok(BuiltParameter::General(GeneralParameterEntry::before(p)).into())
     }
 }

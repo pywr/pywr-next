@@ -242,41 +242,41 @@ impl MultiValue {
 /// Values from parameters
 #[derive(Debug, Clone)]
 struct ParameterValues {
-    values: Vec<Option<f64>>,
-    indices: Vec<Option<u64>>,
-    multi_values: Vec<Option<MultiValue>>,
+    values: Vec<f64>,
+    indices: Vec<u64>,
+    multi_values: Vec<MultiValue>,
 }
 
 impl ParameterValues {
     fn new(num_values: usize, num_indices: usize, num_multi_values: usize) -> Self {
         Self {
-            values: vec![None; num_values],
-            indices: vec![None; num_indices],
-            multi_values: vec![None; num_multi_values],
+            values: vec![0.0; num_values],
+            indices: vec![0; num_indices],
+            multi_values: vec![MultiValue::default(); num_multi_values],
         }
     }
 
     fn get_value(&self, idx: usize) -> Option<f64> {
-        self.values.get(idx).copied().flatten()
+        self.values.get(idx).copied()
     }
 
-    fn get_value_mut(&mut self, idx: usize) -> Option<&mut Option<f64>> {
+    fn get_value_mut(&mut self, idx: usize) -> Option<&mut f64> {
         self.values.get_mut(idx)
     }
 
     fn get_index(&self, idx: usize) -> Option<u64> {
-        self.indices.get(idx).copied().flatten()
+        self.indices.get(idx).copied()
     }
 
-    fn get_index_mut(&mut self, idx: usize) -> Option<&mut Option<u64>> {
+    fn get_index_mut(&mut self, idx: usize) -> Option<&mut u64> {
         self.indices.get_mut(idx)
     }
 
     fn get_multi_value(&self, idx: usize) -> Option<&MultiValue> {
-        self.multi_values.get(idx).and_then(|s| s.as_ref())
+        self.multi_values.get(idx)
     }
 
-    fn get_multi_value_mut(&mut self, idx: usize) -> Option<&mut Option<MultiValue>> {
+    fn get_multi_value_mut(&mut self, idx: usize) -> Option<&mut MultiValue> {
         self.multi_values.get_mut(idx)
     }
 }
@@ -305,34 +305,28 @@ impl ParameterValuesCollection {
 
 #[derive(Default)]
 pub struct ParameterValuesRef<'a> {
-    values: &'a [Option<f64>],
-    indices: &'a [Option<u64>],
-    multi_values: &'a [Option<MultiValue>],
+    values: &'a [f64],
+    indices: &'a [u64],
+    multi_values: &'a [MultiValue],
 }
 
 impl ParameterValuesRef<'_> {
     /// Get the value at the given index.
     fn get_value(&self, idx: usize) -> Option<f64> {
-        self.values.get(idx).copied().flatten()
+        self.values.get(idx).copied()
     }
 
     /// Get the index at the given index.
     fn get_index(&self, idx: usize) -> Option<u64> {
-        self.indices.get(idx).copied().flatten()
+        self.indices.get(idx).copied()
     }
 
     fn get_multi_value(&self, idx: usize, key: &str) -> Option<f64> {
-        self.multi_values
-            .get(idx)
-            .and_then(|s| s.as_ref().map(|mv| mv.get_value(key).copied()))
-            .flatten()
+        self.multi_values.get(idx).and_then(|mv| mv.get_value(key).copied())
     }
 
     fn get_multi_index(&self, idx: usize, key: &str) -> Option<u64> {
-        self.multi_values
-            .get(idx)
-            .and_then(|s| s.as_ref().map(|mv| mv.get_index(key).copied()))
-            .flatten()
+        self.multi_values.get(idx).and_then(|mv| mv.get_index(key).copied())
     }
 }
 
@@ -808,7 +802,7 @@ impl State {
     pub fn set_general_parameter_value_before(
         &mut self,
         idx: GeneralParameterIndex<f64>,
-        value: Option<f64>,
+        value: f64,
     ) -> Result<(), SetStateError<GeneralParameterIndex<f64>>> {
         let v = self
             .parameters_before
@@ -816,7 +810,7 @@ impl State {
             .get_value_mut(*idx)
             .ok_or(SetStateError::IndexNotFound(idx))?;
 
-        if value.is_some_and(|v| v.is_nan()) {
+        if value.is_nan() {
             return Err(SetStateError::NaNValue(idx));
         }
 
@@ -829,7 +823,7 @@ impl State {
     pub fn set_general_parameter_value_after(
         &mut self,
         idx: GeneralParameterIndex<f64>,
-        value: Option<f64>,
+        value: f64,
     ) -> Result<(), SetStateError<GeneralParameterIndex<f64>>> {
         let v = self
             .parameters_after
@@ -837,7 +831,7 @@ impl State {
             .get_value_mut(*idx)
             .ok_or(SetStateError::IndexNotFound(idx))?;
 
-        if value.is_some_and(|v| v.is_nan()) {
+        if value.is_nan() {
             return Err(SetStateError::NaNValue(idx));
         }
 
@@ -849,7 +843,7 @@ impl State {
     pub fn set_simple_parameter_value_before(
         &mut self,
         idx: SimpleParameterIndex<f64>,
-        value: Option<f64>,
+        value: f64,
     ) -> Result<(), SetStateError<SimpleParameterIndex<f64>>> {
         let v = self
             .parameters_before
@@ -857,7 +851,27 @@ impl State {
             .get_value_mut(*idx)
             .ok_or(SetStateError::IndexNotFound(idx))?;
 
-        if value.is_some_and(|v| v.is_nan()) {
+        if value.is_nan() {
+            return Err(SetStateError::NaNValue(idx));
+        }
+
+        *v = value;
+
+        Ok(())
+    }
+
+    pub fn set_simple_parameter_value_after(
+        &mut self,
+        idx: SimpleParameterIndex<f64>,
+        value: f64,
+    ) -> Result<(), SetStateError<SimpleParameterIndex<f64>>> {
+        let v = self
+            .parameters_after
+            .simple
+            .get_value_mut(*idx)
+            .ok_or(SetStateError::IndexNotFound(idx))?;
+
+        if value.is_nan() {
             return Err(SetStateError::NaNValue(idx));
         }
 
@@ -880,7 +894,7 @@ impl State {
             return Err(SetStateError::NaNValue(idx));
         }
 
-        *v = Some(value);
+        *v = value;
 
         Ok(())
     }
@@ -921,7 +935,7 @@ impl State {
     pub fn set_general_parameter_index_before(
         &mut self,
         idx: GeneralParameterIndex<u64>,
-        value: Option<u64>,
+        value: u64,
     ) -> Result<(), SetStateError<GeneralParameterIndex<u64>>> {
         let v = self
             .parameters_before
@@ -937,7 +951,7 @@ impl State {
     pub fn set_general_parameter_index_after(
         &mut self,
         idx: GeneralParameterIndex<u64>,
-        value: Option<u64>,
+        value: u64,
     ) -> Result<(), SetStateError<GeneralParameterIndex<u64>>> {
         let v = self
             .parameters_after
@@ -953,7 +967,7 @@ impl State {
     pub fn set_simple_parameter_index_before(
         &mut self,
         idx: SimpleParameterIndex<u64>,
-        value: Option<u64>,
+        value: u64,
     ) -> Result<(), SetStateError<SimpleParameterIndex<u64>>> {
         let v = self
             .parameters_before
@@ -969,7 +983,7 @@ impl State {
     pub fn set_simple_parameter_index_after(
         &mut self,
         idx: SimpleParameterIndex<u64>,
-        value: Option<u64>,
+        value: u64,
     ) -> Result<(), SetStateError<SimpleParameterIndex<u64>>> {
         let v = self
             .parameters_after
@@ -992,7 +1006,7 @@ impl State {
             .get_index_mut(*idx)
             .ok_or(SetStateError::IndexNotFound(idx))?;
 
-        *v = Some(value);
+        *v = value;
 
         Ok(())
     }
@@ -1115,7 +1129,7 @@ impl State {
     pub fn set_general_multi_parameter_value_before(
         &mut self,
         idx: GeneralParameterIndex<MultiValue>,
-        value: Option<MultiValue>,
+        value: MultiValue,
     ) -> Result<(), SetStateError<GeneralParameterIndex<MultiValue>>> {
         let mv = self
             .parameters_before
@@ -1123,7 +1137,7 @@ impl State {
             .get_multi_value_mut(*idx)
             .ok_or(SetStateError::IndexNotFound(idx))?;
 
-        if value.as_ref().is_some_and(|mv| mv.has_nan()) {
+        if value.has_nan() {
             return Err(SetStateError::NaNValue(idx));
         }
 
@@ -1135,7 +1149,7 @@ impl State {
     pub fn set_general_multi_parameter_value_after(
         &mut self,
         idx: GeneralParameterIndex<MultiValue>,
-        value: Option<MultiValue>,
+        value: MultiValue,
     ) -> Result<(), SetStateError<GeneralParameterIndex<MultiValue>>> {
         let mv = self
             .parameters_after
@@ -1143,7 +1157,7 @@ impl State {
             .get_multi_value_mut(*idx)
             .ok_or(SetStateError::IndexNotFound(idx))?;
 
-        if value.as_ref().is_some_and(|mv| mv.has_nan()) {
+        if value.has_nan() {
             return Err(SetStateError::NaNValue(idx));
         }
 
@@ -1155,7 +1169,7 @@ impl State {
     pub fn set_simple_multi_parameter_value_before(
         &mut self,
         idx: SimpleParameterIndex<MultiValue>,
-        value: Option<MultiValue>,
+        value: MultiValue,
     ) -> Result<(), SetStateError<SimpleParameterIndex<MultiValue>>> {
         let mv = self
             .parameters_before
@@ -1163,7 +1177,7 @@ impl State {
             .get_multi_value_mut(*idx)
             .ok_or(SetStateError::IndexNotFound(idx))?;
 
-        if value.as_ref().is_some_and(|mv| mv.has_nan()) {
+        if value.has_nan() {
             return Err(SetStateError::NaNValue(idx));
         }
 
@@ -1175,7 +1189,7 @@ impl State {
     pub fn set_simple_multi_parameter_value_after(
         &mut self,
         idx: SimpleParameterIndex<MultiValue>,
-        value: Option<MultiValue>,
+        value: MultiValue,
     ) -> Result<(), SetStateError<SimpleParameterIndex<MultiValue>>> {
         let mv = self
             .parameters_after
@@ -1183,7 +1197,7 @@ impl State {
             .get_multi_value_mut(*idx)
             .ok_or(SetStateError::IndexNotFound(idx))?;
 
-        if value.as_ref().is_some_and(|mv| mv.has_nan()) {
+        if value.has_nan() {
             return Err(SetStateError::NaNValue(idx));
         }
 
@@ -1206,7 +1220,7 @@ impl State {
             return Err(SetStateError::NaNValue(idx));
         }
 
-        *mv = Some(value);
+        *mv = value;
 
         Ok(())
     }

@@ -3,8 +3,9 @@ use crate::network::ResolutionMaps;
 use crate::parameters::errors::GeneralCalculationError;
 use crate::parameters::interpolate::linear_interpolation;
 use crate::parameters::{
-    BuiltParameter, GeneralParameter, GeneralParameterContext, MaybeBuiltParameter, Parameter, ParameterBuildError,
-    ParameterBuilder, ParameterMeta, ParameterName, ParameterState,
+    BuiltParameter, GeneralBeforeParameter, GeneralParameter, GeneralParameterContext, GeneralParameterEntry,
+    MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder, ParameterMeta, ParameterName,
+    ParameterState,
 };
 use crate::resolve_metric_f64;
 
@@ -22,12 +23,21 @@ impl Parameter for InterpolatedParameter {
         &self.meta
     }
 }
-impl GeneralParameter<f64> for InterpolatedParameter {
+impl GeneralParameter for InterpolatedParameter {
+    fn as_parameter(&self) -> &dyn Parameter
+    where
+        Self: Sized,
+    {
+        self
+    }
+}
+
+impl GeneralBeforeParameter<f64> for InterpolatedParameter {
     fn before(
         &self,
         ctx: GeneralParameterContext<'_>,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<Option<f64>, GeneralCalculationError> {
+    ) -> Result<f64, GeneralCalculationError> {
         // Current value
         let x = self.x.get_value(ctx.network, ctx.state)?;
 
@@ -44,14 +54,7 @@ impl GeneralParameter<f64> for InterpolatedParameter {
 
         let f = linear_interpolation(x, &points, self.error_on_bounds)?;
 
-        Ok(Some(f))
-    }
-
-    fn as_parameter(&self) -> &dyn Parameter
-    where
-        Self: Sized,
-    {
-        self
+        Ok(f)
     }
 }
 
@@ -108,6 +111,6 @@ impl ParameterBuilder<f64> for InterpolatedParameterBuilder {
             error_on_bounds: self.error_on_bounds,
         };
 
-        Ok(MaybeBuiltParameter::Built(BuiltParameter::General(Box::new(p))))
+        Ok(BuiltParameter::General(GeneralParameterEntry::before(p)).into())
     }
 }

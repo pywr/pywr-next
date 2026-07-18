@@ -2,7 +2,8 @@ use crate::network::ResolutionMaps;
 use crate::parameters::errors::SimpleCalculationError;
 use crate::parameters::{
     BuiltParameter, MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder, ParameterMeta,
-    ParameterName, ParameterState, SimpleParameter, SimpleParameterContext,
+    ParameterName, ParameterState, SimpleBeforeParameter, SimpleParameter, SimpleParameterContext,
+    SimpleParameterEntry,
 };
 use chrono::Timelike;
 
@@ -21,20 +22,22 @@ impl Parameter for DiurnalProfileParameter {
     }
 }
 
-impl SimpleParameter<f64> for DiurnalProfileParameter {
-    fn before(
-        &self,
-        ctx: SimpleParameterContext<'_>,
-        _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<Option<f64>, SimpleCalculationError> {
-        Ok(Some(self.values[ctx.timestep.date.time().hour() as usize]))
-    }
-
+impl SimpleParameter for DiurnalProfileParameter {
     fn as_parameter(&self) -> &dyn Parameter
     where
         Self: Sized,
     {
         self
+    }
+}
+
+impl SimpleBeforeParameter<f64> for DiurnalProfileParameter {
+    fn before(
+        &self,
+        ctx: SimpleParameterContext<'_>,
+        _internal_state: &mut Option<Box<dyn ParameterState>>,
+    ) -> Result<f64, SimpleCalculationError> {
+        Ok(self.values[ctx.timestep.date.time().hour() as usize])
     }
 }
 
@@ -67,6 +70,6 @@ impl ParameterBuilder<f64> for DiurnalProfileParameterBuilder {
             values: self.values,
         };
 
-        Ok(MaybeBuiltParameter::Built(BuiltParameter::Simple(Box::new(p))))
+        Ok(BuiltParameter::Simple(SimpleParameterEntry::before(p)).into())
     }
 }

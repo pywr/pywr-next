@@ -2,8 +2,9 @@ use crate::metric::{MetricF64, UnresolvedMetricF64};
 use crate::network::ResolutionMaps;
 use crate::parameters::errors::GeneralCalculationError;
 use crate::parameters::{
-    BuiltParameter, GeneralParameter, GeneralParameterContext, MaybeBuiltParameter, Parameter, ParameterBuildError,
-    ParameterBuilder, ParameterMeta, ParameterName, ParameterState,
+    BuiltParameter, GeneralBeforeParameter, GeneralParameter, GeneralParameterContext, GeneralParameterEntry,
+    MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder, ParameterMeta, ParameterName,
+    ParameterState,
 };
 use crate::resolve_metric_f64;
 use crate::state::MultiValue;
@@ -30,12 +31,21 @@ impl Parameter for ApportionParameter {
     }
 }
 
-impl GeneralParameter<MultiValue> for ApportionParameter {
+impl GeneralParameter for ApportionParameter {
+    fn as_parameter(&self) -> &dyn Parameter
+    where
+        Self: Sized,
+    {
+        self
+    }
+}
+
+impl GeneralBeforeParameter<MultiValue> for ApportionParameter {
     fn before(
         &self,
         ctx: GeneralParameterContext<'_>,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<Option<MultiValue>, GeneralCalculationError> {
+    ) -> Result<MultiValue, GeneralCalculationError> {
         // Current value
         let x = self.metric.get_value(ctx.network, ctx.state)?;
 
@@ -48,13 +58,7 @@ impl GeneralParameter<MultiValue> for ApportionParameter {
         let values = HashMap::from([("upper".to_string(), upper), ("lower".to_string(), lower)]);
 
         let value = MultiValue::new(values, HashMap::new());
-        Ok(Some(value))
-    }
-    fn as_parameter(&self) -> &dyn Parameter
-    where
-        Self: Sized,
-    {
-        self
+        Ok(value)
     }
 }
 
@@ -93,7 +97,7 @@ impl ParameterBuilder<MultiValue> for ApportionParameterBuilder {
             control_curve,
         };
 
-        let bp = BuiltParameter::General(Box::new(p));
+        let bp = BuiltParameter::General(GeneralParameterEntry::before(p));
         Ok(bp.into())
     }
 }

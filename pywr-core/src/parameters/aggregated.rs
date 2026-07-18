@@ -1,9 +1,14 @@
 use super::{
-    BuiltParameter, ConstParameter, GeneralParameterContext, MaybeBuiltParameter, Parameter, ParameterBuildError,
-    ParameterBuilder, ParameterName, ParameterState, SimpleParameter, SimpleParameterContext,
+    BuiltParameter, ConstParameter, GeneralAfterParameter, GeneralBeforeParameter, GeneralParameterContext,
+    GeneralParameterEntry, MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder, ParameterName,
+    ParameterState, SimpleAfterParameter, SimpleBeforeParameter, SimpleParameter, SimpleParameterContext,
+    SimpleParameterEntry,
 };
 use crate::agg_funcs::AggFuncF64;
-use crate::metric::{ConstantMetricF64, MetricF64, SimpleMetricF64, UnresolvedMetricF64};
+use crate::metric::{
+    ConstantMetricF64, MetricF64, SimpleMetricF64, UnresolvedMetricF64, try_into_constant_metrics_f64,
+    try_into_simple_metrics_f64,
+};
 use crate::network::ResolutionMaps;
 use crate::parameters::errors::{ConstCalculationError, GeneralCalculationError, SimpleCalculationError};
 use crate::parameters::{GeneralParameter, ParameterMeta};
@@ -28,37 +33,7 @@ where
     }
 }
 
-impl GeneralParameter<f64> for AggregatedParameter<MetricF64> {
-    fn before(
-        &self,
-        ctx: GeneralParameterContext<'_>,
-        _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<Option<f64>, GeneralCalculationError> {
-        let values = self
-            .metrics
-            .iter()
-            .map(|p| p.get_value(ctx.network, ctx.state))
-            .collect::<Result<Vec<_>, _>>()?;
-
-        Ok(Some(self.agg_func.calc_iter_f64(&values)?))
-    }
-
-    fn try_into_simple(&self) -> Option<Box<dyn SimpleParameter<f64>>> {
-        // We can make a simple version if all metrics can be simplified
-        let metrics: Vec<SimpleMetricF64> = self
-            .metrics
-            .clone()
-            .into_iter()
-            .map(|m| m.try_into().ok())
-            .collect::<Option<Vec<_>>>()?;
-
-        Some(Box::new(AggregatedParameter::<SimpleMetricF64> {
-            meta: self.meta.clone(),
-            metrics,
-            agg_func: self.agg_func.clone(),
-        }))
-    }
-
+impl GeneralParameter for AggregatedParameter<MetricF64> {
     fn as_parameter(&self) -> &dyn Parameter
     where
         Self: Sized,
@@ -67,42 +42,79 @@ impl GeneralParameter<f64> for AggregatedParameter<MetricF64> {
     }
 }
 
-impl SimpleParameter<f64> for AggregatedParameter<SimpleMetricF64> {
+impl GeneralBeforeParameter<f64> for AggregatedParameter<MetricF64> {
     fn before(
         &self,
-        ctx: SimpleParameterContext<'_>,
+        ctx: GeneralParameterContext<'_>,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<Option<f64>, SimpleCalculationError> {
+    ) -> Result<f64, GeneralCalculationError> {
         let values = self
             .metrics
             .iter()
-            .map(|p| p.get_value(ctx.values))
+            .map(|p| p.get_value(ctx.network, ctx.state))
             .collect::<Result<Vec<_>, _>>()?;
 
-        Ok(Some(self.agg_func.calc_iter_f64(&values)?))
+        Ok(self.agg_func.calc_iter_f64(&values)?)
     }
+}
 
+impl GeneralAfterParameter<f64> for AggregatedParameter<MetricF64> {
+    fn after(
+        &self,
+        ctx: GeneralParameterContext<'_>,
+        _internal_state: &mut Option<Box<dyn ParameterState>>,
+    ) -> Result<f64, GeneralCalculationError> {
+        let values = self
+            .metrics
+            .iter()
+            .map(|p| p.get_value(ctx.network, ctx.state))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(self.agg_func.calc_iter_f64(&values)?)
+    }
+}
+
+impl<M> SimpleParameter for AggregatedParameter<M>
+where
+    M: Send + Sync + Debug,
+{
     fn as_parameter(&self) -> &dyn Parameter
     where
         Self: Sized,
     {
         self
     }
+}
 
-    fn try_into_const(&self) -> Option<Box<dyn ConstParameter<f64>>> {
-        // We can make a constant version if all metrics can be simplified
-        let metrics: Vec<ConstantMetricF64> = self
+impl SimpleBeforeParameter<f64> for AggregatedParameter<SimpleMetricF64> {
+    fn before(
+        &self,
+        ctx: SimpleParameterContext<'_>,
+        _internal_state: &mut Option<Box<dyn ParameterState>>,
+    ) -> Result<f64, SimpleCalculationError> {
+        let values = self
             .metrics
-            .clone()
-            .into_iter()
-            .map(|m| m.try_into().ok())
-            .collect::<Option<Vec<_>>>()?;
+            .iter()
+            .map(|p| p.get_value(ctx.values))
+            .collect::<Result<Vec<_>, _>>()?;
 
-        Some(Box::new(AggregatedParameter::<ConstantMetricF64> {
-            meta: self.meta.clone(),
-            metrics,
-            agg_func: self.agg_func.clone(),
-        }))
+        Ok(self.agg_func.calc_iter_f64(&values)?)
+    }
+}
+
+impl SimpleAfterParameter<f64> for AggregatedParameter<SimpleMetricF64> {
+    fn after(
+        &self,
+        ctx: SimpleParameterContext<'_>,
+        _internal_state: &mut Option<Box<dyn ParameterState>>,
+    ) -> Result<f64, SimpleCalculationError> {
+        let values = self
+            .metrics
+            .iter()
+            .map(|p| p.get_value(ctx.values))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(self.agg_func.calc_iter_f64(&values)?)
     }
 }
 
@@ -163,13 +175,39 @@ impl ParameterBuilder<f64> for AggregatedParameterBuilder {
     ) -> Result<MaybeBuiltParameter<f64>, ParameterBuildError> {
         let metrics = resolve_metric_f64_vec!(self, &self.metrics, resolution_maps, "metrics");
 
-        let p = AggregatedParameter {
-            meta: self.meta,
-            metrics,
-            agg_func: self.agg_func,
-        };
+        let meta = self.meta;
+        let agg_func = self.agg_func;
 
-        let bp = BuiltParameter::General(Box::new(p));
-        Ok(bp.into())
+        // Try the narrowest dependency class first.
+        if let Some(metrics) = try_into_constant_metrics_f64(&metrics) {
+            return Ok(
+                BuiltParameter::Const(Box::new(AggregatedParameter::<ConstantMetricF64> {
+                    meta,
+                    metrics,
+                    agg_func,
+                }))
+                .into(),
+            );
+        }
+
+        if let Some(metrics) = try_into_simple_metrics_f64(&metrics) {
+            return Ok(
+                BuiltParameter::Simple(SimpleParameterEntry::both(AggregatedParameter::<SimpleMetricF64> {
+                    meta,
+                    metrics,
+                    agg_func,
+                }))
+                .into(),
+            );
+        }
+
+        Ok(
+            BuiltParameter::General(GeneralParameterEntry::both(AggregatedParameter::<MetricF64> {
+                meta,
+                metrics,
+                agg_func,
+            }))
+            .into(),
+        )
     }
 }

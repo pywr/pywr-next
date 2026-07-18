@@ -1,6 +1,6 @@
 use super::{
-    BuiltParameter, GeneralParameterContext, MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder,
-    ParameterName,
+    BuiltParameter, GeneralBeforeParameter, GeneralParameterContext, GeneralParameterEntry, MaybeBuiltParameter,
+    Parameter, ParameterBuildError, ParameterBuilder, ParameterName,
 };
 use crate::metric::{MetricF64, UnresolvedMetricF64};
 use crate::network::ResolutionMaps;
@@ -20,12 +20,21 @@ impl Parameter for DivisionParameter {
         &self.meta
     }
 }
-impl GeneralParameter<f64> for DivisionParameter {
+impl GeneralParameter for DivisionParameter {
+    fn as_parameter(&self) -> &dyn Parameter
+    where
+        Self: Sized,
+    {
+        self
+    }
+}
+
+impl GeneralBeforeParameter<f64> for DivisionParameter {
     fn before(
         &self,
         ctx: GeneralParameterContext<'_>,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<Option<f64>, GeneralCalculationError> {
+    ) -> Result<f64, GeneralCalculationError> {
         let denominator = self.denominator.get_value(ctx.network, ctx.state)?;
 
         if denominator == 0.0 {
@@ -33,14 +42,7 @@ impl GeneralParameter<f64> for DivisionParameter {
         }
 
         let numerator = self.numerator.get_value(ctx.network, ctx.state)?;
-        Ok(Some(numerator / denominator))
-    }
-
-    fn as_parameter(&self) -> &dyn Parameter
-    where
-        Self: Sized,
-    {
-        self
+        Ok(numerator / denominator)
     }
 }
 
@@ -79,6 +81,6 @@ impl ParameterBuilder<f64> for DivisionParameterBuilder {
             denominator,
         };
 
-        Ok(MaybeBuiltParameter::Built(BuiltParameter::General(Box::new(p))))
+        Ok(BuiltParameter::General(GeneralParameterEntry::before(p)).into())
     }
 }
