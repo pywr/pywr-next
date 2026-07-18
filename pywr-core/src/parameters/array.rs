@@ -2,7 +2,8 @@ use crate::network::ResolutionMaps;
 use crate::parameters::errors::SimpleCalculationError;
 use crate::parameters::{
     BuiltParameter, MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder, ParameterMeta,
-    ParameterName, ParameterState, SimpleParameter, SimpleParameterContext,
+    ParameterName, ParameterState, SimpleBeforeParameter, SimpleParameter, SimpleParameterContext,
+    SimpleParameterEntry,
 };
 use crate::timestep::{Timestep, TimestepIndex};
 use ndarray::{Array1, Array2, Axis, s};
@@ -37,12 +38,21 @@ where
         &self.meta
     }
 }
-impl SimpleParameter<f64> for Array1Parameter<f64> {
+impl SimpleParameter for Array1Parameter<f64> {
+    fn as_parameter(&self) -> &dyn Parameter
+    where
+        Self: Sized,
+    {
+        self
+    }
+}
+
+impl SimpleBeforeParameter<f64> for Array1Parameter<f64> {
     fn before(
         &self,
         ctx: SimpleParameterContext<'_>,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<Option<f64>, SimpleCalculationError> {
+    ) -> Result<f64, SimpleCalculationError> {
         let idx = self.timestep_index(ctx.timestep);
 
         let value = self
@@ -53,9 +63,11 @@ impl SimpleParameter<f64> for Array1Parameter<f64> {
                 length: self.array.len(),
                 axis: 0,
             })?;
-        Ok(Some(*value))
+        Ok(*value)
     }
+}
 
+impl SimpleParameter for Array1Parameter<u64> {
     fn as_parameter(&self) -> &dyn Parameter
     where
         Self: Sized,
@@ -64,12 +76,12 @@ impl SimpleParameter<f64> for Array1Parameter<f64> {
     }
 }
 
-impl SimpleParameter<u64> for Array1Parameter<u64> {
+impl SimpleBeforeParameter<u64> for Array1Parameter<u64> {
     fn before(
         &self,
         ctx: SimpleParameterContext<'_>,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<Option<u64>, SimpleCalculationError> {
+    ) -> Result<u64, SimpleCalculationError> {
         let idx = self.timestep_index(ctx.timestep);
         let value = self
             .array
@@ -79,16 +91,10 @@ impl SimpleParameter<u64> for Array1Parameter<u64> {
                 length: self.array.len(),
                 axis: 0,
             })?;
-        Ok(Some(*value))
-    }
-
-    fn as_parameter(&self) -> &dyn Parameter
-    where
-        Self: Sized,
-    {
-        self
+        Ok(*value)
     }
 }
+
 #[derive(Debug)]
 pub struct Array1ParameterBuilder<T> {
     meta: ParameterMeta,
@@ -124,7 +130,7 @@ impl ParameterBuilder<f64> for Array1ParameterBuilder<f64> {
             array: self.array,
             timestep_offset: self.timestep_offset,
         };
-        Ok(BuiltParameter::Simple(Box::new(p)).into())
+        Ok(BuiltParameter::Simple(SimpleParameterEntry::before(p)).into())
     }
 }
 
@@ -141,7 +147,7 @@ impl ParameterBuilder<u64> for Array1ParameterBuilder<u64> {
             array: self.array,
             timestep_offset: self.timestep_offset,
         };
-        Ok(BuiltParameter::Simple(Box::new(p)).into())
+        Ok(BuiltParameter::Simple(SimpleParameterEntry::before(p)).into())
     }
 }
 
@@ -177,39 +183,7 @@ where
     }
 }
 
-impl SimpleParameter<f64> for Array2Parameter<f64> {
-    fn before(
-        &self,
-        ctx: SimpleParameterContext<'_>,
-        _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<Option<f64>, SimpleCalculationError> {
-        let t_idx = self.timestep_index(ctx.timestep);
-        let s_idx = ctx.scenario_index.simulation_index_for_group(self.scenario_group_index);
-
-        let value = self.array.get([t_idx, s_idx]).ok_or_else(|| {
-            let shape = self.array.shape();
-            if t_idx >= shape[0] {
-                SimpleCalculationError::OutOfBoundsError {
-                    index: t_idx,
-                    length: shape[0],
-                    axis: 0,
-                }
-            } else if s_idx >= shape[1] {
-                SimpleCalculationError::OutOfBoundsError {
-                    index: s_idx,
-                    length: shape[1],
-                    axis: 1,
-                }
-            } else {
-                unreachable!(
-                    "Invalid indices for array: t_idx = {}, s_idx = {}, shape = {:?}",
-                    t_idx, s_idx, shape
-                )
-            }
-        })?;
-        Ok(Some(*value))
-    }
-
+impl SimpleParameter for Array2Parameter<f64> {
     fn as_parameter(&self) -> &dyn Parameter
     where
         Self: Sized,
@@ -218,12 +192,12 @@ impl SimpleParameter<f64> for Array2Parameter<f64> {
     }
 }
 
-impl SimpleParameter<u64> for Array2Parameter<u64> {
+impl SimpleBeforeParameter<f64> for Array2Parameter<f64> {
     fn before(
         &self,
         ctx: SimpleParameterContext<'_>,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<Option<u64>, SimpleCalculationError> {
+    ) -> Result<f64, SimpleCalculationError> {
         let t_idx = self.timestep_index(ctx.timestep);
         let s_idx = ctx.scenario_index.simulation_index_for_group(self.scenario_group_index);
 
@@ -248,14 +222,48 @@ impl SimpleParameter<u64> for Array2Parameter<u64> {
                 )
             }
         })?;
-        Ok(Some(*value))
+        Ok(*value)
     }
-
+}
+impl SimpleParameter for Array2Parameter<u64> {
     fn as_parameter(&self) -> &dyn Parameter
     where
         Self: Sized,
     {
         self
+    }
+}
+impl SimpleBeforeParameter<u64> for Array2Parameter<u64> {
+    fn before(
+        &self,
+        ctx: SimpleParameterContext<'_>,
+        _internal_state: &mut Option<Box<dyn ParameterState>>,
+    ) -> Result<u64, SimpleCalculationError> {
+        let t_idx = self.timestep_index(ctx.timestep);
+        let s_idx = ctx.scenario_index.simulation_index_for_group(self.scenario_group_index);
+
+        let value = self.array.get([t_idx, s_idx]).ok_or_else(|| {
+            let shape = self.array.shape();
+            if t_idx >= shape[0] {
+                SimpleCalculationError::OutOfBoundsError {
+                    index: t_idx,
+                    length: shape[0],
+                    axis: 0,
+                }
+            } else if s_idx >= shape[1] {
+                SimpleCalculationError::OutOfBoundsError {
+                    index: s_idx,
+                    length: shape[1],
+                    axis: 1,
+                }
+            } else {
+                unreachable!(
+                    "Invalid indices for array: t_idx = {}, s_idx = {}, shape = {:?}",
+                    t_idx, s_idx, shape
+                )
+            }
+        })?;
+        Ok(*value)
     }
 }
 
@@ -312,7 +320,7 @@ impl ParameterBuilder<f64> for Array2ParameterBuilder<f64> {
             timestep_offset: self.timestep_offset,
         };
 
-        Ok(BuiltParameter::Simple(Box::new(p)).into())
+        Ok(BuiltParameter::Simple(SimpleParameterEntry::before(p)).into())
     }
 }
 
@@ -344,7 +352,7 @@ impl ParameterBuilder<u64> for Array2ParameterBuilder<u64> {
             scenario_group_index,
             timestep_offset: self.timestep_offset,
         };
-        Ok(BuiltParameter::Simple(Box::new(p)).into())
+        Ok(BuiltParameter::Simple(SimpleParameterEntry::before(p)).into())
     }
 }
 
@@ -399,7 +407,7 @@ mod tests {
                     scenario_index: si,
                     values: &spv.get_simple_parameter_values(),
                 };
-                assert_approx_eq!(f64, p.before(ctx, &mut state).unwrap().unwrap(), ts.index as f64);
+                assert_approx_eq!(f64, p.before(ctx, &mut state).unwrap(), ts.index as f64);
             }
         }
     }
@@ -432,7 +440,7 @@ mod tests {
                     values: &spv.get_simple_parameter_values(),
                 };
 
-                assert_approx_eq!(f64, p.before(ctx, &mut state).unwrap().unwrap(), ts.index as f64);
+                assert_approx_eq!(f64, p.before(ctx, &mut state).unwrap(), ts.index as f64);
             }
         }
     }
@@ -470,7 +478,7 @@ mod tests {
                     assert!(p.before(ctx, &mut state).is_err());
                 } else {
                     // Otherwise, we should return the value
-                    assert_approx_eq!(f64, p.before(ctx, &mut state).unwrap().unwrap(), ts.index as f64);
+                    assert_approx_eq!(f64, p.before(ctx, &mut state).unwrap(), ts.index as f64);
                 }
             }
         }

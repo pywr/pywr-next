@@ -1,8 +1,9 @@
 use crate::network::ResolutionMaps;
 use crate::parameters::errors::GeneralCalculationError;
 use crate::parameters::{
-    BuiltParameter, GeneralParameter, GeneralParameterContext, MaybeBuiltParameter, Parameter, ParameterBuildError,
-    ParameterBuilder, ParameterMeta, ParameterName, ParameterState,
+    BuiltParameter, GeneralBeforeParameter, GeneralParameter, GeneralParameterContext, GeneralParameterEntry,
+    MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder, ParameterMeta, ParameterName,
+    ParameterState,
 };
 
 #[derive(Debug)]
@@ -17,27 +18,29 @@ impl Parameter for VectorParameter {
     }
 }
 
-impl GeneralParameter<f64> for VectorParameter {
+impl GeneralParameter for VectorParameter {
+    fn as_parameter(&self) -> &dyn Parameter
+    where
+        Self: Sized,
+    {
+        self
+    }
+}
+
+impl GeneralBeforeParameter<f64> for VectorParameter {
     fn before(
         &self,
         ctx: GeneralParameterContext<'_>,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<Option<f64>, GeneralCalculationError> {
+    ) -> Result<f64, GeneralCalculationError> {
         match self.values.get(ctx.timestep.index) {
-            Some(v) => Ok(Some(*v)),
+            Some(v) => Ok(*v),
             None => Err(GeneralCalculationError::OutOfBoundsError {
                 index: ctx.timestep.index,
                 length: self.values.len(),
                 axis: 0,
             }),
         }
-    }
-
-    fn as_parameter(&self) -> &dyn Parameter
-    where
-        Self: Sized,
-    {
-        self
     }
 }
 
@@ -70,7 +73,7 @@ impl ParameterBuilder<f64> for VectorParameterBuilder {
             values: self.values,
         };
 
-        let bp = BuiltParameter::General(Box::new(p));
+        let bp = BuiltParameter::General(GeneralParameterEntry::before(p));
         Ok(bp.into())
     }
 }

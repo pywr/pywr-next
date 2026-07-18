@@ -2,8 +2,9 @@ use crate::metric::{MetricF64, UnresolvedMetricF64};
 use crate::network::ResolutionMaps;
 use crate::parameters::errors::{GeneralCalculationError, ParameterSetupError};
 use crate::parameters::{
-    BuiltParameter, GeneralParameter, GeneralParameterContext, MaybeBuiltParameter, Parameter, ParameterBuildError,
-    ParameterBuilder, ParameterMeta, ParameterName, ParameterState, Predicate, downcast_internal_state_mut,
+    BuiltParameter, GeneralBeforeParameter, GeneralParameter, GeneralParameterContext, GeneralParameterEntry,
+    MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder, ParameterMeta, ParameterName,
+    ParameterState, Predicate, downcast_internal_state_mut,
 };
 use crate::scenario::ScenarioIndex;
 use crate::timestep::Timestep;
@@ -34,12 +35,21 @@ impl Parameter for MultiThresholdParameter {
     }
 }
 
-impl GeneralParameter<u64> for MultiThresholdParameter {
+impl GeneralParameter for MultiThresholdParameter {
+    fn as_parameter(&self) -> &dyn Parameter
+    where
+        Self: Sized,
+    {
+        self
+    }
+}
+
+impl GeneralBeforeParameter<u64> for MultiThresholdParameter {
     fn before(
         &self,
         ctx: GeneralParameterContext<'_>,
         internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<Option<u64>, GeneralCalculationError> {
+    ) -> Result<u64, GeneralCalculationError> {
         // Downcast the internal state to the correct type
         let previous_max = downcast_internal_state_mut::<u64>(internal_state);
 
@@ -62,18 +72,11 @@ impl GeneralParameter<u64> for MultiThresholdParameter {
             if position > *previous_max {
                 *previous_max = position;
             } else {
-                return Ok(Some(*previous_max));
+                return Ok(*previous_max);
             }
         }
 
-        Ok(Some(position))
-    }
-
-    fn as_parameter(&self) -> &dyn Parameter
-    where
-        Self: Sized,
-    {
-        self
+        Ok(position)
     }
 }
 
@@ -130,8 +133,8 @@ impl ParameterBuilder<u64> for MultiThresholdParameterBuilder {
             ratchet: self.ratchet,
         };
 
-        let bp = BuiltParameter::General(Box::new(p));
-        Ok(MaybeBuiltParameter::Built(bp))
+        let bp = BuiltParameter::General(GeneralParameterEntry::before(p));
+        Ok(bp.into())
     }
 }
 

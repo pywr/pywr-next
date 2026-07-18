@@ -3,8 +3,9 @@ use crate::metric::{MetricF64, UnresolvedMetricF64};
 use crate::network::ResolutionMaps;
 use crate::parameters::errors::{GeneralCalculationError, ParameterSetupError};
 use crate::parameters::{
-    BuiltParameter, GeneralParameter, GeneralParameterContext, MaybeBuiltParameter, Parameter, ParameterBuildError,
-    ParameterBuilder, ParameterMeta, ParameterName, ParameterState, downcast_internal_state_mut,
+    BuiltParameter, GeneralBeforeParameter, GeneralParameter, GeneralParameterContext, GeneralParameterEntry,
+    MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder, ParameterMeta, ParameterName,
+    ParameterState, downcast_internal_state_mut,
 };
 use crate::resolve_metric_f64;
 use crate::scenario::ScenarioIndex;
@@ -61,18 +62,27 @@ impl Parameter for ThresholdParameter {
     }
 }
 
-impl GeneralParameter<u64> for ThresholdParameter {
+impl GeneralParameter for ThresholdParameter {
+    fn as_parameter(&self) -> &dyn Parameter
+    where
+        Self: Sized,
+    {
+        self
+    }
+}
+
+impl GeneralBeforeParameter<u64> for ThresholdParameter {
     fn before(
         &self,
         ctx: GeneralParameterContext<'_>,
         internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<Option<u64>, GeneralCalculationError> {
+    ) -> Result<u64, GeneralCalculationError> {
         // Downcast the internal state to the correct type
         let previously_activated = downcast_internal_state_mut::<bool>(internal_state);
 
         // Return early if ratchet has been hit
         if self.ratchet & *previously_activated {
-            return Ok(Some(1));
+            return Ok(1);
         }
 
         let threshold = self.threshold.get_value(ctx.network, ctx.state)?;
@@ -82,17 +92,10 @@ impl GeneralParameter<u64> for ThresholdParameter {
         if active {
             // Update the internal state to remember we've been triggered!
             *previously_activated = true;
-            Ok(Some(1))
+            Ok(1)
         } else {
-            Ok(Some(0))
+            Ok(0)
         }
-    }
-
-    fn as_parameter(&self) -> &dyn Parameter
-    where
-        Self: Sized,
-    {
-        self
     }
 }
 
@@ -148,6 +151,6 @@ impl ParameterBuilder<u64> for ThresholdParameterBuilder {
             ratchet: self.ratchet,
         };
 
-        Ok(MaybeBuiltParameter::Built(BuiltParameter::General(Box::new(p))))
+        Ok(BuiltParameter::General(GeneralParameterEntry::before(p)).into())
     }
 }

@@ -2,7 +2,8 @@ use crate::network::ResolutionMaps;
 use crate::parameters::errors::SimpleCalculationError;
 use crate::parameters::{
     BuiltParameter, MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder, ParameterMeta,
-    ParameterName, ParameterState, SimpleParameter, SimpleParameterContext,
+    ParameterName, ParameterState, SimpleBeforeParameter, SimpleParameter, SimpleParameterContext,
+    SimpleParameterEntry,
 };
 use chrono::{Datelike, NaiveDateTime, Timelike};
 
@@ -17,46 +18,6 @@ pub struct MonthlyProfileParameter {
     meta: ParameterMeta,
     values: [f64; 12],
     interp_day: Option<MonthlyInterpDay>,
-}
-
-#[derive(Debug)]
-pub struct MonthlyProfileParameterBuilder {
-    meta: ParameterMeta,
-    values: [f64; 12],
-    interp_day: Option<MonthlyInterpDay>,
-}
-
-impl MonthlyProfileParameterBuilder {
-    pub fn new(name: ParameterName, values: [f64; 12]) -> Self {
-        Self {
-            meta: ParameterMeta::new(name),
-            values,
-            interp_day: None,
-        }
-    }
-
-    pub fn interp_day(&mut self, interp_day: MonthlyInterpDay) -> &mut Self {
-        self.interp_day = Some(interp_day);
-        self
-    }
-}
-
-impl ParameterBuilder<f64> for MonthlyProfileParameterBuilder {
-    fn name(&self) -> &ParameterName {
-        &self.meta.name
-    }
-
-    fn build(
-        self: Box<Self>,
-        _resolution_maps: &ResolutionMaps,
-    ) -> Result<MaybeBuiltParameter<f64>, ParameterBuildError> {
-        Ok(BuiltParameter::Simple(Box::new(MonthlyProfileParameter {
-            meta: self.meta,
-            values: self.values,
-            interp_day: self.interp_day,
-        }))
-        .into())
-    }
 }
 
 fn days_in_year_month(datetime: &NaiveDateTime) -> u32 {
@@ -106,12 +67,21 @@ impl Parameter for MonthlyProfileParameter {
         &self.meta
     }
 }
-impl SimpleParameter<f64> for MonthlyProfileParameter {
+impl SimpleParameter for MonthlyProfileParameter {
+    fn as_parameter(&self) -> &dyn Parameter
+    where
+        Self: Sized,
+    {
+        self
+    }
+}
+
+impl SimpleBeforeParameter<f64> for MonthlyProfileParameter {
     fn before(
         &self,
         ctx: SimpleParameterContext<'_>,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<Option<f64>, SimpleCalculationError> {
+    ) -> Result<f64, SimpleCalculationError> {
         let v = match &self.interp_day {
             Some(interp_day) => match interp_day {
                 MonthlyInterpDay::First => {
@@ -132,13 +102,46 @@ impl SimpleParameter<f64> for MonthlyProfileParameter {
             },
             None => self.values[ctx.timestep.date.month() as usize - 1],
         };
-        Ok(Some(v))
+        Ok(v)
+    }
+}
+
+#[derive(Debug)]
+pub struct MonthlyProfileParameterBuilder {
+    meta: ParameterMeta,
+    values: [f64; 12],
+    interp_day: Option<MonthlyInterpDay>,
+}
+
+impl MonthlyProfileParameterBuilder {
+    pub fn new(name: ParameterName, values: [f64; 12]) -> Self {
+        Self {
+            meta: ParameterMeta::new(name),
+            values,
+            interp_day: None,
+        }
     }
 
-    fn as_parameter(&self) -> &dyn Parameter
-    where
-        Self: Sized,
-    {
+    pub fn interp_day(&mut self, interp_day: MonthlyInterpDay) -> &mut Self {
+        self.interp_day = Some(interp_day);
         self
+    }
+}
+
+impl ParameterBuilder<f64> for MonthlyProfileParameterBuilder {
+    fn name(&self) -> &ParameterName {
+        &self.meta.name
+    }
+
+    fn build(
+        self: Box<Self>,
+        _resolution_maps: &ResolutionMaps,
+    ) -> Result<MaybeBuiltParameter<f64>, ParameterBuildError> {
+        let p = MonthlyProfileParameter {
+            meta: self.meta,
+            values: self.values,
+            interp_day: self.interp_day,
+        };
+        Ok(BuiltParameter::Simple(SimpleParameterEntry::before(p)).into())
     }
 }

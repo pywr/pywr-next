@@ -1,8 +1,9 @@
 use crate::metric::{MetricF64, UnresolvedMetricF64};
 use crate::network::ResolutionMaps;
 use crate::parameters::{
-    BuiltParameter, GeneralCalculationError, GeneralParameter, GeneralParameterContext, MaybeBuiltParameter, Parameter,
-    ParameterBuildError, ParameterBuilder, ParameterMeta, ParameterName, ParameterState,
+    BuiltParameter, GeneralBeforeParameter, GeneralCalculationError, GeneralParameter, GeneralParameterContext,
+    GeneralParameterEntry, MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder, ParameterMeta,
+    ParameterName, ParameterState,
 };
 use crate::resolve_metric_f64;
 use crate::state::MultiValue;
@@ -50,12 +51,21 @@ impl Parameter for MuskingumParameter {
     }
 }
 
-impl GeneralParameter<MultiValue> for MuskingumParameter {
+impl GeneralParameter for MuskingumParameter {
+    fn as_parameter(&self) -> &dyn Parameter
+    where
+        Self: Sized,
+    {
+        self
+    }
+}
+
+impl GeneralBeforeParameter<MultiValue> for MuskingumParameter {
     fn before(
         &self,
         ctx: GeneralParameterContext<'_>,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<Option<MultiValue>, GeneralCalculationError> {
+    ) -> Result<MultiValue, GeneralCalculationError> {
         let weight = self.weight.get_value(ctx.network, ctx.state)?;
         let travel_time = self.travel_time.get_value(ctx.network, ctx.state)?;
 
@@ -70,7 +80,7 @@ impl GeneralParameter<MultiValue> for MuskingumParameter {
                     let mut values = HashMap::new();
                     values.insert("inflow_factor".to_string(), -inflow_factor / outflow_factor);
                     values.insert("rhs".to_string(), 0.0);
-                    return Ok(Some(MultiValue::new(values, HashMap::new())));
+                    return Ok(MultiValue::new(values, HashMap::new()));
                 }
                 MuskingumInitialCondition::Specified { inflow, outflow } => (*inflow, *outflow),
             }
@@ -84,14 +94,7 @@ impl GeneralParameter<MultiValue> for MuskingumParameter {
         let mut values = HashMap::new();
         values.insert("inflow_factor".to_string(), -inflow_factor(weight, travel_time));
         values.insert("rhs".to_string(), rhs(inflow, outflow, weight, travel_time));
-        Ok(Some(MultiValue::new(values, HashMap::new())))
-    }
-
-    fn as_parameter(&self) -> &dyn Parameter
-    where
-        Self: Sized,
-    {
-        self
+        Ok(MultiValue::new(values, HashMap::new()))
     }
 }
 
@@ -175,6 +178,6 @@ impl ParameterBuilder<MultiValue> for MuskingumParameterBuilder {
             initial_condition: self.initial_condition,
         };
 
-        Ok(MaybeBuiltParameter::Built(BuiltParameter::General(Box::new(p))))
+        Ok(BuiltParameter::General(GeneralParameterEntry::before(p)).into())
     }
 }

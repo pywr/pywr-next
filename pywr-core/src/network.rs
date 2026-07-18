@@ -1004,7 +1004,7 @@ impl Network {
 
         // First we update the simple parameters
         self.parameters
-            .compute_simple(timestep, scenario_index, state, internal_states)?;
+            .before_simple(timestep, scenario_index, state, internal_states)?;
 
         // Next run "before" on nodes and virtual nodes
         for n in &self.nodes {
@@ -1027,7 +1027,7 @@ impl Network {
 
         // Now we can compute the general parameters that may depend on node state.
         self.parameters
-            .compute_general(timestep, scenario_index, self, state, internal_states, p_timings)
+            .before_general(timestep, scenario_index, self, state, internal_states, p_timings)
             .map_err(|source| NetworkStepError::GeneralParameterCalculationError(Box::new(source)))?;
 
         Ok(())

@@ -2,8 +2,9 @@
 use pywr_core::metric::{MetricF64, UnresolvedMetricF64};
 use pywr_core::network::ResolutionMaps;
 use pywr_core::parameters::{
-    BuiltParameter, GeneralCalculationError, GeneralParameter, GeneralParameterContext, MaybeBuiltParameter, Parameter,
-    ParameterBuildError, ParameterBuilder, ParameterMeta, ParameterName, ParameterState,
+    BuiltParameter, GeneralBeforeParameter, GeneralCalculationError, GeneralParameter, GeneralParameterContext,
+    GeneralParameterEntry, MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder, ParameterMeta,
+    ParameterName, ParameterState,
 };
 use pywr_core::resolve_metric_f64;
 
@@ -23,17 +24,7 @@ impl Parameter for MaxParameter {
     }
 }
 
-impl GeneralParameter<f64> for MaxParameter {
-    fn before(
-        &self,
-        ctx: GeneralParameterContext<'_>,
-        _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<Option<f64>, GeneralCalculationError> {
-        // Current value
-        let x = self.metric.get_value(ctx.network, ctx.state)?;
-        Ok(Some(x.max(self.threshold)))
-    }
-
+impl GeneralParameter for MaxParameter {
     fn as_parameter(&self) -> &dyn Parameter
     where
         Self: Sized,
@@ -42,6 +33,17 @@ impl GeneralParameter<f64> for MaxParameter {
     }
 }
 
+impl GeneralBeforeParameter<f64> for MaxParameter {
+    fn before(
+        &self,
+        ctx: GeneralParameterContext<'_>,
+        _internal_state: &mut Option<Box<dyn ParameterState>>,
+    ) -> Result<f64, GeneralCalculationError> {
+        // Current value
+        let x = self.metric.get_value(ctx.network, ctx.state)?;
+        Ok(x.max(self.threshold))
+    }
+}
 // ANCHOR: impl-builder
 #[derive(Debug)]
 pub struct MaxParameterBuilder {
@@ -77,7 +79,7 @@ impl ParameterBuilder<f64> for MaxParameterBuilder {
             threshold: self.threshold,
         };
 
-        Ok(MaybeBuiltParameter::Built(BuiltParameter::General(Box::new(p))))
+        Ok(BuiltParameter::General(GeneralParameterEntry::before(p)).into())
     }
 }
 // ANCHOR_END: impl-builder

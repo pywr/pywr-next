@@ -2,8 +2,9 @@ use crate::metric::{MetricF64, UnresolvedMetricF64};
 use crate::network::ResolutionMaps;
 use crate::parameters::errors::GeneralCalculationError;
 use crate::parameters::{
-    BuiltParameter, GeneralParameter, GeneralParameterContext, MaybeBuiltParameter, Parameter, ParameterBuildError,
-    ParameterBuilder, ParameterMeta, ParameterName, ParameterState,
+    BuiltParameter, GeneralBeforeParameter, GeneralParameter, GeneralParameterContext, GeneralParameterEntry,
+    MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder, ParameterMeta, ParameterName,
+    ParameterState,
 };
 use crate::resolve_metric_f64;
 
@@ -19,21 +20,23 @@ impl Parameter for NegativeMaxParameter {
         &self.meta
     }
 }
-impl GeneralParameter<f64> for NegativeMaxParameter {
-    fn before(
-        &self,
-        ctx: GeneralParameterContext<'_>,
-        _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<Option<f64>, GeneralCalculationError> {
-        let x = -self.metric.get_value(ctx.network, ctx.state)?;
-        Ok(Some(x.max(self.threshold)))
-    }
-
+impl GeneralParameter for NegativeMaxParameter {
     fn as_parameter(&self) -> &dyn Parameter
     where
         Self: Sized,
     {
         self
+    }
+}
+
+impl GeneralBeforeParameter<f64> for NegativeMaxParameter {
+    fn before(
+        &self,
+        ctx: GeneralParameterContext<'_>,
+        _internal_state: &mut Option<Box<dyn ParameterState>>,
+    ) -> Result<f64, GeneralCalculationError> {
+        let x = -self.metric.get_value(ctx.network, ctx.state)?;
+        Ok(x.max(self.threshold))
     }
 }
 
@@ -71,6 +74,6 @@ impl ParameterBuilder<f64> for NegativeMaxParameterBuilder {
             threshold: self.threshold,
         };
 
-        Ok(MaybeBuiltParameter::Built(BuiltParameter::General(Box::new(p))))
+        Ok(BuiltParameter::General(GeneralParameterEntry::before(p)).into())
     }
 }

@@ -44,6 +44,10 @@ pub enum GeneralCalculationError {
     },
     #[error("Aggregation error: {0}")]
     AggFuncError(#[from] AggFuncError),
+    #[error(
+        "Calculation phase not enabled for parameter. This is a runtime error for parameter type `{ty}` that does support '{phase}', but has failed to calculate for the following reason: {message}"
+    )]
+    PhaseNotEnabled { ty: String, phase: String, message: String },
 }
 
 #[derive(Error, Debug)]

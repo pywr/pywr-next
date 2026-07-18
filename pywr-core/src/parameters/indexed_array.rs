@@ -2,8 +2,9 @@ use crate::metric::{MetricF64, MetricU64, UnresolvedMetricF64, UnresolvedMetricU
 use crate::network::ResolutionMaps;
 use crate::parameters::errors::GeneralCalculationError;
 use crate::parameters::{
-    BuiltParameter, GeneralParameter, GeneralParameterContext, MaybeBuiltParameter, Parameter, ParameterBuildError,
-    ParameterBuilder, ParameterMeta, ParameterName, ParameterState,
+    BuiltParameter, GeneralBeforeParameter, GeneralParameter, GeneralParameterContext, GeneralParameterEntry,
+    MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder, ParameterMeta, ParameterName,
+    ParameterState,
 };
 use crate::{resolve_metric_f64_vec, resolve_metric_u64};
 
@@ -20,12 +21,21 @@ impl Parameter for IndexedArrayParameter {
     }
 }
 
-impl GeneralParameter<f64> for IndexedArrayParameter {
+impl GeneralParameter for IndexedArrayParameter {
+    fn as_parameter(&self) -> &dyn Parameter
+    where
+        Self: Sized,
+    {
+        self
+    }
+}
+
+impl GeneralBeforeParameter<f64> for IndexedArrayParameter {
     fn before(
         &self,
         ctx: GeneralParameterContext<'_>,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<Option<f64>, GeneralCalculationError> {
+    ) -> Result<f64, GeneralCalculationError> {
         let index = self.index_parameter.get_value(ctx.network, ctx.state)? as usize;
 
         let metric = self
@@ -37,14 +47,7 @@ impl GeneralParameter<f64> for IndexedArrayParameter {
                 axis: 0,
             })?;
 
-        Ok(Some(metric.get_value(ctx.network, ctx.state)?))
-    }
-
-    fn as_parameter(&self) -> &dyn Parameter
-    where
-        Self: Sized,
-    {
-        self
+        Ok(metric.get_value(ctx.network, ctx.state)?)
     }
 }
 
@@ -88,6 +91,6 @@ impl ParameterBuilder<f64> for IndexedArrayParameterBuilder {
             metrics,
         };
 
-        Ok(MaybeBuiltParameter::Built(BuiltParameter::General(Box::new(p))))
+        Ok(BuiltParameter::General(GeneralParameterEntry::before(p)).into())
     }
 }

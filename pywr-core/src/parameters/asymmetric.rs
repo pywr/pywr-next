@@ -2,8 +2,9 @@ use crate::metric::{MetricU64, UnresolvedMetricU64};
 use crate::network::ResolutionMaps;
 use crate::parameters::errors::{GeneralCalculationError, ParameterSetupError};
 use crate::parameters::{
-    BuiltParameter, GeneralParameter, GeneralParameterContext, MaybeBuiltParameter, Parameter, ParameterBuildError,
-    ParameterBuilder, ParameterMeta, ParameterName, ParameterState, downcast_internal_state_mut,
+    BuiltParameter, GeneralBeforeParameter, GeneralParameter, GeneralParameterContext, GeneralParameterEntry,
+    MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder, ParameterMeta, ParameterName,
+    ParameterState, downcast_internal_state_mut,
 };
 use crate::resolve_metric_u64;
 use crate::scenario::ScenarioIndex;
@@ -29,12 +30,20 @@ impl Parameter for AsymmetricSwitchIndexParameter {
     }
 }
 
-impl GeneralParameter<u64> for AsymmetricSwitchIndexParameter {
+impl GeneralParameter for AsymmetricSwitchIndexParameter {
+    fn as_parameter(&self) -> &dyn Parameter
+    where
+        Self: Sized,
+    {
+        self
+    }
+}
+impl GeneralBeforeParameter<u64> for AsymmetricSwitchIndexParameter {
     fn before(
         &self,
         ctx: GeneralParameterContext<'_>,
         internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<Option<u64>, GeneralCalculationError> {
+    ) -> Result<u64, GeneralCalculationError> {
         let on_value = self.on_parameter.get_value(ctx.network, ctx.state)?;
 
         // Downcast the internal state to the correct type
@@ -54,17 +63,9 @@ impl GeneralParameter<u64> for AsymmetricSwitchIndexParameter {
             *current_state = 1;
         }
 
-        Ok(Some(*current_state))
-    }
-
-    fn as_parameter(&self) -> &dyn Parameter
-    where
-        Self: Sized,
-    {
-        self
+        Ok(*current_state)
     }
 }
-
 #[derive(Debug)]
 pub struct AsymmetricSwitchIndexParameterBuilder {
     meta: ParameterMeta,
@@ -100,6 +101,6 @@ impl ParameterBuilder<u64> for AsymmetricSwitchIndexParameterBuilder {
             off_parameter,
         };
 
-        Ok(MaybeBuiltParameter::Built(BuiltParameter::General(Box::new(p))))
+        Ok(BuiltParameter::General(GeneralParameterEntry::before(p)).into())
     }
 }

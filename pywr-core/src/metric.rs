@@ -396,6 +396,36 @@ impl TryFrom<SimpleMetricF64> for ConstantMetricF64 {
     }
 }
 
+impl TryFrom<MetricF64> for ConstantMetricF64 {
+    type Error = MetricF64Error;
+
+    fn try_from(value: MetricF64) -> Result<Self, Self::Error> {
+        let simple_metric: SimpleMetricF64 = value.try_into()?;
+        let constant_metric: ConstantMetricF64 = simple_metric.try_into()?;
+        Ok(constant_metric)
+    }
+}
+
+/// Try to convert a slice of [`MetricF64`] into a vector of [`ConstantMetricF64`].
+/// If any of the metrics cannot be converted, return `None`.
+pub fn try_into_constant_metrics_f64(metrics: &[MetricF64]) -> Option<Vec<ConstantMetricF64>> {
+    metrics
+        .iter()
+        .map(|m| m.clone().try_into())
+        .collect::<Result<Vec<_>, _>>()
+        .ok()
+}
+
+/// Try to convert a slice of [`MetricF64`] into a vector of [`SimpleMetricF64`].
+/// If any of the metrics cannot be converted, return `None`.
+pub fn try_into_simple_metrics_f64(metrics: &[MetricF64]) -> Option<Vec<SimpleMetricF64>> {
+    metrics
+        .iter()
+        .map(|m| m.clone().try_into())
+        .collect::<Result<Vec<_>, _>>()
+        .ok()
+}
+
 impl From<f64> for ConstantMetricF64 {
     fn from(v: f64) -> Self {
         ConstantMetricF64::Constant(v)
@@ -934,6 +964,36 @@ impl TryFrom<SimpleMetricU64> for ConstantMetricU64 {
             _ => Err(SimpleMetricU64Error::CannotSimplifyMetric),
         }
     }
+}
+
+impl TryFrom<MetricU64> for ConstantMetricU64 {
+    type Error = MetricU64Error;
+
+    fn try_from(value: MetricU64) -> Result<Self, Self::Error> {
+        let simple_metric: SimpleMetricU64 = value.try_into()?;
+        let constant_metric: ConstantMetricU64 = simple_metric.try_into()?;
+        Ok(constant_metric)
+    }
+}
+
+/// Try to convert a slice of [`MetricU64`] into a vector of [`ConstantMetricU64`].
+/// If any of the metrics cannot be converted, return `None`.
+pub fn try_into_constant_metrics_u64(metrics: &[MetricU64]) -> Option<Vec<ConstantMetricU64>> {
+    metrics
+        .iter()
+        .map(|m| m.clone().try_into())
+        .collect::<Result<Vec<_>, _>>()
+        .ok()
+}
+
+/// Try to convert a slice of [`MetricU64`] into a vector of [`SimpleMetricU64`].
+/// If any of the metrics cannot be converted, return `None`.
+pub fn try_into_simple_metrics_u64(metrics: &[MetricU64]) -> Option<Vec<SimpleMetricU64>> {
+    metrics
+        .iter()
+        .map(|m| m.clone().try_into())
+        .collect::<Result<Vec<_>, _>>()
+        .ok()
 }
 
 #[derive(Debug, Error)]

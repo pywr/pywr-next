@@ -2,7 +2,8 @@ use crate::network::ResolutionMaps;
 use crate::parameters::errors::SimpleCalculationError;
 use crate::parameters::{
     BuiltParameter, MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder, ParameterMeta,
-    ParameterName, ParameterState, SimpleParameter, SimpleParameterContext,
+    ParameterName, ParameterState, SimpleBeforeParameter, SimpleParameter, SimpleParameterContext,
+    SimpleParameterEntry,
 };
 use chrono::{Datelike, NaiveDate};
 
@@ -22,12 +23,21 @@ impl Parameter for UniformDrawdownProfileParameter {
         &self.meta
     }
 }
-impl SimpleParameter<f64> for UniformDrawdownProfileParameter {
+impl SimpleParameter for UniformDrawdownProfileParameter {
+    fn as_parameter(&self) -> &dyn Parameter
+    where
+        Self: Sized,
+    {
+        self
+    }
+}
+
+impl SimpleBeforeParameter<f64> for UniformDrawdownProfileParameter {
     fn before(
         &self,
         ctx: SimpleParameterContext<'_>,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<Option<f64>, SimpleCalculationError> {
+    ) -> Result<f64, SimpleCalculationError> {
         // Current calendar year (might be adjusted depending on position of reset day)
         let mut year = ctx.timestep.date.year();
 
@@ -60,14 +70,7 @@ impl SimpleParameter<f64> for UniformDrawdownProfileParameter {
         let residual_proportion = self.residual_days as f64 / total_days_in_period as f64;
         let slope = (residual_proportion - 1.0) / total_days_in_period as f64;
 
-        Ok(Some(1.0 + (slope * days_into_period as f64)))
-    }
-
-    fn as_parameter(&self) -> &dyn Parameter
-    where
-        Self: Sized,
-    {
-        self
+        Ok(1.0 + (slope * days_into_period as f64))
     }
 }
 
@@ -118,6 +121,6 @@ impl ParameterBuilder<f64> for UniformDrawdownProfileParameterBuilder {
             reset_doy,
         };
 
-        Ok(MaybeBuiltParameter::Built(BuiltParameter::Simple(Box::new(p))))
+        Ok(BuiltParameter::Simple(SimpleParameterEntry::before(p)).into())
     }
 }
