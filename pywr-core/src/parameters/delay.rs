@@ -7,8 +7,7 @@ use crate::parameters::errors::{GeneralCalculationError, ParameterSetupError, Si
 use crate::parameters::{
     BuiltParameter, GeneralAfterParameterHook, GeneralBeforeParameter, GeneralParameter, GeneralParameterContext,
     GeneralParameterEntry, MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder, ParameterMeta,
-    ParameterName, ParameterState, SimpleAfterParameterHook, SimpleBeforeParameter, SimpleParameter,
-    SimpleParameterContext, SimpleParameterEntry, downcast_internal_state_mut,
+    ParameterName, ParameterState, SimpleParameter, SimpleParameterContext, downcast_internal_state_mut,
 };
 use crate::scenario::ScenarioIndex;
 use crate::timestep::Timestep;
@@ -121,23 +120,18 @@ impl GeneralAfterParameterHook<f64> for DelayParameter<MetricF64, f64> {
     }
 }
 
-impl SimpleParameter for DelayParameter<SimpleMetricF64, f64> {
-    fn as_parameter(&self) -> &dyn Parameter
-    where
-        Self: Sized,
-    {
-        self
-    }
-}
-
-impl SimpleBeforeParameter<f64> for DelayParameter<SimpleMetricF64, f64> {
-    fn before(
+impl SimpleParameter<f64> for DelayParameter<SimpleMetricF64, f64> {
+    fn compute(
         &self,
-        _ctx: SimpleParameterContext<'_>,
+        ctx: SimpleParameterContext<'_>,
         internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<f64, SimpleCalculationError> {
         // Downcast the internal state to the correct type
         let memory = downcast_internal_state_mut::<VecDeque<f64>>(internal_state);
+
+        // Get today's value from the metric
+        let value = self.metric.get_value(ctx.values)?;
+        memory.push_back(value);
 
         // Take the oldest value from the queue
         // It should be guaranteed that the internal memory/queue has self.delay number of values
@@ -148,21 +142,11 @@ impl SimpleBeforeParameter<f64> for DelayParameter<SimpleMetricF64, f64> {
 
         Ok(value)
     }
-}
-impl SimpleAfterParameterHook<f64> for DelayParameter<SimpleMetricF64, f64> {
-    fn after(
-        &self,
-        ctx: SimpleParameterContext<'_>,
-        internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<(), SimpleCalculationError> {
-        // Downcast the internal state to the correct type
-        let memory = downcast_internal_state_mut::<VecDeque<f64>>(internal_state);
-
-        // Get today's value from the metric
-        let value = self.metric.get_value(ctx.values)?;
-        memory.push_back(value);
-
-        Ok(())
+    fn as_parameter(&self) -> &dyn Parameter
+    where
+        Self: Sized,
+    {
+        self
     }
 }
 
@@ -211,23 +195,18 @@ impl GeneralAfterParameterHook<u64> for DelayParameter<MetricU64, u64> {
     }
 }
 
-impl SimpleParameter for DelayParameter<SimpleMetricU64, u64> {
-    fn as_parameter(&self) -> &dyn Parameter
-    where
-        Self: Sized,
-    {
-        self
-    }
-}
-
-impl SimpleBeforeParameter<u64> for DelayParameter<SimpleMetricU64, u64> {
-    fn before(
+impl SimpleParameter<u64> for DelayParameter<SimpleMetricU64, u64> {
+    fn compute(
         &self,
-        _ctx: SimpleParameterContext<'_>,
+        ctx: SimpleParameterContext<'_>,
         internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<u64, SimpleCalculationError> {
         // Downcast the internal state to the correct type
         let memory = downcast_internal_state_mut::<VecDeque<u64>>(internal_state);
+
+        // Get today's value from the metric
+        let value = self.metric.get_value(ctx.values)?;
+        memory.push_back(value);
 
         // Take the oldest value from the queue
         // It should be guaranteed that the internal memory/queue has self.delay number of values
@@ -238,21 +217,11 @@ impl SimpleBeforeParameter<u64> for DelayParameter<SimpleMetricU64, u64> {
 
         Ok(value)
     }
-}
-impl SimpleAfterParameterHook<u64> for DelayParameter<SimpleMetricU64, u64> {
-    fn after(
-        &self,
-        ctx: SimpleParameterContext<'_>,
-        internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<(), SimpleCalculationError> {
-        // Downcast the internal state to the correct type
-        let memory = downcast_internal_state_mut::<VecDeque<u64>>(internal_state);
-
-        // Get today's value from the metric
-        let value = self.metric.get_value(ctx.values)?;
-        memory.push_back(value);
-
-        Ok(())
+    fn as_parameter(&self) -> &dyn Parameter
+    where
+        Self: Sized,
+    {
+        self
     }
 }
 
@@ -295,7 +264,7 @@ impl ParameterBuilder<f64> for DelayParameterBuilder<UnresolvedMetricF64, f64> {
                 initial_value: self.initial_value,
             };
 
-            let bp = BuiltParameter::Simple(SimpleParameterEntry::before_with_after_hook(p));
+            let bp = BuiltParameter::Simple(Box::new(p));
             return Ok(bp.into());
         }
 
@@ -331,7 +300,7 @@ impl ParameterBuilder<u64> for DelayParameterBuilder<UnresolvedMetricU64, u64> {
                 initial_value: self.initial_value,
             };
 
-            let bp = BuiltParameter::Simple(SimpleParameterEntry::before_with_after_hook(p));
+            let bp = BuiltParameter::Simple(Box::new(p));
             return Ok(bp.into());
         }
 

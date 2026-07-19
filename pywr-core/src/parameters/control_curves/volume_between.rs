@@ -3,8 +3,7 @@ use crate::network::ResolutionMaps;
 use crate::parameters::errors::SimpleCalculationError;
 use crate::parameters::{
     BuiltParameter, MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder, ParameterMeta,
-    ParameterName, ParameterState, SimpleBeforeParameter, SimpleParameter, SimpleParameterContext,
-    SimpleParameterEntry,
+    ParameterName, ParameterState, SimpleParameter, SimpleParameterContext,
 };
 use crate::resolve_metric_f64;
 use std::fmt::Debug;
@@ -27,17 +26,8 @@ where
     }
 }
 
-impl SimpleParameter for VolumeBetweenControlCurvesParameter<SimpleMetricF64> {
-    fn as_parameter(&self) -> &dyn Parameter
-    where
-        Self: Sized,
-    {
-        self
-    }
-}
-
-impl SimpleBeforeParameter<f64> for VolumeBetweenControlCurvesParameter<SimpleMetricF64> {
-    fn before(
+impl SimpleParameter<f64> for VolumeBetweenControlCurvesParameter<SimpleMetricF64> {
+    fn compute(
         &self,
         ctx: SimpleParameterContext<'_>,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
@@ -54,6 +44,12 @@ impl SimpleBeforeParameter<f64> for VolumeBetweenControlCurvesParameter<SimpleMe
             .map_or(Ok(1.0), |metric| metric.get_value(ctx.values))?;
 
         Ok(total * (upper - lower))
+    }
+    fn as_parameter(&self) -> &dyn Parameter
+    where
+        Self: Sized,
+    {
+        self
     }
 }
 
@@ -141,6 +137,6 @@ impl ParameterBuilder<f64> for VolumeBetweenControlCurvesParameterBuilder<Unreso
             lower,
         };
 
-        Ok(BuiltParameter::Simple(SimpleParameterEntry::before(p)).into())
+        Ok(BuiltParameter::Simple(Box::new(p)).into())
     }
 }

@@ -2,8 +2,7 @@ use crate::network::ResolutionMaps;
 use crate::parameters::errors::SimpleCalculationError;
 use crate::parameters::{
     BuiltParameter, MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder, ParameterMeta,
-    ParameterName, ParameterState, SimpleBeforeParameter, SimpleParameter, SimpleParameterContext,
-    SimpleParameterEntry,
+    ParameterName, ParameterState, SimpleParameter, SimpleParameterContext,
 };
 
 #[derive(Debug)]
@@ -18,22 +17,19 @@ impl Parameter for DailyProfileParameter {
     }
 }
 
-impl SimpleParameter for DailyProfileParameter {
-    fn as_parameter(&self) -> &dyn Parameter
-    where
-        Self: Sized,
-    {
-        self
-    }
-}
-
-impl SimpleBeforeParameter<f64> for DailyProfileParameter {
-    fn before(
+impl SimpleParameter<f64> for DailyProfileParameter {
+    fn compute(
         &self,
         ctx: SimpleParameterContext<'_>,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<f64, SimpleCalculationError> {
         Ok(self.values[ctx.timestep.day_of_year_index()])
+    }
+    fn as_parameter(&self) -> &dyn Parameter
+    where
+        Self: Sized,
+    {
+        self
     }
 }
 
@@ -66,6 +62,6 @@ impl ParameterBuilder<f64> for DailyProfileParameterBuilder {
             values: self.values,
         };
 
-        Ok(BuiltParameter::Simple(SimpleParameterEntry::before(p)).into())
+        Ok(BuiltParameter::Simple(Box::new(p)).into())
     }
 }

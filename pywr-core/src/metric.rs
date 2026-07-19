@@ -5,26 +5,18 @@ use crate::network::{
     VirtualStorageIndex,
 };
 use crate::node::{NodeError, UnresolvedNode};
-use crate::parameters::{
-    ConstParameterIndex, GeneralParameterIndex, ParameterIndex, ParameterName, SimpleParameterIndex,
-};
+use crate::parameters::{ConstParameterIndex, GeneralParameterIndex, ParameterName, SimpleParameterIndex};
 use crate::state::{
-    ConstParameterValues, MultiValue, NetworkStateError, ParameterReturnValue, SimpleParameterValues, State, StateError,
+    ConstParameterValues, ConstParameterValuesError, MultiValue, NetworkStateError, ParameterReturnValue,
+    SimpleParameterValues, SimpleParameterValuesError, State, StateError,
 };
 use num::Zero;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum ConstantMetricF64Error {
-    #[error("Parameter not found: {index}")]
-    ParameterNotFound { index: ConstParameterIndex<f64> },
-    #[error("Index parameter not found: {index}")]
-    IndexParameterNotFound { index: ConstParameterIndex<u64> },
-    #[error("Multi-parameter not found: {index}, key: {key}")]
-    MultiParameterNotFound {
-        index: ConstParameterIndex<MultiValue>,
-        key: String,
-    },
+    #[error("Simple parameter value error: {0}")]
+    ConstParameterValuesError(#[from] ConstParameterValuesError),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -41,19 +33,9 @@ pub enum ConstantMetricF64 {
 impl ConstantMetricF64 {
     pub fn get_value(&self, values: &ConstParameterValues) -> Result<f64, ConstantMetricF64Error> {
         match self {
-            ConstantMetricF64::ParameterValue(idx) => values
-                .get_const_parameter_f64(*idx)
-                .ok_or(ConstantMetricF64Error::ParameterNotFound { index: *idx }),
-            ConstantMetricF64::IndexParameterValue(idx) => values
-                .get_const_parameter_u64(*idx)
-                .ok_or(ConstantMetricF64Error::IndexParameterNotFound { index: *idx })
-                .map(|v| v as f64),
-            ConstantMetricF64::MultiParameterValue { index, key } => values
-                .get_const_multi_parameter_f64(*index, key)
-                .ok_or_else(|| ConstantMetricF64Error::MultiParameterNotFound {
-                    index: *index,
-                    key: key.clone(),
-                }),
+            ConstantMetricF64::ParameterValue(idx) => Ok(values.get_f64(*idx)?),
+            ConstantMetricF64::IndexParameterValue(idx) => Ok(values.get_u64(*idx)? as f64),
+            ConstantMetricF64::MultiParameterValue { index, key } => Ok(values.get_multi_f64(*index, key)?),
             ConstantMetricF64::Constant(v) => Ok(*v),
         }
     }
@@ -69,15 +51,8 @@ impl ConstantMetricF64 {
 
 #[derive(Debug, Error)]
 pub enum SimpleMetricF64Error {
-    #[error("Parameter not found: {index}")]
-    ParameterNotFound { index: SimpleParameterIndex<f64> },
-    #[error("Index parameter not found: {index}")]
-    IndexParameterNotFound { index: SimpleParameterIndex<u64> },
-    #[error("Multi-parameter not found: {index}, key: {key}")]
-    MultiParameterNotFound {
-        index: SimpleParameterIndex<MultiValue>,
-        key: String,
-    },
+    #[error("Simple parameter value error: {0}")]
+    SimpleParameterValuesError(#[from] SimpleParameterValuesError),
     #[error("Constant metric error: {0}")]
     ConstantMetricError(#[from] ConstantMetricF64Error),
     #[error("Cannot simplify metric to a constant metric")]
@@ -86,11 +61,18 @@ pub enum SimpleMetricF64Error {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum SimpleMetricF64 {
-    ParameterValue(SimpleParameterIndex<f64>),
-    IndexParameterValue(SimpleParameterIndex<u64>),
+    ParameterValue {
+        index: SimpleParameterIndex<f64>,
+        return_value: ParameterReturnValue,
+    },
+    IndexParameterValue {
+        index: SimpleParameterIndex<u64>,
+        return_value: ParameterReturnValue,
+    },
     MultiParameterValue {
         index: SimpleParameterIndex<MultiValue>,
         key: String,
+        return_value: ParameterReturnValue,
     },
     Constant(ConstantMetricF64),
 }
@@ -98,19 +80,15 @@ pub enum SimpleMetricF64 {
 impl SimpleMetricF64 {
     pub fn get_value(&self, values: &SimpleParameterValues) -> Result<f64, SimpleMetricF64Error> {
         match self {
-            SimpleMetricF64::ParameterValue(idx) => values
-                .get_simple_parameter_f64(*idx)
-                .ok_or(SimpleMetricF64Error::ParameterNotFound { index: *idx }),
-            SimpleMetricF64::IndexParameterValue(idx) => values
-                .get_simple_parameter_u64(*idx)
-                .ok_or(SimpleMetricF64Error::IndexParameterNotFound { index: *idx })
-                .map(|v| v as f64),
-            SimpleMetricF64::MultiParameterValue { index, key } => values
-                .get_simple_multi_parameter_f64(*index, key)
-                .ok_or_else(|| SimpleMetricF64Error::MultiParameterNotFound {
-                    index: *index,
-                    key: key.clone(),
-                }),
+            SimpleMetricF64::ParameterValue { index, return_value } => Ok(values.get_f64(*index, *return_value)?),
+            SimpleMetricF64::IndexParameterValue { index, return_value } => {
+                Ok(values.get_u64(*index, *return_value)? as f64)
+            }
+            SimpleMetricF64::MultiParameterValue {
+                index,
+                key,
+                return_value,
+            } => Ok(values.get_multi_f64(*index, key, *return_value)?),
             SimpleMetricF64::Constant(m) => Ok(m.get_value(values.get_constant_values())?),
         }
     }
@@ -139,15 +117,6 @@ impl SimpleMetricF64 {
 
 #[derive(Debug, Error)]
 pub enum MetricF64Error {
-    #[error("Parameter not found: {index}")]
-    ParameterNotFound { index: SimpleParameterIndex<f64> },
-    #[error("Index parameter not found: {index}")]
-    IndexParameterNotFound { index: SimpleParameterIndex<u64> },
-    #[error("Multi-parameter not found: {index}, key: {key}")]
-    MultiParameterNotFound {
-        index: SimpleParameterIndex<MultiValue>,
-        key: String,
-    },
     #[error("Node index not found: {0}")]
     NodeIndexNotFound(NodeIndex),
     #[error("Virtual storage node index not found: {0}")]
@@ -449,27 +418,27 @@ where
     }
 }
 
-impl TryFrom<ParameterIndex<f64>> for SimpleMetricF64 {
-    type Error = MetricF64Error;
-    fn try_from(idx: ParameterIndex<f64>) -> Result<Self, Self::Error> {
-        match idx {
-            ParameterIndex::Simple(idx) => Ok(Self::ParameterValue(idx)),
-            ParameterIndex::Const(idx) => Ok(Self::Constant(ConstantMetricF64::ParameterValue(idx))),
-            ParameterIndex::General(_) => Err(MetricF64Error::CannotSimplifyMetric),
-        }
-    }
-}
-
-impl TryFrom<ParameterIndex<u64>> for SimpleMetricU64 {
-    type Error = MetricU64Error;
-    fn try_from(idx: ParameterIndex<u64>) -> Result<Self, Self::Error> {
-        match idx {
-            ParameterIndex::Simple(idx) => Ok(Self::IndexParameterValue(idx)),
-            ParameterIndex::Const(idx) => Ok(Self::Constant(ConstantMetricU64::IndexParameterValue(idx))),
-            ParameterIndex::General(_) => Err(MetricU64Error::CannotSimplifyMetric),
-        }
-    }
-}
+// impl TryFrom<ParameterIndex<f64>> for SimpleMetricF64 {
+//     type Error = MetricF64Error;
+//     fn try_from(idx: ParameterIndex<f64>) -> Result<Self, Self::Error> {
+//         match idx {
+//             ParameterIndex::Simple(idx) => Ok(Self::ParameterValue(idx)),
+//             ParameterIndex::Const(idx) => Ok(Self::Constant(ConstantMetricF64::ParameterValue(idx))),
+//             ParameterIndex::General(_) => Err(MetricF64Error::CannotSimplifyMetric),
+//         }
+//     }
+// }
+//
+// impl TryFrom<ParameterIndex<u64>> for SimpleMetricU64 {
+//     type Error = MetricU64Error;
+//     fn try_from(idx: ParameterIndex<u64>) -> Result<Self, Self::Error> {
+//         match idx {
+//             ParameterIndex::Simple(idx) => Ok(Self::IndexParameterValue(idx)),
+//             ParameterIndex::Const(idx) => Ok(Self::Constant(ConstantMetricU64::IndexParameterValue(idx))),
+//             ParameterIndex::General(_) => Err(MetricU64Error::CannotSimplifyMetric),
+//         }
+//     }
+// }
 
 #[derive(Debug, Error)]
 pub enum MetricF64ResolutionError {
@@ -793,13 +762,8 @@ impl From<f64> for UnresolvedMetricF64 {
 
 #[derive(Debug, Error)]
 pub enum ConstantMetricU64Error {
-    #[error("Index parameter not found: {index}")]
-    IndexParameterNotFound { index: ConstParameterIndex<u64> },
-    #[error("Multi-parameter not found: {index}, key: {key}")]
-    MultiParameterNotFound {
-        index: ConstParameterIndex<MultiValue>,
-        key: String,
-    },
+    #[error("Simple parameter value error: {0}")]
+    ConstParameterValuesError(#[from] ConstParameterValuesError),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -815,15 +779,8 @@ pub enum ConstantMetricU64 {
 impl ConstantMetricU64 {
     pub fn get_value(&self, values: &ConstParameterValues) -> Result<u64, ConstantMetricU64Error> {
         match self {
-            ConstantMetricU64::IndexParameterValue(idx) => values
-                .get_const_parameter_u64(*idx)
-                .ok_or(ConstantMetricU64Error::IndexParameterNotFound { index: *idx }),
-            ConstantMetricU64::MultiParameterValue { index, key } => values
-                .get_const_multi_parameter_u64(*index, key)
-                .ok_or_else(|| ConstantMetricU64Error::MultiParameterNotFound {
-                    index: *index,
-                    key: key.clone(),
-                }),
+            ConstantMetricU64::IndexParameterValue(idx) => Ok(values.get_u64(*idx)?),
+            ConstantMetricU64::MultiParameterValue { index, key } => Ok(values.get_multi_u64(*index, key)?),
             ConstantMetricU64::Constant(v) => Ok(*v),
         }
     }
@@ -831,13 +788,8 @@ impl ConstantMetricU64 {
 
 #[derive(Debug, Error)]
 pub enum SimpleMetricU64Error {
-    #[error("Index parameter not found: {index}")]
-    IndexParameterNotFound { index: SimpleParameterIndex<u64> },
-    #[error("Multi-parameter not found: {index}, key: {key}")]
-    MultiParameterNotFound {
-        index: SimpleParameterIndex<MultiValue>,
-        key: String,
-    },
+    #[error("Simple parameter value error: {0}")]
+    SimpleParameterValuesError(#[from] SimpleParameterValuesError),
     #[error("Constant metric error: {0}")]
     ConstantMetricError(#[from] ConstantMetricU64Error),
     #[error("Cannot simplify metric to a constant metric")]
@@ -846,10 +798,14 @@ pub enum SimpleMetricU64Error {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum SimpleMetricU64 {
-    IndexParameterValue(SimpleParameterIndex<u64>),
+    IndexParameterValue {
+        index: SimpleParameterIndex<u64>,
+        return_value: ParameterReturnValue,
+    },
     MultiParameterValue {
         index: SimpleParameterIndex<MultiValue>,
         key: String,
+        return_value: ParameterReturnValue,
     },
     Constant(ConstantMetricU64),
 }
@@ -857,15 +813,12 @@ pub enum SimpleMetricU64 {
 impl SimpleMetricU64 {
     pub fn get_value(&self, values: &SimpleParameterValues) -> Result<u64, SimpleMetricU64Error> {
         match self {
-            SimpleMetricU64::IndexParameterValue(idx) => values
-                .get_simple_parameter_u64(*idx)
-                .ok_or(SimpleMetricU64Error::IndexParameterNotFound { index: *idx }),
-            SimpleMetricU64::MultiParameterValue { index, key } => values
-                .get_simple_multi_parameter_u64(*index, key)
-                .ok_or_else(|| SimpleMetricU64Error::MultiParameterNotFound {
-                    index: *index,
-                    key: key.clone(),
-                }),
+            SimpleMetricU64::IndexParameterValue { index, return_value } => Ok(values.get_u64(*index, *return_value)?),
+            SimpleMetricU64::MultiParameterValue {
+                index,
+                key,
+                return_value,
+            } => Ok(values.get_multi_u64(*index, key, *return_value)?),
             SimpleMetricU64::Constant(m) => Ok(m.get_value(values.get_constant_values())?),
         }
     }

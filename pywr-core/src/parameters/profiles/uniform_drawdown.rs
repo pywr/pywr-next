@@ -2,8 +2,7 @@ use crate::network::ResolutionMaps;
 use crate::parameters::errors::SimpleCalculationError;
 use crate::parameters::{
     BuiltParameter, MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder, ParameterMeta,
-    ParameterName, ParameterState, SimpleBeforeParameter, SimpleParameter, SimpleParameterContext,
-    SimpleParameterEntry,
+    ParameterName, ParameterState, SimpleParameter, SimpleParameterContext,
 };
 use chrono::{Datelike, NaiveDate};
 
@@ -23,17 +22,8 @@ impl Parameter for UniformDrawdownProfileParameter {
         &self.meta
     }
 }
-impl SimpleParameter for UniformDrawdownProfileParameter {
-    fn as_parameter(&self) -> &dyn Parameter
-    where
-        Self: Sized,
-    {
-        self
-    }
-}
-
-impl SimpleBeforeParameter<f64> for UniformDrawdownProfileParameter {
-    fn before(
+impl SimpleParameter<f64> for UniformDrawdownProfileParameter {
+    fn compute(
         &self,
         ctx: SimpleParameterContext<'_>,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
@@ -71,6 +61,12 @@ impl SimpleBeforeParameter<f64> for UniformDrawdownProfileParameter {
         let slope = (residual_proportion - 1.0) / total_days_in_period as f64;
 
         Ok(1.0 + (slope * days_into_period as f64))
+    }
+    fn as_parameter(&self) -> &dyn Parameter
+    where
+        Self: Sized,
+    {
+        self
     }
 }
 
@@ -121,6 +117,6 @@ impl ParameterBuilder<f64> for UniformDrawdownProfileParameterBuilder {
             reset_doy,
         };
 
-        Ok(BuiltParameter::Simple(SimpleParameterEntry::before(p)).into())
+        Ok(BuiltParameter::Simple(Box::new(p)).into())
     }
 }

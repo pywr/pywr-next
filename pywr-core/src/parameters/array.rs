@@ -2,8 +2,7 @@ use crate::network::ResolutionMaps;
 use crate::parameters::errors::SimpleCalculationError;
 use crate::parameters::{
     BuiltParameter, MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder, ParameterMeta,
-    ParameterName, ParameterState, SimpleBeforeParameter, SimpleParameter, SimpleParameterContext,
-    SimpleParameterEntry,
+    ParameterName, ParameterState, SimpleParameter, SimpleParameterContext,
 };
 use crate::timestep::{Timestep, TimestepIndex};
 use ndarray::{Array1, Array2, Axis, s};
@@ -38,17 +37,8 @@ where
         &self.meta
     }
 }
-impl SimpleParameter for Array1Parameter<f64> {
-    fn as_parameter(&self) -> &dyn Parameter
-    where
-        Self: Sized,
-    {
-        self
-    }
-}
-
-impl SimpleBeforeParameter<f64> for Array1Parameter<f64> {
-    fn before(
+impl SimpleParameter<f64> for Array1Parameter<f64> {
+    fn compute(
         &self,
         ctx: SimpleParameterContext<'_>,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
@@ -65,9 +55,6 @@ impl SimpleBeforeParameter<f64> for Array1Parameter<f64> {
             })?;
         Ok(*value)
     }
-}
-
-impl SimpleParameter for Array1Parameter<u64> {
     fn as_parameter(&self) -> &dyn Parameter
     where
         Self: Sized,
@@ -76,8 +63,8 @@ impl SimpleParameter for Array1Parameter<u64> {
     }
 }
 
-impl SimpleBeforeParameter<u64> for Array1Parameter<u64> {
-    fn before(
+impl SimpleParameter<u64> for Array1Parameter<u64> {
+    fn compute(
         &self,
         ctx: SimpleParameterContext<'_>,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
@@ -92,6 +79,12 @@ impl SimpleBeforeParameter<u64> for Array1Parameter<u64> {
                 axis: 0,
             })?;
         Ok(*value)
+    }
+    fn as_parameter(&self) -> &dyn Parameter
+    where
+        Self: Sized,
+    {
+        self
     }
 }
 
@@ -130,7 +123,7 @@ impl ParameterBuilder<f64> for Array1ParameterBuilder<f64> {
             array: self.array,
             timestep_offset: self.timestep_offset,
         };
-        Ok(BuiltParameter::Simple(SimpleParameterEntry::before(p)).into())
+        Ok(BuiltParameter::Simple(Box::new(p)).into())
     }
 }
 
@@ -147,7 +140,7 @@ impl ParameterBuilder<u64> for Array1ParameterBuilder<u64> {
             array: self.array,
             timestep_offset: self.timestep_offset,
         };
-        Ok(BuiltParameter::Simple(SimpleParameterEntry::before(p)).into())
+        Ok(BuiltParameter::Simple(Box::new(p)).into())
     }
 }
 
@@ -183,17 +176,8 @@ where
     }
 }
 
-impl SimpleParameter for Array2Parameter<f64> {
-    fn as_parameter(&self) -> &dyn Parameter
-    where
-        Self: Sized,
-    {
-        self
-    }
-}
-
-impl SimpleBeforeParameter<f64> for Array2Parameter<f64> {
-    fn before(
+impl SimpleParameter<f64> for Array2Parameter<f64> {
+    fn compute(
         &self,
         ctx: SimpleParameterContext<'_>,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
@@ -224,8 +208,6 @@ impl SimpleBeforeParameter<f64> for Array2Parameter<f64> {
         })?;
         Ok(*value)
     }
-}
-impl SimpleParameter for Array2Parameter<u64> {
     fn as_parameter(&self) -> &dyn Parameter
     where
         Self: Sized,
@@ -233,8 +215,9 @@ impl SimpleParameter for Array2Parameter<u64> {
         self
     }
 }
-impl SimpleBeforeParameter<u64> for Array2Parameter<u64> {
-    fn before(
+
+impl SimpleParameter<u64> for Array2Parameter<u64> {
+    fn compute(
         &self,
         ctx: SimpleParameterContext<'_>,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
@@ -264,6 +247,12 @@ impl SimpleBeforeParameter<u64> for Array2Parameter<u64> {
             }
         })?;
         Ok(*value)
+    }
+    fn as_parameter(&self) -> &dyn Parameter
+    where
+        Self: Sized,
+    {
+        self
     }
 }
 
@@ -320,7 +309,7 @@ impl ParameterBuilder<f64> for Array2ParameterBuilder<f64> {
             timestep_offset: self.timestep_offset,
         };
 
-        Ok(BuiltParameter::Simple(SimpleParameterEntry::before(p)).into())
+        Ok(BuiltParameter::Simple(Box::new(p)).into())
     }
 }
 
@@ -352,7 +341,7 @@ impl ParameterBuilder<u64> for Array2ParameterBuilder<u64> {
             scenario_group_index,
             timestep_offset: self.timestep_offset,
         };
-        Ok(BuiltParameter::Simple(SimpleParameterEntry::before(p)).into())
+        Ok(BuiltParameter::Simple(Box::new(p)).into())
     }
 }
 
@@ -407,7 +396,7 @@ mod tests {
                     scenario_index: si,
                     values: &spv.get_simple_parameter_values(),
                 };
-                assert_approx_eq!(f64, p.before(ctx, &mut state).unwrap(), ts.index as f64);
+                assert_approx_eq!(f64, p.compute(ctx, &mut state).unwrap(), ts.index as f64);
             }
         }
     }
@@ -440,7 +429,7 @@ mod tests {
                     values: &spv.get_simple_parameter_values(),
                 };
 
-                assert_approx_eq!(f64, p.before(ctx, &mut state).unwrap(), ts.index as f64);
+                assert_approx_eq!(f64, p.compute(ctx, &mut state).unwrap(), ts.index as f64);
             }
         }
     }
@@ -475,10 +464,10 @@ mod tests {
 
                 if ts.index >= 5 {
                     // If the time-step index is out of bounds, we should return an error
-                    assert!(p.before(ctx, &mut state).is_err());
+                    assert!(p.compute(ctx, &mut state).is_err());
                 } else {
                     // Otherwise, we should return the value
-                    assert_approx_eq!(f64, p.before(ctx, &mut state).unwrap(), ts.index as f64);
+                    assert_approx_eq!(f64, p.compute(ctx, &mut state).unwrap(), ts.index as f64);
                 }
             }
         }

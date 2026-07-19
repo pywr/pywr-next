@@ -2,8 +2,7 @@ use crate::network::ResolutionMaps;
 use crate::parameters::errors::SimpleCalculationError;
 use crate::parameters::{
     BuiltParameter, MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder, ParameterMeta,
-    ParameterName, ParameterState, SimpleBeforeParameter, SimpleParameter, SimpleParameterContext,
-    SimpleParameterEntry,
+    ParameterName, ParameterState, SimpleParameter, SimpleParameterContext,
 };
 use chrono::{Datelike, NaiveDateTime, Timelike};
 
@@ -67,17 +66,8 @@ impl Parameter for MonthlyProfileParameter {
         &self.meta
     }
 }
-impl SimpleParameter for MonthlyProfileParameter {
-    fn as_parameter(&self) -> &dyn Parameter
-    where
-        Self: Sized,
-    {
-        self
-    }
-}
-
-impl SimpleBeforeParameter<f64> for MonthlyProfileParameter {
-    fn before(
+impl SimpleParameter<f64> for MonthlyProfileParameter {
+    fn compute(
         &self,
         ctx: SimpleParameterContext<'_>,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
@@ -103,6 +93,12 @@ impl SimpleBeforeParameter<f64> for MonthlyProfileParameter {
             None => self.values[ctx.timestep.date.month() as usize - 1],
         };
         Ok(v)
+    }
+    fn as_parameter(&self) -> &dyn Parameter
+    where
+        Self: Sized,
+    {
+        self
     }
 }
 
@@ -142,6 +138,6 @@ impl ParameterBuilder<f64> for MonthlyProfileParameterBuilder {
             values: self.values,
             interp_day: self.interp_day,
         };
-        Ok(BuiltParameter::Simple(SimpleParameterEntry::before(p)).into())
+        Ok(BuiltParameter::Simple(Box::new(p)).into())
     }
 }
