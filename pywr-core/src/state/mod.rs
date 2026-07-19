@@ -288,17 +288,11 @@ pub struct ParameterValuesCollection {
 }
 
 impl ParameterValuesCollection {
-    fn get_simple_parameter_values<'a>(
-        &'a self,
-        constant_parameter_values: ConstParameterValues<'a>,
-    ) -> SimpleParameterValues<'a> {
-        SimpleParameterValues {
-            constant: constant_parameter_values,
-            simple: ParameterValuesRef {
-                values: &self.simple.values,
-                indices: &self.simple.indices,
-                multi_values: &self.simple.multi_values,
-            },
+    fn get_simple_parameter_values(&self) -> ParameterValuesRef<'_> {
+        ParameterValuesRef {
+            values: &self.simple.values,
+            indices: &self.simple.indices,
+            multi_values: &self.simple.multi_values,
         }
     }
 }
@@ -321,35 +315,205 @@ impl ParameterValuesRef<'_> {
         self.indices.get(idx).copied()
     }
 
-    fn get_multi_value(&self, idx: usize, key: &str) -> Option<f64> {
-        self.multi_values.get(idx).and_then(|mv| mv.get_value(key).copied())
+    fn get_multi_value(&self, idx: usize) -> Option<&MultiValue> {
+        self.multi_values.get(idx)
     }
+}
 
-    fn get_multi_index(&self, idx: usize, key: &str) -> Option<u64> {
-        self.multi_values.get(idx).and_then(|mv| mv.get_index(key).copied())
-    }
+#[derive(Error, Debug)]
+pub enum SimpleParameterValuesError {
+    #[error("Simple parameter index not found: {0}")]
+    SimpleParameterIndexNotFound(SimpleParameterIndex<f64>),
+    #[error("Simple index parameter index not found: {0}")]
+    SimpleIndexParameterIndexNotFound(SimpleParameterIndex<u64>),
+    #[error("Simple parameter index not found: {0}")]
+    SimpleMultiValueParameterIndexNotFound(SimpleParameterIndex<MultiValue>),
+    #[error("Simple parameter with index {index} has no key: {key}")]
+    SimpleMultiValueParameterKeyNotFound {
+        index: SimpleParameterIndex<MultiValue>,
+        key: String,
+    },
 }
 
 pub struct SimpleParameterValues<'a> {
     constant: ConstParameterValues<'a>,
-    simple: ParameterValuesRef<'a>,
+    before: ParameterValuesRef<'a>,
+    after: ParameterValuesRef<'a>,
 }
 
 impl SimpleParameterValues<'_> {
-    pub fn get_simple_parameter_f64(&self, idx: SimpleParameterIndex<f64>) -> Option<f64> {
-        self.simple.get_value(*idx.deref())
+    pub fn get_f64(
+        &self,
+        idx: SimpleParameterIndex<f64>,
+        return_value: ParameterReturnValue,
+    ) -> Result<f64, SimpleParameterValuesError> {
+        match return_value {
+            ParameterReturnValue::Before => self.get_f64_before(idx),
+            ParameterReturnValue::After => self.get_f64_after(idx),
+            ParameterReturnValue::BeforeOrElseAfter => match self.get_f64_before(idx) {
+                Ok(v) => Ok(v),
+                Err(_) => self.get_f64_after(idx),
+            },
+            ParameterReturnValue::AfterOrElseBefore => match self.get_f64_after(idx) {
+                Ok(v) => Ok(v),
+                Err(_) => self.get_f64_before(idx),
+            },
+        }
     }
 
-    pub fn get_simple_parameter_u64(&self, idx: SimpleParameterIndex<u64>) -> Option<u64> {
-        self.simple.get_index(*idx.deref())
+    fn get_f64_before(&self, idx: SimpleParameterIndex<f64>) -> Result<f64, SimpleParameterValuesError> {
+        self.before
+            .get_value(*idx.deref())
+            .ok_or(SimpleParameterValuesError::SimpleParameterIndexNotFound(idx))
     }
 
-    pub fn get_simple_multi_parameter_f64(&self, idx: SimpleParameterIndex<MultiValue>, key: &str) -> Option<f64> {
-        self.simple.get_multi_value(*idx.deref(), key)
+    fn get_f64_after(&self, idx: SimpleParameterIndex<f64>) -> Result<f64, SimpleParameterValuesError> {
+        self.after
+            .get_value(*idx.deref())
+            .ok_or(SimpleParameterValuesError::SimpleParameterIndexNotFound(idx))
     }
 
-    pub fn get_simple_multi_parameter_u64(&self, idx: SimpleParameterIndex<MultiValue>, key: &str) -> Option<u64> {
-        self.simple.get_multi_index(*idx.deref(), key)
+    pub fn get_u64(
+        &self,
+        idx: SimpleParameterIndex<u64>,
+        return_value: ParameterReturnValue,
+    ) -> Result<u64, SimpleParameterValuesError> {
+        match return_value {
+            ParameterReturnValue::Before => self.get_u64_before(idx),
+            ParameterReturnValue::After => self.get_u64_after(idx),
+            ParameterReturnValue::BeforeOrElseAfter => match self.get_u64_before(idx) {
+                Ok(v) => Ok(v),
+                Err(_) => self.get_u64_after(idx),
+            },
+            ParameterReturnValue::AfterOrElseBefore => match self.get_u64_after(idx) {
+                Ok(v) => Ok(v),
+                Err(_) => self.get_u64_before(idx),
+            },
+        }
+    }
+
+    fn get_u64_before(&self, idx: SimpleParameterIndex<u64>) -> Result<u64, SimpleParameterValuesError> {
+        self.before
+            .get_index(*idx.deref())
+            .ok_or(SimpleParameterValuesError::SimpleIndexParameterIndexNotFound(idx))
+    }
+
+    fn get_u64_after(&self, idx: SimpleParameterIndex<u64>) -> Result<u64, SimpleParameterValuesError> {
+        self.after
+            .get_index(*idx.deref())
+            .ok_or(SimpleParameterValuesError::SimpleIndexParameterIndexNotFound(idx))
+    }
+
+    pub fn get_multi_f64(
+        &self,
+        idx: SimpleParameterIndex<MultiValue>,
+        key: &str,
+        return_value: ParameterReturnValue,
+    ) -> Result<f64, SimpleParameterValuesError> {
+        match return_value {
+            ParameterReturnValue::Before => self.get_multi_f64_before(idx, key),
+            ParameterReturnValue::After => self.get_multi_f64_after(idx, key),
+            ParameterReturnValue::BeforeOrElseAfter => match self.get_multi_f64_before(idx, key) {
+                Ok(v) => Ok(v),
+                Err(_) => self.get_multi_f64_after(idx, key),
+            },
+            ParameterReturnValue::AfterOrElseBefore => match self.get_multi_f64_after(idx, key) {
+                Ok(v) => Ok(v),
+                Err(_) => self.get_multi_f64_before(idx, key),
+            },
+        }
+    }
+
+    fn get_multi_f64_before(
+        &self,
+        idx: SimpleParameterIndex<MultiValue>,
+        key: &str,
+    ) -> Result<f64, SimpleParameterValuesError> {
+        let mv = self
+            .before
+            .get_multi_value(*idx.deref())
+            .ok_or(SimpleParameterValuesError::SimpleMultiValueParameterIndexNotFound(idx))?;
+
+        mv.get_value(key)
+            .ok_or_else(|| SimpleParameterValuesError::SimpleMultiValueParameterKeyNotFound {
+                index: idx,
+                key: key.to_string(),
+            })
+            .copied()
+    }
+
+    fn get_multi_f64_after(
+        &self,
+        idx: SimpleParameterIndex<MultiValue>,
+        key: &str,
+    ) -> Result<f64, SimpleParameterValuesError> {
+        let mv = self
+            .after
+            .get_multi_value(*idx.deref())
+            .ok_or(SimpleParameterValuesError::SimpleMultiValueParameterIndexNotFound(idx))?;
+
+        mv.get_value(key)
+            .ok_or_else(|| SimpleParameterValuesError::SimpleMultiValueParameterKeyNotFound {
+                index: idx,
+                key: key.to_string(),
+            })
+            .copied()
+    }
+
+    pub fn get_multi_u64(
+        &self,
+        idx: SimpleParameterIndex<MultiValue>,
+        key: &str,
+        return_value: ParameterReturnValue,
+    ) -> Result<u64, SimpleParameterValuesError> {
+        match return_value {
+            ParameterReturnValue::Before => self.get_multi_u64_before(idx, key),
+            ParameterReturnValue::After => self.get_multi_u64_after(idx, key),
+            ParameterReturnValue::BeforeOrElseAfter => match self.get_multi_u64_before(idx, key) {
+                Ok(v) => Ok(v),
+                Err(_) => self.get_multi_u64_after(idx, key),
+            },
+            ParameterReturnValue::AfterOrElseBefore => match self.get_multi_u64_after(idx, key) {
+                Ok(v) => Ok(v),
+                Err(_) => self.get_multi_u64_before(idx, key),
+            },
+        }
+    }
+
+    fn get_multi_u64_before(
+        &self,
+        idx: SimpleParameterIndex<MultiValue>,
+        key: &str,
+    ) -> Result<u64, SimpleParameterValuesError> {
+        let mv = self
+            .before
+            .get_multi_value(*idx.deref())
+            .ok_or(SimpleParameterValuesError::SimpleMultiValueParameterIndexNotFound(idx))?;
+
+        mv.get_index(key)
+            .ok_or_else(|| SimpleParameterValuesError::SimpleMultiValueParameterKeyNotFound {
+                index: idx,
+                key: key.to_string(),
+            })
+            .copied()
+    }
+
+    fn get_multi_u64_after(
+        &self,
+        idx: SimpleParameterIndex<MultiValue>,
+        key: &str,
+    ) -> Result<u64, SimpleParameterValuesError> {
+        let mv = self
+            .after
+            .get_multi_value(*idx.deref())
+            .ok_or(SimpleParameterValuesError::SimpleMultiValueParameterIndexNotFound(idx))?;
+
+        mv.get_index(key)
+            .ok_or_else(|| SimpleParameterValuesError::SimpleMultiValueParameterKeyNotFound {
+                index: idx,
+                key: key.to_string(),
+            })
+            .copied()
     }
 
     pub fn get_constant_values(&self) -> &ConstParameterValues<'_> {
@@ -357,26 +521,72 @@ impl SimpleParameterValues<'_> {
     }
 }
 
+#[derive(Error, Debug)]
+pub enum ConstParameterValuesError {
+    #[error("Constant parameter index not found: {0}")]
+    ConstParameterIndexNotFound(ConstParameterIndex<f64>),
+    #[error("Constant index parameter index not found: {0}")]
+    ConstIndexParameterIndexNotFound(ConstParameterIndex<u64>),
+    #[error("Constant parameter index not found: {0}")]
+    ConstMultiValueParameterIndexNotFound(ConstParameterIndex<MultiValue>),
+    #[error("Constant parameter with index {index} has no key: {key}")]
+    ConstMultiValueParameterKeyNotFound {
+        index: ConstParameterIndex<MultiValue>,
+        key: String,
+    },
+}
 #[derive(Default)]
 pub struct ConstParameterValues<'a> {
     constant: ParameterValuesRef<'a>,
 }
 
 impl ConstParameterValues<'_> {
-    pub fn get_const_parameter_f64(&self, idx: ConstParameterIndex<f64>) -> Option<f64> {
-        self.constant.get_value(*idx.deref())
+    pub fn get_f64(&self, idx: ConstParameterIndex<f64>) -> Result<f64, ConstParameterValuesError> {
+        self.constant
+            .get_value(*idx.deref())
+            .ok_or(ConstParameterValuesError::ConstParameterIndexNotFound(idx))
     }
 
-    pub fn get_const_parameter_u64(&self, idx: ConstParameterIndex<u64>) -> Option<u64> {
-        self.constant.get_index(*idx.deref())
+    pub fn get_u64(&self, idx: ConstParameterIndex<u64>) -> Result<u64, ConstParameterValuesError> {
+        self.constant
+            .get_index(*idx.deref())
+            .ok_or(ConstParameterValuesError::ConstIndexParameterIndexNotFound(idx))
     }
 
-    pub fn get_const_multi_parameter_f64(&self, idx: ConstParameterIndex<MultiValue>, key: &str) -> Option<f64> {
-        self.constant.get_multi_value(*idx.deref(), key)
+    pub fn get_multi_f64(
+        &self,
+        idx: ConstParameterIndex<MultiValue>,
+        key: &str,
+    ) -> Result<f64, ConstParameterValuesError> {
+        let mv = self
+            .constant
+            .get_multi_value(*idx.deref())
+            .ok_or(ConstParameterValuesError::ConstMultiValueParameterIndexNotFound(idx))?;
+
+        mv.get_value(key)
+            .ok_or_else(|| ConstParameterValuesError::ConstMultiValueParameterKeyNotFound {
+                index: idx,
+                key: key.to_string(),
+            })
+            .copied()
     }
 
-    pub fn get_const_multi_parameter_u64(&self, idx: ConstParameterIndex<MultiValue>, key: &str) -> Option<u64> {
-        self.constant.get_multi_index(*idx.deref(), key)
+    pub fn get_multi_u64(
+        &self,
+        idx: ConstParameterIndex<MultiValue>,
+        key: &str,
+    ) -> Result<u64, ConstParameterValuesError> {
+        let mv = self
+            .constant
+            .get_multi_value(*idx.deref())
+            .ok_or(ConstParameterValuesError::ConstMultiValueParameterIndexNotFound(idx))?;
+
+        mv.get_index(key)
+            .ok_or_else(|| ConstParameterValuesError::ConstMultiValueParameterKeyNotFound {
+                index: idx,
+                key: key.to_string(),
+            })
+            .copied()
     }
 }
 
@@ -686,28 +896,7 @@ pub enum StateError {
         index: GeneralParameterIndex<MultiValue>,
         key: String,
     },
-    #[error("Simple parameter index not found: {0}")]
-    SimpleParameterIndexNotFound(SimpleParameterIndex<f64>),
-    #[error("Simple index parameter index not found: {0}")]
-    SimpleIndexParameterIndexNotFound(SimpleParameterIndex<u64>),
-    #[error("Simple parameter index not found: {0}")]
-    SimpleMultiValueParameterIndexNotFound(SimpleParameterIndex<MultiValue>),
-    #[error("Simple parameter with index {index} has no key: {key}")]
-    SimpleMultiValueParameterKeyNotFound {
-        index: SimpleParameterIndex<MultiValue>,
-        key: String,
-    },
-    #[error("Constant parameter index not found: {0}")]
-    ConstParameterIndexNotFound(ConstParameterIndex<f64>),
-    #[error("Constant index parameter index not found: {0}")]
-    ConstIndexParameterIndexNotFound(ConstParameterIndex<u64>),
-    #[error("Constant parameter index not found: {0}")]
-    ConstMultiValueParameterIndexNotFound(ConstParameterIndex<MultiValue>),
-    #[error("Constant parameter with index {index} has no key: {key}")]
-    ConstMultiValueParameterKeyNotFound {
-        index: ConstParameterIndex<MultiValue>,
-        key: String,
-    },
+
     #[error("Multi-network transfer index not found: {0}")]
     MultiNetworkTransferIndexNotFound(MultiNetworkTransferIndex),
     #[error("Network state error: {0}")]
@@ -1226,8 +1415,11 @@ impl State {
     }
 
     pub fn get_simple_parameter_values(&self) -> SimpleParameterValues<'_> {
-        self.parameters_before
-            .get_simple_parameter_values(self.get_const_parameter_values())
+        SimpleParameterValues {
+            constant: self.get_const_parameter_values(),
+            before: self.parameters_before.get_simple_parameter_values(),
+            after: self.parameters_after.get_simple_parameter_values(),
+        }
     }
 
     pub fn get_const_parameter_values(&self) -> ConstParameterValues<'_> {

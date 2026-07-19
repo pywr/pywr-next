@@ -2,8 +2,7 @@ use crate::network::ResolutionMaps;
 use crate::parameters::errors::SimpleCalculationError;
 use crate::parameters::{
     BuiltParameter, MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder, ParameterMeta,
-    ParameterName, ParameterState, SimpleBeforeParameter, SimpleParameter, SimpleParameterContext,
-    SimpleParameterEntry,
+    ParameterName, ParameterState, SimpleParameter, SimpleParameterContext,
 };
 use crate::timestep::Timestep;
 use thiserror::Error;
@@ -171,22 +170,19 @@ impl Parameter for WeeklyProfileParameter {
     }
 }
 
-impl SimpleParameter for WeeklyProfileParameter {
-    fn as_parameter(&self) -> &dyn Parameter
-    where
-        Self: Sized,
-    {
-        self
-    }
-}
-
-impl SimpleBeforeParameter<f64> for WeeklyProfileParameter {
-    fn before(
+impl SimpleParameter<f64> for WeeklyProfileParameter {
+    fn compute(
         &self,
         ctx: SimpleParameterContext<'_>,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<f64, SimpleCalculationError> {
         Ok(self.values.value(ctx.timestep, &self.interp_day))
+    }
+    fn as_parameter(&self) -> &dyn Parameter
+    where
+        Self: Sized,
+    {
+        self
     }
 }
 
@@ -227,7 +223,7 @@ impl ParameterBuilder<f64> for WeeklyProfileParameterBuilder {
             interp_day: self.interp_day,
         };
 
-        Ok(BuiltParameter::Simple(SimpleParameterEntry::before(p)).into())
+        Ok(BuiltParameter::Simple(Box::new(p)).into())
     }
 }
 

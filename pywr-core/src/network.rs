@@ -1004,7 +1004,7 @@ impl Network {
 
         // First we update the simple parameters
         self.parameters
-            .before_simple(timestep, scenario_index, state, internal_states)?;
+            .compute_simple(timestep, scenario_index, state, internal_states)?;
 
         // Next run "before" on nodes and virtual nodes
         for n in &self.nodes {
@@ -1050,9 +1050,6 @@ impl Network {
         timings: Option<&mut ComponentTimings>,
     ) -> Result<(), NetworkStepError> {
         // TODO reset parameter state to zero
-
-        self.parameters
-            .after_simple(timestep, scenario_index, state, internal_states)?;
 
         // No "after" on nodes and virtual nodes
 

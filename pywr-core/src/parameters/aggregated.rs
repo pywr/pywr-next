@@ -1,8 +1,7 @@
 use super::{
     BuiltParameter, ConstParameter, GeneralAfterParameter, GeneralBeforeParameter, GeneralParameterContext,
     GeneralParameterEntry, MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder, ParameterName,
-    ParameterState, SimpleAfterParameter, SimpleBeforeParameter, SimpleParameter, SimpleParameterContext,
-    SimpleParameterEntry,
+    ParameterState, SimpleParameter, SimpleParameterContext,
 };
 use crate::agg_funcs::AggFuncF64;
 use crate::metric::{
@@ -74,47 +73,25 @@ impl GeneralAfterParameter<f64> for AggregatedParameter<MetricF64> {
     }
 }
 
-impl<M> SimpleParameter for AggregatedParameter<M>
-where
-    M: Send + Sync + Debug,
-{
+impl SimpleParameter<f64> for AggregatedParameter<SimpleMetricF64> {
+    fn compute(
+        &self,
+        ctx: SimpleParameterContext<'_>,
+        _internal_state: &mut Option<Box<dyn ParameterState>>,
+    ) -> Result<f64, SimpleCalculationError> {
+        let values = self
+            .metrics
+            .iter()
+            .map(|p| p.get_value(ctx.values))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(self.agg_func.calc_iter_f64(&values)?)
+    }
     fn as_parameter(&self) -> &dyn Parameter
     where
         Self: Sized,
     {
         self
-    }
-}
-
-impl SimpleBeforeParameter<f64> for AggregatedParameter<SimpleMetricF64> {
-    fn before(
-        &self,
-        ctx: SimpleParameterContext<'_>,
-        _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<f64, SimpleCalculationError> {
-        let values = self
-            .metrics
-            .iter()
-            .map(|p| p.get_value(ctx.values))
-            .collect::<Result<Vec<_>, _>>()?;
-
-        Ok(self.agg_func.calc_iter_f64(&values)?)
-    }
-}
-
-impl SimpleAfterParameter<f64> for AggregatedParameter<SimpleMetricF64> {
-    fn after(
-        &self,
-        ctx: SimpleParameterContext<'_>,
-        _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<f64, SimpleCalculationError> {
-        let values = self
-            .metrics
-            .iter()
-            .map(|p| p.get_value(ctx.values))
-            .collect::<Result<Vec<_>, _>>()?;
-
-        Ok(self.agg_func.calc_iter_f64(&values)?)
     }
 }
 
@@ -191,14 +168,12 @@ impl ParameterBuilder<f64> for AggregatedParameterBuilder {
         }
 
         if let Some(metrics) = try_into_simple_metrics_f64(&metrics) {
-            return Ok(
-                BuiltParameter::Simple(SimpleParameterEntry::both(AggregatedParameter::<SimpleMetricF64> {
-                    meta,
-                    metrics,
-                    agg_func,
-                }))
-                .into(),
-            );
+            return Ok(BuiltParameter::Simple(Box::new(AggregatedParameter::<SimpleMetricF64> {
+                meta,
+                metrics,
+                agg_func,
+            }))
+            .into());
         }
 
         Ok(

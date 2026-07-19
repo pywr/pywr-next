@@ -1,7 +1,6 @@
 use super::{
     BuiltParameter, GeneralBeforeParameter, GeneralParameterContext, GeneralParameterEntry, MaybeBuiltParameter,
-    Parameter, ParameterBuildError, ParameterBuilder, ParameterName, SimpleBeforeParameter, SimpleParameter,
-    SimpleParameterContext, SimpleParameterEntry,
+    Parameter, ParameterBuildError, ParameterBuilder, ParameterName, SimpleParameter, SimpleParameterContext,
 };
 use crate::metric::{MetricF64, SimpleMetricF64, UnresolvedMetricF64};
 use crate::network::ResolutionMaps;
@@ -66,17 +65,8 @@ impl GeneralBeforeParameter<f64> for DifferenceParameter<MetricF64> {
     }
 }
 
-impl SimpleParameter for DifferenceParameter<SimpleMetricF64> {
-    fn as_parameter(&self) -> &dyn Parameter
-    where
-        Self: Sized,
-    {
-        self
-    }
-}
-
-impl SimpleBeforeParameter<f64> for DifferenceParameter<SimpleMetricF64> {
-    fn before(
+impl SimpleParameter<f64> for DifferenceParameter<SimpleMetricF64> {
+    fn compute(
         &self,
         ctx: SimpleParameterContext<'_>,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
@@ -87,6 +77,12 @@ impl SimpleBeforeParameter<f64> for DifferenceParameter<SimpleMetricF64> {
         let max = self.max.as_ref().map(|m| m.get_value(ctx.values)).transpose()?;
 
         Ok(difference(a, b, min, max))
+    }
+    fn as_parameter(&self) -> &dyn Parameter
+    where
+        Self: Sized,
+    {
+        self
     }
 }
 
@@ -172,7 +168,7 @@ impl ParameterBuilder<f64> for DifferenceParameterBuilder {
                     min,
                     max,
                 };
-                return Ok(BuiltParameter::Simple(SimpleParameterEntry::before(p)).into());
+                return Ok(BuiltParameter::Simple(Box::new(p)).into());
             }
         }
 
