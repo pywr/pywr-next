@@ -572,7 +572,7 @@ impl ModelSchema {
 
         let metadata = v1.metadata.into();
         let time = v1.timestepper.into();
-        let scenarios = match v1.scenarios.map(|s| s.try_into()) {
+        let mut scenarios: Option<ScenarioDomain> = match v1.scenarios.map(|s| s.try_into()) {
             Some(Ok(scenarios)) => Some(scenarios),
             Some(Err(err)) => {
                 errors.push(ComponentConversionError::Scenarios { error: err });
@@ -580,6 +580,21 @@ impl ModelSchema {
             }
             None => None,
         };
+
+        if let Some(combinations) = v1.scenario_combinations {
+            let combinations = combinations
+                .into_iter()
+                .map(|c| c.into_iter().map(ScenarioLabelOrIndex::Index).collect::<Vec<_>>())
+                .collect::<Vec<_>>();
+
+            if let Some(scenarios) = &mut scenarios {
+                scenarios.combinations = Some(combinations);
+            } else {
+                errors.push(ComponentConversionError::Scenarios {
+                    error: ConversionError::ScenarioCombinationsWithoutGroups {},
+                });
+            }
+        }
 
         let (network, network_errors) = NetworkSchema::from_v1(v1.network);
         errors.extend(network_errors);
