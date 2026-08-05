@@ -1,11 +1,12 @@
+from pathlib import Path
+
+import h5py
 import numpy as np
 import pandas
 import polars as pl
-from polars.testing import assert_frame_equal
-from pywr import ModelSchema, ModelResult, MultiNetworkModelSchema, ModelTimings
-from pathlib import Path
-import h5py
 import pytest
+from polars.testing import assert_frame_equal
+from pywr import ModelResult, ModelSchema, ModelTimings, MultiNetworkModelSchema
 
 
 @pytest.fixture()
