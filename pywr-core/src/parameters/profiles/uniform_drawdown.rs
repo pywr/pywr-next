@@ -4,9 +4,9 @@ use crate::parameters::{
     BuiltParameter, MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder, ParameterMeta,
     ParameterName, ParameterState, SimpleParameter, SimpleParameterContext,
 };
-use chrono::{Datelike, NaiveDate};
+use jiff::civil::Date;
 
-fn is_leap_year(year: i32) -> bool {
+fn is_leap_year(year: i16) -> bool {
     (year % 4 == 0) & ((year % 100 != 0) | (year % 400 == 0))
 }
 
@@ -14,7 +14,7 @@ fn is_leap_year(year: i32) -> bool {
 pub struct UniformDrawdownProfileParameter {
     meta: ParameterMeta,
     residual_days: u8,
-    reset_doy: u16,
+    reset_doy: i16,
 }
 
 impl Parameter for UniformDrawdownProfileParameter {
@@ -74,12 +74,12 @@ impl SimpleParameter<f64> for UniformDrawdownProfileParameter {
 pub struct UniformDrawdownProfileParameterBuilder {
     meta: ParameterMeta,
     residual_days: u8,
-    reset_day: u32,
-    reset_month: u32,
+    reset_day: i8,
+    reset_month: i8,
 }
 
 impl UniformDrawdownProfileParameterBuilder {
-    pub fn new(name: ParameterName, reset_day: u32, reset_month: u32) -> Self {
+    pub fn new(name: ParameterName, reset_day: i8, reset_month: i8) -> Self {
         Self {
             meta: ParameterMeta::new(name),
             residual_days: 0,
@@ -104,12 +104,12 @@ impl ParameterBuilder<f64> for UniformDrawdownProfileParameterBuilder {
         _resolution_maps: &ResolutionMaps,
     ) -> Result<MaybeBuiltParameter<f64>, ParameterBuildError> {
         // Calculate the reset day of year in a known leap year.
-        let reset_doy = NaiveDate::from_ymd_opt(2016, self.reset_month, self.reset_day)
-            .ok_or(ParameterBuildError::InvalidDayOfYear {
+        let reset_doy = Date::new(2016, self.reset_month, self.reset_day)
+            .map_err(|_| ParameterBuildError::InvalidDayOfYear {
                 day: self.reset_day,
                 month: self.reset_month,
             })?
-            .ordinal() as u16;
+            .day_of_year();
 
         let p = UniformDrawdownProfileParameter {
             meta: self.meta,
