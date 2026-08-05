@@ -73,7 +73,9 @@ the same function with different values in different parts of the model.
 from pywr import ParameterInfo
 
 
-def current_timestep(info: ParameterInfo, a: float, b: float, some_condition: str = "foo") -> float:
+def current_timestep(
+    info: ParameterInfo, a: float, b: float, some_condition: str = "foo"
+) -> float:
     """Return the current time step."""
     match some_condition:
         case "foo":
@@ -82,7 +84,6 @@ def current_timestep(info: ParameterInfo, a: float, b: float, some_condition: st
             return info.timestep.index + b
         case _:
             raise ValueError(f"Invalid condition: {some_condition}")
-
 ```
 
 To pass these arguments to the function, you can define them in the model's JSON file as follows:
@@ -208,8 +209,6 @@ class TimeStepCounter:
         # Note that `_info` is not used, but it is required by the interface.
         self.count += 1
         return self.count
-
-
 ```
 
 To use this custom parameter in your model, you can define it in the JSON file as follows:
@@ -289,10 +288,7 @@ from pywr import ParameterInfo
 
 def multiple_values(info: ParameterInfo, factor: float) -> dict:
     """Return multiple values."""
-    return {
-        "value1": info.timestep.index,
-        "value2": info.get_metric("volume") * factor
-    }
+    return {"value1": info.timestep.index, "value2": info.get_metric("volume") * factor}
 ```
 
 The corresponding JSON for this parameter would look like this:
