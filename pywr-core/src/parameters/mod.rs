@@ -890,7 +890,7 @@ pub enum ParameterBuildError {
         source: MetricF64Error,
     },
     #[error("Could not compute day of the year; invalid date: day: {day}, month: {day}")]
-    InvalidDayOfYear { day: u32, month: u32 },
+    InvalidDayOfYear { day: i8, month: i8 },
     #[error("Parameter is configured without a valid calculation phase: {detail}")]
     NoCalculationPhase { detail: String },
 }

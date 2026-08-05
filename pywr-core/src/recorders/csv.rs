@@ -7,7 +7,7 @@ use crate::models::ModelDomain;
 use crate::network::{MetricSetIndex, Network, ResolutionMaps};
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
-use chrono::NaiveDateTime;
+use jiff::civil::DateTime;
 use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::num::NonZeroU32;
@@ -225,8 +225,8 @@ impl RecorderBuilder for CsvWideFmtOutputBuilder {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CsvLongFmtRecord {
-    time_start: NaiveDateTime,
-    time_end: NaiveDateTime,
+    time_start: DateTime,
+    time_end: DateTime,
     simulation_id: usize,
     label: String,
     metric_set: String,

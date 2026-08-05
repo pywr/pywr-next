@@ -187,11 +187,11 @@ impl UniformDrawdownProfileParameter {
         parent: Option<&str>,
     ) -> Result<(), SchemaError> {
         let reset_day = match &self.reset_day {
-            Some(v) => v.load(args.tables)? as u32,
+            Some(v) => v.load(args.tables)? as i8,
             None => 1,
         };
         let reset_month = match &self.reset_month {
-            Some(v) => v.load(args.tables)? as u32,
+            Some(v) => v.load(args.tables)? as i8,
             None => 1,
         };
         let residual_days = match &self.residual_days {

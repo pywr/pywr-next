@@ -35,9 +35,10 @@ use crate::solvers::Solver;
 ))]
 use crate::solvers::SolverSettings;
 use crate::timestep::{TimeDomainBuilder, TimestepDuration};
-use chrono::{Days, NaiveDate};
 use csv::{Reader, ReaderBuilder};
 use float_cmp::{F64Margin, approx_eq};
+use jiff::ToSpan;
+use jiff::civil::date;
 use ndarray::{Array, Array2};
 use rand::{Rng, RngExt};
 use rand_distr::{Distribution, Normal};
@@ -45,14 +46,8 @@ use std::num::NonZeroU64;
 use std::path::PathBuf;
 
 pub fn default_time_domain_builder() -> TimeDomainBuilder {
-    let start = NaiveDate::from_ymd_opt(2020, 1, 1)
-        .unwrap()
-        .and_hms_opt(0, 0, 0)
-        .unwrap();
-    let end = NaiveDate::from_ymd_opt(2020, 1, 15)
-        .unwrap()
-        .and_hms_opt(0, 0, 0)
-        .unwrap();
+    let start = date(2020, 1, 1).at(0, 0, 0, 0);
+    let end = date(2020, 1, 15).at(0, 0, 0, 0);
     let duration = TimestepDuration::Days(NonZeroU64::new(1).unwrap());
     TimeDomainBuilder::new(start, end, duration)
 }
@@ -169,13 +164,9 @@ pub fn run_and_assert_parameter(
     let p_name = parameter.name().clone();
     model_builder.network_builder().parameters().f64(parameter);
 
-    let start = NaiveDate::from_ymd_opt(2020, 1, 1)
-        .unwrap()
-        .and_hms_opt(0, 0, 0)
-        .unwrap();
-    let _end = start
-        .checked_add_days(Days::new(expected_values.nrows() as u64 - 1))
-        .unwrap();
+    let start = date(2020, 1, 1).at(0, 0, 0, 0);
+
+    let _end = start.checked_add((expected_values.nrows() as i64 - 1).days()).unwrap();
 
     let mut rec = AssertionF64RecorderBuilder::new(
         "assert",
@@ -211,13 +202,8 @@ pub fn run_and_assert_parameter_u64(
     let p_name = parameter.name().clone();
     model_builder.network_builder().parameters().u64(parameter);
 
-    let start = NaiveDate::from_ymd_opt(2020, 1, 1)
-        .unwrap()
-        .and_hms_opt(0, 0, 0)
-        .unwrap();
-    let _end = start
-        .checked_add_days(Days::new(expected_values.nrows() as u64 - 1))
-        .unwrap();
+    let start = date(2020, 1, 1).at(0, 0, 0, 0);
+    let _end = start.checked_add((expected_values.nrows() as i64 - 1).days());
 
     let rec = AssertionU64RecorderBuilder::new(
         "assert",
@@ -657,14 +643,8 @@ pub fn make_random_model_builder<R: Rng>(
     num_scenarios: usize,
     rng: &mut R,
 ) -> ModelBuilder {
-    let start = NaiveDate::from_ymd_opt(2020, 1, 1)
-        .unwrap()
-        .and_hms_opt(0, 0, 0)
-        .unwrap();
-    let end = NaiveDate::from_ymd_opt(2020, 4, 9)
-        .unwrap()
-        .and_hms_opt(0, 0, 0)
-        .unwrap();
+    let start = date(2020, 1, 1).at(0, 0, 0, 0);
+    let end = date(2020, 4, 9).at(0, 0, 0, 0);
     let duration = TimestepDuration::Days(NonZeroU64::new(1).unwrap());
     let time_builder = TimeDomainBuilder::new(start, end, duration);
 
