@@ -128,9 +128,7 @@ class ModelSchema:
     def to_json_string(self) -> str:
         """Serialize the schema to a JSON string."""
 
-    def build(
-        self, data_path: PathLike | None, output_path: PathLike | None
-    ) -> Model:
+    def build(self, data_path: PathLike | None, output_path: PathLike | None) -> Model:
         """Build the schema in to a Pywr model."""
 
 class MultiNetworkModelSchema:
@@ -153,9 +151,7 @@ class MultiNetworkModelSchema:
     def to_json_string(self) -> str:
         """Serialize the schema to a JSON string."""
 
-    def build(
-        self, data_path: PathLike | None, output_path: PathLike | None
-    ) -> Model:
+    def build(self, data_path: PathLike | None, output_path: PathLike | None) -> Model:
         """Build the schema in to a Pywr model."""
 
 class Model:

@@ -41,10 +41,10 @@ __all__ = [
 
 
 def run_from_path(
-        filename: Path,
-        data_path: Path | None = None,
-        output_path: Path | None = None,
-        solver: str = "clp",
+    filename: Path,
+    data_path: Path | None = None,
+    output_path: Path | None = None,
+    solver: str = "clp",
 ):
     """Load and run a Pywr model from a file path.
 
