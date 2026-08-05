@@ -232,34 +232,26 @@ mod tests {
     use crate::parameters::profiles::weekly::{WeeklyInterpDay, WeeklyProfileValues};
     use crate::test_utils::assert_approx_array_eq;
     use crate::timestep::{PywrDuration, Timestep};
-    use chrono::{Datelike, NaiveDate, TimeDelta};
     use float_cmp::{F64Margin, assert_approx_eq};
+    use jiff::ToSpan;
+    use jiff::civil::date;
 
     /// Build a time-series from the weekly profile
     fn collect(week_size: &WeeklyProfileValues, interp_day: Option<WeeklyInterpDay>) -> Vec<f64> {
-        let dt0 = NaiveDate::from_ymd_opt(2020, 1, 1)
-            .unwrap()
-            .and_hms_opt(0, 0, 0)
-            .unwrap();
-        let dt1 = NaiveDate::from_ymd_opt(2020, 12, 31)
-            .unwrap()
-            .and_hms_opt(23, 59, 59)
-            .unwrap();
+        let dt0 = date(2020, 1, 1).at(0, 0, 0, 0);
+        let dt1 = date(2020, 12, 31).at(23, 59, 59, 0);
 
         let mut dt = dt0;
         let mut data: Vec<f64> = Vec::new();
         while dt <= dt1 {
-            let date = NaiveDate::from_ymd_opt(dt.year(), dt.month(), dt.day())
-                .unwrap()
-                .and_hms_opt(0, 0, 0)
-                .unwrap();
+            let date = date(dt.year(), dt.month(), dt.day()).at(0, 0, 0, 0);
 
             let timestep = Timestep::new(date, 0, PywrDuration::from_days(1));
 
             let value = week_size.value(&timestep, &interp_day);
             data.push(value);
 
-            dt += TimeDelta::days(1);
+            dt += 1.days();
         }
         data
     }
@@ -504,17 +496,11 @@ mod tests {
         ];
         let week_size = WeeklyProfileValues::FiftyTwo(profile);
 
-        let t0 = NaiveDate::from_ymd_opt(2016, 1, 1)
-            .unwrap()
-            .and_hms_opt(0, 0, 0)
-            .unwrap();
+        let t0 = date(2016, 1, 1).at(0, 0, 0, 0);
         let t0 = Timestep::new(t0, 0, PywrDuration::from_days(1));
         assert_eq!(week_size.interpolate(&t0, 0.0, 1.0), 0.0);
 
-        let t0 = NaiveDate::from_ymd_opt(2016, 1, 7)
-            .unwrap()
-            .and_hms_opt(12, 00, 00)
-            .unwrap();
+        let t0 = date(2016, 1, 7).at(12, 00, 00, 0);
         let margins = F64Margin {
             epsilon: 2.0,
             ulps: (f64::EPSILON * 2.0) as i64,

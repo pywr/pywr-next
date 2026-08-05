@@ -7,7 +7,6 @@ use crate::models::ModelDomain;
 use crate::network::{MetricSetIndex, Network, ResolutionMaps};
 use crate::scenario::{ScenarioDomain, ScenarioIndex};
 use crate::state::State;
-use chrono::{Datelike, Timelike};
 use hdf5_metno::types::StringError;
 use hdf5_metno::{Extents, Group};
 use ndarray::{Array1, s};
@@ -65,7 +64,7 @@ struct Internal {
 #[repr(C)]
 pub struct DateTime {
     index: usize,
-    year: i32,
+    year: i16,
     month: u8,
     day: u8,
     hour: u8,

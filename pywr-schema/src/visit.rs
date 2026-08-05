@@ -104,10 +104,12 @@ where
 }
 
 impl VisitMetrics for u8 {}
+impl VisitMetrics for i8 {}
 impl VisitMetrics for u16 {}
+impl VisitMetrics for i16 {}
 impl VisitMetrics for u32 {}
 impl VisitMetrics for i32 {}
-impl VisitMetrics for chrono::Month {}
+
 impl VisitMetrics for f32 {}
 impl VisitMetrics for f64 {}
 impl<const N: usize> VisitMetrics for [f64; N] {}
@@ -209,10 +211,12 @@ where
 }
 
 impl VisitPaths for u8 {}
+impl VisitPaths for i8 {}
 impl VisitPaths for u16 {}
+impl VisitPaths for i16 {}
 impl VisitPaths for u32 {}
 impl VisitPaths for i32 {}
-impl VisitPaths for chrono::Month {}
+
 impl VisitPaths for f32 {}
 impl VisitPaths for f64 {}
 impl<const N: usize> VisitPaths for [f64; N] {}

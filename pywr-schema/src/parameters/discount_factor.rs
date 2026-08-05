@@ -18,7 +18,7 @@ use schemars::JsonSchema;
 pub struct DiscountFactorParameter {
     pub meta: ParameterMeta,
     pub discount_rate: Metric,
-    pub base_year: i32,
+    pub base_year: i16,
 }
 
 #[cfg(feature = "core")]
@@ -55,7 +55,7 @@ impl TryFromV1<DiscountFactorParameterV1> for DiscountFactorParameter {
         Ok(Self {
             meta,
             discount_rate,
-            base_year: v1.base_year as i32,
+            base_year: v1.base_year as i16,
         })
     }
 }
