@@ -3292,7 +3292,6 @@ name = "pywr-schema-macros"
 version = "2.0.0-beta4"
 dependencies = [
  "heck",
- "proc-macro2",
  "quote",
  "syn 2.0.118",
 ]
