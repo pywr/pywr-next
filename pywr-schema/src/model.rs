@@ -8,7 +8,7 @@ use crate::metric::Metric;
 use crate::network::{LoadArgs, NetworkSchemaBuildError, NetworkSchemaReadError};
 #[cfg(feature = "core")]
 use crate::timeseries::LoadedTimeseriesCollection;
-use crate::visit::{VisitMetrics, VisitPaths};
+use crate::visit::{VisitMetrics, VisitNodeReferences, VisitPaths};
 use crate::{ConversionError, NetworkSchema, NetworkSchemaRef};
 use jiff::civil::{DateTime, date};
 #[cfg(all(feature = "core", feature = "pyo3"))]
@@ -469,6 +469,16 @@ impl VisitMetrics for ModelSchema {
 
     fn visit_metrics_mut<F: FnMut(&mut Metric)>(&mut self, visitor: &mut F) {
         self.network.visit_metrics_mut(visitor);
+    }
+}
+
+impl VisitNodeReferences for ModelSchema {
+    fn visit_node_references<F: FnMut(&str)>(&self, visitor: &mut F) {
+        self.network.visit_node_references(visitor);
+    }
+
+    fn visit_node_references_mut<F: FnMut(&mut String)>(&mut self, visitor: &mut F) {
+        self.network.visit_node_references_mut(visitor);
     }
 }
 

@@ -7,7 +7,7 @@ use crate::parameters::{DynamicFloatValueType, ParameterMeta};
 use crate::py_utils::PythonSource;
 #[cfg(all(feature = "core", feature = "pyo3"))]
 use crate::py_utils::{try_load_optional_py_args, try_load_optional_py_kwargs};
-use crate::visit::{VisitMetrics, VisitPaths};
+use crate::visit::{VisitMetrics, VisitNodeReferences, VisitPaths};
 #[cfg(all(feature = "core", feature = "pyo3"))]
 use pyo3::{
     Bound, Python,
@@ -154,6 +154,18 @@ impl VisitMetrics for PythonParameter {
                 visitor(metric);
             }
         }
+    }
+}
+
+impl VisitNodeReferences for PythonParameter {
+    fn visit_node_references<F: FnMut(&str)>(&self, visitor: &mut F) {
+        self.metrics.visit_node_references(visitor);
+        self.indices.visit_node_references(visitor);
+    }
+
+    fn visit_node_references_mut<F: FnMut(&mut String)>(&mut self, visitor: &mut F) {
+        self.metrics.visit_node_references_mut(visitor);
+        self.indices.visit_node_references_mut(visitor);
     }
 }
 

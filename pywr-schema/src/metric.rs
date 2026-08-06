@@ -18,6 +18,7 @@ use crate::parameters::ParameterType;
 use crate::timeseries::TimeseriesColumns;
 use crate::timeseries::TimeseriesReference;
 use crate::v1::{ConversionData, TryFromV1, TryIntoV2};
+use crate::visit::VisitNodeReferences;
 #[cfg(feature = "pyo3")]
 use pyo3::{PyResult, exceptions::PyRuntimeError, pyclass, pymethods};
 #[cfg(feature = "core")]
@@ -26,7 +27,7 @@ use pywr_core::{
     parameters::ParameterName,
     recorders::UnresolvedOutputMetric,
 };
-use pywr_schema_macros::{PywrVisitAll, skip_serializing_none};
+use pywr_schema_macros::{PywrVisitMetrics, PywrVisitPaths, skip_serializing_none};
 use pywr_v1_schema::parameters::ParameterValue as ParameterValueV1;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -280,7 +281,9 @@ impl TryFromV1<ParameterValueV1> for Metric {
 
 /// A reference to a node with an optional attribute.
 #[skip_serializing_none]
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll, PartialEq)]
+#[derive(
+    serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitMetrics, PywrVisitPaths, PartialEq,
+)]
 #[serde(deny_unknown_fields)]
 #[cfg_attr(feature = "pyo3", pyclass(from_py_object))]
 pub struct NodeAttrReference {
@@ -366,9 +369,21 @@ impl From<String> for NodeAttrReference {
     }
 }
 
+impl VisitNodeReferences for NodeAttrReference {
+    fn visit_node_references<F: FnMut(&str)>(&self, visitor: &mut F) {
+        visitor(&self.name);
+    }
+
+    fn visit_node_references_mut<F: FnMut(&mut String)>(&mut self, visitor: &mut F) {
+        visitor(&mut self.name);
+    }
+}
+
 /// A reference to a node with an optional attribute.
 #[skip_serializing_none]
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll, PartialEq)]
+#[derive(
+    serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitMetrics, PywrVisitPaths, PartialEq,
+)]
 #[serde(deny_unknown_fields)]
 #[cfg_attr(feature = "pyo3", pyclass(from_py_object))]
 pub struct VirtualNodeAttrReference {
@@ -454,8 +469,20 @@ impl From<String> for VirtualNodeAttrReference {
     }
 }
 
+impl VisitNodeReferences for VirtualNodeAttrReference {
+    fn visit_node_references<F: FnMut(&str)>(&self, visitor: &mut F) {
+        visitor(&self.name);
+    }
+
+    fn visit_node_references_mut<F: FnMut(&mut String)>(&mut self, visitor: &mut F) {
+        visitor(&mut self.name);
+    }
+}
+
 /// A reference to a node with an optional component.
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll, PartialEq)]
+#[derive(
+    serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitMetrics, PywrVisitPaths, PartialEq,
+)]
 #[serde(deny_unknown_fields)]
 pub struct NodeComponentReference {
     /// The name of the node
@@ -470,6 +497,16 @@ impl From<String> for NodeComponentReference {
             name: v,
             component: None,
         }
+    }
+}
+
+impl VisitNodeReferences for NodeComponentReference {
+    fn visit_node_references<F: FnMut(&str)>(&self, visitor: &mut F) {
+        visitor(&self.name);
+    }
+
+    fn visit_node_references_mut<F: FnMut(&mut String)>(&mut self, visitor: &mut F) {
+        visitor(&mut self.name);
     }
 }
 
@@ -588,6 +625,16 @@ impl ParameterReference {
 pub struct EdgeReference {
     /// The edge referred to by this reference.
     pub edge: Edge,
+}
+
+impl VisitNodeReferences for EdgeReference {
+    fn visit_node_references<F: FnMut(&str)>(&self, visitor: &mut F) {
+        self.edge.visit_node_references(visitor);
+    }
+
+    fn visit_node_references_mut<F: FnMut(&mut String)>(&mut self, visitor: &mut F) {
+        self.edge.visit_node_references_mut(visitor);
+    }
 }
 
 #[cfg(feature = "core")]
