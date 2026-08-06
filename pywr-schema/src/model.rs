@@ -10,9 +10,8 @@ use crate::network::{LoadArgs, NetworkSchemaBuildError, NetworkSchemaReadError};
 use crate::timeseries::LoadedTimeseriesCollection;
 use crate::visit::{VisitMetrics, VisitPaths};
 use crate::{ConversionError, NetworkSchema, NetworkSchemaRef};
-#[cfg(feature = "core")]
-use chrono::NaiveTime;
-use chrono::{NaiveDate, NaiveDateTime};
+use chrono::{Datelike, Timelike};
+use jiff::civil::{DateTime, date};
 #[cfg(all(feature = "core", feature = "pyo3"))]
 use pyo3::Python;
 #[cfg(feature = "pyo3")]
@@ -105,36 +104,40 @@ impl Default for Timestep {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Clone, Copy, Debug, JsonSchema, Display, EnumDiscriminants)]
-#[serde(untagged)]
-#[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
-#[strum_discriminants(name(DateType))]
-pub enum Date {
-    Date(NaiveDate),
-    DateTime(NaiveDateTime),
-}
+fn v1_date_type_to_datetime(v1: pywr_v1_schema::model::DateType) -> DateTime {
+    match v1 {
+        pywr_v1_schema::model::DateType::Date(chrono_date) => {
+            let d = date(
+                chrono_date.year() as i16,
+                chrono_date.month() as i8,
+                chrono_date.day() as i8,
+            );
 
-impl From<pywr_v1_schema::model::DateType> for Date {
-    fn from(v1: pywr_v1_schema::model::DateType) -> Self {
-        match v1 {
-            pywr_v1_schema::model::DateType::Date(date) => Self::Date(date),
-            pywr_v1_schema::model::DateType::DateTime(date_time) => Self::DateTime(date_time),
+            d.at(0, 0, 0, 0)
+        }
+        pywr_v1_schema::model::DateType::DateTime(date_time) => {
+            date(date_time.year() as i16, date_time.month() as i8, date_time.day() as i8).at(
+                date_time.hour() as i8,
+                date_time.minute() as i8,
+                date_time.second() as i8,
+                0,
+            )
         }
     }
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema)]
 pub struct TimeDomain {
-    pub start: Date,
-    pub end: Date,
+    pub start: DateTime,
+    pub end: DateTime,
     pub timestep: Timestep,
 }
 
 impl Default for TimeDomain {
     fn default() -> Self {
         Self {
-            start: Date::Date(NaiveDate::from_ymd_opt(2000, 1, 1).expect("Invalid date")),
-            end: Date::Date(NaiveDate::from_ymd_opt(2000, 12, 31).expect("Invalid date")),
+            start: date(2000, 1, 1).at(0, 0, 0, 0),
+            end: date(2000, 12, 31).at(0, 0, 0, 0),
             timestep: Timestep::default(),
         }
     }
@@ -143,8 +146,8 @@ impl Default for TimeDomain {
 impl From<pywr_v1_schema::model::Timestepper> for TimeDomain {
     fn from(v1: pywr_v1_schema::model::Timestepper) -> Self {
         Self {
-            start: v1.start.into(),
-            end: v1.end.into(),
+            start: v1_date_type_to_datetime(v1.start),
+            end: v1_date_type_to_datetime(v1.end),
             timestep: v1.timestep.into(),
         }
     }
@@ -159,17 +162,7 @@ impl From<TimeDomain> for pywr_core::timestep::TimeDomainBuilder {
             Timestep::Frequency { freq } => TimestepDuration::Frequency(freq),
         };
 
-        let start = match ts.start {
-            Date::Date(date) => NaiveDateTime::new(date, NaiveTime::default()),
-            Date::DateTime(date_time) => date_time,
-        };
-
-        let end = match ts.end {
-            Date::Date(date) => NaiveDateTime::new(date, NaiveTime::default()),
-            Date::DateTime(date_time) => date_time,
-        };
-
-        Self::new(start, end, timestep)
+        Self::new(ts.start, ts.end, timestep)
     }
 }
 
@@ -503,7 +496,7 @@ impl VisitMetrics for ModelSchema {
 }
 
 impl ModelSchema {
-    pub fn new(title: &str, start: &Date, end: &Date) -> Self {
+    pub fn new(title: &str, start: &DateTime, end: &DateTime) -> Self {
         Self {
             metadata: Metadata {
                 title: title.to_string(),
@@ -624,10 +617,7 @@ impl ModelSchema {
 #[pymethods]
 impl ModelSchema {
     #[new]
-    fn new_py(title: &str, start: NaiveDateTime, end: NaiveDateTime) -> Self {
-        let start = Date::DateTime(start);
-        let end = Date::DateTime(end);
-
+    fn new_py(title: &str, start: DateTime, end: DateTime) -> Self {
         Self::new(title, &start, &end)
     }
 
@@ -813,7 +803,7 @@ impl FromStr for MultiNetworkModelSchema {
 }
 
 impl MultiNetworkModelSchema {
-    pub fn new(title: &str, start: &Date, end: &Date) -> Self {
+    pub fn new(title: &str, start: &DateTime, end: &DateTime) -> Self {
         Self {
             metadata: Metadata {
                 title: title.to_string(),
@@ -989,10 +979,7 @@ impl MultiNetworkModelSchema {
 #[pymethods]
 impl MultiNetworkModelSchema {
     #[new]
-    fn new_py(title: &str, start: NaiveDateTime, end: NaiveDateTime) -> Self {
-        let start = Date::DateTime(start);
-        let end = Date::DateTime(end);
-
+    fn new_py(title: &str, start: DateTime, end: DateTime) -> Self {
         Self::new(title, &start, &end)
     }
 
@@ -1036,6 +1023,7 @@ mod tests {
     use super::{ModelSchema, ScenarioDomain};
     use crate::model::TimeDomain;
     use crate::visit::VisitPaths;
+    use jiff::civil::date;
     use std::fs;
     use std::fs::read_to_string;
     use std::path::PathBuf;
@@ -1068,19 +1056,8 @@ mod tests {
 
         let timestep: TimeDomain = serde_json::from_str(timestepper_str).unwrap();
 
-        match timestep.start {
-            super::Date::Date(date) => {
-                assert_eq!(date, chrono::NaiveDate::from_ymd_opt(2015, 1, 1).unwrap());
-            }
-            _ => panic!("Expected a date"),
-        }
-
-        match timestep.end {
-            super::Date::Date(date) => {
-                assert_eq!(date, chrono::NaiveDate::from_ymd_opt(2015, 12, 31).unwrap());
-            }
-            _ => panic!("Expected a date"),
-        }
+        assert_eq!(timestep.start, date(2015, 1, 1).at(0, 0, 0, 0));
+        assert_eq!(timestep.end, date(2015, 12, 31).at(0, 0, 0, 0));
     }
 
     #[test]
@@ -1097,32 +1074,8 @@ mod tests {
         "#;
 
         let timestep: TimeDomain = serde_json::from_str(timestepper_str).unwrap();
-
-        match timestep.start {
-            super::Date::DateTime(date_time) => {
-                assert_eq!(
-                    date_time,
-                    chrono::NaiveDate::from_ymd_opt(2015, 1, 1)
-                        .unwrap()
-                        .and_hms_opt(12, 30, 0)
-                        .unwrap()
-                );
-            }
-            _ => panic!("Expected a date"),
-        }
-
-        match timestep.end {
-            super::Date::DateTime(date_time) => {
-                assert_eq!(
-                    date_time,
-                    chrono::NaiveDate::from_ymd_opt(2015, 1, 1)
-                        .unwrap()
-                        .and_hms_opt(14, 30, 0)
-                        .unwrap()
-                );
-            }
-            _ => panic!("Expected a date"),
-        }
+        assert_eq!(timestep.start, date(2015, 1, 1).at(12, 30, 0, 0));
+        assert_eq!(timestep.end, date(2015, 1, 1).at(14, 30, 0, 0));
     }
 
     /// Test that the visit_paths functions works as expected.
