@@ -206,6 +206,10 @@ impl VisitMetrics for NetworkSchema {
             node.visit_metrics(visitor);
         }
 
+        for virtual_node in self.virtual_nodes.as_deref().into_iter().flatten() {
+            virtual_node.visit_metrics(visitor);
+        }
+
         for parameter in self.parameters.as_deref().into_iter().flatten() {
             parameter.visit_metrics(visitor);
         }
@@ -224,6 +228,10 @@ impl VisitMetrics for NetworkSchema {
     fn visit_metrics_mut<F: FnMut(&mut Metric)>(&mut self, visitor: &mut F) {
         for node in self.nodes.iter_mut() {
             node.visit_metrics_mut(visitor);
+        }
+
+        for virtual_node in self.virtual_nodes.as_deref_mut().into_iter().flatten() {
+            virtual_node.visit_metrics_mut(visitor);
         }
 
         for parameter in self.parameters.as_deref_mut().into_iter().flatten() {
