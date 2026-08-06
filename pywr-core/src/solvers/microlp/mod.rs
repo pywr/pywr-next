@@ -14,6 +14,8 @@ use thiserror::Error;
 pub enum MicroLpError {
     #[error("MicroLp solver error: {0}")]
     SolveError(#[from] microlp::Error),
+    #[error("MicroLp solver was interrupted: {reason:?}")]
+    Interrupted { reason: microlp::TerminationReason },
 }
 
 pub struct MicroLpSolver {
@@ -124,9 +126,18 @@ impl Solver for MicroLpSolver {
         timings.update_constraints += now.elapsed();
 
         let now = Instant::now();
-        let solution = problem.solve().map_err(MicroLpError::SolveError)?;
+        let solve_outcome = problem.solve().map_err(MicroLpError::SolveError)?;
 
-        let solution = solution.iter().map(|(_, x)| *x).collect::<Vec<f64>>();
+        let solution = match solve_outcome {
+            microlp::SolveOutcome::Interrupted(interrupted) => {
+                return Err(MicroLpError::Interrupted {
+                    reason: interrupted.termination_reason(),
+                })?;
+            }
+            microlp::SolveOutcome::Solution(solution) => solution,
+        };
+
+        let solution = solution.iter().map(|(_, x)| x).collect::<Vec<f64>>();
 
         timings.solve = now.elapsed();
 
