@@ -1,14 +1,13 @@
 use crate::agg_funcs::AggFunc;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
+use crate::metric::Metric;
 #[cfg(feature = "core")]
-use crate::metric::{EdgeReference, VirtualNodeAttrReference};
-use crate::metric::{Metric, ParameterReferenceBuilder, ParameterReturnValue};
+use crate::metric::{EdgeReference, ParameterReferenceBuilder, ParameterReturnValue, VirtualNodeAttrReference};
 #[cfg(feature = "core")]
 use crate::network::LoadArgs;
-use crate::parameters::ParameterPhase;
 #[cfg(feature = "core")]
-use crate::parameters::{Parameter, PythonReturnType};
+use crate::parameters::{Parameter, ParameterPhase, PythonReturnType};
 #[cfg(feature = "core")]
 use pywr_core::recorders::UnresolvedOutputMetric;
 use pywr_schema_macros::skip_serializing_none;
