@@ -1,4 +1,4 @@
-use crate::metric::{MetricF64, MetricF64Error, MetricF64ResolutionError, UnresolvedMetricF64};
+use crate::metric::{MetricConsumerPhase, MetricF64, MetricF64Error, MetricF64ResolutionError, UnresolvedMetricF64};
 use crate::models::ModelDomain;
 use crate::network::{
     Network, NetworkBuildError, NetworkBuilder, NetworkFinaliseError, NetworkRecorderSaveError,
@@ -1059,12 +1059,16 @@ impl MultiNetworkModelBuilder {
 
                     let r_map = &resolution_maps[idx];
 
-                    let metric = t.from_metric.resolve(r_map).map_err(|source| {
-                        MultiNetworkModelBuilderError::ResolveMetricF64ForTransferError {
-                            name: t.name.clone(),
-                            source,
-                        }
-                    })?;
+                    // The consumer phase is after the "from" model has been stepped, so we resolve the metric in the "after" phase.
+                    let metric = t
+                        .from_metric
+                        .resolve(r_map, MetricConsumerPhase::After)
+                        .map_err(
+                            |source| MultiNetworkModelBuilderError::ResolveMetricF64ForTransferError {
+                                name: t.name.clone(),
+                                source,
+                            },
+                        )?;
 
                     let from_model_idx = OtherNetworkIndex::from_indices(idx, entries.len()).ok_or_else(|| {
                         MultiNetworkModelBuilderError::TransferToSelf {

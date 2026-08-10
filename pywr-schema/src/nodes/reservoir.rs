@@ -431,7 +431,7 @@ impl ReservoirNode {
                 let rainfall_metric = rainfall.data.load(network, args, Some(&self.meta().name))?;
 
                 let rainfall_flow_parameter_name = ParameterName::new("rainfall", Some(self.meta().name.as_str()));
-                let mut rainfall_flow_parameter = pywr_core::parameters::AggregatedParameterBuilder::new(
+                let mut rainfall_flow_parameter = pywr_core::parameters::AggregatedParameterBuilder::before(
                     rainfall_flow_parameter_name.clone(),
                     AggFuncF64::Product,
                 );
@@ -464,7 +464,7 @@ impl ReservoirNode {
                 let evaporation_metric = evaporation.data.load(network, args, Some(&self.meta().name))?;
                 let evaporation_flow_parameter_name =
                     ParameterName::new("evaporation", Some(self.meta().name.as_str()));
-                let mut evaporation_flow_parameter = pywr_core::parameters::AggregatedParameterBuilder::new(
+                let mut evaporation_flow_parameter = pywr_core::parameters::AggregatedParameterBuilder::before(
                     evaporation_flow_parameter_name.clone(),
                     AggFuncF64::Product,
                 );

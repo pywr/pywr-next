@@ -1,4 +1,4 @@
-use crate::metric::{MetricF64, UnresolvedMetricF64};
+use crate::metric::{MetricConsumerPhase, MetricF64, UnresolvedMetricF64};
 use crate::network::ResolutionMaps;
 use crate::parameters::errors::GeneralCalculationError;
 use crate::parameters::interpolate::linear_interpolation;
@@ -95,12 +95,14 @@ impl ParameterBuilder<f64> for InterpolatedParameterBuilder {
         self: Box<Self>,
         resolution_maps: &ResolutionMaps,
     ) -> Result<MaybeBuiltParameter<f64>, ParameterBuildError> {
-        let x = resolve_metric_f64!(self, self.x, resolution_maps, "x");
+        // Phase is hardcoded to "before" for this parameter, as it only implements the `GeneralBeforeParameter` trait.
+        let phase = MetricConsumerPhase::Before;
+        let x = resolve_metric_f64!(self, self.x, resolution_maps, phase, "x");
 
         let mut points = Vec::with_capacity(self.points.len());
         for (i, (uxp, ufp)) in self.points.iter().enumerate() {
-            let xp = resolve_metric_f64!(self, uxp, resolution_maps, &format!("points[{i}].x"));
-            let fp = resolve_metric_f64!(self, ufp, resolution_maps, &format!("points[{i}].f"));
+            let xp = resolve_metric_f64!(self, uxp, resolution_maps, phase, &format!("points[{i}].x"));
+            let fp = resolve_metric_f64!(self, ufp, resolution_maps, phase, &format!("points[{i}].f"));
             points.push((xp, fp));
         }
 

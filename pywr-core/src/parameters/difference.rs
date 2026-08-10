@@ -2,7 +2,7 @@ use super::{
     BuiltParameter, GeneralBeforeParameter, GeneralParameterContext, GeneralParameterEntry, MaybeBuiltParameter,
     Parameter, ParameterBuildError, ParameterBuilder, ParameterName, SimpleParameter, SimpleParameterContext,
 };
-use crate::metric::{MetricF64, SimpleMetricF64, UnresolvedMetricF64};
+use crate::metric::{MetricConsumerPhase, MetricF64, SimpleMetricF64, UnresolvedMetricF64};
 use crate::network::ResolutionMaps;
 use crate::parameters::errors::{GeneralCalculationError, SimpleCalculationError};
 use crate::parameters::{GeneralParameter, ParameterMeta, ParameterState};
@@ -142,14 +142,16 @@ impl ParameterBuilder<f64> for DifferenceParameterBuilder {
         self: Box<Self>,
         resolution_maps: &ResolutionMaps,
     ) -> Result<MaybeBuiltParameter<f64>, ParameterBuildError> {
-        let a = resolve_metric_f64!(self, self.a, resolution_maps, "a");
-        let b = resolve_metric_f64!(self, self.b, resolution_maps, "b");
+        // Phase is hardcoded to "before" for this parameter, as it only implements the `GeneralBeforeParameter` trait.
+        let phase = MetricConsumerPhase::Before;
+        let a = resolve_metric_f64!(self, self.a, resolution_maps, phase, "a");
+        let b = resolve_metric_f64!(self, self.b, resolution_maps, phase, "b");
         let min = match &self.min {
-            Some(min) => Some(resolve_metric_f64!(self, min, resolution_maps, "min")),
+            Some(min) => Some(resolve_metric_f64!(self, min, resolution_maps, phase, "min")),
             None => None,
         };
         let max = match &self.max {
-            Some(max) => Some(resolve_metric_f64!(self, max, resolution_maps, "max")),
+            Some(max) => Some(resolve_metric_f64!(self, max, resolution_maps, phase, "max")),
             None => None,
         };
 

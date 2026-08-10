@@ -1,4 +1,4 @@
-use crate::metric::{MetricF64, UnresolvedMetricF64};
+use crate::metric::{MetricConsumerPhase, MetricF64, UnresolvedMetricF64};
 use crate::network::ResolutionMaps;
 use crate::parameters::errors::GeneralCalculationError;
 use crate::parameters::interpolate::interpolate;
@@ -81,7 +81,8 @@ pub struct PiecewiseInterpolatedParameterBuilder {
 }
 
 impl PiecewiseInterpolatedParameterBuilder {
-    pub fn new(name: ParameterName, metric: UnresolvedMetricF64, maximum: f64, minimum: f64) -> Self {
+    /// Create a new builder for [`PiecewiseInterpolatedParameter`] that is evaluated in the "before" phase.
+    pub fn before(name: ParameterName, metric: UnresolvedMetricF64, maximum: f64, minimum: f64) -> Self {
         Self {
             meta: ParameterMeta::new(name),
             metric,
@@ -115,8 +116,11 @@ impl ParameterBuilder<f64> for PiecewiseInterpolatedParameterBuilder {
         self: Box<Self>,
         resolution_maps: &ResolutionMaps,
     ) -> Result<MaybeBuiltParameter<f64>, ParameterBuildError> {
-        let metric = resolve_metric_f64!(self, self.metric, resolution_maps, "metric");
-        let control_curves = resolve_metric_f64_vec!(self, &self.control_curves, resolution_maps, "control_curves");
+        // Phase is hardcoded to "before" for this parameter, as it only implements the `GeneralBeforeParameter` trait.
+        let phase = MetricConsumerPhase::Before;
+        let metric = resolve_metric_f64!(self, self.metric, resolution_maps, phase, "metric");
+        let control_curves =
+            resolve_metric_f64_vec!(self, &self.control_curves, resolution_maps, phase, "control_curves");
 
         let p = PiecewiseInterpolatedParameter {
             meta: self.meta,
@@ -149,7 +153,7 @@ mod test {
         let volume = Array1ParameterBuilder::new("test-x".into(), Array1::linspace(1.0, 0.0, 21));
         model_builder.network_builder().parameters().f64(Box::new(volume));
 
-        let mut parameter = PiecewiseInterpolatedParameterBuilder::new(
+        let mut parameter = PiecewiseInterpolatedParameterBuilder::before(
             "test-parameter".into(),
             UnresolvedMetricF64::new_parameter_before("test-x"), // Interpolate with the parameter based values
             1.0,

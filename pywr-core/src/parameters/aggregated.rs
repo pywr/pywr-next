@@ -5,8 +5,8 @@ use super::{
 };
 use crate::agg_funcs::AggFuncF64;
 use crate::metric::{
-    ConstantMetricF64, MetricF64, SimpleMetricF64, UnresolvedMetricF64, try_into_constant_metrics_f64,
-    try_into_simple_metrics_f64,
+    ConstantMetricF64, MetricConsumerPhase, MetricF64, SimpleMetricF64, UnresolvedMetricF64,
+    try_into_constant_metrics_f64, try_into_simple_metrics_f64,
 };
 use crate::network::ResolutionMaps;
 use crate::parameters::errors::{ConstCalculationError, GeneralCalculationError, SimpleCalculationError};
@@ -119,19 +119,43 @@ impl ConstParameter<f64> for AggregatedParameter<ConstantMetricF64> {
     }
 }
 
+/// Builder for creating an [`AggregatedParameter`]
 #[derive(Debug)]
 pub struct AggregatedParameterBuilder {
     meta: ParameterMeta,
     agg_func: AggFuncF64,
     metrics: Vec<UnresolvedMetricF64>,
+    phase: MetricConsumerPhase,
 }
 
 impl AggregatedParameterBuilder {
-    pub fn new(name: ParameterName, agg_func: AggFuncF64) -> Self {
+    /// Create a new builder for [`AggregatedParameter`] that is evaluated in the "after" phase.
+    pub fn before(name: ParameterName, agg_func: AggFuncF64) -> Self {
         Self {
             meta: ParameterMeta::new(name),
             metrics: Vec::new(),
             agg_func,
+            phase: MetricConsumerPhase::Before,
+        }
+    }
+
+    /// Create a new builder for [`AggregatedParameter`] that is evaluated in the "after" phase.
+    pub fn after(name: ParameterName, agg_func: AggFuncF64) -> Self {
+        Self {
+            meta: ParameterMeta::new(name),
+            metrics: Vec::new(),
+            agg_func,
+            phase: MetricConsumerPhase::After,
+        }
+    }
+
+    /// Create a new builder for [`AggregatedParameter`] that is evaluated in both "before" and "after" phases.
+    pub fn both(name: ParameterName, agg_func: AggFuncF64) -> Self {
+        Self {
+            meta: ParameterMeta::new(name),
+            metrics: Vec::new(),
+            agg_func,
+            phase: MetricConsumerPhase::Both,
         }
     }
 
@@ -150,39 +174,45 @@ impl ParameterBuilder<f64> for AggregatedParameterBuilder {
         self: Box<Self>,
         resolution_maps: &ResolutionMaps,
     ) -> Result<MaybeBuiltParameter<f64>, ParameterBuildError> {
-        let metrics = resolve_metric_f64_vec!(self, &self.metrics, resolution_maps, "metrics");
+        let metrics = resolve_metric_f64_vec!(self, &self.metrics, resolution_maps, self.phase, "metrics");
 
         let meta = self.meta;
         let agg_func = self.agg_func;
 
-        // Try the narrowest dependency class first.
-        if let Some(metrics) = try_into_constant_metrics_f64(&metrics) {
-            return Ok(
-                BuiltParameter::Const(Box::new(AggregatedParameter::<ConstantMetricF64> {
-                    meta,
-                    metrics,
-                    agg_func,
-                }))
-                .into(),
-            );
-        }
-
-        if let Some(metrics) = try_into_simple_metrics_f64(&metrics) {
-            return Ok(BuiltParameter::Simple(Box::new(AggregatedParameter::<SimpleMetricF64> {
+        let built = match self.phase {
+            MetricConsumerPhase::Before => {
+                if let Some(metrics) = try_into_constant_metrics_f64(&metrics) {
+                    BuiltParameter::Const(Box::new(AggregatedParameter {
+                        meta,
+                        metrics,
+                        agg_func,
+                    }))
+                } else if let Some(metrics) = try_into_simple_metrics_f64(&metrics) {
+                    BuiltParameter::Simple(Box::new(AggregatedParameter {
+                        meta,
+                        metrics,
+                        agg_func,
+                    }))
+                } else {
+                    BuiltParameter::General(GeneralParameterEntry::before(AggregatedParameter {
+                        meta,
+                        metrics,
+                        agg_func,
+                    }))
+                }
+            }
+            MetricConsumerPhase::After => BuiltParameter::General(GeneralParameterEntry::after(AggregatedParameter {
                 meta,
                 metrics,
                 agg_func,
-            }))
-            .into());
-        }
-
-        Ok(
-            BuiltParameter::General(GeneralParameterEntry::both(AggregatedParameter::<MetricF64> {
+            })),
+            MetricConsumerPhase::Both => BuiltParameter::General(GeneralParameterEntry::both(AggregatedParameter {
                 meta,
                 metrics,
                 agg_func,
-            }))
-            .into(),
-        )
+            })),
+        };
+
+        Ok(built.into())
     }
 }

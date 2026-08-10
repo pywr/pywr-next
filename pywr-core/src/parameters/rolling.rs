@@ -1,7 +1,7 @@
 use crate::agg_funcs::{AggFuncF64, AggFuncU64};
 use crate::metric::{
-    MetricF64, MetricF64Error, MetricU64, MetricU64Error, SimpleMetricF64, SimpleMetricU64, UnresolvedMetricF64,
-    UnresolvedMetricU64,
+    MetricConsumerPhase, MetricF64, MetricF64Error, MetricU64, MetricU64Error, SimpleMetricF64, SimpleMetricU64,
+    UnresolvedMetricF64, UnresolvedMetricU64,
 };
 use crate::network::ResolutionMaps;
 use crate::parameters::errors::{GeneralCalculationError, ParameterSetupError, SimpleCalculationError};
@@ -320,7 +320,10 @@ impl ParameterBuilder<f64> for RollingParameterBuilder<UnresolvedMetricF64, f64,
         self: Box<Self>,
         resolution_maps: &ResolutionMaps,
     ) -> Result<MaybeBuiltParameter<f64>, ParameterBuildError> {
-        let metric = resolve_metric_f64!(self, self.metric, resolution_maps, "metric");
+        // Phase is hardcoded to "both" for this parameter, as it only implements the
+        // `GeneralBeforeParameter` and `GeneralAfterParameterHook` traits.
+        let phase = MetricConsumerPhase::Both;
+        let metric = resolve_metric_f64!(self, self.metric, resolution_maps, phase, "metric");
 
         // We can make a simple version if the metric can be simplified
         if let Ok(metric) = metric.clone().try_into() {
@@ -360,7 +363,10 @@ impl ParameterBuilder<u64> for RollingParameterBuilder<UnresolvedMetricU64, u64,
         self: Box<Self>,
         resolution_maps: &ResolutionMaps,
     ) -> Result<MaybeBuiltParameter<u64>, ParameterBuildError> {
-        let metric = resolve_metric_u64!(self, self.metric, resolution_maps, "metric");
+        // Phase is hardcoded to "both" for this parameter, as it only implements the
+        // `GeneralBeforeParameter` and `GeneralAfterParameterHook` traits.
+        let phase = MetricConsumerPhase::Both;
+        let metric = resolve_metric_u64!(self, self.metric, resolution_maps, phase, "metric");
 
         // We can make a simple version if the metric can be simplified
         if let Ok(metric) = metric.clone().try_into() {

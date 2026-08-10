@@ -124,6 +124,7 @@
             "type": "Timeseries"
           }
         ],
+        "phase": "Before",
         "type": "Aggregated"
       }
     ],

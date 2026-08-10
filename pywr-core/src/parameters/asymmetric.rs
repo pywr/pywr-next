@@ -1,4 +1,4 @@
-use crate::metric::{MetricU64, UnresolvedMetricU64};
+use crate::metric::{MetricConsumerPhase, MetricU64, UnresolvedMetricU64};
 use crate::network::ResolutionMaps;
 use crate::parameters::errors::{GeneralCalculationError, ParameterSetupError};
 use crate::parameters::{
@@ -71,14 +71,17 @@ pub struct AsymmetricSwitchIndexParameterBuilder {
     meta: ParameterMeta,
     on_parameter: UnresolvedMetricU64,
     off_parameter: UnresolvedMetricU64,
+    phase: MetricConsumerPhase,
 }
 
 impl AsymmetricSwitchIndexParameterBuilder {
-    pub fn new(name: ParameterName, on_parameter: UnresolvedMetricU64, off_parameter: UnresolvedMetricU64) -> Self {
+    /// Create a new builder for [`AsymmetricSwitchIndexParameter`] that is evaluated in the "before" phase.
+    pub fn before(name: ParameterName, on_parameter: UnresolvedMetricU64, off_parameter: UnresolvedMetricU64) -> Self {
         Self {
             meta: ParameterMeta::new(name),
             on_parameter,
             off_parameter,
+            phase: MetricConsumerPhase::Before,
         }
     }
 }
@@ -92,8 +95,8 @@ impl ParameterBuilder<u64> for AsymmetricSwitchIndexParameterBuilder {
         self: Box<Self>,
         resolution_maps: &ResolutionMaps,
     ) -> Result<MaybeBuiltParameter<u64>, ParameterBuildError> {
-        let on_parameter = resolve_metric_u64!(self, self.on_parameter, resolution_maps, "on_parameter");
-        let off_parameter = resolve_metric_u64!(self, self.off_parameter, resolution_maps, "off_parameter");
+        let on_parameter = resolve_metric_u64!(self, self.on_parameter, resolution_maps, self.phase, "on_parameter");
+        let off_parameter = resolve_metric_u64!(self, self.off_parameter, resolution_maps, self.phase, "off_parameter");
 
         let p = AsymmetricSwitchIndexParameter {
             meta: self.meta,

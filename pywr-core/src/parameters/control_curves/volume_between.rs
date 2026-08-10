@@ -1,4 +1,4 @@
-use crate::metric::{SimpleMetricF64, UnresolvedMetricF64};
+use crate::metric::{MetricConsumerPhase, SimpleMetricF64, UnresolvedMetricF64};
 use crate::network::ResolutionMaps;
 use crate::parameters::errors::SimpleCalculationError;
 use crate::parameters::{
@@ -91,7 +91,9 @@ impl ParameterBuilder<f64> for VolumeBetweenControlCurvesParameterBuilder<Unreso
         self: Box<Self>,
         resolution_maps: &ResolutionMaps,
     ) -> Result<MaybeBuiltParameter<f64>, ParameterBuildError> {
-        let total = resolve_metric_f64!(self, self.total, resolution_maps, "total");
+        // Phase is hardcoded to "before" for this parameter, as it only implements the `GeneralBeforeParameter` trait.
+        let phase = MetricConsumerPhase::Before;
+        let total = resolve_metric_f64!(self, self.total, resolution_maps, phase, "total");
         let total: SimpleMetricF64 =
             total
                 .try_into()
@@ -102,7 +104,7 @@ impl ParameterBuilder<f64> for VolumeBetweenControlCurvesParameterBuilder<Unreso
 
         let upper: Option<SimpleMetricF64> = match &self.upper {
             Some(upper) => {
-                let upper = resolve_metric_f64!(self, upper, resolution_maps, "upper");
+                let upper = resolve_metric_f64!(self, upper, resolution_maps, phase, "upper");
                 let upper: SimpleMetricF64 =
                     upper
                         .try_into()
@@ -118,7 +120,7 @@ impl ParameterBuilder<f64> for VolumeBetweenControlCurvesParameterBuilder<Unreso
 
         let lower: Option<SimpleMetricF64> = match &self.lower {
             Some(lower) => {
-                let lower = resolve_metric_f64!(self, lower, resolution_maps, "lower");
+                let lower = resolve_metric_f64!(self, lower, resolution_maps, phase, "lower");
                 let lower = lower
                     .try_into()
                     .map_err(|source| ParameterBuildError::CouldNotSimplifyMetricF64 {

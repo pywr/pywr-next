@@ -1,12 +1,12 @@
 {
   "metadata": {
-    "title": "Python agg func 1",
-    "description": "A simple example showing how to use a Python function to aggregate data.",
+    "title": "Deficit aggregation 1",
+    "description": "An example of how to aggregate deficits from multiple nodes.",
     "minimum_version": "0.1"
   },
   "time": {
     "start": "2015-01-01",
-    "end": "2015-01-03",
+    "end": "2015-12-31",
     "timestep": {
       "type": "Days",
       "days": 1
@@ -32,7 +32,21 @@
       },
       {
         "meta": {
-          "name": "demand1"
+          "name": "demand11"
+        },
+        "type": "Output",
+        "max_flow": {
+          "type": "Parameter",
+          "name": "demand"
+        },
+        "cost": {
+          "type": "Literal",
+          "value": -10
+        }
+      },
+      {
+        "meta": {
+          "name": "demand12"
         },
         "type": "Output",
         "max_flow": {
@@ -58,65 +72,52 @@
     "parameters": [
       {
         "meta": {
-          "name": "A"
-        },
-        "type": "Constant",
-        "value": {
-          "type": "Literal",
-          "value": 2.0
-        }
-      },
-      {
-        "meta": {
-          "name": "B"
-        },
-        "type": "Constant",
-        "value": {
-          "type": "Literal",
-          "value": 5.0
-        }
-      },
-      {
-        "meta": {
           "name": "demand"
         },
-        "type": "Aggregated",
-        "agg_func": {
-          "type": "Python",
-          "source": {
-            "type": "Path",
-            "path": "test_agg_funcs.py"
-          },
-          "object": "my_agg_func",
-          "args": [
-            2.0
-          ],
-          "kwargs": {
-            "multiplier": 1.5
-          }
+        "type": "Constant",
+        "value": {
+          "type": "Literal",
+          "value": 10.0
+        }
+      },
+      {
+        "meta": {
+          "name": "Total deficit"
         },
+        "type": "Aggregated",
         "phase": "Before",
+        "agg_func": {
+          "type": "Sum"
+        },
         "metrics": [
           {
-            "type": "Parameter",
-            "name": "A"
+            "type": "Node",
+            "name": "demand11",
+            "attribute": "Deficit",
+            "return_type": {
+              "type": "AfterOrElseZero"
+            }
           },
           {
-            "type": "Parameter",
-            "name": "B"
+            "type": "Node",
+            "name": "demand12",
+            "attribute": "Deficit",
+            "return_type": {
+              "type": "AfterOrElseZero"
+            }
           }
         ]
       }
     ],
     "metric_sets": [
       {
-        "name": "parameters",
-        "metrics": [
-          {
-            "type": "Parameter",
-            "name": "demand"
-          }
-        ]
+        "name": "all",
+        "filters": {
+          "all_nodes": true,
+          "all_virtual_nodes": true,
+          "all_parameters": true,
+          "all_edges": false
+        }
       }
     ],
     "outputs": [
@@ -124,8 +125,8 @@
         "name": "nodes",
         "type": "CSV",
         "format": "Long",
-        "filename": "python-agg-func1-expected.csv",
-        "metric_set": "parameters"
+        "filename": "deficit-agg1-expected.csv",
+        "metric_set": "all"
       }
     ]
   }

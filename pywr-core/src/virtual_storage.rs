@@ -1,6 +1,8 @@
 use crate::NodeIndex;
 use crate::aggregated_node::RelationshipBuildError;
-use crate::metric::{MetricF64, MetricF64Error, MetricF64ResolutionError, SimpleMetricF64Error, UnresolvedMetricF64};
+use crate::metric::{
+    MetricConsumerPhase, MetricF64, MetricF64Error, MetricF64ResolutionError, SimpleMetricF64Error, UnresolvedMetricF64,
+};
 use crate::network::{Network, ResolutionMaps, VirtualStorageIndex};
 use crate::node::{NodeMeta, StorageConstraints, StorageInitialVolume, UnresolvedNode, UnresolvedStorageInitialVolume};
 use crate::state::{NetworkStateError, State, StateError, VirtualStorageState};
@@ -134,7 +136,7 @@ impl VirtualStorageNodeBuilder {
             .as_ref()
             .map(|min_volume| {
                 min_volume
-                    .resolve(resolution_maps)
+                    .resolve(resolution_maps, MetricConsumerPhase::Before)
                     .map_err(|source| VirtualStorageNodeBuilderError::ResolveMetricF64Error {
                         attr: "min_volume".to_string(),
                         source,
@@ -152,7 +154,7 @@ impl VirtualStorageNodeBuilder {
             .as_ref()
             .map(|max_volume| {
                 max_volume
-                    .resolve(resolution_maps)
+                    .resolve(resolution_maps, MetricConsumerPhase::Before)
                     .map_err(|source| VirtualStorageNodeBuilderError::ResolveMetricF64Error {
                         attr: "max_volume".to_string(),
                         source,
@@ -182,7 +184,7 @@ impl VirtualStorageNodeBuilder {
                 prior_max_volume,
             } => {
                 let prior_max_volume = prior_max_volume
-                    .resolve(resolution_maps)
+                    .resolve(resolution_maps, MetricConsumerPhase::Before)
                     .map_err(|source| VirtualStorageNodeBuilderError::ResolveMetricF64Error {
                         attr: "prior_max_volume".to_string(),
                         source,
@@ -203,7 +205,7 @@ impl VirtualStorageNodeBuilder {
                 prior_max_volume,
             } => {
                 let total_volume = total_volume
-                    .resolve(resolution_maps)
+                    .resolve(resolution_maps, MetricConsumerPhase::Before)
                     .map_err(|source| VirtualStorageNodeBuilderError::ResolveMetricF64Error {
                         attr: "total_volume".to_string(),
                         source,
@@ -214,7 +216,7 @@ impl VirtualStorageNodeBuilder {
                         source,
                     })?;
                 let prior_max_volume = prior_max_volume
-                    .resolve(resolution_maps)
+                    .resolve(resolution_maps, MetricConsumerPhase::Before)
                     .map_err(|source| VirtualStorageNodeBuilderError::ResolveMetricF64Error {
                         attr: "prior_max_volume".to_string(),
                         source,
@@ -261,7 +263,7 @@ impl VirtualStorageNodeBuilder {
         let cost = self
             .cost
             .as_ref()
-            .map(|cost| cost.resolve(resolution_maps))
+            .map(|cost| cost.resolve(resolution_maps, MetricConsumerPhase::Before))
             .transpose()
             .map_err(|source| VirtualStorageNodeBuilderError::ResolveMetricF64Error {
                 attr: "cost".to_string(),
@@ -728,7 +730,7 @@ mod tests {
         network_builder.virtual_storage_node(vs_builder);
 
         // Virtual storage node cost increases with decreasing volume
-        let mut cost_param = ControlCurveInterpolatedParameterBuilder::new(
+        let mut cost_param = ControlCurveInterpolatedParameterBuilder::before(
             "cost".into(),
             UnresolvedMetricF64::VirtualStorageProportionalVolume("vs".into()),
         );

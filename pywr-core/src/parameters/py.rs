@@ -3,7 +3,7 @@ use super::{
     GeneralParameterEntry, MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder, ParameterMeta,
     ParameterName, ParameterState, Timestep,
 };
-use crate::metric::{MetricF64, MetricU64, UnresolvedMetricF64, UnresolvedMetricU64};
+use crate::metric::{MetricConsumerPhase, MetricF64, MetricU64, UnresolvedMetricF64, UnresolvedMetricU64};
 use crate::network::{Network, ResolutionMaps};
 use crate::parameters::downcast_internal_state_mut;
 use crate::parameters::errors::{GeneralCalculationError, ParameterSetupError};
@@ -390,8 +390,26 @@ impl ParameterBuilder<f64> for PyClassParameterBuilder {
         self: Box<Self>,
         resolution_maps: &ResolutionMaps,
     ) -> Result<MaybeBuiltParameter<f64>, ParameterBuildError> {
-        let metrics = resolve_metric_f64_hashmap!(self, &self.common.metrics, resolution_maps, "metrics");
-        let indices = resolve_metric_u64_hashmap!(self, &self.common.indices, resolution_maps, "indices");
+        let (has_before, has_after) = Python::attach(|py| {
+            let has_before = self.class.getattr(py, "before").is_ok();
+            let has_after = self.class.getattr(py, "after").is_ok();
+            (has_before, has_after)
+        });
+
+        let phase = match (has_before, has_after) {
+            (true, true) => MetricConsumerPhase::Both,
+            (true, false) => MetricConsumerPhase::Before,
+            (false, true) => MetricConsumerPhase::After,
+            (false, false) => {
+                return Err(ParameterBuildError::NoCalculationPhase {
+                    detail: "PyClassParameterBuilder must have at least one of `before` or `after` methods defined."
+                        .into(),
+                });
+            }
+        };
+
+        let metrics = resolve_metric_f64_hashmap!(self, &self.common.metrics, resolution_maps, phase, "metrics");
+        let indices = resolve_metric_u64_hashmap!(self, &self.common.indices, resolution_maps, phase, "indices");
 
         let common = PyCommon {
             meta: self.common.meta,
@@ -401,27 +419,15 @@ impl ParameterBuilder<f64> for PyClassParameterBuilder {
             indices,
         };
 
-        let (has_before, has_after) = Python::attach(|py| {
-            let has_before = self.class.getattr(py, "before").is_ok();
-            let has_after = self.class.getattr(py, "after").is_ok();
-            (has_before, has_after)
-        });
-
         let p = PyClassParameter {
             class: self.class,
             common,
         };
 
-        let entry = match (has_before, has_after) {
-            (true, true) => GeneralParameterEntry::both(p),
-            (true, false) => GeneralParameterEntry::before(p),
-            (false, true) => GeneralParameterEntry::after(p),
-            (false, false) => {
-                return Err(ParameterBuildError::NoCalculationPhase {
-                    detail: "PyClassParameterBuilder must have at least one of `before` or `after` methods defined."
-                        .into(),
-                });
-            }
+        let entry = match phase {
+            MetricConsumerPhase::Both => GeneralParameterEntry::both(p),
+            MetricConsumerPhase::Before => GeneralParameterEntry::before(p),
+            MetricConsumerPhase::After => GeneralParameterEntry::after(p),
         };
 
         Ok(BuiltParameter::General(entry).into())
@@ -437,8 +443,26 @@ impl ParameterBuilder<u64> for PyClassParameterBuilder {
         self: Box<Self>,
         resolution_maps: &ResolutionMaps,
     ) -> Result<MaybeBuiltParameter<u64>, ParameterBuildError> {
-        let metrics = resolve_metric_f64_hashmap!(self, &self.common.metrics, resolution_maps, "metrics");
-        let indices = resolve_metric_u64_hashmap!(self, &self.common.indices, resolution_maps, "indices");
+        let (has_before, has_after) = Python::attach(|py| {
+            let has_before = self.class.getattr(py, "before").is_ok();
+            let has_after = self.class.getattr(py, "after").is_ok();
+            (has_before, has_after)
+        });
+
+        let phase = match (has_before, has_after) {
+            (true, true) => MetricConsumerPhase::Both,
+            (true, false) => MetricConsumerPhase::Before,
+            (false, true) => MetricConsumerPhase::After,
+            (false, false) => {
+                return Err(ParameterBuildError::NoCalculationPhase {
+                    detail: "PyClassParameterBuilder must have at least one of `before` or `after` methods defined."
+                        .into(),
+                });
+            }
+        };
+
+        let metrics = resolve_metric_f64_hashmap!(self, &self.common.metrics, resolution_maps, phase, "metrics");
+        let indices = resolve_metric_u64_hashmap!(self, &self.common.indices, resolution_maps, phase, "indices");
 
         let common = PyCommon {
             meta: self.common.meta,
@@ -448,27 +472,15 @@ impl ParameterBuilder<u64> for PyClassParameterBuilder {
             indices,
         };
 
-        let (has_before, has_after) = Python::attach(|py| {
-            let has_before = self.class.getattr(py, "before").is_ok();
-            let has_after = self.class.getattr(py, "after").is_ok();
-            (has_before, has_after)
-        });
-
         let p = PyClassParameter {
             class: self.class,
             common,
         };
 
-        let entry = match (has_before, has_after) {
-            (true, true) => GeneralParameterEntry::both(p),
-            (true, false) => GeneralParameterEntry::before(p),
-            (false, true) => GeneralParameterEntry::after(p),
-            (false, false) => {
-                return Err(ParameterBuildError::NoCalculationPhase {
-                    detail: "PyClassParameterBuilder must have at least one of `before` or `after` methods defined."
-                        .into(),
-                });
-            }
+        let entry = match phase {
+            MetricConsumerPhase::Both => GeneralParameterEntry::both(p),
+            MetricConsumerPhase::Before => GeneralParameterEntry::before(p),
+            MetricConsumerPhase::After => GeneralParameterEntry::after(p),
         };
 
         Ok(BuiltParameter::General(entry).into())
@@ -484,8 +496,26 @@ impl ParameterBuilder<MultiValue> for PyClassParameterBuilder {
         self: Box<Self>,
         resolution_maps: &ResolutionMaps,
     ) -> Result<MaybeBuiltParameter<MultiValue>, ParameterBuildError> {
-        let metrics = resolve_metric_f64_hashmap!(self, &self.common.metrics, resolution_maps, "metrics");
-        let indices = resolve_metric_u64_hashmap!(self, &self.common.indices, resolution_maps, "indices");
+        let (has_before, has_after) = Python::attach(|py| {
+            let has_before = self.class.getattr(py, "before").is_ok();
+            let has_after = self.class.getattr(py, "after").is_ok();
+            (has_before, has_after)
+        });
+
+        let phase = match (has_before, has_after) {
+            (true, true) => MetricConsumerPhase::Both,
+            (true, false) => MetricConsumerPhase::Before,
+            (false, true) => MetricConsumerPhase::After,
+            (false, false) => {
+                return Err(ParameterBuildError::NoCalculationPhase {
+                    detail: "PyClassParameterBuilder must have at least one of `before` or `after` methods defined."
+                        .into(),
+                });
+            }
+        };
+
+        let metrics = resolve_metric_f64_hashmap!(self, &self.common.metrics, resolution_maps, phase, "metrics");
+        let indices = resolve_metric_u64_hashmap!(self, &self.common.indices, resolution_maps, phase, "indices");
 
         let common = PyCommon {
             meta: self.common.meta,
@@ -495,27 +525,15 @@ impl ParameterBuilder<MultiValue> for PyClassParameterBuilder {
             indices,
         };
 
-        let (has_before, has_after) = Python::attach(|py| {
-            let has_before = self.class.getattr(py, "before").is_ok();
-            let has_after = self.class.getattr(py, "after").is_ok();
-            (has_before, has_after)
-        });
-
         let p = PyClassParameter {
             class: self.class,
             common,
         };
 
-        let entry = match (has_before, has_after) {
-            (true, true) => GeneralParameterEntry::both(p),
-            (true, false) => GeneralParameterEntry::before(p),
-            (false, true) => GeneralParameterEntry::after(p),
-            (false, false) => {
-                return Err(ParameterBuildError::NoCalculationPhase {
-                    detail: "PyClassParameterBuilder must have at least one of `before` or `after` methods defined."
-                        .into(),
-                });
-            }
+        let entry = match phase {
+            MetricConsumerPhase::Both => GeneralParameterEntry::both(p),
+            MetricConsumerPhase::Before => GeneralParameterEntry::before(p),
+            MetricConsumerPhase::After => GeneralParameterEntry::after(p),
         };
 
         Ok(BuiltParameter::General(entry).into())
@@ -723,8 +741,10 @@ impl ParameterBuilder<f64> for PyFuncParameterBuilder {
         self: Box<Self>,
         resolution_maps: &ResolutionMaps,
     ) -> Result<MaybeBuiltParameter<f64>, ParameterBuildError> {
-        let metrics = resolve_metric_f64_hashmap!(self, &self.common.metrics, resolution_maps, "metrics");
-        let indices = resolve_metric_u64_hashmap!(self, &self.common.indices, resolution_maps, "indices");
+        // Phase is hardcoded to "before" for this parameter, as it only implements the `GeneralBeforeParameter` trait.
+        let phase = MetricConsumerPhase::Before;
+        let metrics = resolve_metric_f64_hashmap!(self, &self.common.metrics, resolution_maps, phase, "metrics");
+        let indices = resolve_metric_u64_hashmap!(self, &self.common.indices, resolution_maps, phase, "indices");
 
         let common = PyCommon {
             meta: self.common.meta,
@@ -752,8 +772,10 @@ impl ParameterBuilder<u64> for PyFuncParameterBuilder {
         self: Box<Self>,
         resolution_maps: &ResolutionMaps,
     ) -> Result<MaybeBuiltParameter<u64>, ParameterBuildError> {
-        let metrics = resolve_metric_f64_hashmap!(self, &self.common.metrics, resolution_maps, "metrics");
-        let indices = resolve_metric_u64_hashmap!(self, &self.common.indices, resolution_maps, "indices");
+        // Phase is hardcoded to "before" for this parameter, as it only implements the `GeneralBeforeParameter` trait.
+        let phase = MetricConsumerPhase::Before;
+        let metrics = resolve_metric_f64_hashmap!(self, &self.common.metrics, resolution_maps, phase, "metrics");
+        let indices = resolve_metric_u64_hashmap!(self, &self.common.indices, resolution_maps, phase, "indices");
 
         let common = PyCommon {
             meta: self.common.meta,
@@ -781,8 +803,10 @@ impl ParameterBuilder<MultiValue> for PyFuncParameterBuilder {
         self: Box<Self>,
         resolution_maps: &ResolutionMaps,
     ) -> Result<MaybeBuiltParameter<MultiValue>, ParameterBuildError> {
-        let metrics = resolve_metric_f64_hashmap!(self, &self.common.metrics, resolution_maps, "metrics");
-        let indices = resolve_metric_u64_hashmap!(self, &self.common.indices, resolution_maps, "indices");
+        // Phase is hardcoded to "before" for this parameter, as it only implements the `GeneralBeforeParameter` trait.
+        let phase = MetricConsumerPhase::Before;
+        let metrics = resolve_metric_f64_hashmap!(self, &self.common.metrics, resolution_maps, phase, "metrics");
+        let indices = resolve_metric_u64_hashmap!(self, &self.common.indices, resolution_maps, phase, "indices");
 
         let common = PyCommon {
             meta: self.common.meta,

@@ -5,7 +5,7 @@ use crate::error::SchemaError;
 use crate::metric::{IndexMetric, Metric};
 #[cfg(feature = "core")]
 use crate::network::LoadArgs;
-use crate::parameters::{ConversionData, ParameterMeta};
+use crate::parameters::{ConversionData, ParameterMeta, ParameterPhase};
 use crate::v1::{TryFromV1, TryIntoV2, try_convert_parameter_attr};
 #[cfg(feature = "core")]
 use pywr_core::parameters::ParameterName;
@@ -43,6 +43,7 @@ use std::collections::HashMap;
 #[serde(deny_unknown_fields)]
 pub struct AggregatedParameter {
     pub meta: ParameterMeta,
+    pub phase: ParameterPhase,
     pub agg_func: AggFunc,
     pub metrics: Vec<Metric>,
 }
@@ -55,10 +56,13 @@ impl AggregatedParameter {
         args: &LoadArgs,
         parent: Option<&str>,
     ) -> Result<(), SchemaError> {
-        let mut builder = pywr_core::parameters::AggregatedParameterBuilder::new(
-            ParameterName::new(&self.meta.name, parent),
-            self.agg_func.load(args.data_path)?,
-        );
+        let name = ParameterName::new(&self.meta.name, parent);
+        let agg_func = self.agg_func.load(args.data_path)?;
+
+        let mut builder = match self.phase {
+            ParameterPhase::Before => pywr_core::parameters::AggregatedParameterBuilder::before(name, agg_func),
+            ParameterPhase::After => pywr_core::parameters::AggregatedParameterBuilder::after(name, agg_func),
+        };
 
         for metric in &self.metrics {
             let m = metric.load(network, args, parent)?;
@@ -91,6 +95,7 @@ impl TryFromV1<AggregatedParameterV1> for AggregatedParameter {
             meta,
             agg_func: v1.agg_func.into(),
             metrics,
+            phase: ParameterPhase::Before,
         };
         Ok(p)
     }
@@ -100,6 +105,7 @@ impl TryFromV1<AggregatedParameterV1> for AggregatedParameter {
 #[serde(deny_unknown_fields)]
 pub struct AggregatedIndexParameter {
     pub meta: ParameterMeta,
+    pub phase: ParameterPhase,
     pub agg_func: IndexAggFunc,
     pub metrics: Vec<IndexMetric>,
 }
@@ -108,15 +114,6 @@ impl AggregatedIndexParameter {
     pub fn node_references(&self) -> HashMap<&str, &str> {
         HashMap::new()
     }
-
-    // pub fn parameters(&self) -> HashMap<&str, DynamicFloatValueType> {
-    //     let mut attributes = HashMap::new();
-    //
-    //     let parameters = &self.parameters;
-    //     attributes.insert("parameters", parameters.into());
-    //
-    //     attributes
-    // }
 }
 
 #[cfg(feature = "core")]
@@ -127,10 +124,13 @@ impl AggregatedIndexParameter {
         args: &LoadArgs,
         parent: Option<&str>,
     ) -> Result<(), SchemaError> {
-        let mut builder = pywr_core::parameters::AggregatedIndexParameterBuilder::new(
-            ParameterName::new(&self.meta.name, parent),
-            self.agg_func.load(args.data_path)?,
-        );
+        let name = ParameterName::new(&self.meta.name, parent);
+        let agg_func = self.agg_func.load(args.data_path)?;
+
+        let mut builder = match self.phase {
+            ParameterPhase::Before => pywr_core::parameters::AggregatedIndexParameterBuilder::before(name, agg_func),
+            ParameterPhase::After => pywr_core::parameters::AggregatedIndexParameterBuilder::after(name, agg_func),
+        };
 
         for metric in &self.metrics {
             let m = metric.load(network, args, parent)?;
@@ -161,6 +161,7 @@ impl TryFromV1<AggregatedIndexParameterV1> for AggregatedIndexParameter {
 
         let p = Self {
             meta,
+            phase: ParameterPhase::Before,
             agg_func: v1.agg_func.into(),
             metrics,
         };
@@ -184,6 +185,7 @@ mod tests {
                 "agg_func": {
                   "type": "Min"
                 },
+                "phase": "Before",
                 "metrics": [
                   {
                     "type": "Parameter",

@@ -1,6 +1,6 @@
 use crate::metric::{
-    ConstantMetricF64Error, MetricF64, MetricF64Error, MetricF64ResolutionError, SimpleMetricF64, SimpleMetricF64Error,
-    UnresolvedMetricF64,
+    ConstantMetricF64Error, MetricConsumerPhase, MetricF64, MetricF64Error, MetricF64ResolutionError, SimpleMetricF64,
+    SimpleMetricF64Error, UnresolvedMetricF64,
 };
 use crate::network::{EdgeIndex, Network, NodeIndex, ResolutionMaps, VirtualStorageIndex};
 use crate::state::{ConstParameterValues, NetworkStateError, NodeState, SimpleParameterValues, State, StateError};
@@ -164,7 +164,7 @@ impl NodeBuilder {
 
         let local = match &self.cost {
             Some(cost) => cost
-                .resolve(resolution_maps)
+                .resolve(resolution_maps, MetricConsumerPhase::Before)
                 .map_err(|source| NodeBuilderError::ResolveMetricF64Error {
                     attr: "cost".to_string(),
                     source,
@@ -194,7 +194,7 @@ impl NodeBuilder {
             .as_ref()
             .map(|min_flow| {
                 min_flow
-                    .resolve(resolution_maps)
+                    .resolve(resolution_maps, MetricConsumerPhase::Before)
                     .map_err(|source| NodeBuilderError::ResolveMetricF64Error {
                         attr: "min_flow".to_string(),
                         source,
@@ -207,7 +207,7 @@ impl NodeBuilder {
             .as_ref()
             .map(|max_flow| {
                 max_flow
-                    .resolve(resolution_maps)
+                    .resolve(resolution_maps, MetricConsumerPhase::Before)
                     .map_err(|source| NodeBuilderError::ResolveMetricF64Error {
                         attr: "max_flow".to_string(),
                         source,
@@ -230,7 +230,7 @@ impl NodeBuilder {
             .as_ref()
             .map(|min_volume| {
                 min_volume
-                    .resolve(resolution_maps)
+                    .resolve(resolution_maps, MetricConsumerPhase::Before)
                     .map_err(|source| NodeBuilderError::ResolveMetricF64Error {
                         attr: "min_volume".to_string(),
                         source,
@@ -248,7 +248,7 @@ impl NodeBuilder {
             .as_ref()
             .map(|max_volume| {
                 max_volume
-                    .resolve(resolution_maps)
+                    .resolve(resolution_maps, MetricConsumerPhase::Before)
                     .map_err(|source| NodeBuilderError::ResolveMetricF64Error {
                         attr: "max_volume".to_string(),
                         source,
@@ -279,7 +279,7 @@ impl NodeBuilder {
                     prior_max_volume,
                 } => {
                     let prior_max_volume = prior_max_volume
-                        .resolve(resolution_maps)
+                        .resolve(resolution_maps, MetricConsumerPhase::Before)
                         .map_err(|source| NodeBuilderError::ResolveMetricF64Error {
                             attr: "prior_max_volume".to_string(),
                             source,
@@ -300,7 +300,7 @@ impl NodeBuilder {
                     prior_max_volume,
                 } => {
                     let total_volume = total_volume
-                        .resolve(resolution_maps)
+                        .resolve(resolution_maps, MetricConsumerPhase::Before)
                         .map_err(|source| NodeBuilderError::ResolveMetricF64Error {
                             attr: "total_volume".to_string(),
                             source,
@@ -311,7 +311,7 @@ impl NodeBuilder {
                             source,
                         })?;
                     let prior_max_volume = prior_max_volume
-                        .resolve(resolution_maps)
+                        .resolve(resolution_maps, MetricConsumerPhase::Before)
                         .map_err(|source| NodeBuilderError::ResolveMetricF64Error {
                             attr: "prior_max_volume".to_string(),
                             source,

@@ -1,4 +1,4 @@
-use crate::metric::{MetricF64, UnresolvedMetricF64};
+use crate::metric::{MetricConsumerPhase, MetricF64, UnresolvedMetricF64};
 use crate::network::{Network, ResolutionMaps};
 use crate::parameters::errors::GeneralCalculationError;
 use crate::parameters::{
@@ -191,12 +191,27 @@ impl ParameterBuilder<f64> for HydropowerTargetParameterBuilder {
         self: Box<Self>,
         resolution_maps: &ResolutionMaps,
     ) -> Result<MaybeBuiltParameter<f64>, ParameterBuildError> {
-        let actual_flow = resolve_optional_metric_f64!(self, &self.actual_flow, resolution_maps, "actual_flow");
-        let target = resolve_optional_metric_f64!(self, &self.target, resolution_maps, "target");
-        let max_flow = resolve_optional_metric_f64!(self, &self.max_flow, resolution_maps, "max_flow");
-        let min_flow = resolve_optional_metric_f64!(self, &self.min_flow, resolution_maps, "min_flow");
+        // Determine which calculation phase(s) the parameter will be used in
+        // based on whether the target and actual flow are provided.
+        // If neither is provided, return an error.
+        let phase = match (self.target.is_some(), self.actual_flow.is_some()) {
+            (true, true) => MetricConsumerPhase::Both,
+            (true, false) => MetricConsumerPhase::Before,
+            (false, true) => MetricConsumerPhase::After,
+            (false, false) => {
+                return Err(ParameterBuildError::NoCalculationPhase {
+                    detail: "HydropowerTargetParameter must have at least one of `target` or `actual_flow` defined."
+                        .into(),
+                });
+            }
+        };
+
+        let actual_flow = resolve_optional_metric_f64!(self, &self.actual_flow, resolution_maps, phase, "actual_flow");
+        let target = resolve_optional_metric_f64!(self, &self.target, resolution_maps, phase, "target");
+        let max_flow = resolve_optional_metric_f64!(self, &self.max_flow, resolution_maps, phase, "max_flow");
+        let min_flow = resolve_optional_metric_f64!(self, &self.min_flow, resolution_maps, phase, "min_flow");
         let water_elevation =
-            resolve_optional_metric_f64!(self, &self.water_elevation, resolution_maps, "water_elevation");
+            resolve_optional_metric_f64!(self, &self.water_elevation, resolution_maps, phase, "water_elevation");
 
         let p = HydropowerTargetParameter {
             meta: self.meta,
@@ -213,19 +228,10 @@ impl ParameterBuilder<f64> for HydropowerTargetParameterBuilder {
             energy_unit_conversion: self.energy_unit_conversion,
         };
 
-        // Determine which calculation phase(s) the parameter will be used in
-        // based on whether the target and actual flow are provided.
-        // If neither is provided, return an error.
-        let entry = match (p.target.is_some(), p.actual_flow.is_some()) {
-            (true, true) => GeneralParameterEntry::both(p),
-            (true, false) => GeneralParameterEntry::before(p),
-            (false, true) => GeneralParameterEntry::after(p),
-            (false, false) => {
-                return Err(ParameterBuildError::NoCalculationPhase {
-                    detail: "HydropowerTargetParameter must have at least one of `target` or `actual_flow` defined."
-                        .into(),
-                });
-            }
+        let entry = match phase {
+            MetricConsumerPhase::Both => GeneralParameterEntry::both(p),
+            MetricConsumerPhase::Before => GeneralParameterEntry::before(p),
+            MetricConsumerPhase::After => GeneralParameterEntry::after(p),
         };
 
         Ok(BuiltParameter::General(entry).into())

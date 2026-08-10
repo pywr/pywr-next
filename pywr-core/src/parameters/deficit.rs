@@ -1,4 +1,4 @@
-use crate::metric::{MetricF64, UnresolvedMetricF64};
+use crate::metric::{MetricConsumerPhase, MetricF64, UnresolvedMetricF64};
 use crate::network::ResolutionMaps;
 use crate::parameters::{
     BuiltParameter, GeneralAfterParameter, GeneralCalculationError, GeneralParameter, GeneralParameterContext,
@@ -73,8 +73,10 @@ impl ParameterBuilder<f64> for DeficitParameterBuilder {
         self: Box<Self>,
         resolution_maps: &ResolutionMaps,
     ) -> Result<MaybeBuiltParameter<f64>, ParameterBuildError> {
-        let flow = resolve_metric_f64!(self, self.flow, resolution_maps, "flow");
-        let max_flow = resolve_metric_f64!(self, self.max_flow, resolution_maps, "max_flow");
+        // Phase is hardcoded to "after" for this parameter, as it only implements the `GeneralAfterParameter` trait.
+        let phase = MetricConsumerPhase::After;
+        let flow = resolve_metric_f64!(self, self.flow, resolution_maps, phase, "flow");
+        let max_flow = resolve_metric_f64!(self, self.max_flow, resolution_maps, phase, "max_flow");
 
         let p = DeficitParameter {
             meta: self.meta,

@@ -1,5 +1,5 @@
 #![allow(dead_code)]
-use pywr_core::metric::{MetricF64, UnresolvedMetricF64};
+use pywr_core::metric::{MetricConsumerPhase, MetricF64, UnresolvedMetricF64};
 use pywr_core::network::ResolutionMaps;
 use pywr_core::parameters::{
     BuiltParameter, GeneralBeforeParameter, GeneralCalculationError, GeneralParameter, GeneralParameterContext,
@@ -71,7 +71,9 @@ impl ParameterBuilder<f64> for MaxParameterBuilder {
         self: Box<Self>,
         resolution_maps: &ResolutionMaps,
     ) -> Result<MaybeBuiltParameter<f64>, ParameterBuildError> {
-        let metric = resolve_metric_f64!(self, self.metric, resolution_maps, "metric");
+        // Phase is hardcoded to "before" for this parameter, as it only implements the `GeneralBeforeParameter` trait.
+        let phase = MetricConsumerPhase::Before;
+        let metric = resolve_metric_f64!(self, self.metric, resolution_maps, phase, "metric");
 
         let p = MaxParameter {
             meta: self.meta,

@@ -1,4 +1,4 @@
-use crate::metric::{MetricF64, UnresolvedMetricF64};
+use crate::metric::{MetricConsumerPhase, MetricF64, UnresolvedMetricF64};
 use crate::network::ResolutionMaps;
 use crate::parameters::{
     BuiltParameter, GeneralBeforeParameter, GeneralCalculationError, GeneralParameter, GeneralParameterContext,
@@ -164,10 +164,12 @@ impl ParameterBuilder<MultiValue> for MuskingumParameterBuilder {
         self: Box<Self>,
         resolution_maps: &ResolutionMaps,
     ) -> Result<MaybeBuiltParameter<MultiValue>, ParameterBuildError> {
-        let inflow = resolve_metric_f64!(self, self.inflow, resolution_maps, "inflow");
-        let outflow = resolve_metric_f64!(self, self.outflow, resolution_maps, "outflow");
-        let travel_time = resolve_metric_f64!(self, self.travel_time, resolution_maps, "travel_time");
-        let weight = resolve_metric_f64!(self, self.weight, resolution_maps, "weight");
+        // Phase is hardcoded to "before" for this parameter, as it only implements the `GeneralBeforeParameter` trait.
+        let phase = MetricConsumerPhase::Before;
+        let inflow = resolve_metric_f64!(self, self.inflow, resolution_maps, phase, "inflow");
+        let outflow = resolve_metric_f64!(self, self.outflow, resolution_maps, phase, "outflow");
+        let travel_time = resolve_metric_f64!(self, self.travel_time, resolution_maps, phase, "travel_time");
+        let weight = resolve_metric_f64!(self, self.weight, resolution_maps, phase, "weight");
 
         let p = MuskingumParameter {
             meta: self.meta,

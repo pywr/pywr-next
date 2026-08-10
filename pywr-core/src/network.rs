@@ -1036,8 +1036,8 @@ impl Network {
     /// Undertake "after" for network components after solve.
     ///
     /// This method iterates through the network components (nodes, parameters, etc) to perform
-    /// pre-solve calculations. For nodes this can be adjustments to storage volume (e.g. to
-    /// set initial volume). For parameters this involves computing the current value for the
+    /// post-solve calculations. For nodes this can be adjustments to storage volume (e.g. to
+    /// set initial volume). For parameters this involves computing the "after" value for
     /// the timestep. The `state` object is progressively updated with these values during this
     /// method.
     fn after(
@@ -2605,7 +2605,7 @@ mod tests {
 
         // Set-up a control curve that uses the proportional volume
         // This should be use the initial proportion (100%) on the first time-step, and then the previous day's end value
-        let mut cc = ControlCurveInterpolatedParameterBuilder::new(
+        let mut cc = ControlCurveInterpolatedParameterBuilder::before(
             "interp".into(),
             UnresolvedMetricF64::NodeProportionalVolume("reservoir".into()),
         );

@@ -1,11 +1,12 @@
 use crate::agg_funcs::AggFunc;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
-use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::metric::{EdgeReference, VirtualNodeAttrReference};
+use crate::metric::{Metric, ParameterReferenceBuilder, ParameterReturnValue};
 #[cfg(feature = "core")]
 use crate::network::LoadArgs;
+use crate::parameters::ParameterPhase;
 #[cfg(feature = "core")]
 use crate::parameters::{Parameter, PythonReturnType};
 #[cfg(feature = "core")]
@@ -92,7 +93,7 @@ pub struct MetricSetFilters {
 #[cfg(feature = "core")]
 impl MetricSetFilters {
     fn create_metrics(&self, args: &LoadArgs) -> Vec<Metric> {
-        use crate::metric::{NodeAttrReference, ParameterReference};
+        use crate::metric::NodeAttrReference;
 
         let mut metrics = vec![];
 
@@ -124,7 +125,21 @@ impl MetricSetFilters {
                         }
                     }
 
-                    metrics.push(Metric::Parameter(ParameterReference::new(parameter.name(), None)));
+                    // Create a reference to the parameter
+                    let mut p_ref_builder = ParameterReferenceBuilder::new(parameter.name());
+                    // Make sure we create a reference to the correct phase that the parameter
+                    // will produce a value in.
+                    match parameter.phase() {
+                        ParameterPhase::Before => {
+                            p_ref_builder.return_value(ParameterReturnValue::Before);
+                        }
+                        ParameterPhase::After => {
+                            p_ref_builder.return_value(ParameterReturnValue::After);
+                        }
+                    }
+
+                    let p_ref = p_ref_builder.build();
+                    metrics.push(Metric::Parameter(p_ref));
                 }
             }
         }

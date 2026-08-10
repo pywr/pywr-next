@@ -34,15 +34,10 @@ mod vector;
 
 use std::any::Any;
 // Re-imports
-use crate::metric::{
-    ConstantMetricF64, ConstantMetricU64, MetricF64, MetricF64Error, MetricF64ResolutionError, MetricU64,
-    MetricU64ResolutionError, SimpleMetricF64, SimpleMetricU64,
-};
+use crate::metric::{MetricF64Error, MetricF64ResolutionError, MetricU64ResolutionError};
 use crate::network::{Network, ResolutionMaps};
 use crate::scenario::{ScenarioGroupNotFound, ScenarioIndex};
-use crate::state::{
-    ConstParameterValues, MultiValue, ParameterReturnValue, SetStateError, SimpleParameterValues, State,
-};
+use crate::state::{ConstParameterValues, MultiValue, SetStateError, SimpleParameterValues, State};
 use crate::timestep::Timestep;
 pub use activation_function::ActivationFunction;
 pub use aggregated::{AggregatedParameter, AggregatedParameterBuilder};
@@ -100,7 +95,7 @@ use thiserror::Error;
 pub use threshold::{Predicate, ThresholdParameter, ThresholdParameterBuilder};
 pub use vector::{VectorParameter, VectorParameterBuilder};
 
-/// Simple parameter index.
+/// Constant parameter index.
 ///
 /// This is a wrapper around usize that is used to index parameters in the state. It is
 /// generic over the type of the value that the parameter returns.
@@ -202,7 +197,7 @@ impl<T> Display for SimpleParameterIndex<T> {
 
 /// Generic parameter index.
 ///
-/// This is a wrapper around usize that is used to index parameters in the state. It is
+/// This is a wrapper around usize that is used to index parameters in the collection. It is
 /// generic over the type of the value that the parameter returns.
 #[derive(Debug)]
 pub struct GeneralParameterIndex<T> {
@@ -257,14 +252,128 @@ impl<T> Hash for GeneralParameterIndex<T> {
     }
 }
 
+/// An index for a general parameter's before value in the state.
+#[derive(Debug)]
+pub struct GeneralBeforeValueIndex<T> {
+    idx: usize,
+    phantom: PhantomData<T>,
+}
+
+impl<T> GeneralBeforeValueIndex<T> {
+    fn new(idx: usize) -> Self {
+        Self {
+            idx,
+            phantom: PhantomData,
+        }
+    }
+}
+
+// These implementations are required because the derive macro does not work well with PhantomData.
+// See issue: https://github.com/rust-lang/rust/issues/26925
+impl<T> Clone for GeneralBeforeValueIndex<T> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<T> Copy for GeneralBeforeValueIndex<T> {}
+
+impl<T> Deref for GeneralBeforeValueIndex<T> {
+    type Target = usize;
+
+    fn deref(&self) -> &Self::Target {
+        &self.idx
+    }
+}
+
+impl<T> Display for GeneralBeforeValueIndex<T> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.idx)
+    }
+}
+
+impl<T> PartialEq<Self> for GeneralBeforeValueIndex<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.idx == other.idx
+    }
+}
+
+impl<T> Eq for GeneralBeforeValueIndex<T> {}
+
+/// An index for a general parameter's after value in the state.
+#[derive(Debug)]
+pub struct GeneralAfterValueIndex<T> {
+    idx: usize,
+    phantom: PhantomData<T>,
+}
+impl<T> GeneralAfterValueIndex<T> {
+    fn new(idx: usize) -> Self {
+        Self {
+            idx,
+            phantom: PhantomData,
+        }
+    }
+}
+
+// These implementations are required because the derive macro does not work well with PhantomData.
+// See issue: https://github.com/rust-lang/rust/issues/26925
+impl<T> Clone for GeneralAfterValueIndex<T> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<T> Copy for GeneralAfterValueIndex<T> {}
+
+impl<T> Deref for GeneralAfterValueIndex<T> {
+    type Target = usize;
+
+    fn deref(&self) -> &Self::Target {
+        &self.idx
+    }
+}
+
+impl<T> Display for GeneralAfterValueIndex<T> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.idx)
+    }
+}
+
+impl<T> PartialEq<Self> for GeneralAfterValueIndex<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.idx == other.idx
+    }
+}
+
+impl<T> Eq for GeneralAfterValueIndex<T> {}
+#[derive(Debug, PartialEq, Eq)]
+pub struct GeneralParameterRegistration<T> {
+    pub parameter: GeneralParameterIndex<T>,
+    pub before: Option<GeneralBeforeValueIndex<T>>,
+    pub after: Option<GeneralAfterValueIndex<T>>,
+}
+
+// These implementations are required because the derive macro does not work well with PhantomData.
+// See issue: https://github.com/rust-lang/rust/issues/26925
+impl<T> Clone for GeneralParameterRegistration<T> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<T> Copy for GeneralParameterRegistration<T> {}
+
 #[derive(Debug, Copy, Clone)]
 pub enum ParameterIndex<T> {
     Const(ConstParameterIndex<T>),
     Simple(SimpleParameterIndex<T>),
-    General(GeneralParameterIndex<T>),
+    General(GeneralParameterRegistration<T>),
 }
 
-impl<T> PartialEq<Self> for ParameterIndex<T> {
+impl<T> PartialEq<Self> for ParameterIndex<T>
+where
+    T: PartialEq,
+{
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (Self::Const(idx1), Self::Const(idx2)) => idx1 == idx2,
@@ -275,19 +384,19 @@ impl<T> PartialEq<Self> for ParameterIndex<T> {
     }
 }
 
-impl<T> Eq for ParameterIndex<T> {}
+impl<T> Eq for ParameterIndex<T> where T: Eq {}
 
 impl<T> Display for ParameterIndex<T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
             Self::Const(idx) => write!(f, "{idx}",),
             Self::Simple(idx) => write!(f, "{idx}",),
-            Self::General(idx) => write!(f, "{idx}",),
+            Self::General(idx) => write!(f, "{}", idx.parameter),
         }
     }
 }
-impl<T> From<GeneralParameterIndex<T>> for ParameterIndex<T> {
-    fn from(idx: GeneralParameterIndex<T>) -> Self {
+impl<T> From<GeneralParameterRegistration<T>> for ParameterIndex<T> {
+    fn from(idx: GeneralParameterRegistration<T>) -> Self {
         Self::General(idx)
     }
 }
@@ -304,117 +413,12 @@ impl<T> From<ConstParameterIndex<T>> for ParameterIndex<T> {
     }
 }
 
-impl ParameterIndex<f64> {
-    /// Convert the parameter index into a metric.
-    pub fn into_metric_f64(self, return_value: ParameterReturnValue) -> MetricF64 {
-        match self {
-            ParameterIndex::Const(idx) => ConstantMetricF64::ParameterValue(idx).into(),
-            ParameterIndex::Simple(index) => SimpleMetricF64::ParameterValue { index, return_value }.into(),
-            ParameterIndex::General(index) => MetricF64::ParameterValue { index, return_value },
-        }
-    }
-
-    /// Convert the parameter index into a metric that returns the "before" value.
-    ///
-    /// This is a convenience method for `into_metric_f64(ParameterReturnValue::Before)`.
-    pub fn into_metric_f64_before(self) -> MetricF64 {
-        self.into_metric_f64(ParameterReturnValue::Before)
-    }
-
-    /// Convert the parameter index into a metric that returns the "after" value.
-    ///
-    /// This is a convenience method for `into_metric_f64(ParameterReturnValue::After)`.
-    pub fn into_metric_f64_after(self) -> MetricF64 {
-        self.into_metric_f64(ParameterReturnValue::After)
-    }
-}
-
-impl ParameterIndex<u64> {
-    /// Convert the parameter index into a metric.
-    pub fn into_metric_f64(self, return_value: ParameterReturnValue) -> MetricF64 {
-        match self {
-            ParameterIndex::Const(idx) => ConstantMetricF64::IndexParameterValue(idx).into(),
-            ParameterIndex::Simple(index) => SimpleMetricF64::IndexParameterValue { index, return_value }.into(),
-            ParameterIndex::General(index) => MetricF64::IndexParameterValue { index, return_value },
-        }
-    }
-
-    /// Convert the parameter index into a metric that returns the "before" value.
-    ///
-    /// This is a convenience method for `into_metric(ParameterReturnValue::Before)`.
-    pub fn into_metric_f64_before(self) -> MetricF64 {
-        self.into_metric_f64(ParameterReturnValue::Before)
-    }
-
-    /// Convert the parameter index into a metric.
-    pub fn into_metric_u64(self, return_value: ParameterReturnValue) -> MetricU64 {
-        match self {
-            ParameterIndex::Const(idx) => ConstantMetricU64::IndexParameterValue(idx).into(),
-            ParameterIndex::Simple(index) => SimpleMetricU64::IndexParameterValue { index, return_value }.into(),
-            ParameterIndex::General(index) => MetricU64::IndexParameterValue { index, return_value },
-        }
-    }
-
-    /// Convert the parameter index into a metric that returns the "before" value.
-    ///
-    /// This is a convenience method for `into_metric(ParameterReturnValue::Before)`.
-    pub fn into_metric_u64_before(self) -> MetricU64 {
-        self.into_metric_u64(ParameterReturnValue::Before)
-    }
-}
-
-impl ParameterIndex<MultiValue> {
-    /// Convert the parameter index into a metric.
-    pub fn into_metric_f64(self, key: &str, return_value: ParameterReturnValue) -> MetricF64 {
-        let key = key.to_string();
-        match self {
-            ParameterIndex::Const(index) => ConstantMetricF64::MultiParameterValue { index, key }.into(),
-            ParameterIndex::Simple(index) => SimpleMetricF64::MultiParameterValue {
-                index,
-                key,
-                return_value,
-            }
-            .into(),
-            ParameterIndex::General(index) => MetricF64::MultiParameterValue {
-                index,
-                key,
-                return_value,
-            },
-        }
-    }
-
-    /// Convert the parameter index into a metric that returns the "before" value.
-    ///
-    /// This is a convenience method for `into_metric_f64(key, ParameterReturnValue::Before)`.
-    pub fn into_metric_f64_before(self, key: &str) -> MetricF64 {
-        self.into_metric_f64(key, ParameterReturnValue::Before)
-    }
-
-    /// Convert the parameter index into a metric.
-    pub fn into_metric_u64(self, key: &str, return_value: ParameterReturnValue) -> MetricU64 {
-        let key = key.to_string();
-        match self {
-            ParameterIndex::Const(index) => ConstantMetricU64::MultiParameterValue { index, key }.into(),
-            ParameterIndex::Simple(index) => SimpleMetricU64::MultiParameterValue {
-                index,
-                key,
-                return_value,
-            }
-            .into(),
-            ParameterIndex::General(index) => MetricU64::MultiParameterValue {
-                index,
-                key,
-                return_value,
-            },
-        }
-    }
-
-    /// Convert the parameter index into a metric that returns the "before" value.
-    ///
-    /// This is a convenience method for `into_metric_u64(key, ParameterReturnValue::Before)`.
-    pub fn into_metric_u64_before(self, key: &str) -> MetricU64 {
-        self.into_metric_u64(key, ParameterReturnValue::Before)
-    }
+/// Specifies whether to use the 'before' or 'after' parameter values.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ParameterReturnValue {
+    Before,
+    After,
+    AfterOrElseInitial,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -536,7 +540,7 @@ impl ParameterStates {
         match index {
             ParameterIndex::Const(idx) => self.constant.f64.get(*idx.deref()),
             ParameterIndex::Simple(idx) => self.simple.f64.get(*idx.deref()),
-            ParameterIndex::General(idx) => self.general.f64.get(*idx.deref()),
+            ParameterIndex::General(idx) => self.general.f64.get(*idx.parameter),
         }
     }
     pub fn get_general_f64_state(&self, index: GeneralParameterIndex<f64>) -> Option<&Option<Box<dyn ParameterState>>> {
@@ -547,7 +551,7 @@ impl ParameterStates {
         self.simple.f64.get(*index.deref())
     }
 
-    pub fn get_const_f64_state(&self, index: SimpleParameterIndex<f64>) -> Option<&Option<Box<dyn ParameterState>>> {
+    pub fn get_const_f64_state(&self, index: ConstParameterIndex<f64>) -> Option<&Option<Box<dyn ParameterState>>> {
         self.constant.f64.get(*index.deref())
     }
 
@@ -555,7 +559,7 @@ impl ParameterStates {
         match index {
             ParameterIndex::Const(idx) => self.constant.f64.get_mut(*idx.deref()),
             ParameterIndex::Simple(idx) => self.simple.f64.get_mut(*idx.deref()),
-            ParameterIndex::General(idx) => self.general.f64.get_mut(*idx.deref()),
+            ParameterIndex::General(idx) => self.general.f64.get_mut(*idx.parameter),
         }
     }
 
@@ -765,7 +769,7 @@ pub trait GeneralAfterParameterHook<T>: GeneralParameter {
     ) -> Result<(), GeneralCalculationError>;
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 enum GeneralAfterOperation<T> {
     Value(Arc<dyn GeneralAfterParameter<T>>),
     Hook(Arc<dyn GeneralAfterParameterHook<T>>),
@@ -841,14 +845,6 @@ impl<T: 'static> GeneralParameterEntry<T> {
 
     fn as_parameter(&self) -> &dyn Parameter {
         self.parameter.as_parameter()
-    }
-
-    fn has_before(&self) -> bool {
-        self.before.is_some()
-    }
-
-    fn has_after(&self) -> bool {
-        self.after.is_some()
     }
 }
 
@@ -937,12 +933,12 @@ pub trait ParameterBuilder<T>: Debug {
 ///
 /// # Example
 /// ```ignore
-/// let metric = resolve_metric_f64!(self, self.metric, resolution_maps, "metric");
+/// let metric = resolve_metric_f64!(self, self.metric, resolution_maps, phase, "metric");
 /// ```
 #[macro_export]
 macro_rules! resolve_metric_f64 {
-    ($self:ident, $unresolved:expr, $maps:expr, $attr:expr $(,)?) => {
-        match $unresolved.resolve($maps) {
+    ($self:ident, $unresolved:expr, $maps:expr, $phase:expr, $attr:expr $(,)?) => {
+        match $unresolved.resolve($maps, $phase) {
             Ok(m) => m,
             Err(err) => {
                 return if let $crate::metric::MetricF64ResolutionError::ParameterNotFound { parameter } = err {
@@ -971,12 +967,12 @@ macro_rules! resolve_metric_f64 {
 ///
 /// # Example
 /// ```ignore
-/// let metric = resolve_metric_u64!(self, self.metric, resolution_maps, "metric");
+/// let metric = resolve_metric_u64!(self, self.metric, resolution_maps, phase, "metric");
 /// ```
 #[macro_export]
 macro_rules! resolve_metric_u64 {
-    ($self:ident, $unresolved:expr, $maps:expr, $attr:expr $(,)?) => {
-        match $unresolved.resolve($maps) {
+    ($self:ident, $unresolved:expr, $maps:expr, $phase:expr, $attr:expr $(,)?) => {
+        match $unresolved.resolve($maps, $phase) {
             Ok(m) => m,
             Err(err) => {
                 return if let $crate::metric::MetricU64ResolutionError::ParameterNotFound { parameter } = err {
@@ -1005,9 +1001,9 @@ macro_rules! resolve_metric_u64 {
 ///
 #[macro_export]
 macro_rules! resolve_optional_metric_f64 {
-    ($self:ident, $unresolved:expr, $maps:expr, $attr:expr $(,)?) => {
+    ($self:ident, $unresolved:expr, $maps:expr, $phase:expr, $attr:expr $(,)?) => {
         match $unresolved {
-            Some(u) => match u.resolve($maps) {
+            Some(u) => match u.resolve($maps, $phase) {
                 Ok(m) => Some(m),
                 Err(err) => {
                     return if let $crate::metric::MetricF64ResolutionError::ParameterNotFound { parameter } = err {
@@ -1038,15 +1034,15 @@ macro_rules! resolve_optional_metric_f64 {
 /// # Example
 /// ```ignore
 /// let control_curves =
-///     resolve_metric_f64_vec!(self, &self.control_curves, resolution_maps, "control_curves");
+///     resolve_metric_f64_vec!(self, &self.control_curves, resolution_maps, phase, "control_curves");
 /// ```
 #[macro_export]
 macro_rules! resolve_metric_f64_vec {
-    ($self:ident, $unresolved:expr, $maps:expr, $attr:expr $(,)?) => {{
+    ($self:ident, $unresolved:expr, $maps:expr, $phase:expr, $attr:expr $(,)?) => {{
         let unresolved = $unresolved;
         let mut resolved = Vec::with_capacity(unresolved.len());
         for m in unresolved.iter() {
-            match m.resolve($maps) {
+            match m.resolve($maps, $phase) {
                 Ok(m) => resolved.push(m),
                 Err(err) => {
                     return if let $crate::metric::MetricF64ResolutionError::ParameterNotFound { parameter } = err {
@@ -1076,11 +1072,11 @@ macro_rules! resolve_metric_f64_vec {
 ///
 #[macro_export]
 macro_rules! resolve_metric_u64_vec {
-    ($self:ident, $unresolved:expr, $maps:expr, $attr:expr $(,)?) => {{
+    ($self:ident, $unresolved:expr, $maps:expr, $phase:expr, $attr:expr $(,)?) => {{
         let unresolved = $unresolved;
         let mut resolved = Vec::with_capacity(unresolved.len());
         for m in unresolved.iter() {
-            match m.resolve($maps) {
+            match m.resolve($maps, $phase) {
                 Ok(m) => resolved.push(m),
                 Err(err) => {
                     return if let $crate::metric::MetricU64ResolutionError::ParameterNotFound { parameter } = err {
@@ -1110,11 +1106,11 @@ macro_rules! resolve_metric_u64_vec {
 ///
 #[macro_export]
 macro_rules! resolve_metric_f64_hashmap {
-    ($self:ident, $unresolved:expr, $maps:expr, $attr:expr $(,)?) => {{
+    ($self:ident, $unresolved:expr, $maps:expr, $phase:expr, $attr:expr $(,)?) => {{
         let unresolved = $unresolved;
         let mut resolved = HashMap::with_capacity(unresolved.len());
         for (k, m) in unresolved.iter() {
-            match m.resolve($maps) {
+            match m.resolve($maps, $phase) {
                 Ok(m) => {
                     resolved.insert(k.clone(), m);
                 }
@@ -1146,11 +1142,11 @@ macro_rules! resolve_metric_f64_hashmap {
 ///
 #[macro_export]
 macro_rules! resolve_metric_u64_hashmap {
-    ($self:ident, $unresolved:expr, $maps:expr, $attr:expr $(,)?) => {{
+    ($self:ident, $unresolved:expr, $maps:expr, $phase:expr, $attr:expr $(,)?) => {{
         let unresolved = $unresolved;
         let mut resolved = HashMap::with_capacity(unresolved.len());
         for (k, m) in unresolved.iter() {
-            match m.resolve($maps) {
+            match m.resolve($maps, $phase) {
                 Ok(m) => {
                     resolved.insert(k.clone(), m);
                 }
@@ -1184,8 +1180,6 @@ pub struct SimpleParameterContext<'a> {
 /// A trait that defines a component that may produce a value each time-step, and may have an
 /// internal state that is updated each time-step.
 ///
-/// See [`SimpleBeforeParameter`] and [`SimpleAfterParameter`] for more specific traits that define
-/// the behaviour of parameters that produce values before or after the network is updated.
 pub trait SimpleParameter<T>: Parameter {
     fn compute(
         &self,
@@ -1344,17 +1338,24 @@ pub trait VariableParameter<T> {
     fn get_upper_bounds(&self, variable_config: &dyn VariableConfig) -> Option<Vec<T>>;
 }
 
+/// A struct that holds the required state sizes for a parameter collection.
 #[derive(Debug, Clone, Copy)]
-pub struct ParameterCollectionSize {
+pub struct ParameterCollectionStateSize {
     pub const_f64: usize,
-    pub const_usize: usize,
+    pub const_u64: usize,
     pub const_multi: usize,
+
     pub simple_f64: usize,
-    pub simple_usize: usize,
+    pub simple_u64: usize,
     pub simple_multi: usize,
-    pub general_f64: usize,
-    pub general_usize: usize,
-    pub general_multi: usize,
+
+    pub general_before_f64: usize,
+    pub general_before_u64: usize,
+    pub general_before_multi: usize,
+
+    pub general_after_f64: usize,
+    pub general_after_u64: usize,
+    pub general_after_multi: usize,
 }
 
 /// Error types for the parameter collection.
@@ -1594,6 +1595,52 @@ impl ParameterTimings {
     }
 }
 
+#[derive(Debug)]
+enum GeneralBeforeScheduleEntry {
+    F64 {
+        index: GeneralParameterIndex<f64>,
+        parameter: Arc<dyn GeneralBeforeParameter<f64>>,
+        output: GeneralBeforeValueIndex<f64>,
+    },
+    U64 {
+        index: GeneralParameterIndex<u64>,
+        parameter: Arc<dyn GeneralBeforeParameter<u64>>,
+        output: GeneralBeforeValueIndex<u64>,
+    },
+    Multi {
+        index: GeneralParameterIndex<MultiValue>,
+        parameter: Arc<dyn GeneralBeforeParameter<MultiValue>>,
+        output: GeneralBeforeValueIndex<MultiValue>,
+    },
+}
+
+#[derive(Debug)]
+enum GeneralAfterScheduleOperation<T> {
+    Value {
+        parameter: Arc<dyn GeneralAfterParameter<T>>,
+        output: GeneralAfterValueIndex<T>,
+    },
+    Hook {
+        parameter: Arc<dyn GeneralAfterParameterHook<T>>,
+    },
+}
+
+#[derive(Debug)]
+enum GeneralAfterScheduleEntry {
+    F64 {
+        index: GeneralParameterIndex<f64>,
+        op: GeneralAfterScheduleOperation<f64>,
+    },
+    U64 {
+        index: GeneralParameterIndex<u64>,
+        op: GeneralAfterScheduleOperation<u64>,
+    },
+    Multi {
+        index: GeneralParameterIndex<MultiValue>,
+        op: GeneralAfterScheduleOperation<MultiValue>,
+    },
+}
+
 #[derive(Error, Debug)]
 #[error("Error calculating general parameter '{name}': {source}")]
 pub enum ParameterCollectionGeneralCalculationError {
@@ -1609,23 +1656,41 @@ pub enum ParameterCollectionGeneralCalculationError {
         #[source]
         source: Box<GeneralCalculationError>,
     },
-    #[error("Error setting state for general F64 parameter '{name}': {source}")]
-    F64SetStateError {
+    #[error("Error setting before state for general F64 parameter '{name}': {source}")]
+    F64SetBeforeStateError {
         name: ParameterName,
         #[source]
-        source: SetStateError<GeneralParameterIndex<f64>>,
+        source: SetStateError<GeneralBeforeValueIndex<f64>>,
     },
-    #[error("Error setting state for general U64 parameter '{name}': {source}")]
-    U64SetStateError {
+    #[error("Error setting after state for general F64 parameter '{name}': {source}")]
+    F64SetAfterStateError {
         name: ParameterName,
         #[source]
-        source: SetStateError<GeneralParameterIndex<u64>>,
+        source: SetStateError<GeneralAfterValueIndex<f64>>,
     },
-    #[error("Error setting state for general Multi parameter '{name}': {source}")]
-    MultiSetStateError {
+    #[error("Error setting before state for general U64 parameter '{name}': {source}")]
+    U64SetBeforeStateError {
         name: ParameterName,
         #[source]
-        source: SetStateError<GeneralParameterIndex<MultiValue>>,
+        source: SetStateError<GeneralBeforeValueIndex<u64>>,
+    },
+    #[error("Error setting after state for general U64 parameter '{name}': {source}")]
+    U64SetAfterStateError {
+        name: ParameterName,
+        #[source]
+        source: SetStateError<GeneralAfterValueIndex<u64>>,
+    },
+    #[error("Error setting before state for general Multi parameter '{name}': {source}")]
+    MultiSetBeforeStateError {
+        name: ParameterName,
+        #[source]
+        source: SetStateError<GeneralBeforeValueIndex<MultiValue>>,
+    },
+    #[error("Error setting after state for general Multi parameter '{name}': {source}")]
+    MultiSetAfterStateError {
+        name: ParameterName,
+        #[source]
+        source: SetStateError<GeneralAfterValueIndex<MultiValue>>,
     },
     #[error("The timing data was created with from a different parameter collection. ")]
     TimingsFromAnotherCollection,
@@ -1651,8 +1716,14 @@ pub struct ParameterCollection {
     general_f64: Vec<GeneralParameterEntry<f64>>,
     general_u64: Vec<GeneralParameterEntry<u64>>,
     general_multi: Vec<GeneralParameterEntry<MultiValue>>,
-    general_before_order: Vec<GeneralParameterType>,
-    general_after_order: Vec<GeneralParameterType>,
+    num_general_before_f64: usize,
+    num_general_before_u64: usize,
+    num_general_before_multi: usize,
+    num_general_after_f64: usize,
+    num_general_after_u64: usize,
+    num_general_after_multi: usize,
+    general_before_order: Vec<GeneralBeforeScheduleEntry>,
+    general_after_order: Vec<GeneralAfterScheduleEntry>,
     id: u64,
 }
 
@@ -1670,6 +1741,12 @@ impl Default for ParameterCollection {
             general_f64: Vec::new(),
             general_u64: Vec::new(),
             general_multi: Vec::new(),
+            num_general_before_f64: 0,
+            num_general_before_u64: 0,
+            num_general_before_multi: 0,
+            num_general_after_f64: 0,
+            num_general_after_u64: 0,
+            num_general_after_multi: 0,
             general_before_order: Vec::new(),
             general_after_order: Vec::new(),
             id: PARAMETER_COLLECTION_ID.fetch_add(1, Ordering::Relaxed),
@@ -1678,17 +1755,20 @@ impl Default for ParameterCollection {
 }
 
 impl ParameterCollection {
-    pub fn size(&self) -> ParameterCollectionSize {
-        ParameterCollectionSize {
+    pub fn size(&self) -> ParameterCollectionStateSize {
+        ParameterCollectionStateSize {
             const_f64: self.constant_f64.len(),
-            const_usize: self.constant_u64.len(),
+            const_u64: self.constant_u64.len(),
             const_multi: self.constant_multi.len(),
             simple_f64: self.simple_f64.len(),
-            simple_usize: self.simple_u64.len(),
+            simple_u64: self.simple_u64.len(),
             simple_multi: self.simple_multi.len(),
-            general_f64: self.general_f64.len(),
-            general_usize: self.general_u64.len(),
-            general_multi: self.general_multi.len(),
+            general_before_f64: self.num_general_before_f64,
+            general_before_u64: self.num_general_before_u64,
+            general_before_multi: self.num_general_before_multi,
+            general_after_f64: self.num_general_after_f64,
+            general_after_u64: self.num_general_after_u64,
+            general_after_multi: self.num_general_after_multi,
         }
     }
     fn general_initial_states(
@@ -1866,17 +1946,47 @@ impl ParameterCollection {
     fn push_general_f64(&mut self, entry: GeneralParameterEntry<f64>) -> ParameterIndex<f64> {
         let index = GeneralParameterIndex::new(self.general_f64.len());
 
-        if entry.has_before() {
-            self.general_before_order.push(index.into());
-        }
+        let before = entry.before.clone().map(|parameter| {
+            let output = GeneralBeforeValueIndex::new(self.num_general_before_f64);
+            self.num_general_before_f64 += 1;
 
-        if entry.has_after() {
-            self.general_after_order.push(index.into());
-        }
+            self.general_before_order.push(GeneralBeforeScheduleEntry::F64 {
+                index,
+                parameter,
+                output,
+            });
+
+            output
+        });
+
+        let after = entry.after.clone().and_then(|op| match op {
+            GeneralAfterOperation::Value(parameter) => {
+                let output = GeneralAfterValueIndex::new(self.num_general_after_f64);
+                self.num_general_after_f64 += 1;
+
+                let op = GeneralAfterScheduleOperation::Value { parameter, output };
+
+                self.general_after_order
+                    .push(GeneralAfterScheduleEntry::F64 { index, op });
+
+                Some(output)
+            }
+            GeneralAfterOperation::Hook(parameter) => {
+                let op = GeneralAfterScheduleOperation::Hook { parameter };
+                self.general_after_order
+                    .push(GeneralAfterScheduleEntry::F64 { index, op });
+
+                None
+            }
+        });
 
         self.general_f64.push(entry);
 
-        ParameterIndex::General(index)
+        ParameterIndex::General(GeneralParameterRegistration {
+            parameter: index,
+            before,
+            after,
+        })
     }
 
     /// Push a new simple parameter to the collection.
@@ -1907,7 +2017,7 @@ impl ParameterCollection {
         match index {
             ParameterIndex::Const(idx) => self.constant_f64.get(*idx.deref()).map(|p| p.as_parameter()),
             ParameterIndex::Simple(idx) => self.simple_f64.get(*idx.deref()).map(|p| p.as_parameter()),
-            ParameterIndex::General(idx) => self.general_f64.get(*idx.deref()).map(|p| p.as_parameter()),
+            ParameterIndex::General(idx) => self.general_f64.get(*idx.parameter.deref()).map(|p| p.as_parameter()),
         }
     }
 
@@ -1916,20 +2026,66 @@ impl ParameterCollection {
     }
 
     pub fn get_f64_by_name(&self, name: &ParameterName) -> Option<&dyn Parameter> {
-        self.general_f64
+        if let Some(p) = self
+            .general_f64
             .iter()
             .find(|p| p.name() == name)
             .map(|p| p.as_parameter())
+        {
+            Some(p)
+        } else if let Some(p) = self
+            .simple_f64
+            .iter()
+            .find(|p| p.name() == name)
+            .map(|p| p.as_parameter())
+        {
+            Some(p)
+        } else {
+            self.constant_f64
+                .iter()
+                .find(|p| p.name() == name)
+                .map(|p| p.as_parameter())
+        }
     }
 
     pub fn get_f64_index_by_name(&self, name: &ParameterName) -> Option<ParameterIndex<f64>> {
-        if let Some(idx) = self
+        if let Some(parameter_idx) = self
             .general_f64
             .iter()
             .position(|p| p.name() == name)
             .map(GeneralParameterIndex::new)
         {
-            Some(idx.into())
+            // Find if this index is used in the before or after schedule and return the appropriate index type.
+            let before = self.general_before_order.iter().find_map(|entry| {
+                if let GeneralBeforeScheduleEntry::F64 { index, output, .. } = entry {
+                    if *index == parameter_idx { Some(*output) } else { None }
+                } else {
+                    None
+                }
+            });
+
+            let after = self.general_after_order.iter().find_map(|entry| {
+                if let GeneralAfterScheduleEntry::F64 { index, op } = entry {
+                    if *index == parameter_idx {
+                        match op {
+                            GeneralAfterScheduleOperation::Value { output, .. } => Some(*output),
+                            GeneralAfterScheduleOperation::Hook { .. } => None,
+                        }
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            });
+
+            let reg = GeneralParameterRegistration {
+                parameter: parameter_idx,
+                before,
+                after,
+            };
+
+            Some(reg.into())
         } else if let Some(idx) = self
             .simple_f64
             .iter()
@@ -1952,16 +2108,47 @@ impl ParameterCollection {
     fn push_general_u64(&mut self, entry: GeneralParameterEntry<u64>) -> ParameterIndex<u64> {
         let index = GeneralParameterIndex::new(self.general_u64.len());
 
-        if entry.has_before() {
-            self.general_before_order.push(index.into());
-        }
+        let before = entry.before.clone().map(|parameter| {
+            let output = GeneralBeforeValueIndex::new(self.num_general_before_u64);
+            self.num_general_before_u64 += 1;
 
-        if entry.has_after() {
-            self.general_after_order.push(index.into());
-        }
+            self.general_before_order.push(GeneralBeforeScheduleEntry::U64 {
+                index,
+                parameter,
+                output,
+            });
+
+            output
+        });
+
+        let after = entry.after.clone().and_then(|op| match op {
+            GeneralAfterOperation::Value(parameter) => {
+                let output = GeneralAfterValueIndex::new(self.num_general_after_u64);
+                self.num_general_after_u64 += 1;
+
+                let op = GeneralAfterScheduleOperation::Value { parameter, output };
+
+                self.general_after_order
+                    .push(GeneralAfterScheduleEntry::U64 { index, op });
+
+                Some(output)
+            }
+            GeneralAfterOperation::Hook(parameter) => {
+                let op = GeneralAfterScheduleOperation::Hook { parameter };
+                self.general_after_order
+                    .push(GeneralAfterScheduleEntry::U64 { index, op });
+
+                None
+            }
+        });
+
         self.general_u64.push(entry);
 
-        ParameterIndex::General(index)
+        ParameterIndex::General(GeneralParameterRegistration {
+            parameter: index,
+            before,
+            after,
+        })
     }
 
     /// Push a new simple parameter to the collection.
@@ -1994,7 +2181,7 @@ impl ParameterCollection {
         match index {
             ParameterIndex::Const(idx) => self.constant_u64.get(*idx.deref()).map(|p| p.as_parameter()),
             ParameterIndex::Simple(idx) => self.simple_u64.get(*idx.deref()).map(|p| p.as_parameter()),
-            ParameterIndex::General(idx) => self.general_u64.get(*idx.deref()).map(|p| p.as_parameter()),
+            ParameterIndex::General(idx) => self.general_u64.get(*idx.parameter.deref()).map(|p| p.as_parameter()),
         }
     }
 
@@ -2003,20 +2190,66 @@ impl ParameterCollection {
     }
 
     pub fn get_u64_by_name(&self, name: &ParameterName) -> Option<&dyn Parameter> {
-        self.general_u64
+        if let Some(p) = self
+            .general_u64
             .iter()
             .find(|p| p.name() == name)
             .map(|p| p.as_parameter())
+        {
+            Some(p)
+        } else if let Some(p) = self
+            .simple_u64
+            .iter()
+            .find(|p| p.name() == name)
+            .map(|p| p.as_parameter())
+        {
+            Some(p)
+        } else {
+            self.constant_u64
+                .iter()
+                .find(|p| p.name() == name)
+                .map(|p| p.as_parameter())
+        }
     }
 
     pub fn get_u64_index_by_name(&self, name: &ParameterName) -> Option<ParameterIndex<u64>> {
-        if let Some(idx) = self
+        if let Some(parameter_idx) = self
             .general_u64
             .iter()
             .position(|p| p.name() == name)
             .map(GeneralParameterIndex::new)
         {
-            Some(idx.into())
+            // Find if this index is used in the before or after schedule and return the appropriate index type.
+            let before = self.general_before_order.iter().find_map(|entry| {
+                if let GeneralBeforeScheduleEntry::U64 { index, output, .. } = entry {
+                    if *index == parameter_idx { Some(*output) } else { None }
+                } else {
+                    None
+                }
+            });
+
+            let after = self.general_after_order.iter().find_map(|entry| {
+                if let GeneralAfterScheduleEntry::U64 { index, op } = entry {
+                    if *index == parameter_idx {
+                        match op {
+                            GeneralAfterScheduleOperation::Value { output, .. } => Some(*output),
+                            GeneralAfterScheduleOperation::Hook { .. } => None,
+                        }
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            });
+
+            let reg = GeneralParameterRegistration {
+                parameter: parameter_idx,
+                before,
+                after,
+            };
+
+            Some(reg.into())
         } else if let Some(idx) = self
             .simple_u64
             .iter()
@@ -2041,16 +2274,47 @@ impl ParameterCollection {
     fn push_general_multi(&mut self, entry: GeneralParameterEntry<MultiValue>) -> ParameterIndex<MultiValue> {
         let index = GeneralParameterIndex::new(self.general_multi.len());
 
-        if entry.has_before() {
-            self.general_before_order.push(index.into());
-        }
+        let before = entry.before.clone().map(|parameter| {
+            let output = GeneralBeforeValueIndex::new(self.num_general_before_multi);
+            self.num_general_before_multi += 1;
 
-        if entry.has_after() {
-            self.general_after_order.push(index.into());
-        }
+            self.general_before_order.push(GeneralBeforeScheduleEntry::Multi {
+                index,
+                parameter,
+                output,
+            });
+
+            output
+        });
+
+        let after = entry.after.clone().and_then(|op| match op {
+            GeneralAfterOperation::Value(parameter) => {
+                let output = GeneralAfterValueIndex::new(self.num_general_after_multi);
+                self.num_general_after_multi += 1;
+
+                let op = GeneralAfterScheduleOperation::Value { parameter, output };
+
+                self.general_after_order
+                    .push(GeneralAfterScheduleEntry::Multi { index, op });
+
+                Some(output)
+            }
+            GeneralAfterOperation::Hook(parameter) => {
+                let op = GeneralAfterScheduleOperation::Hook { parameter };
+                self.general_after_order
+                    .push(GeneralAfterScheduleEntry::Multi { index, op });
+
+                None
+            }
+        });
+
         self.general_multi.push(entry);
 
-        ParameterIndex::General(index)
+        ParameterIndex::General(GeneralParameterRegistration {
+            parameter: index,
+            before,
+            after,
+        })
     }
 
     /// Push a new simple parameter to the collection.
@@ -2083,7 +2347,7 @@ impl ParameterCollection {
         match index {
             ParameterIndex::Const(idx) => self.constant_multi.get(*idx.deref()).map(|p| p.as_parameter()),
             ParameterIndex::Simple(idx) => self.simple_multi.get(*idx.deref()).map(|p| p.as_parameter()),
-            ParameterIndex::General(idx) => self.general_multi.get(*idx.deref()).map(|p| p.as_parameter()),
+            ParameterIndex::General(idx) => self.general_multi.get(*idx.parameter.deref()).map(|p| p.as_parameter()),
         }
     }
 
@@ -2095,20 +2359,66 @@ impl ParameterCollection {
     }
 
     pub fn get_multi_by_name(&self, name: &ParameterName) -> Option<&dyn Parameter> {
-        self.general_multi
+        if let Some(p) = self
+            .general_multi
             .iter()
             .find(|p| p.name() == name)
             .map(|p| p.as_parameter())
+        {
+            Some(p)
+        } else if let Some(p) = self
+            .simple_multi
+            .iter()
+            .find(|p| p.name() == name)
+            .map(|p| p.as_parameter())
+        {
+            Some(p)
+        } else {
+            self.constant_multi
+                .iter()
+                .find(|p| p.name() == name)
+                .map(|p| p.as_parameter())
+        }
     }
 
     pub fn get_multi_index_by_name(&self, name: &ParameterName) -> Option<ParameterIndex<MultiValue>> {
-        if let Some(idx) = self
+        if let Some(parameter_idx) = self
             .general_multi
             .iter()
             .position(|p| p.name() == name)
             .map(GeneralParameterIndex::new)
         {
-            Some(idx.into())
+            // Find if this index is used in the before or after schedule and return the appropriate index type.
+            let before = self.general_before_order.iter().find_map(|entry| {
+                if let GeneralBeforeScheduleEntry::Multi { index, output, .. } = entry {
+                    if *index == parameter_idx { Some(*output) } else { None }
+                } else {
+                    None
+                }
+            });
+
+            let after = self.general_after_order.iter().find_map(|entry| {
+                if let GeneralAfterScheduleEntry::Multi { index, op } = entry {
+                    if *index == parameter_idx {
+                        match op {
+                            GeneralAfterScheduleOperation::Value { output, .. } => Some(*output),
+                            GeneralAfterScheduleOperation::Hook { .. } => None,
+                        }
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            });
+
+            let reg = GeneralParameterRegistration {
+                parameter: parameter_idx,
+                before,
+                after,
+            };
+
+            Some(reg.into())
         } else if let Some(idx) = self
             .simple_multi
             .iter()
@@ -2143,23 +2453,15 @@ impl ParameterCollection {
         for p in &self.general_before_order {
             let start = Instant::now();
             match p {
-                GeneralParameterType::Parameter(idx) => {
-                    // Find the parameter itself
-                    let entry = self
-                        .general_f64
-                        .get(*idx.deref())
-                        .ok_or(ParameterCollectionGeneralCalculationError::F64IndexNotFound(*idx))?;
-
-                    // .. and its internal state
+                GeneralBeforeScheduleEntry::F64 {
+                    index,
+                    parameter,
+                    output,
+                } => {
+                    // Find any internal state
                     let internal_state = internal_states
-                        .get_general_mut_f64_state(*idx)
-                        .ok_or(ParameterCollectionGeneralCalculationError::F64IndexNotFound(*idx))?;
-
-                    let p = entry.before.as_ref().ok_or(
-                        ParameterCollectionGeneralCalculationError::BeforeNotImplemented {
-                            name: entry.name().clone(),
-                        },
-                    )?;
+                        .get_general_mut_f64_state(*index)
+                        .ok_or(ParameterCollectionGeneralCalculationError::F64IndexNotFound(*index))?;
 
                     let ctx = GeneralParameterContext {
                         timestep,
@@ -2168,113 +2470,103 @@ impl ParameterCollection {
                         state,
                     };
 
-                    let value = p.before(ctx, internal_state).map_err(|source| {
+                    let value = parameter.before(ctx, internal_state).map_err(|source| {
                         ParameterCollectionGeneralCalculationError::CalculationError {
-                            name: entry.name().clone(),
+                            name: parameter.name().clone(),
                             source: Box::new(source),
                         }
                     })?;
 
                     state
-                        .set_general_parameter_value_before(*idx, value)
-                        .map_err(|source| ParameterCollectionGeneralCalculationError::F64SetStateError {
-                            name: entry.name().clone(),
-                            source,
-                        })?;
-
-                    if let Some(timings) = timings.as_deref_mut() {
-                        unsafe {
-                            timings.general_f64.get_unchecked_mut(*idx.deref()).before += start.elapsed();
-                        }
-                    }
-                }
-                GeneralParameterType::Index(idx) => {
-                    // Find the parameter itself
-                    let entry = self
-                        .general_u64
-                        .get(*idx.deref())
-                        .ok_or(ParameterCollectionGeneralCalculationError::U64IndexNotFound(*idx))?;
-                    // ... and its internal state
-                    let internal_state = internal_states
-                        .get_general_mut_u64_state(*idx)
-                        .ok_or(ParameterCollectionGeneralCalculationError::U64IndexNotFound(*idx))?;
-
-                    let p = entry.before.as_ref().ok_or(
-                        ParameterCollectionGeneralCalculationError::BeforeNotImplemented {
-                            name: entry.name().clone(),
-                        },
-                    )?;
-
-                    let ctx = GeneralParameterContext {
-                        timestep,
-                        scenario_index,
-                        network,
-                        state,
-                    };
-
-                    let value = p.before(ctx, internal_state).map_err(|source| {
-                        ParameterCollectionGeneralCalculationError::CalculationError {
-                            name: p.name().clone(),
-                            source: Box::new(source),
-                        }
-                    })?;
-
-                    state
-                        .set_general_parameter_index_before(*idx, value)
-                        .map_err(|source| ParameterCollectionGeneralCalculationError::U64SetStateError {
-                            name: p.name().clone(),
-                            source,
-                        })?;
-
-                    if let Some(timings) = timings.as_deref_mut() {
-                        unsafe {
-                            timings.general_u64.get_unchecked_mut(*idx.deref()).before += start.elapsed();
-                        }
-                    }
-                }
-                GeneralParameterType::Multi(idx) => {
-                    // Find the parameter itself
-                    let entry = self
-                        .general_multi
-                        .get(*idx.deref())
-                        .ok_or(ParameterCollectionGeneralCalculationError::MultiIndexNotFound(*idx))?;
-                    // ... and its internal state
-                    let internal_state = internal_states
-                        .get_general_mut_multi_state(*idx)
-                        .ok_or(ParameterCollectionGeneralCalculationError::MultiIndexNotFound(*idx))?;
-
-                    let p = entry.before.as_ref().ok_or(
-                        ParameterCollectionGeneralCalculationError::BeforeNotImplemented {
-                            name: entry.name().clone(),
-                        },
-                    )?;
-
-                    let ctx = GeneralParameterContext {
-                        timestep,
-                        scenario_index,
-                        network,
-                        state,
-                    };
-
-                    let value = p.before(ctx, internal_state).map_err(|source| {
-                        ParameterCollectionGeneralCalculationError::CalculationError {
-                            name: p.name().clone(),
-                            source: Box::new(source),
-                        }
-                    })?;
-
-                    state
-                        .set_general_multi_parameter_value_before(*idx, value)
+                        .set_general_parameter_f64_before(*output, value)
                         .map_err(
-                            |source| ParameterCollectionGeneralCalculationError::MultiSetStateError {
-                                name: p.name().clone(),
+                            |source| ParameterCollectionGeneralCalculationError::F64SetBeforeStateError {
+                                name: parameter.name().clone(),
                                 source,
                             },
                         )?;
 
                     if let Some(timings) = timings.as_deref_mut() {
                         unsafe {
-                            timings.general_multi.get_unchecked_mut(*idx.deref()).before += start.elapsed();
+                            timings.general_f64.get_unchecked_mut(*index.deref()).before += start.elapsed();
+                        }
+                    }
+                }
+                GeneralBeforeScheduleEntry::U64 {
+                    index,
+                    parameter,
+                    output,
+                } => {
+                    // Find the internal state
+                    let internal_state = internal_states
+                        .get_general_mut_u64_state(*index)
+                        .ok_or(ParameterCollectionGeneralCalculationError::U64IndexNotFound(*index))?;
+
+                    let ctx = GeneralParameterContext {
+                        timestep,
+                        scenario_index,
+                        network,
+                        state,
+                    };
+
+                    let value = parameter.before(ctx, internal_state).map_err(|source| {
+                        ParameterCollectionGeneralCalculationError::CalculationError {
+                            name: parameter.name().clone(),
+                            source: Box::new(source),
+                        }
+                    })?;
+
+                    state
+                        .set_general_parameter_u64_before(*output, value)
+                        .map_err(
+                            |source| ParameterCollectionGeneralCalculationError::U64SetBeforeStateError {
+                                name: parameter.name().clone(),
+                                source,
+                            },
+                        )?;
+
+                    if let Some(timings) = timings.as_deref_mut() {
+                        unsafe {
+                            timings.general_u64.get_unchecked_mut(*index.deref()).before += start.elapsed();
+                        }
+                    }
+                }
+                GeneralBeforeScheduleEntry::Multi {
+                    index,
+                    parameter,
+                    output,
+                } => {
+                    // Find the internal state
+                    let internal_state = internal_states
+                        .get_general_mut_multi_state(*index)
+                        .ok_or(ParameterCollectionGeneralCalculationError::MultiIndexNotFound(*index))?;
+
+                    let ctx = GeneralParameterContext {
+                        timestep,
+                        scenario_index,
+                        network,
+                        state,
+                    };
+
+                    let value = parameter.before(ctx, internal_state).map_err(|source| {
+                        ParameterCollectionGeneralCalculationError::CalculationError {
+                            name: parameter.name().clone(),
+                            source: Box::new(source),
+                        }
+                    })?;
+
+                    state
+                        .set_general_parameter_multi_before(*output, value)
+                        .map_err(
+                            |source| ParameterCollectionGeneralCalculationError::MultiSetBeforeStateError {
+                                name: parameter.name().clone(),
+                                source,
+                            },
+                        )?;
+
+                    if let Some(timings) = timings.as_deref_mut() {
+                        unsafe {
+                            timings.general_multi.get_unchecked_mut(*index.deref()).before += start.elapsed();
                         }
                     }
                 }
@@ -2303,22 +2595,11 @@ impl ParameterCollection {
         for p in &self.general_after_order {
             let start = Instant::now();
             match p {
-                GeneralParameterType::Parameter(idx) => {
-                    // Find the parameter itself
-                    let entry = self
-                        .general_f64
-                        .get(*idx.deref())
-                        .ok_or(ParameterCollectionGeneralCalculationError::F64IndexNotFound(*idx))?;
-                    // .. and its internal state
+                GeneralAfterScheduleEntry::F64 { index, op } => {
+                    // Find the internal state
                     let internal_state = internal_states
-                        .get_general_mut_f64_state(*idx)
-                        .ok_or(ParameterCollectionGeneralCalculationError::F64IndexNotFound(*idx))?;
-
-                    let op = entry.after.as_ref().ok_or(
-                        ParameterCollectionGeneralCalculationError::AfterNotImplemented {
-                            name: entry.name().clone(),
-                        },
-                    )?;
+                        .get_general_mut_f64_state(*index)
+                        .ok_or(ParameterCollectionGeneralCalculationError::F64IndexNotFound(*index))?;
 
                     let ctx = GeneralParameterContext {
                         timestep,
@@ -2328,139 +2609,27 @@ impl ParameterCollection {
                     };
 
                     match op {
-                        GeneralAfterOperation::Value(p) => {
-                            let value = p.after(ctx, internal_state).map_err(|source| {
+                        GeneralAfterScheduleOperation::Value { parameter, output } => {
+                            let value = parameter.after(ctx, internal_state).map_err(|source| {
                                 ParameterCollectionGeneralCalculationError::CalculationError {
-                                    name: entry.name().clone(),
-                                    source: Box::new(source),
-                                }
-                            })?;
-
-                            state.set_general_parameter_value_after(*idx, value).map_err(|source| {
-                                ParameterCollectionGeneralCalculationError::F64SetStateError {
-                                    name: entry.name().clone(),
-                                    source,
-                                }
-                            })?;
-                        }
-                        GeneralAfterOperation::Hook(p) => {
-                            p.after(ctx, internal_state).map_err(|source| {
-                                ParameterCollectionGeneralCalculationError::CalculationError {
-                                    name: entry.name().clone(),
-                                    source: Box::new(source),
-                                }
-                            })?;
-                        }
-                    }
-
-                    if let Some(timings) = timings.as_deref_mut() {
-                        unsafe {
-                            timings.general_f64.get_unchecked_mut(*idx.deref()).after += start.elapsed();
-                        }
-                    }
-                }
-                GeneralParameterType::Index(idx) => {
-                    // Find the parameter itself
-                    let entry = self
-                        .general_u64
-                        .get(*idx.deref())
-                        .ok_or(ParameterCollectionGeneralCalculationError::U64IndexNotFound(*idx))?;
-                    // .. and its internal state
-                    let internal_state = internal_states
-                        .get_general_mut_u64_state(*idx)
-                        .ok_or(ParameterCollectionGeneralCalculationError::U64IndexNotFound(*idx))?;
-
-                    let op = entry.after.as_ref().ok_or(
-                        ParameterCollectionGeneralCalculationError::AfterNotImplemented {
-                            name: entry.name().clone(),
-                        },
-                    )?;
-
-                    let ctx = GeneralParameterContext {
-                        timestep,
-                        scenario_index,
-                        network,
-                        state,
-                    };
-
-                    match op {
-                        GeneralAfterOperation::Value(p) => {
-                            let value = p.after(ctx, internal_state).map_err(|source| {
-                                ParameterCollectionGeneralCalculationError::CalculationError {
-                                    name: entry.name().clone(),
-                                    source: Box::new(source),
-                                }
-                            })?;
-
-                            state.set_general_parameter_index_after(*idx, value).map_err(|source| {
-                                ParameterCollectionGeneralCalculationError::U64SetStateError {
-                                    name: entry.name().clone(),
-                                    source,
-                                }
-                            })?;
-                        }
-                        GeneralAfterOperation::Hook(p) => {
-                            p.after(ctx, internal_state).map_err(|source| {
-                                ParameterCollectionGeneralCalculationError::CalculationError {
-                                    name: entry.name().clone(),
-                                    source: Box::new(source),
-                                }
-                            })?;
-                        }
-                    }
-
-                    if let Some(timings) = timings.as_deref_mut() {
-                        unsafe {
-                            timings.general_u64.get_unchecked_mut(*idx.deref()).after += start.elapsed();
-                        }
-                    }
-                }
-                GeneralParameterType::Multi(idx) => {
-                    // Find the parameter itself
-                    let entry = self
-                        .general_multi
-                        .get(*idx.deref())
-                        .ok_or(ParameterCollectionGeneralCalculationError::MultiIndexNotFound(*idx))?;
-                    // .. and its internal state
-                    let internal_state = internal_states
-                        .get_general_mut_multi_state(*idx)
-                        .ok_or(ParameterCollectionGeneralCalculationError::MultiIndexNotFound(*idx))?;
-
-                    let op = entry.after.as_ref().ok_or(
-                        ParameterCollectionGeneralCalculationError::AfterNotImplemented {
-                            name: entry.name().clone(),
-                        },
-                    )?;
-
-                    let ctx = GeneralParameterContext {
-                        timestep,
-                        scenario_index,
-                        network,
-                        state,
-                    };
-
-                    match op {
-                        GeneralAfterOperation::Value(p) => {
-                            let value = p.after(ctx, internal_state).map_err(|source| {
-                                ParameterCollectionGeneralCalculationError::CalculationError {
-                                    name: entry.name().clone(),
+                                    name: parameter.name().clone(),
                                     source: Box::new(source),
                                 }
                             })?;
 
                             state
-                                .set_general_multi_parameter_value_after(*idx, value)
-                                .map_err(
-                                    |source| ParameterCollectionGeneralCalculationError::MultiSetStateError {
-                                        name: entry.name().clone(),
+                                .set_general_parameter_f64_after(*output, value)
+                                .map_err(|source| {
+                                    ParameterCollectionGeneralCalculationError::F64SetAfterStateError {
+                                        name: parameter.name().clone(),
                                         source,
-                                    },
-                                )?;
+                                    }
+                                })?;
                         }
-                        GeneralAfterOperation::Hook(p) => {
-                            p.after(ctx, internal_state).map_err(|source| {
+                        GeneralAfterScheduleOperation::Hook { parameter } => {
+                            parameter.after(ctx, internal_state).map_err(|source| {
                                 ParameterCollectionGeneralCalculationError::CalculationError {
-                                    name: entry.name().clone(),
+                                    name: parameter.name().clone(),
                                     source: Box::new(source),
                                 }
                             })?;
@@ -2469,7 +2638,101 @@ impl ParameterCollection {
 
                     if let Some(timings) = timings.as_deref_mut() {
                         unsafe {
-                            timings.general_multi.get_unchecked_mut(*idx.deref()).after += start.elapsed();
+                            timings.general_f64.get_unchecked_mut(*index.deref()).after += start.elapsed();
+                        }
+                    }
+                }
+                GeneralAfterScheduleEntry::U64 { index, op } => {
+                    // Find the internal state
+                    let internal_state = internal_states
+                        .get_general_mut_u64_state(*index)
+                        .ok_or(ParameterCollectionGeneralCalculationError::U64IndexNotFound(*index))?;
+
+                    let ctx = GeneralParameterContext {
+                        timestep,
+                        scenario_index,
+                        network,
+                        state,
+                    };
+
+                    match op {
+                        GeneralAfterScheduleOperation::Value { parameter, output } => {
+                            let value = parameter.after(ctx, internal_state).map_err(|source| {
+                                ParameterCollectionGeneralCalculationError::CalculationError {
+                                    name: parameter.name().clone(),
+                                    source: Box::new(source),
+                                }
+                            })?;
+
+                            state
+                                .set_general_parameter_u64_after(*output, value)
+                                .map_err(|source| {
+                                    ParameterCollectionGeneralCalculationError::U64SetAfterStateError {
+                                        name: parameter.name().clone(),
+                                        source,
+                                    }
+                                })?;
+                        }
+                        GeneralAfterScheduleOperation::Hook { parameter } => {
+                            parameter.after(ctx, internal_state).map_err(|source| {
+                                ParameterCollectionGeneralCalculationError::CalculationError {
+                                    name: parameter.name().clone(),
+                                    source: Box::new(source),
+                                }
+                            })?;
+                        }
+                    }
+
+                    if let Some(timings) = timings.as_deref_mut() {
+                        unsafe {
+                            timings.general_u64.get_unchecked_mut(*index.deref()).after += start.elapsed();
+                        }
+                    }
+                }
+                GeneralAfterScheduleEntry::Multi { index, op } => {
+                    // Find the internal state
+                    let internal_state = internal_states
+                        .get_general_mut_multi_state(*index)
+                        .ok_or(ParameterCollectionGeneralCalculationError::MultiIndexNotFound(*index))?;
+
+                    let ctx = GeneralParameterContext {
+                        timestep,
+                        scenario_index,
+                        network,
+                        state,
+                    };
+
+                    match op {
+                        GeneralAfterScheduleOperation::Value { parameter, output } => {
+                            let value = parameter.after(ctx, internal_state).map_err(|source| {
+                                ParameterCollectionGeneralCalculationError::CalculationError {
+                                    name: parameter.name().clone(),
+                                    source: Box::new(source),
+                                }
+                            })?;
+
+                            state
+                                .set_general_parameter_multi_after(*output, value)
+                                .map_err(|source| {
+                                    ParameterCollectionGeneralCalculationError::MultiSetAfterStateError {
+                                        name: parameter.name().clone(),
+                                        source,
+                                    }
+                                })?;
+                        }
+                        GeneralAfterScheduleOperation::Hook { parameter } => {
+                            parameter.after(ctx, internal_state).map_err(|source| {
+                                ParameterCollectionGeneralCalculationError::CalculationError {
+                                    name: parameter.name().clone(),
+                                    source: Box::new(source),
+                                }
+                            })?;
+                        }
+                    }
+
+                    if let Some(timings) = timings.as_deref_mut() {
+                        unsafe {
+                            timings.general_multi.get_unchecked_mut(*index.deref()).after += start.elapsed();
                         }
                     }
                 }
@@ -2512,7 +2775,7 @@ impl ParameterCollection {
                         }
                     })?;
 
-                    state.set_simple_parameter_value_before(*idx, value).map_err(|source| {
+                    state.set_simple_parameter_f64(*idx, value).map_err(|source| {
                         ParameterCollectionSimpleCalculationError::F64SetStateError {
                             name: p.name().clone(),
                             source,
@@ -2543,7 +2806,7 @@ impl ParameterCollection {
                         }
                     })?;
 
-                    state.set_simple_parameter_index_before(*idx, value).map_err(|source| {
+                    state.set_simple_parameter_u64(*idx, value).map_err(|source| {
                         ParameterCollectionSimpleCalculationError::U64SetStateError {
                             name: p.name().clone(),
                             source,
@@ -2574,12 +2837,12 @@ impl ParameterCollection {
                         }
                     })?;
 
-                    state
-                        .set_simple_multi_parameter_value_before(*idx, value)
-                        .map_err(|source| ParameterCollectionSimpleCalculationError::MultiSetStateError {
+                    state.set_simple_parameter_multi(*idx, value).map_err(|source| {
+                        ParameterCollectionSimpleCalculationError::MultiSetStateError {
                             name: p.name().clone(),
                             source,
-                        })?;
+                        }
+                    })?;
                 }
             }
         }
@@ -2614,7 +2877,7 @@ impl ParameterCollection {
                             source,
                         })?;
 
-                    state.set_const_parameter_value(*idx, value).map_err(|source| {
+                    state.set_const_parameter_f64(*idx, value).map_err(|source| {
                         ParameterCollectionConstCalculationError::F64SetStateError {
                             name: p.name().clone(),
                             source,
@@ -2638,7 +2901,7 @@ impl ParameterCollection {
                             name: p.name().clone(),
                             source,
                         })?;
-                    state.set_const_parameter_index(*idx, value).map_err(|source| {
+                    state.set_const_parameter_u64(*idx, value).map_err(|source| {
                         ParameterCollectionConstCalculationError::U64SetStateError {
                             name: p.name().clone(),
                             source,
@@ -2662,7 +2925,7 @@ impl ParameterCollection {
                             name: p.name().clone(),
                             source,
                         })?;
-                    state.set_const_multi_parameter_value(*idx, value).map_err(|source| {
+                    state.set_const_parameter_multi(*idx, value).map_err(|source| {
                         ParameterCollectionConstCalculationError::MultiSetStateError {
                             name: p.name().clone(),
                             source,
@@ -2902,10 +3165,9 @@ mod tests {
         BuiltParameter, ConstParameter, GeneralAfterParameter, GeneralAfterParameterHook, GeneralBeforeParameter,
         GeneralCalculationError, GeneralParameter, GeneralParameterContext, GeneralParameterEntry, MaybeBuiltParameter,
         Parameter, ParameterBuildError, ParameterBuilder, ParameterCollection, ParameterCollectionBuilder,
-        ParameterIndex, ParameterMeta, ParameterName, ParameterReturnValue, ParameterState, ParameterStates,
-        SimpleParameter, SimpleParameterContext,
+        ParameterIndex, ParameterMeta, ParameterName, ParameterState, ParameterStates, SimpleParameter,
+        SimpleParameterContext,
     };
-    use crate::metric::{MetricF64, SimpleMetricF64};
     use crate::network::{Network, ResolutionMaps};
     use crate::parameters::errors::{ConstCalculationError, SimpleCalculationError};
     use crate::scenario::ScenarioIndex;
@@ -3173,123 +3435,10 @@ mod tests {
         }
     }
 
-    fn general_index(index: ParameterIndex<f64>) -> super::GeneralParameterIndex<f64> {
+    fn general_index(index: ParameterIndex<f64>) -> super::GeneralParameterRegistration<f64> {
         match index {
             ParameterIndex::General(index) => index,
             _ => panic!("expected a general parameter index"),
-        }
-    }
-
-    #[derive(Debug)]
-    struct SimpleDependencyTestParameter {
-        meta: ParameterMeta,
-        metric: SimpleMetricF64,
-        observed_values: Arc<Mutex<Vec<f64>>>,
-    }
-
-    impl SimpleDependencyTestParameter {
-        fn new(name: &str, metric: SimpleMetricF64, observed_values: Arc<Mutex<Vec<f64>>>) -> Self {
-            Self {
-                meta: ParameterMeta::new(name.into()),
-                metric,
-                observed_values,
-            }
-        }
-
-        fn calculate(&self, context: SimpleParameterContext<'_>) -> Result<f64, SimpleCalculationError> {
-            let value = self.metric.get_value(context.values)?;
-            self.observed_values.lock().unwrap().push(value);
-
-            // Returning a transformed value makes it clear that this parameter
-            // consumed the dependency rather than simply reproducing a constant.
-            Ok(value * 2.0)
-        }
-    }
-
-    impl Parameter for SimpleDependencyTestParameter {
-        fn meta(&self) -> &ParameterMeta {
-            &self.meta
-        }
-    }
-
-    impl SimpleParameter<f64> for SimpleDependencyTestParameter {
-        fn compute(
-            &self,
-            context: SimpleParameterContext<'_>,
-            _internal_state: &mut Option<Box<dyn ParameterState>>,
-        ) -> Result<f64, SimpleCalculationError> {
-            self.calculate(context)
-        }
-        fn as_parameter(&self) -> &dyn Parameter {
-            self
-        }
-    }
-
-    #[derive(Debug)]
-    struct GeneralDependencyTestParameter {
-        meta: ParameterMeta,
-        metric: MetricF64,
-        observed_values: Arc<Mutex<Vec<f64>>>,
-    }
-
-    impl GeneralDependencyTestParameter {
-        fn new(name: &str, metric: MetricF64, observed_values: Arc<Mutex<Vec<f64>>>) -> Self {
-            Self {
-                meta: ParameterMeta::new(name.into()),
-                metric,
-                observed_values,
-            }
-        }
-
-        fn calculate(&self, context: GeneralParameterContext<'_>) -> Result<f64, GeneralCalculationError> {
-            let value = self.metric.get_value(context.network, context.state)?;
-            self.observed_values.lock().unwrap().push(value);
-
-            Ok(value * 2.0)
-        }
-    }
-
-    impl Parameter for GeneralDependencyTestParameter {
-        fn meta(&self) -> &ParameterMeta {
-            &self.meta
-        }
-    }
-
-    impl GeneralParameter for GeneralDependencyTestParameter {
-        fn as_parameter(&self) -> &dyn Parameter {
-            self
-        }
-    }
-
-    impl GeneralBeforeParameter<f64> for GeneralDependencyTestParameter {
-        fn before(
-            &self,
-            context: GeneralParameterContext<'_>,
-            _internal_state: &mut Option<Box<dyn ParameterState>>,
-        ) -> Result<f64, GeneralCalculationError> {
-            self.calculate(context)
-        }
-    }
-
-    impl GeneralAfterParameter<f64> for GeneralDependencyTestParameter {
-        fn after(
-            &self,
-            context: GeneralParameterContext<'_>,
-            _internal_state: &mut Option<Box<dyn ParameterState>>,
-        ) -> Result<f64, GeneralCalculationError> {
-            self.calculate(context)
-        }
-    }
-
-    /// Extract a simple metric from the public ParameterIndex conversion API.
-    ///
-    /// Going through `ParameterIndex::into_metric_f64_*` is important for the
-    /// regression test: this is currently where the requested phase is discarded
-    /// for simple parameters.
-    fn expect_simple_metric(metric: MetricF64) -> SimpleMetricF64 {
-        match metric {
-            MetricF64::Simple(metric) => metric,
-            other => panic!("expected a simple metric, got {other:?}"),
         }
     }
 
@@ -3320,10 +3469,7 @@ mod tests {
 
         let values = state.get_simple_parameter_values();
 
-        assert_eq!(
-            values.get_f64(before_index, ParameterReturnValue::Before).unwrap(),
-            11.0
-        );
+        assert_eq!(values.get_f64(before_index).unwrap(), 11.0);
 
         assert_eq!(events.lock().unwrap().as_slice(), ["simple-before:before",]);
 
@@ -3331,10 +3477,7 @@ mod tests {
         // changed by after-phase calculations.
         let values = state.get_simple_parameter_values();
 
-        assert_eq!(
-            values.get_f64(before_index, ParameterReturnValue::Before).unwrap(),
-            11.0
-        );
+        assert_eq!(values.get_f64(before_index).unwrap(), 11.0);
     }
 
     #[test]
@@ -3342,11 +3485,11 @@ mod tests {
         let events = Arc::new(Mutex::new(Vec::new()));
         let mut collection = ParameterCollection::default();
 
-        let before_index = general_index(collection.push_general_f64(GeneralParameterEntry::before(
+        let before_reg = general_index(collection.push_general_f64(GeneralParameterEntry::before(
             PhaseTestParameter::new("general-before", events.clone()),
         )));
 
-        let after_index = general_index(collection.push_general_f64(GeneralParameterEntry::after(
+        let after_reg = general_index(collection.push_general_f64(GeneralParameterEntry::after(
             PhaseTestParameter::new("general-after", events.clone()),
         )));
 
@@ -3354,7 +3497,7 @@ mod tests {
             PhaseTestParameter::new("general-both", events.clone()),
         )));
 
-        let hook_index = general_index(
+        let hook_reg = general_index(
             collection.push_general_f64(GeneralParameterEntry::before_with_after_hook(PhaseTestParameter::new(
                 "general-hook",
                 events.clone(),
@@ -3389,28 +3532,25 @@ mod tests {
 
         assert_eq!(
             state
-                .get_general_parameter_value(before_index, ParameterReturnValue::Before,)
+                .get_general_parameter_f64_before(before_reg.before.unwrap())
+                .unwrap(),
+            11.0
+        );
+
+        assert_eq!(
+            state
+                .get_general_parameter_f64_before(both_index.before.unwrap())
                 .unwrap(),
             11.0
         );
         assert_eq!(
             state
-                .get_general_parameter_value(after_index, ParameterReturnValue::Before,)
-                .unwrap(),
-            0.0
-        );
-        assert_eq!(
-            state
-                .get_general_parameter_value(both_index, ParameterReturnValue::Before,)
+                .get_general_parameter_f64_before(hook_reg.before.unwrap())
                 .unwrap(),
             11.0
         );
-        assert_eq!(
-            state
-                .get_general_parameter_value(hook_index, ParameterReturnValue::Before,)
-                .unwrap(),
-            11.0
-        );
+        // After-only entries should not be registered for the before phase.
+        assert!(after_reg.before.is_none());
 
         collection
             .after_general(
@@ -3437,194 +3577,18 @@ mod tests {
 
         // Value-producing after operations write their result.
         assert_eq!(
-            state
-                .get_general_parameter_value(after_index, ParameterReturnValue::After,)
-                .unwrap(),
+            state.get_general_parameter_f64_after(after_reg.after.unwrap()).unwrap(),
             22.0
         );
         assert_eq!(
             state
-                .get_general_parameter_value(both_index, ParameterReturnValue::After,)
+                .get_general_parameter_f64_after(both_index.after.unwrap())
                 .unwrap(),
             22.0
         );
 
-        // Before-only entries and after hooks do not write an after value.
-        assert_eq!(
-            state
-                .get_general_parameter_value(before_index, ParameterReturnValue::After,)
-                .unwrap(),
-            0.0
-        );
-        assert_eq!(
-            state
-                .get_general_parameter_value(hook_index, ParameterReturnValue::After,)
-                .unwrap(),
-            0.0
-        );
-    }
-
-    #[test]
-    fn simple_before_parameter_can_depend_on_simple_before_value() {
-        let events = Arc::new(Mutex::new(Vec::new()));
-        let observed_values = Arc::new(Mutex::new(Vec::new()));
-        let mut collection = ParameterCollection::default();
-
-        let source_index = collection.push_simple_f64(Box::new(PhaseTestParameter::new("source", events)));
-
-        let dependency_metric = expect_simple_metric(source_index.into_metric_f64_before());
-
-        let dependent_index = simple_index(collection.push_simple_f64(Box::new(SimpleDependencyTestParameter::new(
-            "dependent",
-            dependency_metric,
-            observed_values.clone(),
-        ))));
-
-        let domain = default_domain();
-        let timesteps = domain.time().timesteps();
-        let timestep = &timesteps[0];
-        let scenario_index = ScenarioIndex::default();
-
-        let mut state = StateBuilder::new(Vec::new(), 0).with_parameters(&collection).build();
-
-        let mut internal_states = ParameterStates::from_collection(&collection, timesteps, &scenario_index).unwrap();
-
-        collection
-            .compute_simple(timestep, &scenario_index, &mut state, &mut internal_states)
-            .unwrap();
-
-        // The source returns 11.0 and the dependent returns source * 2.
-        assert_eq!(observed_values.lock().unwrap().as_slice(), [11.0]);
-        assert_eq!(
-            state
-                .get_simple_parameter_values()
-                .get_f64(dependent_index, ParameterReturnValue::Before)
-                .unwrap(),
-            22.0
-        );
-    }
-
-    #[test]
-    fn general_before_parameter_can_depend_on_general_before_value() {
-        let events = Arc::new(Mutex::new(Vec::new()));
-        let observed_values = Arc::new(Mutex::new(Vec::new()));
-        let mut collection = ParameterCollection::default();
-
-        let source_index =
-            collection.push_general_f64(GeneralParameterEntry::before(PhaseTestParameter::new("source", events)));
-
-        let dependent_index = general_index(collection.push_general_f64(GeneralParameterEntry::before(
-            GeneralDependencyTestParameter::new(
-                "dependent",
-                source_index.into_metric_f64_before(),
-                observed_values.clone(),
-            ),
-        )));
-
-        let domain = default_domain();
-        let timesteps = domain.time().timesteps();
-        let timestep = &timesteps[0];
-        let scenario_index = ScenarioIndex::default();
-        let network = Network::default();
-
-        let mut state = StateBuilder::new(Vec::new(), 0).with_parameters(&collection).build();
-
-        let mut internal_states = ParameterStates::from_collection(&collection, timesteps, &scenario_index).unwrap();
-
-        collection
-            .before_general(
-                timestep,
-                &scenario_index,
-                &network,
-                &mut state,
-                &mut internal_states,
-                None,
-            )
-            .unwrap();
-
-        assert_eq!(observed_values.lock().unwrap().as_slice(), [11.0]);
-        assert_eq!(
-            state
-                .get_general_parameter_value(dependent_index, ParameterReturnValue::Before,)
-                .unwrap(),
-            22.0
-        );
-    }
-
-    #[test]
-    fn general_after_dependencies_respect_the_requested_phase() {
-        let events = Arc::new(Mutex::new(Vec::new()));
-        let observed_before = Arc::new(Mutex::new(Vec::new()));
-        let observed_after = Arc::new(Mutex::new(Vec::new()));
-        let mut collection = ParameterCollection::default();
-
-        // This source produces 11.0 before and 22.0 after.
-        let source_index =
-            collection.push_general_f64(GeneralParameterEntry::both(PhaseTestParameter::new("source", events)));
-
-        let dependent_on_before_index = general_index(collection.push_general_f64(GeneralParameterEntry::after(
-            GeneralDependencyTestParameter::new(
-                "dependent-on-before",
-                source_index.into_metric_f64_before(),
-                observed_before.clone(),
-            ),
-        )));
-
-        let dependent_on_after_index = general_index(collection.push_general_f64(GeneralParameterEntry::after(
-            GeneralDependencyTestParameter::new(
-                "dependent-on-after",
-                source_index.into_metric_f64_after(),
-                observed_after.clone(),
-            ),
-        )));
-
-        let domain = default_domain();
-        let timesteps = domain.time().timesteps();
-        let timestep = &timesteps[0];
-        let scenario_index = ScenarioIndex::default();
-        let network = Network::default();
-
-        let mut state = StateBuilder::new(Vec::new(), 0).with_parameters(&collection).build();
-
-        let mut internal_states = ParameterStates::from_collection(&collection, timesteps, &scenario_index).unwrap();
-
-        collection
-            .before_general(
-                timestep,
-                &scenario_index,
-                &network,
-                &mut state,
-                &mut internal_states,
-                None,
-            )
-            .unwrap();
-
-        collection
-            .after_general(
-                timestep,
-                &scenario_index,
-                &network,
-                &mut state,
-                &mut internal_states,
-                None,
-            )
-            .unwrap();
-
-        assert_eq!(observed_before.lock().unwrap().as_slice(), [11.0]);
-        assert_eq!(observed_after.lock().unwrap().as_slice(), [22.0]);
-
-        assert_eq!(
-            state
-                .get_general_parameter_value(dependent_on_before_index, ParameterReturnValue::After,)
-                .unwrap(),
-            22.0
-        );
-
-        assert_eq!(
-            state
-                .get_general_parameter_value(dependent_on_after_index, ParameterReturnValue::After,)
-                .unwrap(),
-            44.0
-        );
+        // Before-only entries and after hooks should not be registered for the after phase.
+        assert!(before_reg.after.is_none());
+        assert!(hook_reg.after.is_none());
     }
 }

@@ -32,7 +32,7 @@ impl AsymmetricSwitchIndexParameter {
         let on_index_parameter = self.on_index_parameter.load(network, args, None)?;
         let off_index_parameter = self.off_index_parameter.load(network, args, None)?;
 
-        let p = pywr_core::parameters::AsymmetricSwitchIndexParameterBuilder::new(
+        let p = pywr_core::parameters::AsymmetricSwitchIndexParameterBuilder::before(
             ParameterName::new(&self.meta.name, parent),
             on_index_parameter,
             off_index_parameter,

@@ -7,8 +7,8 @@ use super::{
 };
 use crate::agg_funcs::AggFuncU64;
 use crate::metric::{
-    ConstantMetricU64, MetricU64, SimpleMetricU64, UnresolvedMetricU64, try_into_constant_metrics_u64,
-    try_into_simple_metrics_u64,
+    ConstantMetricU64, MetricConsumerPhase, MetricU64, SimpleMetricU64, UnresolvedMetricU64,
+    try_into_constant_metrics_u64, try_into_simple_metrics_u64,
 };
 use crate::network::ResolutionMaps;
 use crate::parameters::errors::{ConstCalculationError, GeneralCalculationError, SimpleCalculationError};
@@ -126,14 +126,26 @@ pub struct AggregatedIndexParameterBuilder {
     meta: ParameterMeta,
     metrics: Vec<UnresolvedMetricU64>,
     agg_func: AggFuncU64,
+    phase: MetricConsumerPhase,
 }
 
 impl AggregatedIndexParameterBuilder {
-    pub fn new(name: ParameterName, agg_func: AggFuncU64) -> Self {
+    /// Create a new builder for [`AggregatedIndexParameter`] that is evaluated in the "before" phase.
+    pub fn before(name: ParameterName, agg_func: AggFuncU64) -> Self {
         Self {
             meta: ParameterMeta::new(name),
             metrics: Vec::new(),
             agg_func,
+            phase: MetricConsumerPhase::Before,
+        }
+    }
+    /// Create a new builder for [`AggregatedIndexParameter`] that is evaluated in the "after" phase.
+    pub fn after(name: ParameterName, agg_func: AggFuncU64) -> Self {
+        Self {
+            meta: ParameterMeta::new(name),
+            metrics: Vec::new(),
+            agg_func,
+            phase: MetricConsumerPhase::After,
         }
     }
 
@@ -152,7 +164,7 @@ impl ParameterBuilder<u64> for AggregatedIndexParameterBuilder {
         self: Box<Self>,
         resolution_maps: &ResolutionMaps,
     ) -> Result<MaybeBuiltParameter<u64>, ParameterBuildError> {
-        let metrics = resolve_metric_u64_vec!(self, &self.metrics, resolution_maps, "metrics");
+        let metrics = resolve_metric_u64_vec!(self, &self.metrics, resolution_maps, self.phase, "metrics");
 
         let meta = self.meta;
         let agg_func = self.agg_func;

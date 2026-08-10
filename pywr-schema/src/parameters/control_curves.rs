@@ -50,7 +50,7 @@ impl ControlCurveInterpolatedParameter {
             .map(|val| val.load(network, args, None))
             .collect::<Result<Vec<_>, _>>()?;
 
-        let mut p = pywr_core::parameters::ControlCurveInterpolatedParameterBuilder::new(
+        let mut p = pywr_core::parameters::ControlCurveInterpolatedParameterBuilder::before(
             ParameterName::new(&self.meta.name, parent),
             metric,
         );
@@ -156,7 +156,7 @@ impl ControlCurveIndexParameter {
         parent: Option<&str>,
     ) -> Result<(), SchemaError> {
         let metric = self.storage_metric.load(network, args, parent)?;
-        let mut builder = pywr_core::parameters::ControlCurveIndexParameterBuilder::new(
+        let mut builder = pywr_core::parameters::ControlCurveIndexParameterBuilder::before(
             ParameterName::new(&self.meta.name, parent),
             metric,
         );
@@ -275,7 +275,7 @@ impl ControlCurveParameter {
     ) -> Result<(), SchemaError> {
         let metric = self.storage_metric.load(network, args, None)?;
 
-        let mut builder = pywr_core::parameters::ControlCurveParameterBuilder::new(
+        let mut builder = pywr_core::parameters::ControlCurveParameterBuilder::before(
             ParameterName::new(&self.meta.name, parent),
             metric,
         );
@@ -376,7 +376,7 @@ impl ControlCurvePiecewiseInterpolatedParameter {
     ) -> Result<(), SchemaError> {
         let metric = self.storage_metric.load(network, args, parent)?;
 
-        let mut builder = PiecewiseInterpolatedParameterBuilder::new(
+        let mut builder = PiecewiseInterpolatedParameterBuilder::before(
             ParameterName::new(&self.meta.name, parent),
             metric,
             self.maximum.unwrap_or(1.0),
