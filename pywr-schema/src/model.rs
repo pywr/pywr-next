@@ -10,7 +10,6 @@ use crate::network::{LoadArgs, NetworkSchemaBuildError, NetworkSchemaReadError};
 use crate::timeseries::LoadedTimeseriesCollection;
 use crate::visit::{VisitMetrics, VisitPaths};
 use crate::{ConversionError, NetworkSchema, NetworkSchemaRef};
-use chrono::{Datelike, Timelike};
 use jiff::civil::{DateTime, date};
 #[cfg(all(feature = "core", feature = "pyo3"))]
 use pyo3::Python;
@@ -104,28 +103,6 @@ impl Default for Timestep {
     }
 }
 
-fn v1_date_type_to_datetime(v1: pywr_v1_schema::model::DateType) -> DateTime {
-    match v1 {
-        pywr_v1_schema::model::DateType::Date(chrono_date) => {
-            let d = date(
-                chrono_date.year() as i16,
-                chrono_date.month() as i8,
-                chrono_date.day() as i8,
-            );
-
-            d.at(0, 0, 0, 0)
-        }
-        pywr_v1_schema::model::DateType::DateTime(date_time) => {
-            date(date_time.year() as i16, date_time.month() as i8, date_time.day() as i8).at(
-                date_time.hour() as i8,
-                date_time.minute() as i8,
-                date_time.second() as i8,
-                0,
-            )
-        }
-    }
-}
-
 #[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema)]
 pub struct TimeDomain {
     pub start: DateTime,
@@ -146,8 +123,8 @@ impl Default for TimeDomain {
 impl From<pywr_v1_schema::model::Timestepper> for TimeDomain {
     fn from(v1: pywr_v1_schema::model::Timestepper) -> Self {
         Self {
-            start: v1_date_type_to_datetime(v1.start),
-            end: v1_date_type_to_datetime(v1.end),
+            start: v1.start,
+            end: v1.end,
             timestep: v1.timestep.into(),
         }
     }
