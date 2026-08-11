@@ -178,12 +178,14 @@ impl NodeBuilder {
     }
 
     /// Create the next default name without duplicating an existing name in the model.
+    ///
+    /// Nodes and virtual nodes share a single name-space, so this checks both.
     pub fn next_default_name_for_model(mut self, network: &NetworkSchema) -> Self {
         let mut num = 1;
         loop {
             let name = format!("{}-{}", self.ty, num);
-            if network.get_node_by_name(&name).is_none() {
-                // No node with this name found!
+            if !network.node_name_exists(&name) {
+                // No node or virtual node with this name found!
                 self.name = Some(name);
                 break;
             } else {

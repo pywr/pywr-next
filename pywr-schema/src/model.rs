@@ -1,8 +1,6 @@
 #[cfg(feature = "core")]
 use crate::data_tables::LoadedTableCollection;
-use crate::error::ComponentConversionError;
-#[cfg(feature = "core")]
-use crate::error::SchemaError;
+use crate::error::{ComponentConversionError, SchemaError};
 use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::network::{LoadArgs, NetworkSchemaBuildError, NetworkSchemaReadError};
@@ -498,6 +496,11 @@ impl ModelSchema {
         Ok(serde_json::from_str(data.as_str())?)
     }
 
+    /// Validate the model's schema. See [`NetworkSchema::validate`].
+    pub fn validate(&self) -> Result<(), SchemaError> {
+        self.network.validate()
+    }
+
     /// Create a [`pywr_core::models::ModelBuilder`] from the schema.
     #[cfg(feature = "core")]
     pub fn create_model_builder(
@@ -802,6 +805,16 @@ impl MultiNetworkModelSchema {
             error,
         })?;
         Ok(serde_json::from_str(data.as_str())?)
+    }
+
+    /// Validate the schema of each network in the model. See [`NetworkSchema::validate`].
+    pub fn validate(&self) -> Result<(), SchemaError> {
+        for entry in &self.networks {
+            if let NetworkSchemaRef::Inline(network) = &entry.network {
+                network.validate()?;
+            }
+        }
+        Ok(())
     }
 
     #[cfg(feature = "core")]
