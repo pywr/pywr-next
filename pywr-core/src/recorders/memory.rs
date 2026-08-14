@@ -10,7 +10,7 @@ use crate::recorders::{
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
 use crate::timestep::Timestep;
-use chrono::NaiveDateTime;
+use jiff::civil::DateTime;
 use polars::df;
 use polars::frame::DataFrame;
 use std::ops::Deref;
@@ -147,8 +147,8 @@ impl InternalState {
 }
 
 struct LongFmtRecord {
-    time_start: NaiveDateTime,
-    time_end: NaiveDateTime,
+    time_start: DateTime,
+    time_end: DateTime,
     simulation_id: usize,
     label: String,
     metric_set: String,
@@ -265,8 +265,8 @@ impl RecorderFinalResult for MemoryRecorderResult {
         let records: Vec<LongFmtRecord> = self.iter_long_fmt_records().collect();
 
         df!(
-            "time_start" => records.iter().map(|r| r.time_start).collect::<Vec<_>>(),
-            "time_end" => records.iter().map(|r| r.time_end).collect::<Vec<_>>(),
+            "time_start" => records.iter().map(|r| r.time_start.to_string()).collect::<Vec<_>>(),
+            "time_end" => records.iter().map(|r| r.time_end.to_string()).collect::<Vec<_>>(),
             "simulation_id" => records.iter().map(|r| r.simulation_id as u32).collect::<Vec<_>>(),
             "label" => records.iter().map(|r| r.label.as_str()).collect::<Vec<_>>(),
             "metric_set" => records.iter().map(|r| r.metric_set.as_str()).collect::<Vec<_>>(),

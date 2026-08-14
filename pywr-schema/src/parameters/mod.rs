@@ -425,7 +425,7 @@ impl TryFromV1<ParameterV1> for ParameterOrTimeseriesRef {
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
         let p: ParameterOrTimeseriesRef = match v1 {
-            ParameterV1::Core(v1) => match v1 {
+            ParameterV1::Core(v1) => match *v1 {
                 CoreParameter::Aggregated(p) => {
                     Parameter::Aggregated(p.try_into_v2(parent_node, conversion_data)?).into()
                 }

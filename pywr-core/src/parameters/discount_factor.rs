@@ -7,13 +7,12 @@ use crate::parameters::{
     ParameterState,
 };
 use crate::resolve_metric_f64;
-use chrono::Datelike;
 
 #[derive(Debug)]
 pub struct DiscountFactorParameter {
     meta: ParameterMeta,
     discount_rate: MetricF64,
-    base_year: i32,
+    base_year: i16,
 }
 
 impl Parameter for DiscountFactorParameter {
@@ -39,7 +38,7 @@ impl GeneralBeforeParameter<f64> for DiscountFactorParameter {
         let year = ctx.timestep.date.year() - self.base_year;
         let rate = self.discount_rate.get_value(ctx.network, ctx.state)?;
 
-        let factor = 1.0 / (1.0 + rate).powi(year);
+        let factor = 1.0 / (1.0 + rate).powi(year as i32);
         Ok(factor)
     }
 }
@@ -48,11 +47,11 @@ impl GeneralBeforeParameter<f64> for DiscountFactorParameter {
 pub struct DiscountFactorParameterBuilder {
     meta: ParameterMeta,
     discount_rate: UnresolvedMetricF64,
-    base_year: i32,
+    base_year: i16,
 }
 
 impl DiscountFactorParameterBuilder {
-    pub fn new(name: ParameterName, discount_rate: UnresolvedMetricF64, base_year: i32) -> Self {
+    pub fn new(name: ParameterName, discount_rate: UnresolvedMetricF64, base_year: i16) -> Self {
         Self {
             meta: ParameterMeta::new(name),
             discount_rate,

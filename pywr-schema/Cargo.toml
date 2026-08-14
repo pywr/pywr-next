@@ -38,6 +38,7 @@ digest-io = { workspace = true }
 float-cmp = { workspace = true }
 hdf5-metno = { workspace = true, optional = true }
 hex = { workspace = true }
+jiff = { workspace = true }
 md-5 = { workspace = true }
 ndarray = { workspace = true, optional = true }
 num = { workspace = true }
