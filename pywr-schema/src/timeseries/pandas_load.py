@@ -1,10 +1,10 @@
 from pathlib import Path
-from typing import Union
+
 import pandas as pd
 import polars as pl
 
 
-def load_pandas(path: str, index_col: Union[str, int], **kwargs) -> pl.DataFrame:
+def load_pandas(path: str, index_col: str | int, **kwargs) -> pl.DataFrame:
     """Helper function to load a pandas DataFrame from a file, and then convert it to a polars DataFrame.
 
     This function is used by the `load` function of the `PandasDataset` in the Rust extension.

@@ -205,4 +205,6 @@ pub enum ConversionError {
     TableConversionNotSupported { name: String },
     #[error("Invalid slot: {slot}")]
     InvalidSlot { slot: String },
+    #[error("Scenario combinations defined without any groups.")]
+    ScenarioCombinationsWithoutGroups {},
 }

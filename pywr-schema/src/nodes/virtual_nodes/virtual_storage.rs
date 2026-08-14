@@ -37,17 +37,17 @@ node_attribute_subset_enum! {
 #[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct AnnualReset {
-    pub day: u8,
-    pub month: u8,
+    pub day: i8,
+    pub month: i8,
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct SeasonalReset {
-    pub start_day: u8,
-    pub start_month: u8,
-    pub end_day: u8,
-    pub end_month: u8,
+    pub start_day: i8,
+    pub start_month: i8,
+    pub end_day: i8,
+    pub end_month: i8,
 }
 
 /// The reset behaviour for a virtual storage node.
@@ -74,23 +74,17 @@ impl TryInto<pywr_core::virtual_storage::VirtualStorageReset> for VirtualStorage
     fn try_into(self) -> Result<pywr_core::virtual_storage::VirtualStorageReset, Self::Error> {
         let r = match self {
             VirtualStorageReset::Never => pywr_core::virtual_storage::VirtualStorageReset::Never,
-            VirtualStorageReset::Annual(annual) => {
-                let reset_month = annual.month.try_into()?;
-                pywr_core::virtual_storage::VirtualStorageReset::DayOfYear {
-                    day: annual.day as u32,
-                    month: reset_month,
-                }
-            }
+            VirtualStorageReset::Annual(annual) => pywr_core::virtual_storage::VirtualStorageReset::DayOfYear {
+                day: annual.day,
+                month: annual.month,
+            },
             VirtualStorageReset::Monthly { months } => {
                 pywr_core::virtual_storage::VirtualStorageReset::NumberOfMonths { months: months.into() }
             }
-            VirtualStorageReset::Seasonal(seasonal) => {
-                let reset_month = seasonal.start_month.try_into()?;
-                pywr_core::virtual_storage::VirtualStorageReset::DayOfYear {
-                    day: seasonal.start_day as u32,
-                    month: reset_month,
-                }
-            }
+            VirtualStorageReset::Seasonal(seasonal) => pywr_core::virtual_storage::VirtualStorageReset::DayOfYear {
+                day: seasonal.start_day,
+                month: seasonal.start_month,
+            },
         };
 
         Ok(r)
@@ -126,7 +120,7 @@ impl RollingWindow {
         match self {
             Self::Days { days } => {
                 // If the timestep duration is not a whole number of days then the rolling window cannot be specified in days.
-                let ts_days = time.step_duration().whole_days()? as usize;
+                let ts_days = time.fixed_step_duration()?.whole_days()? as usize;
                 let timesteps = days.get() / ts_days;
 
                 NonZeroUsize::new(timesteps)
@@ -279,13 +273,11 @@ impl VirtualStorageNode {
 
         // Set the active period if this is a seasonal reset
         if let Some(VirtualStorageReset::Seasonal(seasonal)) = &self.reset {
-            let start_month = seasonal.start_month.try_into()?;
-            let end_month = seasonal.end_month.try_into()?;
             let period = pywr_core::virtual_storage::VirtualStorageActivePeriod::Period {
-                start_day: seasonal.start_day as u32,
-                start_month,
-                end_day: seasonal.end_day as u32,
-                end_month,
+                start_day: seasonal.start_day,
+                start_month: seasonal.start_month,
+                end_day: seasonal.end_day,
+                end_month: seasonal.end_month,
             };
             builder.active_period(period);
         }
@@ -399,8 +391,8 @@ impl TryFromV1<AnnualVirtualStorageNodeV1> for VirtualStorageNode {
             cost,
             initial_volume,
             reset: Some(VirtualStorageReset::Annual(AnnualReset {
-                day: v1.reset_day as u8,
-                month: v1.reset_month as u8,
+                day: v1.reset_day as i8,
+                month: v1.reset_month as i8,
             })),
             reset_volume,
             window: None,
@@ -547,10 +539,10 @@ impl TryFromV1<SeasonalVirtualStorageNodeV1> for VirtualStorageNode {
         };
 
         let reset = VirtualStorageReset::Seasonal(SeasonalReset {
-            start_day: v1.reset_day as u8,
-            start_month: v1.reset_month as u8,
-            end_day: v1.end_day as u8,
-            end_month: v1.end_month as u8,
+            start_day: v1.reset_day as i8,
+            start_month: v1.reset_month as i8,
+            end_day: v1.end_day as i8,
+            end_month: v1.end_month as i8,
         });
 
         let n = Self {

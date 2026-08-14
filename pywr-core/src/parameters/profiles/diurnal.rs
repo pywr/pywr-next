@@ -4,7 +4,6 @@ use crate::parameters::{
     BuiltParameter, MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder, ParameterMeta,
     ParameterName, ParameterState, SimpleParameter, SimpleParameterContext,
 };
-use chrono::Timelike;
 
 /// A parameter that defines a profile over a 24-hour period.
 ///

@@ -27,7 +27,16 @@
         ]
       }
     ],
-    "combinations": null
+    "combinations": [
+      [
+        0,
+        0
+      ],
+      [
+        1,
+        1
+      ]
+    ]
   },
   "network": {
     "nodes": [

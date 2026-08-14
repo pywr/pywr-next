@@ -3,10 +3,10 @@ from pathlib import Path
 
 # ANCHOR: convert
 from pywr import (
-    convert_model_from_v1_json_string,
     ComponentConversionError,
     ConversionError,
     ModelSchema,
+    convert_model_from_v1_json_string,
 )
 
 

@@ -1,6 +1,6 @@
 from datetime import datetime
 from os import PathLike
-from typing import Optional, List, Tuple
+
 import polars as pl
 
 class ParameterInfo:
@@ -11,11 +11,11 @@ class ParameterInfo:
     """
 
     @property
-    def timestep(self) -> "Timestep":
+    def timestep(self) -> Timestep:
         """Returns the current time-step object."""
 
     @property
-    def scenario_index(self) -> "ScenarioIndex":
+    def scenario_index(self) -> ScenarioIndex:
         """Returns the current scenario index object."""
 
     def get_metric(self, name: str) -> float:
@@ -105,12 +105,12 @@ class ScenarioIndex:
         """Returns the current simulation id."""
 
     @property
-    def simulation_indices(self) -> List[int]:
+    def simulation_indices(self) -> list[int]:
         """Returns indices for each scenario group for this simulation."""
 
 class ModelSchema:
     @classmethod
-    def from_path(cls, path: PathLike) -> "ModelSchema":
+    def from_path(cls, path: PathLike) -> ModelSchema:
         """Create a new schema object from a file path.
 
         Args:
@@ -118,7 +118,7 @@ class ModelSchema:
         """
 
     @classmethod
-    def from_json_string(cls, json_string: str) -> "ModelSchema":
+    def from_json_string(cls, json_string: str) -> ModelSchema:
         """Create a new schema object from a JSON string.
 
         Args:
@@ -128,14 +128,12 @@ class ModelSchema:
     def to_json_string(self) -> str:
         """Serialize the schema to a JSON string."""
 
-    def build(
-        self, data_path: Optional[PathLike], output_path: Optional[PathLike]
-    ) -> "Model":
+    def build(self, data_path: PathLike | None, output_path: PathLike | None) -> Model:
         """Build the schema in to a Pywr model."""
 
 class MultiNetworkModelSchema:
     @classmethod
-    def from_path(cls, path: PathLike) -> "ModelSchema":
+    def from_path(cls, path: PathLike) -> ModelSchema:
         """Create a new schema object from a file path.
 
         Args:
@@ -143,7 +141,7 @@ class MultiNetworkModelSchema:
         """
 
     @classmethod
-    def from_json_string(cls, json_string: str) -> "ModelSchema":
+    def from_json_string(cls, json_string: str) -> ModelSchema:
         """Create a new schema object from a JSON string.
 
         Args:
@@ -153,13 +151,11 @@ class MultiNetworkModelSchema:
     def to_json_string(self) -> str:
         """Serialize the schema to a JSON string."""
 
-    def build(
-        self, data_path: Optional[PathLike], output_path: Optional[PathLike]
-    ) -> "Model":
+    def build(self, data_path: PathLike | None, output_path: PathLike | None) -> Model:
         """Build the schema in to a Pywr model."""
 
 class Model:
-    def run(self, solver_name: str, solver_kwargs: Optional[dict] = None):
+    def run(self, solver_name: str, solver_kwargs: dict | None = None):
         """Run the model using the specified solver.
 
         Args:
@@ -168,7 +164,7 @@ class Model:
         """
 
 class MultiNetworkModel:
-    def run(self, solver_name: str, solver_kwargs: Optional[dict] = None):
+    def run(self, solver_name: str, solver_kwargs: dict | None = None):
         """Run the model using the specified solver.
 
         Args:
@@ -178,15 +174,15 @@ class MultiNetworkModel:
 
 class ModelResult:
     @property
-    def network_result(self) -> "NetworkResult":
+    def network_result(self) -> NetworkResult:
         """Returns the network result object."""
 
     @property
-    def timings(self) -> "ModelTimings":
+    def timings(self) -> ModelTimings:
         """Returns the model timings object."""
 
 class MultiNetworkModelResult:
-    def network_results(self, name: str) -> "NetworkResult":
+    def network_results(self, name: str) -> NetworkResult:
         """Get the network result for a specific network by name.
 
         Args:
@@ -194,7 +190,7 @@ class MultiNetworkModelResult:
         """
 
     @property
-    def timings(self) -> "MultiNetworkModelTimings":
+    def timings(self) -> MultiNetworkModelTimings:
         """Returns the model timings object."""
 
 class NetworkResult:
@@ -239,6 +235,6 @@ class ConversionError: ...
 
 def convert_model_from_v1_json_string(
     data: str,
-) -> Tuple[ModelSchema, List[ComponentConversionError]]: ...
+) -> tuple[ModelSchema, list[ComponentConversionError]]: ...
 def convert_metric_from_v1_json_string(data: str) -> Metric: ...
 def export_schema(out_path: PathLike): ...

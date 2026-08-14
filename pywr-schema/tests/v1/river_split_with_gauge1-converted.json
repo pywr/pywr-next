@@ -5,8 +5,8 @@
     "minimum_version": "0.1"
   },
   "time": {
-    "start": "2015-01-01",
-    "end": "2015-12-31",
+    "start": "2015-01-01T00:00:00",
+    "end": "2015-12-31T00:00:00",
     "timestep": {
       "type": "Days",
       "days": 1
