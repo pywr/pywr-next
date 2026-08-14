@@ -46,7 +46,7 @@ hdf5-metno = { version = "0.13", features = ["static", "zlib"] }
 hex = "0.4.3"
 jiff = { version = "0.2", features = ["serde"] }
 md-5 = "0.11"
-microlp = "0.4.0"
+microlp = "0.6.0"
 ndarray = "0.17"
 num = "0.4"
 polars = { version = "0.54", default-features = false }
