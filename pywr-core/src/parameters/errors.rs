@@ -17,6 +17,9 @@ pub enum ParameterSetupError {
         #[source]
         py_error: Box<pyo3::PyErr>,
     },
+    #[cfg(test)]
+    #[error("Test error: {0}")]
+    TestError(String),
 }
 
 /// Errors returned by parameter calculations.
