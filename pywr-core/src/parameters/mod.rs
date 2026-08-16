@@ -3374,6 +3374,14 @@ mod tests {
         meta: ParameterMeta,
     }
 
+    impl TestParameter {
+        fn named(name: &str) -> Self {
+            Self {
+                meta: ParameterMeta::new(name.into()),
+            }
+        }
+    }
+
     impl Default for TestParameter {
         fn default() -> Self {
             Self {
@@ -3473,6 +3481,76 @@ mod tests {
             _internal_state: &mut Option<Box<dyn ParameterState>>,
         ) -> Result<MultiValue, GeneralCalculationError> {
             Ok(MultiValue::default())
+        }
+    }
+
+    impl<T> GeneralAfterParameter<T> for TestParameter
+    where
+        T: Default,
+    {
+        fn after(
+            &self,
+            _ctx: GeneralParameterContext<'_>,
+            _internal_state: &mut Option<Box<dyn ParameterState>>,
+        ) -> Result<T, GeneralCalculationError> {
+            Ok(T::default())
+        }
+    }
+
+    impl<T> GeneralAfterParameterHook<T> for TestParameter {
+        fn after(
+            &self,
+            _ctx: GeneralParameterContext<'_>,
+            _internal_state: &mut Option<Box<dyn ParameterState>>,
+        ) -> Result<(), GeneralCalculationError> {
+            Ok(())
+        }
+    }
+
+    fn assert_general_registration<T: std::fmt::Debug>(index: &ParameterIndex<T>, has_before: bool, has_after: bool) {
+        let ParameterIndex::General(registration) = index else {
+            panic!("expected a general parameter index, got {index:?}");
+        };
+        assert_eq!(registration.before.is_some(), has_before);
+        assert_eq!(registration.after.is_some(), has_after);
+    }
+
+    fn assert_f64_lookup(collection: &ParameterCollection, index: ParameterIndex<f64>, expected_name: &str) {
+        let name: ParameterName = expected_name.into();
+        assert_eq!(collection.get_f64(index).unwrap().name(), &name);
+        assert_eq!(collection.get_f64_by_name(&name).unwrap().name(), &name);
+        assert_eq!(collection.get_f64_index_by_name(&name).as_ref(), Some(&index));
+        if let ParameterIndex::General(registration) = index {
+            assert_eq!(
+                collection.get_general_f64(registration.parameter).unwrap().name(),
+                &name
+            );
+        }
+    }
+
+    fn assert_u64_lookup(collection: &ParameterCollection, index: ParameterIndex<u64>, expected_name: &str) {
+        let name: ParameterName = expected_name.into();
+        assert_eq!(collection.get_u64(index).unwrap().name(), &name);
+        assert_eq!(collection.get_u64_by_name(&name).unwrap().name(), &name);
+        assert_eq!(collection.get_u64_index_by_name(&name).as_ref(), Some(&index));
+        if let ParameterIndex::General(registration) = index {
+            assert_eq!(
+                collection.get_general_u64(registration.parameter).unwrap().name(),
+                &name
+            );
+        }
+    }
+
+    fn assert_multi_lookup(collection: &ParameterCollection, index: &ParameterIndex<MultiValue>, expected_name: &str) {
+        let name: ParameterName = expected_name.into();
+        assert_eq!(collection.get_multi(index).unwrap().name(), &name);
+        assert_eq!(collection.get_multi_by_name(&name).unwrap().name(), &name);
+        assert_eq!(collection.get_multi_index_by_name(&name).as_ref(), Some(index));
+        if let ParameterIndex::General(registration) = index {
+            assert_eq!(
+                collection.get_general_multi(&registration.parameter).unwrap().name(),
+                &name
+            );
         }
     }
 
@@ -3801,6 +3879,132 @@ mod tests {
         }
         assert!(display.contains("broken"));
         assert!(display.contains("intentional failure"));
+    }
+
+    #[test]
+    fn size_counts_every_storage_and_general_output_category() {
+        let mut collection = ParameterCollection::default();
+
+        collection.push_const_f64(Box::new(TestParameter::named("f64-const")));
+        collection.push_simple_f64(Box::new(TestParameter::named("f64-simple")));
+        collection.push_general_f64(GeneralParameterEntry::before(TestParameter::named("f64-before")));
+        collection.push_general_f64(GeneralParameterEntry::after(TestParameter::named("f64-after")));
+        collection.push_general_f64(GeneralParameterEntry::both(TestParameter::named("f64-both")));
+        collection.push_general_f64(GeneralParameterEntry::before_with_after_hook(TestParameter::named(
+            "f64-hook",
+        )));
+
+        collection.push_const_u64(Box::new(TestParameter::named("u64-const")));
+        collection.push_simple_u64(Box::new(TestParameter::named("u64-simple")));
+        collection.push_general_u64(GeneralParameterEntry::before(TestParameter::named("u64-before")));
+        collection.push_general_u64(GeneralParameterEntry::after(TestParameter::named("u64-after")));
+        collection.push_general_u64(GeneralParameterEntry::both(TestParameter::named("u64-both")));
+        collection.push_general_u64(GeneralParameterEntry::before_with_after_hook(TestParameter::named(
+            "u64-hook",
+        )));
+
+        collection.push_const_multi(Box::new(TestParameter::named("multi-const")));
+        collection.push_simple_multi(Box::new(TestParameter::named("multi-simple")));
+        collection.push_general_multi(GeneralParameterEntry::before(TestParameter::named("multi-before")));
+        collection.push_general_multi(GeneralParameterEntry::after(TestParameter::named("multi-after")));
+        collection.push_general_multi(GeneralParameterEntry::both(TestParameter::named("multi-both")));
+        collection.push_general_multi(GeneralParameterEntry::before_with_after_hook(TestParameter::named(
+            "multi-hook",
+        )));
+
+        let size = collection.size();
+        assert_eq!(size.const_f64, 1);
+        assert_eq!(size.const_u64, 1);
+        assert_eq!(size.const_multi, 1);
+        assert_eq!(size.simple_f64, 1);
+        assert_eq!(size.simple_u64, 1);
+        assert_eq!(size.simple_multi, 1);
+        assert_eq!(size.general_before_f64, 3);
+        assert_eq!(size.general_before_u64, 3);
+        assert_eq!(size.general_before_multi, 3);
+        assert_eq!(size.general_after_f64, 2);
+        assert_eq!(size.general_after_u64, 2);
+        assert_eq!(size.general_after_multi, 2);
+    }
+
+    #[test]
+    fn typed_lookup_round_trips_indices_names_and_phase_registrations() {
+        let mut collection = ParameterCollection::default();
+
+        let f64_const = collection.push_const_f64(Box::new(TestParameter::named("f64-const")));
+        let f64_simple = collection.push_simple_f64(Box::new(TestParameter::named("f64-simple")));
+        let f64_before = collection.push_general_f64(GeneralParameterEntry::before(TestParameter::named("f64-before")));
+        let f64_after = collection.push_general_f64(GeneralParameterEntry::after(TestParameter::named("f64-after")));
+        let f64_both = collection.push_general_f64(GeneralParameterEntry::both(TestParameter::named("f64-both")));
+        let f64_hook = collection.push_general_f64(GeneralParameterEntry::before_with_after_hook(
+            TestParameter::named("f64-hook"),
+        ));
+
+        let u64_const = collection.push_const_u64(Box::new(TestParameter::named("u64-const")));
+        let u64_simple = collection.push_simple_u64(Box::new(TestParameter::named("u64-simple")));
+        let u64_before = collection.push_general_u64(GeneralParameterEntry::before(TestParameter::named("u64-before")));
+        let u64_after = collection.push_general_u64(GeneralParameterEntry::after(TestParameter::named("u64-after")));
+        let u64_both = collection.push_general_u64(GeneralParameterEntry::both(TestParameter::named("u64-both")));
+        let u64_hook = collection.push_general_u64(GeneralParameterEntry::before_with_after_hook(
+            TestParameter::named("u64-hook"),
+        ));
+
+        let multi_const = collection.push_const_multi(Box::new(TestParameter::named("multi-const")));
+        let multi_simple = collection.push_simple_multi(Box::new(TestParameter::named("multi-simple")));
+        let multi_before =
+            collection.push_general_multi(GeneralParameterEntry::before(TestParameter::named("multi-before")));
+        let multi_after =
+            collection.push_general_multi(GeneralParameterEntry::after(TestParameter::named("multi-after")));
+        let multi_both = collection.push_general_multi(GeneralParameterEntry::both(TestParameter::named("multi-both")));
+        let multi_hook = collection.push_general_multi(GeneralParameterEntry::before_with_after_hook(
+            TestParameter::named("multi-hook"),
+        ));
+
+        assert_f64_lookup(&collection, f64_const, "f64-const");
+        assert_f64_lookup(&collection, f64_simple, "f64-simple");
+        assert_f64_lookup(&collection, f64_before, "f64-before");
+        assert_f64_lookup(&collection, f64_after, "f64-after");
+        assert_f64_lookup(&collection, f64_both, "f64-both");
+        assert_f64_lookup(&collection, f64_hook, "f64-hook");
+
+        assert_u64_lookup(&collection, u64_const, "u64-const");
+        assert_u64_lookup(&collection, u64_simple, "u64-simple");
+        assert_u64_lookup(&collection, u64_before, "u64-before");
+        assert_u64_lookup(&collection, u64_after, "u64-after");
+        assert_u64_lookup(&collection, u64_both, "u64-both");
+        assert_u64_lookup(&collection, u64_hook, "u64-hook");
+
+        assert_multi_lookup(&collection, &multi_const, "multi-const");
+        assert_multi_lookup(&collection, &multi_simple, "multi-simple");
+        assert_multi_lookup(&collection, &multi_before, "multi-before");
+        assert_multi_lookup(&collection, &multi_after, "multi-after");
+        assert_multi_lookup(&collection, &multi_both, "multi-both");
+        assert_multi_lookup(&collection, &multi_hook, "multi-hook");
+
+        for (index, has_before, has_after) in [
+            (&f64_before, true, false),
+            (&f64_after, false, true),
+            (&f64_both, true, true),
+            (&f64_hook, true, false),
+        ] {
+            assert_general_registration(index, has_before, has_after);
+        }
+        for (index, has_before, has_after) in [
+            (&u64_before, true, false),
+            (&u64_after, false, true),
+            (&u64_both, true, true),
+            (&u64_hook, true, false),
+        ] {
+            assert_general_registration(index, has_before, has_after);
+        }
+        for (index, has_before, has_after) in [
+            (&multi_before, true, false),
+            (&multi_after, false, true),
+            (&multi_both, true, true),
+            (&multi_hook, true, false),
+        ] {
+            assert_general_registration(index, has_before, has_after);
+        }
     }
 
     #[derive(Debug)]
