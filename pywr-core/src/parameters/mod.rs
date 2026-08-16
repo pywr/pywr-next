@@ -33,6 +33,7 @@ mod threshold;
 mod vector;
 
 use std::any::Any;
+use std::collections::HashSet;
 // Re-imports
 use crate::metric::{MetricF64Error, MetricF64ResolutionError, MetricU64ResolutionError};
 use crate::network::{Network, ResolutionMaps};
@@ -3001,6 +3002,21 @@ impl ParameterCollectionBuilder {
         mut self,
         resolution_maps: &mut ResolutionMaps,
     ) -> Result<ParameterCollection, ParameterCollectionBuilderError> {
+        // Validate names before attempting resolution so duplicate builders always produce the
+        // same error, including when neither builder can yet be resolved.
+        let mut names = HashSet::with_capacity(self.len());
+        for name in self
+            .f64
+            .iter()
+            .map(|p| p.name())
+            .chain(self.u64.iter().map(|p| p.name()))
+            .chain(self.multi.iter().map(|p| p.name()))
+        {
+            if !names.insert(name.clone()) {
+                return Err(ParameterCollectionBuilderError::DuplicateParameterName { name: name.clone() });
+            }
+        }
+
         let mut collection = ParameterCollection::default();
 
         let mut num_unbuilt = self.len();
@@ -3165,14 +3181,15 @@ mod tests {
         BuiltParameter, ConstParameter, GeneralAfterParameter, GeneralAfterParameterHook, GeneralBeforeParameter,
         GeneralCalculationError, GeneralParameter, GeneralParameterContext, GeneralParameterEntry, MaybeBuiltParameter,
         Parameter, ParameterBuildError, ParameterBuilder, ParameterCollection, ParameterCollectionBuilder,
-        ParameterIndex, ParameterMeta, ParameterName, ParameterState, ParameterStates, SimpleParameter,
-        SimpleParameterContext,
+        ParameterCollectionBuilderError, ParameterIndex, ParameterMeta, ParameterName, ParameterState, ParameterStates,
+        SimpleParameter, SimpleParameterContext,
     };
     use crate::network::{Network, ResolutionMaps};
     use crate::parameters::errors::{ConstCalculationError, SimpleCalculationError};
     use crate::scenario::ScenarioIndex;
     use crate::state::{ConstParameterValues, MultiValue, StateBuilder};
     use crate::test_utils::default_domain;
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::{Arc, Mutex};
 
     #[derive(Debug)]
@@ -3213,6 +3230,141 @@ mod tests {
         ) -> Result<MaybeBuiltParameter<u64>, ParameterBuildError> {
             let p = TestParameter { meta: self.meta };
             Ok(MaybeBuiltParameter::Built(BuiltParameter::Const(Box::new(p))))
+        }
+    }
+
+    #[derive(Debug, Clone, Copy)]
+    enum TestBuildKind {
+        Const,
+        Simple,
+        General,
+    }
+
+    #[derive(Debug, Clone, Copy)]
+    enum TestValueType {
+        F64,
+        U64,
+        Multi,
+    }
+
+    /// A configurable builder used to exercise the collection builder independently of concrete
+    /// parameter implementations.
+    #[derive(Debug)]
+    struct ScriptedParameterBuilder {
+        meta: ParameterMeta,
+        kind: TestBuildKind,
+        dependency: Option<ParameterName>,
+        error: Option<String>,
+        attempts: Arc<AtomicUsize>,
+        build_order: Arc<Mutex<Vec<String>>>,
+    }
+
+    impl ScriptedParameterBuilder {
+        fn new(name: &str, kind: TestBuildKind) -> Self {
+            Self::with_build_order(name, kind, Arc::new(Mutex::new(Vec::new())))
+        }
+
+        fn with_build_order(name: &str, kind: TestBuildKind, build_order: Arc<Mutex<Vec<String>>>) -> Self {
+            Self {
+                meta: ParameterMeta::new(name.into()),
+                kind,
+                dependency: None,
+                error: None,
+                attempts: Arc::new(AtomicUsize::new(0)),
+                build_order,
+            }
+        }
+
+        fn depending_on(mut self, dependency: &str) -> Self {
+            self.dependency = Some(dependency.into());
+            self
+        }
+
+        fn failing(mut self, detail: &str) -> Self {
+            self.error = Some(detail.to_string());
+            self
+        }
+
+        fn attempts(&self) -> Arc<AtomicUsize> {
+            self.attempts.clone()
+        }
+    }
+
+    macro_rules! impl_scripted_parameter_builder {
+        ($value_type:ty, $map:ident) => {
+            impl ParameterBuilder<$value_type> for ScriptedParameterBuilder {
+                fn name(&self) -> &ParameterName {
+                    &self.meta.name
+                }
+
+                fn build(
+                    self: Box<Self>,
+                    resolution_maps: &ResolutionMaps,
+                ) -> Result<MaybeBuiltParameter<$value_type>, ParameterBuildError> {
+                    self.attempts.fetch_add(1, Ordering::Relaxed);
+
+                    if let Some(detail) = &self.error {
+                        return Err(ParameterBuildError::NoCalculationPhase {
+                            detail: detail.clone(),
+                        });
+                    }
+
+                    if let Some(dependency) = &self.dependency
+                        && !resolution_maps.parameters_f64.contains_key(dependency)
+                        && !resolution_maps.parameters_u64.contains_key(dependency)
+                        && !resolution_maps.parameters_multi.contains_key(dependency)
+                    {
+                        return Ok(MaybeBuiltParameter::Retry {
+                            parameter_not_found: dependency.clone(),
+                            builder: self,
+                        });
+                    }
+
+                    self.build_order.lock().unwrap().push(self.meta.name.to_string());
+                    let parameter = TestParameter { meta: self.meta };
+                    let built = match self.kind {
+                        TestBuildKind::Const => BuiltParameter::Const(Box::new(parameter)),
+                        TestBuildKind::Simple => BuiltParameter::Simple(Box::new(parameter)),
+                        TestBuildKind::General => BuiltParameter::General(GeneralParameterEntry::before(parameter)),
+                    };
+                    Ok(MaybeBuiltParameter::Built(built))
+                }
+            }
+        };
+    }
+
+    impl_scripted_parameter_builder!(f64, parameters_f64);
+    impl_scripted_parameter_builder!(u64, parameters_u64);
+    impl_scripted_parameter_builder!(MultiValue, parameters_multi);
+
+    fn add_scripted_builder(
+        collection: &mut ParameterCollectionBuilder,
+        value_type: TestValueType,
+        builder: ScriptedParameterBuilder,
+    ) {
+        match value_type {
+            TestValueType::F64 => {
+                collection.f64(Box::new(builder));
+            }
+            TestValueType::U64 => {
+                collection.u64(Box::new(builder));
+            }
+            TestValueType::Multi => {
+                collection.multi(Box::new(builder));
+            }
+        }
+    }
+
+    fn assert_index_kind<T: std::fmt::Debug>(index: &ParameterIndex<T>, kind: TestBuildKind, expected_position: usize) {
+        match (index, kind) {
+            (ParameterIndex::Const(index), TestBuildKind::Const) => assert_eq!(**index, expected_position),
+            (ParameterIndex::Simple(index), TestBuildKind::Simple) => assert_eq!(**index, expected_position),
+            (ParameterIndex::General(registration), TestBuildKind::General) => {
+                assert_eq!(*registration.parameter, expected_position);
+                assert!(registration.before.is_some());
+                assert!(registration.after.is_none());
+            }
+            (actual, expected) => panic!("expected {expected:?} index, got {actual:?}"),
         }
     }
 
@@ -3347,6 +3499,308 @@ mod tests {
         collection.u64(Box::new(TestParameterBuilder::default()));
 
         assert!(collection.build(&mut ResolutionMaps::new(default_domain())).is_err());
+    }
+
+    #[test]
+    fn builder_registers_each_value_and_parameter_kind() {
+        let mut builder = ParameterCollectionBuilder::default();
+        for (value_type, prefix) in [
+            (TestValueType::F64, "f64"),
+            (TestValueType::U64, "u64"),
+            (TestValueType::Multi, "multi"),
+        ] {
+            for (kind, suffix) in [
+                (TestBuildKind::Const, "const"),
+                (TestBuildKind::Simple, "simple"),
+                (TestBuildKind::General, "general"),
+            ] {
+                add_scripted_builder(
+                    &mut builder,
+                    value_type,
+                    ScriptedParameterBuilder::new(&format!("{prefix}-{suffix}"), kind),
+                );
+            }
+        }
+
+        let mut maps = ResolutionMaps::new(default_domain());
+        let collection = builder.build(&mut maps).unwrap();
+        let size = collection.size();
+        assert_eq!(size.const_f64, 1);
+        assert_eq!(size.const_u64, 1);
+        assert_eq!(size.const_multi, 1);
+        assert_eq!(size.simple_f64, 1);
+        assert_eq!(size.simple_u64, 1);
+        assert_eq!(size.simple_multi, 1);
+        assert_eq!(size.general_before_f64, 1);
+        assert_eq!(size.general_before_u64, 1);
+        assert_eq!(size.general_before_multi, 1);
+        assert_eq!(size.general_after_f64, 0);
+        assert_eq!(size.general_after_u64, 0);
+        assert_eq!(size.general_after_multi, 0);
+
+        for (name, kind) in [
+            ("f64-const", TestBuildKind::Const),
+            ("f64-simple", TestBuildKind::Simple),
+            ("f64-general", TestBuildKind::General),
+        ] {
+            let name: ParameterName = name.into();
+            let mapped = maps.parameters_f64.get(&name).unwrap();
+            assert_index_kind(mapped, kind, 0);
+            assert_eq!(collection.get_f64(*mapped).unwrap().name(), &name);
+            assert_eq!(collection.get_f64_by_name(&name).unwrap().name(), &name);
+            assert_eq!(collection.get_f64_index_by_name(&name).as_ref(), Some(mapped));
+            assert!(!maps.parameters_u64.contains_key(&name));
+            assert!(!maps.parameters_multi.contains_key(&name));
+        }
+        for (name, kind) in [
+            ("u64-const", TestBuildKind::Const),
+            ("u64-simple", TestBuildKind::Simple),
+            ("u64-general", TestBuildKind::General),
+        ] {
+            let name: ParameterName = name.into();
+            let mapped = maps.parameters_u64.get(&name).unwrap();
+            assert_index_kind(mapped, kind, 0);
+            assert_eq!(collection.get_u64(*mapped).unwrap().name(), &name);
+            assert_eq!(collection.get_u64_by_name(&name).unwrap().name(), &name);
+            assert_eq!(collection.get_u64_index_by_name(&name).as_ref(), Some(mapped));
+            assert!(!maps.parameters_f64.contains_key(&name));
+            assert!(!maps.parameters_multi.contains_key(&name));
+        }
+        for (name, kind) in [
+            ("multi-const", TestBuildKind::Const),
+            ("multi-simple", TestBuildKind::Simple),
+            ("multi-general", TestBuildKind::General),
+        ] {
+            let name: ParameterName = name.into();
+            let mapped = maps.parameters_multi.get(&name).unwrap();
+            assert_index_kind(mapped, kind, 0);
+            assert_eq!(collection.get_multi(mapped).unwrap().name(), &name);
+            assert_eq!(collection.get_multi_by_name(&name).unwrap().name(), &name);
+            assert_eq!(collection.get_multi_index_by_name(&name).as_ref(), Some(mapped));
+            assert!(!maps.parameters_f64.contains_key(&name));
+            assert!(!maps.parameters_u64.contains_key(&name));
+        }
+    }
+
+    #[test]
+    fn duplicate_names_return_exact_error_for_all_type_combinations() {
+        for (first, second) in [
+            (TestValueType::F64, TestValueType::F64),
+            (TestValueType::U64, TestValueType::U64),
+            (TestValueType::Multi, TestValueType::Multi),
+            (TestValueType::F64, TestValueType::U64),
+            (TestValueType::F64, TestValueType::Multi),
+            (TestValueType::U64, TestValueType::Multi),
+        ] {
+            let mut builder = ParameterCollectionBuilder::default();
+            add_scripted_builder(
+                &mut builder,
+                first,
+                ScriptedParameterBuilder::new("duplicate", TestBuildKind::Const),
+            );
+            add_scripted_builder(
+                &mut builder,
+                second,
+                ScriptedParameterBuilder::new("duplicate", TestBuildKind::Simple),
+            );
+
+            assert!(matches!(
+                builder.build(&mut ResolutionMaps::new(default_domain())),
+                Err(ParameterCollectionBuilderError::DuplicateParameterName { name })
+                    if name == ParameterName::from("duplicate")
+            ));
+        }
+    }
+
+    #[test]
+    fn duplicate_unresolved_builders_are_reported_as_duplicates() {
+        let mut builder = ParameterCollectionBuilder::default();
+        builder
+            .f64(Box::new(
+                ScriptedParameterBuilder::new("duplicate", TestBuildKind::General).depending_on("missing"),
+            ))
+            .f64(Box::new(
+                ScriptedParameterBuilder::new("duplicate", TestBuildKind::General).depending_on("missing"),
+            ));
+
+        assert!(matches!(
+            builder.build(&mut ResolutionMaps::new(default_domain())),
+            Err(ParameterCollectionBuilderError::DuplicateParameterName { name })
+                if name == ParameterName::from("duplicate")
+        ));
+    }
+
+    #[test]
+    fn forward_reference_builds_after_dependency() {
+        let order = Arc::new(Mutex::new(Vec::new()));
+        let dependent = ScriptedParameterBuilder::with_build_order("dependent", TestBuildKind::General, order.clone())
+            .depending_on("source");
+        let dependent_attempts = dependent.attempts();
+        let source = ScriptedParameterBuilder::with_build_order("source", TestBuildKind::Const, order.clone());
+        let source_attempts = source.attempts();
+        let mut builder = ParameterCollectionBuilder::default();
+        builder.f64(Box::new(dependent)).f64(Box::new(source));
+
+        let mut maps = ResolutionMaps::new(default_domain());
+        let collection = builder.build(&mut maps).unwrap();
+
+        assert_eq!(order.lock().unwrap().as_slice(), ["source", "dependent"]);
+        assert_eq!(dependent_attempts.load(Ordering::Relaxed), 2);
+        assert_eq!(source_attempts.load(Ordering::Relaxed), 1);
+        assert!(collection.has_name(&"source".into()));
+        assert!(collection.has_name(&"dependent".into()));
+    }
+
+    #[test]
+    fn reverse_order_dependency_chain_is_topologically_built() {
+        let order = Arc::new(Mutex::new(Vec::new()));
+        let a =
+            ScriptedParameterBuilder::with_build_order("a", TestBuildKind::General, order.clone()).depending_on("b");
+        let b =
+            ScriptedParameterBuilder::with_build_order("b", TestBuildKind::General, order.clone()).depending_on("c");
+        let c = ScriptedParameterBuilder::with_build_order("c", TestBuildKind::Const, order.clone());
+        let a_attempts = a.attempts();
+        let b_attempts = b.attempts();
+        let c_attempts = c.attempts();
+        let mut builder = ParameterCollectionBuilder::default();
+        builder.f64(Box::new(a)).f64(Box::new(b)).f64(Box::new(c));
+
+        builder.build(&mut ResolutionMaps::new(default_domain())).unwrap();
+
+        assert_eq!(order.lock().unwrap().as_slice(), ["c", "b", "a"]);
+        assert_eq!(a_attempts.load(Ordering::Relaxed), 3);
+        assert_eq!(b_attempts.load(Ordering::Relaxed), 2);
+        assert_eq!(c_attempts.load(Ordering::Relaxed), 1);
+    }
+
+    #[test]
+    fn dependencies_can_progress_across_typed_builder_vectors() {
+        let order = Arc::new(Mutex::new(Vec::new()));
+        let f64_builder = ScriptedParameterBuilder::with_build_order("f64", TestBuildKind::General, order.clone())
+            .depending_on("u64");
+        let u64_builder = ScriptedParameterBuilder::with_build_order("u64", TestBuildKind::General, order.clone())
+            .depending_on("multi");
+        let multi_builder = ScriptedParameterBuilder::with_build_order("multi", TestBuildKind::Const, order.clone());
+        let f64_attempts = f64_builder.attempts();
+        let u64_attempts = u64_builder.attempts();
+        let multi_attempts = multi_builder.attempts();
+        let mut builder = ParameterCollectionBuilder::default();
+        builder
+            .f64(Box::new(f64_builder))
+            .u64(Box::new(u64_builder))
+            .multi(Box::new(multi_builder));
+
+        let mut maps = ResolutionMaps::new(default_domain());
+        let collection = builder.build(&mut maps).unwrap();
+
+        assert_eq!(order.lock().unwrap().as_slice(), ["multi", "u64", "f64"]);
+        assert_eq!(f64_attempts.load(Ordering::Relaxed), 3);
+        assert_eq!(u64_attempts.load(Ordering::Relaxed), 2);
+        assert_eq!(multi_attempts.load(Ordering::Relaxed), 1);
+        assert!(collection.get_f64_by_name(&"f64".into()).is_some());
+        assert!(collection.get_u64_by_name(&"u64".into()).is_some());
+        assert!(collection.get_multi_by_name(&"multi".into()).is_some());
+    }
+
+    #[test]
+    fn missing_dependency_returns_exact_missing_name_for_all_types() {
+        for value_type in [TestValueType::F64, TestValueType::U64, TestValueType::Multi] {
+            let mut builder = ParameterCollectionBuilder::default();
+            add_scripted_builder(
+                &mut builder,
+                value_type,
+                ScriptedParameterBuilder::new("dependent", TestBuildKind::General).depending_on("missing"),
+            );
+
+            assert!(matches!(
+                builder.build(&mut ResolutionMaps::new(default_domain())),
+                Err(ParameterCollectionBuilderError::ParameterNotFound { name })
+                    if name == ParameterName::from("missing")
+            ));
+        }
+    }
+
+    #[test]
+    fn self_reference_returns_circular_reference() {
+        let mut builder = ParameterCollectionBuilder::default();
+        builder.f64(Box::new(
+            ScriptedParameterBuilder::new("self", TestBuildKind::General).depending_on("self"),
+        ));
+
+        match builder.build(&mut ResolutionMaps::new(default_domain())) {
+            Err(ParameterCollectionBuilderError::CircularParameterReference { names }) => {
+                assert_eq!(names, vec![ParameterName::from("self")]);
+            }
+            result => panic!("expected a circular reference error, got {result:?}"),
+        }
+    }
+
+    #[test]
+    fn three_parameter_cycle_returns_all_cycle_names() {
+        let mut builder = ParameterCollectionBuilder::default();
+        builder
+            .f64(Box::new(
+                ScriptedParameterBuilder::new("a", TestBuildKind::General).depending_on("b"),
+            ))
+            .f64(Box::new(
+                ScriptedParameterBuilder::new("b", TestBuildKind::General).depending_on("c"),
+            ))
+            .f64(Box::new(
+                ScriptedParameterBuilder::new("c", TestBuildKind::General).depending_on("a"),
+            ));
+
+        match builder.build(&mut ResolutionMaps::new(default_domain())) {
+            Err(ParameterCollectionBuilderError::CircularParameterReference { names }) => {
+                assert_eq!(names, ["a", "b", "c"].map(ParameterName::from));
+            }
+            result => panic!("expected a circular reference error, got {result:?}"),
+        }
+    }
+
+    #[test]
+    fn mixed_cycle_and_missing_dependency_prefers_missing_error() {
+        let mut builder = ParameterCollectionBuilder::default();
+        builder
+            .f64(Box::new(
+                ScriptedParameterBuilder::new("a", TestBuildKind::General).depending_on("b"),
+            ))
+            .f64(Box::new(
+                ScriptedParameterBuilder::new("b", TestBuildKind::General).depending_on("a"),
+            ))
+            .f64(Box::new(
+                ScriptedParameterBuilder::new("c", TestBuildKind::General).depending_on("missing"),
+            ));
+
+        assert!(matches!(
+            builder.build(&mut ResolutionMaps::new(default_domain())),
+            Err(ParameterCollectionBuilderError::ParameterNotFound { name })
+                if name == ParameterName::from("missing")
+        ));
+    }
+
+    #[test]
+    fn parameter_build_error_preserves_parameter_name_and_source() {
+        let mut builder = ParameterCollectionBuilder::default();
+        builder.f64(Box::new(
+            ScriptedParameterBuilder::new("broken", TestBuildKind::General).failing("intentional failure"),
+        ));
+
+        let error = builder
+            .build(&mut ResolutionMaps::new(default_domain()))
+            .expect_err("the scripted builder should fail");
+        let display = error.to_string();
+        match error {
+            ParameterCollectionBuilderError::ParameterBuildError { name, source } => {
+                assert_eq!(name, ParameterName::from("broken"));
+                assert!(matches!(
+                    source.as_ref(),
+                    ParameterBuildError::NoCalculationPhase { detail } if detail == "intentional failure"
+                ));
+            }
+            other => panic!("expected a wrapped parameter build error, got {other:?}"),
+        }
+        assert!(display.contains("broken"));
+        assert!(display.contains("intentional failure"));
     }
 
     #[derive(Debug)]
