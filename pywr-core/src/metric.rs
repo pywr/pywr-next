@@ -940,9 +940,28 @@ fn resolve_parameter_index_u64_to_metric_f64(
     consumer_phase: MetricConsumerPhase,
 ) -> Result<MetricF64, MetricF64ResolutionError> {
     match idx {
-        // Constant and simple can always be resolved to a metric.
-        ParameterIndex::Const(idx) => Ok(ConstantMetricF64::IndexParameterValue(idx).into()),
-        ParameterIndex::Simple(idx) => Ok(SimpleMetricF64::IndexParameterValue { index: idx }.into()),
+        // Constant and simple can always be resolved to a metric, regardless of the consumer phase
+        // as long as the parameter return value is "before".
+        ParameterIndex::Const(idx) => match parameter_return_value {
+            ParameterReturnValue::Before => Ok(ConstantMetricF64::IndexParameterValue(idx).into()),
+            ParameterReturnValue::After | ParameterReturnValue::AfterOrElseInitial => {
+                Err(MetricF64ResolutionError::ParameterNotRegisteredInCorrectPhase {
+                    parameter: name.clone(),
+                    consumer_phase,
+                    return_value: parameter_return_value,
+                })
+            }
+        },
+        ParameterIndex::Simple(idx) => match parameter_return_value {
+            ParameterReturnValue::Before => Ok(SimpleMetricF64::IndexParameterValue { index: idx }.into()),
+            ParameterReturnValue::After | ParameterReturnValue::AfterOrElseInitial => {
+                Err(MetricF64ResolutionError::ParameterNotRegisteredInCorrectPhase {
+                    parameter: name.clone(),
+                    consumer_phase,
+                    return_value: parameter_return_value,
+                })
+            }
+        },
         // General parameters must be validated against the consumer phase to determine if they can be resolved to a metric.
         ParameterIndex::General(idx) => {
             match (parameter_return_value, consumer_phase) {
@@ -1070,17 +1089,36 @@ fn resolve_parameter_index_multi_to_metric_f64(
     consumer_phase: MetricConsumerPhase,
 ) -> Result<MetricF64, MetricF64ResolutionError> {
     match idx {
-        // Constant and simple can always be resolved to a metric.
-        ParameterIndex::Const(index) => Ok(ConstantMetricF64::MultiParameterValue {
-            index,
-            key: key.to_string(),
-        }
-        .into()),
-        ParameterIndex::Simple(index) => Ok(SimpleMetricF64::MultiParameterValue {
-            index,
-            key: key.to_string(),
-        }
-        .into()),
+        // Constant and simple can always be resolved to a metric, regardless of the consumer phase
+        // as long as the parameter return value is "before".
+        ParameterIndex::Const(index) => match parameter_return_value {
+            ParameterReturnValue::Before => Ok(ConstantMetricF64::MultiParameterValue {
+                index,
+                key: key.to_string(),
+            }
+            .into()),
+            ParameterReturnValue::After | ParameterReturnValue::AfterOrElseInitial => {
+                Err(MetricF64ResolutionError::ParameterNotRegisteredInCorrectPhase {
+                    parameter: name.clone(),
+                    consumer_phase,
+                    return_value: parameter_return_value,
+                })
+            }
+        },
+        ParameterIndex::Simple(index) => match parameter_return_value {
+            ParameterReturnValue::Before => Ok(SimpleMetricF64::MultiParameterValue {
+                index,
+                key: key.to_string(),
+            }
+            .into()),
+            ParameterReturnValue::After | ParameterReturnValue::AfterOrElseInitial => {
+                Err(MetricF64ResolutionError::ParameterNotRegisteredInCorrectPhase {
+                    parameter: name.clone(),
+                    consumer_phase,
+                    return_value: parameter_return_value,
+                })
+            }
+        },
         // General parameters must be validated against the consumer phase to determine if they can be resolved to a metric.
         ParameterIndex::General(idx) => {
             match (parameter_return_value, consumer_phase) {
