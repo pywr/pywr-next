@@ -892,6 +892,8 @@ pub enum ParameterBuildError {
     InvalidDayOfYear { day: u32, month: u32 },
     #[error("Parameter is configured without a valid calculation phase: {detail}")]
     NoCalculationPhase { detail: String },
+    #[error("Metric for `{attr}` attribute is unused. {message}")]
+    UnusedMetric { attr: String, message: String },
 }
 
 pub enum BuiltParameter<T> {
