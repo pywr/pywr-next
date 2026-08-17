@@ -124,21 +124,25 @@ impl MetricSetFilters {
                         }
                     }
 
-                    // Create a reference to the parameter
-                    let mut p_ref_builder = ParameterReferenceBuilder::new(parameter.name());
-                    // Make sure we create a reference to the correct phase that the parameter
+                    // Make sure we create a reference to the correct phase(s) that the parameter
                     // will produce a value in.
-                    match parameter.phase() {
-                        ParameterPhase::Before => {
-                            p_ref_builder.return_value(ParameterReturnValue::Before);
-                        }
-                        ParameterPhase::After => {
-                            p_ref_builder.return_value(ParameterReturnValue::After);
-                        }
+                    let (add_before, add_after) = match parameter.phase() {
+                        ParameterPhase::Before => (true, false),
+                        ParameterPhase::After => (false, true),
+                        ParameterPhase::Both => (true, true),
+                    };
+
+                    if add_before {
+                        let mut p_ref_builder = ParameterReferenceBuilder::new(parameter.name());
+                        p_ref_builder.return_value(ParameterReturnValue::Before);
+                        metrics.push(Metric::Parameter(p_ref_builder.build()));
                     }
 
-                    let p_ref = p_ref_builder.build();
-                    metrics.push(Metric::Parameter(p_ref));
+                    if add_after {
+                        let mut p_ref_builder = ParameterReferenceBuilder::new(parameter.name());
+                        p_ref_builder.return_value(ParameterReturnValue::After);
+                        metrics.push(Metric::Parameter(p_ref_builder.build()));
+                    }
                 }
             }
         }

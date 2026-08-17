@@ -86,7 +86,7 @@
       },
       {
         "meta": {
-          "name": "Total deficit"
+          "name": "Total flow"
         },
         "type": "Aggregated",
         "phase": "Both",
@@ -97,12 +97,12 @@
           {
             "type": "Node",
             "name": "demand11",
-            "attribute": "Deficit"
+            "attribute": "Inflow"
           },
           {
             "type": "Node",
             "name": "demand12",
-            "attribute": "Deficit"
+            "attribute": "Inflow"
           }
         ]
       }
@@ -123,7 +123,7 @@
         "name": "nodes",
         "type": "CSV",
         "format": "Long",
-        "filename": "deficit-agg3-expected.csv",
+        "filename": "flow-agg1-expected.csv",
         "metric_set": "all"
       }
     ]

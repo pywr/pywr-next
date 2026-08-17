@@ -88,6 +88,7 @@ pub struct ParameterMeta {
 pub enum ParameterPhase {
     Before,
     After,
+    Both,
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, EnumDiscriminants, Clone, JsonSchema, Display)]

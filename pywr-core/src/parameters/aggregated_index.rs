@@ -149,6 +149,16 @@ impl AggregatedIndexParameterBuilder {
         }
     }
 
+    /// Create a new builder for [`AggregatedIndexParameter`] that is evaluated in both "before" and "after" phases.
+    pub fn both(name: ParameterName, agg_func: AggFuncU64) -> Self {
+        Self {
+            meta: ParameterMeta::new(name),
+            metrics: Vec::new(),
+            agg_func,
+            phase: MetricConsumerPhase::Both,
+        }
+    }
+
     /// Add a new metric to the builder
     pub fn metric(&mut self, metric: UnresolvedMetricU64) -> &mut Self {
         self.metrics.push(metric);

@@ -62,6 +62,7 @@ impl AggregatedParameter {
         let mut builder = match self.phase {
             ParameterPhase::Before => pywr_core::parameters::AggregatedParameterBuilder::before(name, agg_func),
             ParameterPhase::After => pywr_core::parameters::AggregatedParameterBuilder::after(name, agg_func),
+            ParameterPhase::Both => pywr_core::parameters::AggregatedParameterBuilder::both(name, agg_func),
         };
 
         for metric in &self.metrics {
@@ -130,6 +131,7 @@ impl AggregatedIndexParameter {
         let mut builder = match self.phase {
             ParameterPhase::Before => pywr_core::parameters::AggregatedIndexParameterBuilder::before(name, agg_func),
             ParameterPhase::After => pywr_core::parameters::AggregatedIndexParameterBuilder::after(name, agg_func),
+            ParameterPhase::Both => pywr_core::parameters::AggregatedIndexParameterBuilder::both(name, agg_func),
         };
 
         for metric in &self.metrics {

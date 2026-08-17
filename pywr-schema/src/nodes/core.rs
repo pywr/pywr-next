@@ -781,7 +781,7 @@ impl OutputNode {
                     network.parameters().f64(Box::new(deficit_builder));
                 }
 
-                UnresolvedMetricF64::new_parameter_after(deficit_parameter_name)
+                UnresolvedMetricF64::new_parameter_after_else_initial(deficit_parameter_name)
             }
         };
 

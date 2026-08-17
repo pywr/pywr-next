@@ -524,6 +524,15 @@ impl UnresolvedMetricF64 {
         }
     }
 
+    /// Create a new [`Self::ParameterValue`] variant with the given parameter name and a return
+    /// value of [`ParameterReturnValue::AfterOrElseInitial`].
+    pub fn new_parameter_after_else_initial<N: Into<ParameterName>>(name: N) -> Self {
+        Self::ParameterValue {
+            name: name.into(),
+            return_value: ParameterReturnValue::AfterOrElseInitial,
+        }
+    }
+
     /// Create a new [`Self::MultiParameterValue`] variant with the given parameter name and a return
     /// value of [`ParameterReturnValue::After`].
     pub fn new_parameter_after_key<N: Into<ParameterName>>(name: N, key: &str) -> Self {
