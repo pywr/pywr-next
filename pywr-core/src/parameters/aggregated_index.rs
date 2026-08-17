@@ -169,36 +169,44 @@ impl ParameterBuilder<u64> for AggregatedIndexParameterBuilder {
         let meta = self.meta;
         let agg_func = self.agg_func;
 
-        // Try the narrowest dependency class first.
-        if let Some(metrics) = try_into_constant_metrics_u64(&metrics) {
-            return Ok(
-                BuiltParameter::Const(Box::new(AggregatedIndexParameter::<ConstantMetricU64> {
+        let built = match self.phase {
+            MetricConsumerPhase::Before => {
+                if let Some(metrics) = try_into_constant_metrics_u64(&metrics) {
+                    BuiltParameter::Const(Box::new(AggregatedIndexParameter::<ConstantMetricU64> {
+                        meta,
+                        metrics,
+                        agg_func,
+                    }))
+                } else if let Some(metrics) = try_into_simple_metrics_u64(&metrics) {
+                    BuiltParameter::Simple(Box::new(AggregatedIndexParameter::<SimpleMetricU64> {
+                        meta,
+                        metrics,
+                        agg_func,
+                    }))
+                } else {
+                    BuiltParameter::General(GeneralParameterEntry::both(AggregatedIndexParameter::<MetricU64> {
+                        meta,
+                        metrics,
+                        agg_func,
+                    }))
+                }
+            }
+            MetricConsumerPhase::After => {
+                BuiltParameter::General(GeneralParameterEntry::after(AggregatedIndexParameter::<MetricU64> {
                     meta,
                     metrics,
                     agg_func,
                 }))
-                .into(),
-            );
-        }
-
-        if let Some(metrics) = try_into_simple_metrics_u64(&metrics) {
-            return Ok(
-                BuiltParameter::Simple(Box::new(AggregatedIndexParameter::<SimpleMetricU64> {
+            }
+            MetricConsumerPhase::Both => {
+                BuiltParameter::General(GeneralParameterEntry::both(AggregatedIndexParameter::<MetricU64> {
                     meta,
                     metrics,
                     agg_func,
                 }))
-                .into(),
-            );
-        }
+            }
+        };
 
-        Ok(
-            BuiltParameter::General(GeneralParameterEntry::both(AggregatedIndexParameter::<MetricU64> {
-                meta,
-                metrics,
-                agg_func,
-            }))
-            .into(),
-        )
+        Ok(built.into())
     }
 }
