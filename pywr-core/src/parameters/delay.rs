@@ -253,9 +253,9 @@ impl ParameterBuilder<f64> for DelayParameterBuilder<UnresolvedMetricF64, f64> {
         self: Box<Self>,
         resolution_maps: &ResolutionMaps,
     ) -> Result<MaybeBuiltParameter<f64>, ParameterBuildError> {
-        // Phase is hardcoded to "both" for this parameter, as it only implements the
-        // `GeneralBeforeParameter` and `GeneralAfterParameterHook` traits.
-        let phase = MetricConsumerPhase::Both;
+        // Phase is hardcoded to "after" for this parameter, as it only uses the metric
+        // values in the after phase to update internal state.
+        let phase = MetricConsumerPhase::After;
         let metric = resolve_metric_f64!(self, self.metric, resolution_maps, phase, "metric");
 
         let simple_metric: Result<SimpleMetricF64, _> = metric.clone().try_into();

@@ -129,7 +129,7 @@ pub struct AggregatedParameterBuilder {
 }
 
 impl AggregatedParameterBuilder {
-    /// Create a new builder for [`AggregatedParameter`] that is evaluated in the "after" phase.
+    /// Create a new builder for [`AggregatedParameter`] that is evaluated in the "before" phase.
     pub fn before(name: ParameterName, agg_func: AggFuncF64) -> Self {
         Self {
             meta: ParameterMeta::new(name),
