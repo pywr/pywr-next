@@ -29,6 +29,8 @@ mod profiles;
 #[cfg(feature = "pyo3")]
 mod py;
 mod rolling;
+#[cfg(test)]
+pub(crate) mod test_utils;
 mod threshold;
 mod vector;
 
@@ -3177,177 +3179,28 @@ impl ParameterCollectionBuilder {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        BuiltParameter, ConstParameter, GeneralAfterParameter, GeneralAfterParameterHook, GeneralBeforeParameter,
-        GeneralCalculationError, GeneralParameter, GeneralParameterContext, GeneralParameterEntry, MaybeBuiltParameter,
-        Parameter, ParameterBuildError, ParameterBuilder, ParameterCollection, ParameterCollectionBuilder,
-        ParameterCollectionBuilderError, ParameterCollectionConstCalculationError,
-        ParameterCollectionGeneralCalculationError, ParameterCollectionSetupError,
-        ParameterCollectionSimpleCalculationError, ParameterIndex, ParameterMeta, ParameterName, ParameterSetupError,
-        ParameterState, ParameterStates, ParameterTimings, SimpleParameter, SimpleParameterContext,
+    use super::test_utils::{
+        TestBuildKind, TestParameter, TestParameterBuilder, TestParameterFailure, TestValueType, test_parameter_state,
     };
-    use crate::metric::{ConstantMetricF64Error, SimpleMetricF64Error};
+    use super::{
+        GeneralCalculationError, GeneralParameterEntry, ParameterBuildError, ParameterCollection,
+        ParameterCollectionBuilder, ParameterCollectionBuilderError, ParameterCollectionConstCalculationError,
+        ParameterCollectionGeneralCalculationError, ParameterCollectionSetupError,
+        ParameterCollectionSimpleCalculationError, ParameterIndex, ParameterName, ParameterSetupError, ParameterState,
+        ParameterStates, ParameterTimings,
+    };
     use crate::network::{Network, ResolutionMaps};
     use crate::parameters::errors::{ConstCalculationError, SimpleCalculationError};
     use crate::scenario::ScenarioIndex;
-    use crate::state::{
-        ConstParameterValues, ConstParameterValuesError, MultiValue, SetStateError, SimpleParameterValues, StateBuilder,
-    };
+    use crate::state::{MultiValue, SetStateError, StateBuilder};
     use crate::test_utils::default_domain;
-    use std::collections::HashMap;
-    use std::marker::PhantomData;
-    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::atomic::Ordering;
     use std::sync::{Arc, Mutex};
 
-    #[derive(Debug)]
-    struct TestParameterBuilder {
-        meta: ParameterMeta,
-    }
-
-    impl Default for TestParameterBuilder {
-        fn default() -> Self {
-            Self {
-                meta: ParameterMeta::new("test-parameter".into()),
-            }
-        }
-    }
-
-    impl ParameterBuilder<f64> for TestParameterBuilder {
-        fn name(&self) -> &ParameterName {
-            &self.meta.name
-        }
-
-        fn build(
-            self: Box<Self>,
-            _resolution_maps: &ResolutionMaps,
-        ) -> Result<MaybeBuiltParameter<f64>, ParameterBuildError> {
-            let p = TestParameter { meta: self.meta };
-            Ok(MaybeBuiltParameter::Built(BuiltParameter::Const(Box::new(p))))
-        }
-    }
-
-    impl ParameterBuilder<u64> for TestParameterBuilder {
-        fn name(&self) -> &ParameterName {
-            &self.meta.name
-        }
-
-        fn build(
-            self: Box<Self>,
-            _resolution_maps: &ResolutionMaps,
-        ) -> Result<MaybeBuiltParameter<u64>, ParameterBuildError> {
-            let p = TestParameter { meta: self.meta };
-            Ok(MaybeBuiltParameter::Built(BuiltParameter::Const(Box::new(p))))
-        }
-    }
-
-    #[derive(Debug, Clone, Copy)]
-    enum TestBuildKind {
-        Const,
-        Simple,
-        General,
-    }
-
-    #[derive(Debug, Clone, Copy)]
-    enum TestValueType {
-        F64,
-        U64,
-        Multi,
-    }
-
-    /// A configurable builder used to exercise the collection builder independently of concrete
-    /// parameter implementations.
-    #[derive(Debug)]
-    struct ScriptedParameterBuilder {
-        meta: ParameterMeta,
-        kind: TestBuildKind,
-        dependency: Option<ParameterName>,
-        error: Option<String>,
-        attempts: Arc<AtomicUsize>,
-        build_order: Arc<Mutex<Vec<String>>>,
-    }
-
-    impl ScriptedParameterBuilder {
-        fn new(name: &str, kind: TestBuildKind) -> Self {
-            Self::with_build_order(name, kind, Arc::new(Mutex::new(Vec::new())))
-        }
-
-        fn with_build_order(name: &str, kind: TestBuildKind, build_order: Arc<Mutex<Vec<String>>>) -> Self {
-            Self {
-                meta: ParameterMeta::new(name.into()),
-                kind,
-                dependency: None,
-                error: None,
-                attempts: Arc::new(AtomicUsize::new(0)),
-                build_order,
-            }
-        }
-
-        fn depending_on(mut self, dependency: &str) -> Self {
-            self.dependency = Some(dependency.into());
-            self
-        }
-
-        fn failing(mut self, detail: &str) -> Self {
-            self.error = Some(detail.to_string());
-            self
-        }
-
-        fn attempts(&self) -> Arc<AtomicUsize> {
-            self.attempts.clone()
-        }
-    }
-
-    macro_rules! impl_scripted_parameter_builder {
-        ($value_type:ty, $map:ident) => {
-            impl ParameterBuilder<$value_type> for ScriptedParameterBuilder {
-                fn name(&self) -> &ParameterName {
-                    &self.meta.name
-                }
-
-                fn build(
-                    self: Box<Self>,
-                    resolution_maps: &ResolutionMaps,
-                ) -> Result<MaybeBuiltParameter<$value_type>, ParameterBuildError> {
-                    self.attempts.fetch_add(1, Ordering::Relaxed);
-
-                    if let Some(detail) = &self.error {
-                        return Err(ParameterBuildError::NoCalculationPhase {
-                            detail: detail.clone(),
-                        });
-                    }
-
-                    if let Some(dependency) = &self.dependency
-                        && !resolution_maps.parameters_f64.contains_key(dependency)
-                        && !resolution_maps.parameters_u64.contains_key(dependency)
-                        && !resolution_maps.parameters_multi.contains_key(dependency)
-                    {
-                        return Ok(MaybeBuiltParameter::Retry {
-                            parameter_not_found: dependency.clone(),
-                            builder: self,
-                        });
-                    }
-
-                    self.build_order.lock().unwrap().push(self.meta.name.to_string());
-                    let parameter = TestParameter { meta: self.meta };
-                    let built = match self.kind {
-                        TestBuildKind::Const => BuiltParameter::Const(Box::new(parameter)),
-                        TestBuildKind::Simple => BuiltParameter::Simple(Box::new(parameter)),
-                        TestBuildKind::General => BuiltParameter::General(GeneralParameterEntry::before(parameter)),
-                    };
-                    Ok(MaybeBuiltParameter::Built(built))
-                }
-            }
-        };
-    }
-
-    impl_scripted_parameter_builder!(f64, parameters_f64);
-    impl_scripted_parameter_builder!(u64, parameters_u64);
-    impl_scripted_parameter_builder!(MultiValue, parameters_multi);
-
-    fn add_scripted_builder(
+    fn add_test_parameter_builder(
         collection: &mut ParameterCollectionBuilder,
         value_type: TestValueType,
-        builder: ScriptedParameterBuilder,
+        builder: TestParameterBuilder,
     ) {
         match value_type {
             TestValueType::F64 => {
@@ -3372,145 +3225,6 @@ mod tests {
                 assert!(registration.after.is_none());
             }
             (actual, expected) => panic!("expected {expected:?} index, got {actual:?}"),
-        }
-    }
-
-    /// Parameter for testing purposes
-    #[derive(Debug)]
-    struct TestParameter {
-        meta: ParameterMeta,
-    }
-
-    impl TestParameter {
-        fn named(name: &str) -> Self {
-            Self {
-                meta: ParameterMeta::new(name.into()),
-            }
-        }
-    }
-
-    impl Default for TestParameter {
-        fn default() -> Self {
-            Self {
-                meta: ParameterMeta::new("test-parameter".into()),
-            }
-        }
-    }
-    impl Parameter for TestParameter {
-        fn meta(&self) -> &ParameterMeta {
-            &self.meta
-        }
-    }
-
-    impl<T> ConstParameter<T> for TestParameter
-    where
-        T: From<u8>,
-    {
-        fn compute(
-            &self,
-            _scenario_index: &ScenarioIndex,
-            _values: &ConstParameterValues,
-            _internal_state: &mut Option<Box<dyn ParameterState>>,
-        ) -> Result<T, ConstCalculationError> {
-            Ok(T::from(1))
-        }
-
-        fn as_parameter(&self) -> &dyn Parameter {
-            self
-        }
-    }
-
-    impl ConstParameter<MultiValue> for TestParameter {
-        fn compute(
-            &self,
-            _scenario_index: &ScenarioIndex,
-            _values: &ConstParameterValues,
-            _internal_state: &mut Option<Box<dyn ParameterState>>,
-        ) -> Result<MultiValue, ConstCalculationError> {
-            Ok(MultiValue::default())
-        }
-
-        fn as_parameter(&self) -> &dyn Parameter {
-            self
-        }
-    }
-    impl<T> SimpleParameter<T> for TestParameter
-    where
-        T: From<u8>,
-    {
-        fn compute(
-            &self,
-            _ctx: SimpleParameterContext<'_>,
-            _internal_state: &mut Option<Box<dyn ParameterState>>,
-        ) -> Result<T, SimpleCalculationError> {
-            Ok(T::from(1))
-        }
-        fn as_parameter(&self) -> &dyn Parameter {
-            self
-        }
-    }
-
-    impl SimpleParameter<MultiValue> for TestParameter {
-        fn compute(
-            &self,
-            _ctx: SimpleParameterContext<'_>,
-            _internal_state: &mut Option<Box<dyn ParameterState>>,
-        ) -> Result<MultiValue, SimpleCalculationError> {
-            Ok(MultiValue::default())
-        }
-        fn as_parameter(&self) -> &dyn Parameter {
-            self
-        }
-    }
-    impl GeneralParameter for TestParameter {
-        fn as_parameter(&self) -> &dyn Parameter {
-            self
-        }
-    }
-
-    impl<T> GeneralBeforeParameter<T> for TestParameter
-    where
-        T: From<u8>,
-    {
-        fn before(
-            &self,
-            _ctx: GeneralParameterContext<'_>,
-            _internal_state: &mut Option<Box<dyn ParameterState>>,
-        ) -> Result<T, GeneralCalculationError> {
-            Ok(T::from(1))
-        }
-    }
-
-    impl GeneralBeforeParameter<MultiValue> for TestParameter {
-        fn before(
-            &self,
-            _ctx: GeneralParameterContext<'_>,
-            _internal_state: &mut Option<Box<dyn ParameterState>>,
-        ) -> Result<MultiValue, GeneralCalculationError> {
-            Ok(MultiValue::default())
-        }
-    }
-
-    impl<T> GeneralAfterParameter<T> for TestParameter
-    where
-        T: Default,
-    {
-        fn after(
-            &self,
-            _ctx: GeneralParameterContext<'_>,
-            _internal_state: &mut Option<Box<dyn ParameterState>>,
-        ) -> Result<T, GeneralCalculationError> {
-            Ok(T::default())
-        }
-    }
-
-    impl<T> GeneralAfterParameterHook<T> for TestParameter {
-        fn after(
-            &self,
-            _ctx: GeneralParameterContext<'_>,
-            _internal_state: &mut Option<Box<dyn ParameterState>>,
-        ) -> Result<(), GeneralCalculationError> {
-            Ok(())
         }
     }
 
@@ -3561,310 +3275,6 @@ mod tests {
         }
     }
 
-    trait ProbeValue: std::fmt::Debug + Send + Sync + 'static {
-        fn before_value() -> Self;
-        fn after_value() -> Self;
-
-        fn const_value(
-            _values: &ConstParameterValues<'_>,
-            _dependency: Option<super::ConstParameterIndex<f64>>,
-        ) -> Result<Self, ConstCalculationError>
-        where
-            Self: Sized,
-        {
-            Ok(Self::before_value())
-        }
-
-        fn simple_value(
-            _values: &SimpleParameterValues<'_>,
-            _dependency: Option<super::SimpleParameterIndex<f64>>,
-        ) -> Result<Self, SimpleCalculationError>
-        where
-            Self: Sized,
-        {
-            Ok(Self::before_value())
-        }
-    }
-
-    impl ProbeValue for f64 {
-        fn before_value() -> Self {
-            11.0
-        }
-
-        fn after_value() -> Self {
-            21.0
-        }
-
-        fn const_value(
-            values: &ConstParameterValues<'_>,
-            dependency: Option<super::ConstParameterIndex<f64>>,
-        ) -> Result<Self, ConstCalculationError> {
-            dependency.map_or_else(
-                || Ok(Self::before_value()),
-                |index| {
-                    values.get_f64(index).map(|value| value + 1.0).map_err(|source| {
-                        ConstCalculationError::ConstantMetricF64Error(
-                            ConstantMetricF64Error::ConstParameterValuesError(source),
-                        )
-                    })
-                },
-            )
-        }
-
-        fn simple_value(
-            values: &SimpleParameterValues<'_>,
-            dependency: Option<super::SimpleParameterIndex<f64>>,
-        ) -> Result<Self, SimpleCalculationError> {
-            dependency.map_or_else(
-                || Ok(Self::before_value()),
-                |index| {
-                    values.get_f64(index).map(|value| value + 1.0).map_err(|source| {
-                        SimpleCalculationError::SimpleMetricF64Error(SimpleMetricF64Error::SimpleParameterValuesError(
-                            source,
-                        ))
-                    })
-                },
-            )
-        }
-    }
-
-    impl ProbeValue for u64 {
-        fn before_value() -> Self {
-            12
-        }
-
-        fn after_value() -> Self {
-            22
-        }
-    }
-
-    impl ProbeValue for MultiValue {
-        fn before_value() -> Self {
-            MultiValue::new(
-                HashMap::from([("value".to_string(), 13.0)]),
-                HashMap::from([("index".to_string(), 14)]),
-            )
-        }
-
-        fn after_value() -> Self {
-            MultiValue::new(
-                HashMap::from([("value".to_string(), 23.0)]),
-                HashMap::from([("index".to_string(), 24)]),
-            )
-        }
-    }
-
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    enum ProbeFailure {
-        None,
-        Setup,
-        Const,
-        Simple,
-        GeneralBefore,
-        GeneralAfter,
-        GeneralHook,
-    }
-
-    #[derive(Debug)]
-    struct ProbeState {
-        owner: String,
-        calls: usize,
-        timestep_count: usize,
-        scenario_id: usize,
-    }
-
-    #[derive(Debug)]
-    struct LifecycleProbe<T> {
-        meta: ParameterMeta,
-        events: Arc<Mutex<Vec<String>>>,
-        setup_calls: Arc<AtomicUsize>,
-        failure: ProbeFailure,
-        const_dependency: Option<super::ConstParameterIndex<f64>>,
-        simple_dependency: Option<super::SimpleParameterIndex<f64>>,
-        phantom: PhantomData<T>,
-    }
-
-    impl<T> LifecycleProbe<T> {
-        fn new(name: &str, events: Arc<Mutex<Vec<String>>>) -> Self {
-            Self {
-                meta: ParameterMeta::new(name.into()),
-                events,
-                setup_calls: Arc::new(AtomicUsize::new(0)),
-                failure: ProbeFailure::None,
-                const_dependency: None,
-                simple_dependency: None,
-                phantom: PhantomData,
-            }
-        }
-
-        fn failing(mut self, failure: ProbeFailure) -> Self {
-            self.failure = failure;
-            self
-        }
-
-        fn with_const_dependency(mut self, dependency: super::ConstParameterIndex<f64>) -> Self {
-            self.const_dependency = Some(dependency);
-            self
-        }
-
-        fn with_simple_dependency(mut self, dependency: super::SimpleParameterIndex<f64>) -> Self {
-            self.simple_dependency = Some(dependency);
-            self
-        }
-
-        fn setup_calls(&self) -> Arc<AtomicUsize> {
-            self.setup_calls.clone()
-        }
-
-        fn record(&self, phase: &str) {
-            self.events.lock().unwrap().push(format!("{}:{phase}", self.meta.name));
-        }
-
-        fn touch_state(&self, internal_state: &mut Option<Box<dyn ParameterState>>) -> Result<usize, String> {
-            let state = internal_state
-                .as_deref_mut()
-                .and_then(|state| state.as_any_mut().downcast_mut::<ProbeState>())
-                .ok_or_else(|| "missing or invalid probe state".to_string())?;
-            if state.owner != self.meta.name.to_string() {
-                return Err("probe state belongs to another parameter".to_string());
-            }
-            state.calls += 1;
-            Ok(state.calls)
-        }
-    }
-
-    impl<T: ProbeValue> Parameter for LifecycleProbe<T> {
-        fn meta(&self) -> &ParameterMeta {
-            &self.meta
-        }
-
-        fn setup(
-            &self,
-            timesteps: &[crate::timestep::Timestep],
-            scenario_index: &ScenarioIndex,
-        ) -> Result<Option<Box<dyn ParameterState>>, ParameterSetupError> {
-            self.setup_calls.fetch_add(1, Ordering::Relaxed);
-            if self.failure == ProbeFailure::Setup {
-                return Err(ParameterSetupError::TestError("lifecycle-probe".to_string()));
-            }
-            Ok(Some(Box::new(ProbeState {
-                owner: self.meta.name.to_string(),
-                calls: 0,
-                timestep_count: timesteps.len(),
-                scenario_id: scenario_index.simulation_id(),
-            })))
-        }
-    }
-
-    fn intentional_const_error() -> ConstCalculationError {
-        ConstCalculationError::ConstantMetricF64Error(ConstantMetricF64Error::ConstParameterValuesError(
-            ConstParameterValuesError::ConstParameterIndexNotFound(super::ConstParameterIndex::new(usize::MAX)),
-        ))
-    }
-
-    impl<T: ProbeValue> ConstParameter<T> for LifecycleProbe<T> {
-        fn compute(
-            &self,
-            _scenario_index: &ScenarioIndex,
-            values: &ConstParameterValues,
-            internal_state: &mut Option<Box<dyn ParameterState>>,
-        ) -> Result<T, ConstCalculationError> {
-            if self.failure == ProbeFailure::Const {
-                return Err(intentional_const_error());
-            }
-            self.touch_state(internal_state)
-                .map_err(|_| intentional_const_error())?;
-            self.record("const");
-            T::const_value(values, self.const_dependency)
-        }
-
-        fn as_parameter(&self) -> &dyn Parameter {
-            self
-        }
-    }
-
-    impl<T: ProbeValue> SimpleParameter<T> for LifecycleProbe<T> {
-        fn compute(
-            &self,
-            context: SimpleParameterContext<'_>,
-            internal_state: &mut Option<Box<dyn ParameterState>>,
-        ) -> Result<T, SimpleCalculationError> {
-            if self.failure == ProbeFailure::Simple {
-                return Err(SimpleCalculationError::Internal {
-                    message: "intentional simple failure".to_string(),
-                });
-            }
-            self.touch_state(internal_state)
-                .map_err(|message| SimpleCalculationError::Internal { message })?;
-            self.record("simple");
-            T::simple_value(context.values, self.simple_dependency)
-        }
-
-        fn as_parameter(&self) -> &dyn Parameter {
-            self
-        }
-    }
-
-    impl<T: ProbeValue> GeneralParameter for LifecycleProbe<T> {
-        fn as_parameter(&self) -> &dyn Parameter {
-            self
-        }
-    }
-
-    impl<T: ProbeValue> GeneralBeforeParameter<T> for LifecycleProbe<T> {
-        fn before(
-            &self,
-            _context: GeneralParameterContext<'_>,
-            internal_state: &mut Option<Box<dyn ParameterState>>,
-        ) -> Result<T, GeneralCalculationError> {
-            if self.failure == ProbeFailure::GeneralBefore {
-                return Err(GeneralCalculationError::Internal {
-                    message: "intentional general before failure".to_string(),
-                });
-            }
-            self.touch_state(internal_state)
-                .map_err(|message| GeneralCalculationError::Internal { message })?;
-            self.record("before");
-            Ok(T::before_value())
-        }
-    }
-
-    impl<T: ProbeValue> GeneralAfterParameter<T> for LifecycleProbe<T> {
-        fn after(
-            &self,
-            _context: GeneralParameterContext<'_>,
-            internal_state: &mut Option<Box<dyn ParameterState>>,
-        ) -> Result<T, GeneralCalculationError> {
-            if self.failure == ProbeFailure::GeneralAfter {
-                return Err(GeneralCalculationError::Internal {
-                    message: "intentional general after failure".to_string(),
-                });
-            }
-            self.touch_state(internal_state)
-                .map_err(|message| GeneralCalculationError::Internal { message })?;
-            self.record("after");
-            Ok(T::after_value())
-        }
-    }
-
-    impl<T: ProbeValue> GeneralAfterParameterHook<T> for LifecycleProbe<T> {
-        fn after(
-            &self,
-            _context: GeneralParameterContext<'_>,
-            internal_state: &mut Option<Box<dyn ParameterState>>,
-        ) -> Result<(), GeneralCalculationError> {
-            if self.failure == ProbeFailure::GeneralHook {
-                return Err(GeneralCalculationError::Internal {
-                    message: "intentional general hook failure".to_string(),
-                });
-            }
-            self.touch_state(internal_state)
-                .map_err(|message| GeneralCalculationError::Internal { message })?;
-            self.record("hook");
-            Ok(())
-        }
-    }
-
     fn expect_const_index<T>(index: ParameterIndex<T>) -> super::ConstParameterIndex<T> {
         match index {
             ParameterIndex::Const(index) => index,
@@ -3886,21 +3296,18 @@ mod tests {
         }
     }
 
-    fn assert_probe_state(
+    fn assert_test_parameter_state(
         state: &Option<Box<dyn ParameterState>>,
         owner: &str,
         timestep_count: usize,
         scenario_id: usize,
         calls: usize,
     ) {
-        let state = state
-            .as_deref()
-            .and_then(|state| state.as_any().downcast_ref::<ProbeState>())
-            .expect("expected probe state");
-        assert_eq!(state.owner, owner);
-        assert_eq!(state.timestep_count, timestep_count);
-        assert_eq!(state.scenario_id, scenario_id);
-        assert_eq!(state.calls, calls);
+        let state = test_parameter_state(state).expect("expected test parameter state");
+        assert_eq!(state.owner(), owner);
+        assert_eq!(state.timestep_count(), timestep_count);
+        assert_eq!(state.scenario_id(), scenario_id);
+        assert_eq!(state.calls(), calls);
     }
 
     fn assert_general_calculation_error(
@@ -3958,10 +3365,10 @@ mod tests {
                 (TestBuildKind::Simple, "simple"),
                 (TestBuildKind::General, "general"),
             ] {
-                add_scripted_builder(
+                add_test_parameter_builder(
                     &mut builder,
                     value_type,
-                    ScriptedParameterBuilder::new(&format!("{prefix}-{suffix}"), kind),
+                    TestParameterBuilder::new(&format!("{prefix}-{suffix}"), kind),
                 );
             }
         }
@@ -4037,15 +3444,15 @@ mod tests {
             (TestValueType::U64, TestValueType::Multi),
         ] {
             let mut builder = ParameterCollectionBuilder::default();
-            add_scripted_builder(
+            add_test_parameter_builder(
                 &mut builder,
                 first,
-                ScriptedParameterBuilder::new("duplicate", TestBuildKind::Const),
+                TestParameterBuilder::new("duplicate", TestBuildKind::Const),
             );
-            add_scripted_builder(
+            add_test_parameter_builder(
                 &mut builder,
                 second,
-                ScriptedParameterBuilder::new("duplicate", TestBuildKind::Simple),
+                TestParameterBuilder::new("duplicate", TestBuildKind::Simple),
             );
 
             assert!(matches!(
@@ -4061,10 +3468,10 @@ mod tests {
         let mut builder = ParameterCollectionBuilder::default();
         builder
             .f64(Box::new(
-                ScriptedParameterBuilder::new("duplicate", TestBuildKind::General).depending_on("missing"),
+                TestParameterBuilder::new("duplicate", TestBuildKind::General).depending_on("missing"),
             ))
             .f64(Box::new(
-                ScriptedParameterBuilder::new("duplicate", TestBuildKind::General).depending_on("missing"),
+                TestParameterBuilder::new("duplicate", TestBuildKind::General).depending_on("missing"),
             ));
 
         assert!(matches!(
@@ -4077,10 +3484,10 @@ mod tests {
     #[test]
     fn forward_reference_builds_after_dependency() {
         let order = Arc::new(Mutex::new(Vec::new()));
-        let dependent = ScriptedParameterBuilder::with_build_order("dependent", TestBuildKind::General, order.clone())
+        let dependent = TestParameterBuilder::with_build_order("dependent", TestBuildKind::General, order.clone())
             .depending_on("source");
         let dependent_attempts = dependent.attempts();
-        let source = ScriptedParameterBuilder::with_build_order("source", TestBuildKind::Const, order.clone());
+        let source = TestParameterBuilder::with_build_order("source", TestBuildKind::Const, order.clone());
         let source_attempts = source.attempts();
         let mut builder = ParameterCollectionBuilder::default();
         builder.f64(Box::new(dependent)).f64(Box::new(source));
@@ -4098,11 +3505,9 @@ mod tests {
     #[test]
     fn reverse_order_dependency_chain_is_topologically_built() {
         let order = Arc::new(Mutex::new(Vec::new()));
-        let a =
-            ScriptedParameterBuilder::with_build_order("a", TestBuildKind::General, order.clone()).depending_on("b");
-        let b =
-            ScriptedParameterBuilder::with_build_order("b", TestBuildKind::General, order.clone()).depending_on("c");
-        let c = ScriptedParameterBuilder::with_build_order("c", TestBuildKind::Const, order.clone());
+        let a = TestParameterBuilder::with_build_order("a", TestBuildKind::General, order.clone()).depending_on("b");
+        let b = TestParameterBuilder::with_build_order("b", TestBuildKind::General, order.clone()).depending_on("c");
+        let c = TestParameterBuilder::with_build_order("c", TestBuildKind::Const, order.clone());
         let a_attempts = a.attempts();
         let b_attempts = b.attempts();
         let c_attempts = c.attempts();
@@ -4120,11 +3525,11 @@ mod tests {
     #[test]
     fn dependencies_can_progress_across_typed_builder_vectors() {
         let order = Arc::new(Mutex::new(Vec::new()));
-        let f64_builder = ScriptedParameterBuilder::with_build_order("f64", TestBuildKind::General, order.clone())
-            .depending_on("u64");
-        let u64_builder = ScriptedParameterBuilder::with_build_order("u64", TestBuildKind::General, order.clone())
-            .depending_on("multi");
-        let multi_builder = ScriptedParameterBuilder::with_build_order("multi", TestBuildKind::Const, order.clone());
+        let f64_builder =
+            TestParameterBuilder::with_build_order("f64", TestBuildKind::General, order.clone()).depending_on("u64");
+        let u64_builder =
+            TestParameterBuilder::with_build_order("u64", TestBuildKind::General, order.clone()).depending_on("multi");
+        let multi_builder = TestParameterBuilder::with_build_order("multi", TestBuildKind::Const, order.clone());
         let f64_attempts = f64_builder.attempts();
         let u64_attempts = u64_builder.attempts();
         let multi_attempts = multi_builder.attempts();
@@ -4150,10 +3555,10 @@ mod tests {
     fn missing_dependency_returns_exact_missing_name_for_all_types() {
         for value_type in [TestValueType::F64, TestValueType::U64, TestValueType::Multi] {
             let mut builder = ParameterCollectionBuilder::default();
-            add_scripted_builder(
+            add_test_parameter_builder(
                 &mut builder,
                 value_type,
-                ScriptedParameterBuilder::new("dependent", TestBuildKind::General).depending_on("missing"),
+                TestParameterBuilder::new("dependent", TestBuildKind::General).depending_on("missing"),
             );
 
             assert!(matches!(
@@ -4168,7 +3573,7 @@ mod tests {
     fn self_reference_returns_circular_reference() {
         let mut builder = ParameterCollectionBuilder::default();
         builder.f64(Box::new(
-            ScriptedParameterBuilder::new("self", TestBuildKind::General).depending_on("self"),
+            TestParameterBuilder::new("self", TestBuildKind::General).depending_on("self"),
         ));
 
         match builder.build(&mut ResolutionMaps::new(default_domain())) {
@@ -4184,13 +3589,13 @@ mod tests {
         let mut builder = ParameterCollectionBuilder::default();
         builder
             .f64(Box::new(
-                ScriptedParameterBuilder::new("a", TestBuildKind::General).depending_on("b"),
+                TestParameterBuilder::new("a", TestBuildKind::General).depending_on("b"),
             ))
             .f64(Box::new(
-                ScriptedParameterBuilder::new("b", TestBuildKind::General).depending_on("c"),
+                TestParameterBuilder::new("b", TestBuildKind::General).depending_on("c"),
             ))
             .f64(Box::new(
-                ScriptedParameterBuilder::new("c", TestBuildKind::General).depending_on("a"),
+                TestParameterBuilder::new("c", TestBuildKind::General).depending_on("a"),
             ));
 
         match builder.build(&mut ResolutionMaps::new(default_domain())) {
@@ -4206,13 +3611,13 @@ mod tests {
         let mut builder = ParameterCollectionBuilder::default();
         builder
             .f64(Box::new(
-                ScriptedParameterBuilder::new("a", TestBuildKind::General).depending_on("b"),
+                TestParameterBuilder::new("a", TestBuildKind::General).depending_on("b"),
             ))
             .f64(Box::new(
-                ScriptedParameterBuilder::new("b", TestBuildKind::General).depending_on("a"),
+                TestParameterBuilder::new("b", TestBuildKind::General).depending_on("a"),
             ))
             .f64(Box::new(
-                ScriptedParameterBuilder::new("c", TestBuildKind::General).depending_on("missing"),
+                TestParameterBuilder::new("c", TestBuildKind::General).depending_on("missing"),
             ));
 
         assert!(matches!(
@@ -4226,7 +3631,7 @@ mod tests {
     fn parameter_build_error_preserves_parameter_name_and_source() {
         let mut builder = ParameterCollectionBuilder::default();
         builder.f64(Box::new(
-            ScriptedParameterBuilder::new("broken", TestBuildKind::General).failing("intentional failure"),
+            TestParameterBuilder::new("broken", TestBuildKind::General).failing("intentional failure"),
         ));
 
         let error = builder
@@ -4378,35 +3783,35 @@ mod tests {
         let events = Arc::new(Mutex::new(Vec::new()));
         let mut collection = ParameterCollection::default();
 
-        let f64_const_probe = LifecycleProbe::<f64>::new("f64-const-state", events.clone());
+        let f64_const_probe = TestParameter::<f64>::new("f64-const-state", events.clone());
         let f64_const_calls = f64_const_probe.setup_calls();
         let f64_const = expect_const_index(collection.push_const_f64(Box::new(f64_const_probe)));
-        let f64_simple_probe = LifecycleProbe::<f64>::new("f64-simple-state", events.clone());
+        let f64_simple_probe = TestParameter::<f64>::new("f64-simple-state", events.clone());
         let f64_simple_calls = f64_simple_probe.setup_calls();
         let f64_simple = expect_simple_index(collection.push_simple_f64(Box::new(f64_simple_probe)));
-        let f64_general_probe = LifecycleProbe::<f64>::new("f64-general-state", events.clone());
+        let f64_general_probe = TestParameter::<f64>::new("f64-general-state", events.clone());
         let f64_general_calls = f64_general_probe.setup_calls();
         let f64_general =
             expect_general_registration(collection.push_general_f64(GeneralParameterEntry::before(f64_general_probe)));
 
-        let u64_const_probe = LifecycleProbe::<u64>::new("u64-const-state", events.clone());
+        let u64_const_probe = TestParameter::<u64>::new("u64-const-state", events.clone());
         let u64_const_calls = u64_const_probe.setup_calls();
         let u64_const = expect_const_index(collection.push_const_u64(Box::new(u64_const_probe)));
-        let u64_simple_probe = LifecycleProbe::<u64>::new("u64-simple-state", events.clone());
+        let u64_simple_probe = TestParameter::<u64>::new("u64-simple-state", events.clone());
         let u64_simple_calls = u64_simple_probe.setup_calls();
         let u64_simple = expect_simple_index(collection.push_simple_u64(Box::new(u64_simple_probe)));
-        let u64_general_probe = LifecycleProbe::<u64>::new("u64-general-state", events.clone());
+        let u64_general_probe = TestParameter::<u64>::new("u64-general-state", events.clone());
         let u64_general_calls = u64_general_probe.setup_calls();
         let u64_general =
             expect_general_registration(collection.push_general_u64(GeneralParameterEntry::before(u64_general_probe)));
 
-        let multi_const_probe = LifecycleProbe::<MultiValue>::new("multi-const-state", events.clone());
+        let multi_const_probe = TestParameter::<MultiValue>::new("multi-const-state", events.clone());
         let multi_const_calls = multi_const_probe.setup_calls();
         let multi_const = expect_const_index(collection.push_const_multi(Box::new(multi_const_probe)));
-        let multi_simple_probe = LifecycleProbe::<MultiValue>::new("multi-simple-state", events.clone());
+        let multi_simple_probe = TestParameter::<MultiValue>::new("multi-simple-state", events.clone());
         let multi_simple_calls = multi_simple_probe.setup_calls();
         let multi_simple = expect_simple_index(collection.push_simple_multi(Box::new(multi_simple_probe)));
-        let multi_general_probe = LifecycleProbe::<MultiValue>::new("multi-general-state", events);
+        let multi_general_probe = TestParameter::<MultiValue>::new("multi-general-state", events);
         let multi_general_calls = multi_general_probe.setup_calls();
         let multi_general = expect_general_registration(
             collection.push_general_multi(GeneralParameterEntry::before(multi_general_probe)),
@@ -4417,63 +3822,63 @@ mod tests {
         let scenario = ScenarioIndex::default();
         let mut states = ParameterStates::from_collection(&collection, timesteps, &scenario).unwrap();
 
-        assert_probe_state(
+        assert_test_parameter_state(
             states.get_const_f64_state(f64_const).unwrap(),
             "f64-const-state",
             timesteps.len(),
             0,
             0,
         );
-        assert_probe_state(
+        assert_test_parameter_state(
             states.get_simple_f64_state(f64_simple).unwrap(),
             "f64-simple-state",
             timesteps.len(),
             0,
             0,
         );
-        assert_probe_state(
+        assert_test_parameter_state(
             states.get_general_f64_state(f64_general.parameter).unwrap(),
             "f64-general-state",
             timesteps.len(),
             0,
             0,
         );
-        assert_probe_state(
+        assert_test_parameter_state(
             states.get_const_mut_u64_state(u64_const).unwrap(),
             "u64-const-state",
             timesteps.len(),
             0,
             0,
         );
-        assert_probe_state(
+        assert_test_parameter_state(
             states.get_simple_mut_u64_state(u64_simple).unwrap(),
             "u64-simple-state",
             timesteps.len(),
             0,
             0,
         );
-        assert_probe_state(
+        assert_test_parameter_state(
             states.get_general_mut_u64_state(u64_general.parameter).unwrap(),
             "u64-general-state",
             timesteps.len(),
             0,
             0,
         );
-        assert_probe_state(
+        assert_test_parameter_state(
             states.get_const_mut_multi_state(multi_const).unwrap(),
             "multi-const-state",
             timesteps.len(),
             0,
             0,
         );
-        assert_probe_state(
+        assert_test_parameter_state(
             states.get_simple_mut_multi_state(multi_simple).unwrap(),
             "multi-simple-state",
             timesteps.len(),
             0,
             0,
         );
-        assert_probe_state(
+        assert_test_parameter_state(
             states.get_general_mut_multi_state(multi_general.parameter).unwrap(),
             "multi-general-state",
             timesteps.len(),
@@ -4501,8 +3906,8 @@ mod tests {
         pyo3::Python::initialize();
         for kind in [TestBuildKind::Const, TestBuildKind::Simple, TestBuildKind::General] {
             let expected_name = format!("broken-{kind:?}");
-            let probe = LifecycleProbe::<f64>::new(&expected_name, Arc::new(Mutex::new(Vec::new())))
-                .failing(ProbeFailure::Setup);
+            let probe = TestParameter::<f64>::new(&expected_name, Arc::new(Mutex::new(Vec::new())))
+                .failing(TestParameterFailure::Setup);
             let mut collection = ParameterCollection::default();
             match kind {
                 TestBuildKind::Const => {
@@ -4537,17 +3942,17 @@ mod tests {
         let events = Arc::new(Mutex::new(Vec::new()));
         let mut collection = ParameterCollection::default();
         let f64_source = expect_const_index(
-            collection.push_const_f64(Box::new(LifecycleProbe::<f64>::new("const-f64-source", events.clone()))),
+            collection.push_const_f64(Box::new(TestParameter::<f64>::new("const-f64-source", events.clone()))),
         );
         let u64_index = expect_const_index(
-            collection.push_const_u64(Box::new(LifecycleProbe::<u64>::new("const-u64", events.clone()))),
+            collection.push_const_u64(Box::new(TestParameter::<u64>::new("const-u64", events.clone()))),
         );
-        let multi_index = expect_const_index(collection.push_const_multi(Box::new(LifecycleProbe::<MultiValue>::new(
+        let multi_index = expect_const_index(collection.push_const_multi(Box::new(TestParameter::<MultiValue>::new(
             "const-multi",
             events.clone(),
         ))));
         let f64_dependent = expect_const_index(collection.push_const_f64(Box::new(
-            LifecycleProbe::<f64>::new("const-f64-dependent", events.clone()).with_const_dependency(f64_source),
+            TestParameter::<f64>::new("const-f64-dependent", events.clone()).with_const_dependency(f64_source),
         )));
 
         let domain = default_domain();
@@ -4574,28 +3979,28 @@ mod tests {
         assert_eq!(values.get_u64(u64_index).unwrap(), 12);
         assert_eq!(values.get_multi_f64(multi_index, "value").unwrap(), 13.0);
         assert_eq!(values.get_multi_u64(multi_index, "index").unwrap(), 14);
-        assert_probe_state(
+        assert_test_parameter_state(
             internal_states.get_const_f64_state(f64_source).unwrap(),
             "const-f64-source",
             timesteps.len(),
             0,
             1,
         );
-        assert_probe_state(
+        assert_test_parameter_state(
             internal_states.get_const_f64_state(f64_dependent).unwrap(),
             "const-f64-dependent",
             timesteps.len(),
             0,
             1,
         );
-        assert_probe_state(
+        assert_test_parameter_state(
             internal_states.get_const_mut_u64_state(u64_index).unwrap(),
             "const-u64",
             timesteps.len(),
             0,
             1,
         );
-        assert_probe_state(
+        assert_test_parameter_state(
             internal_states.get_const_mut_multi_state(multi_index).unwrap(),
             "const-multi",
             timesteps.len(),
@@ -4608,18 +4013,17 @@ mod tests {
     fn compute_simple_covers_all_types_dependency_order_and_internal_state() {
         let events = Arc::new(Mutex::new(Vec::new()));
         let mut collection = ParameterCollection::default();
-        let f64_source = expect_simple_index(collection.push_simple_f64(Box::new(LifecycleProbe::<f64>::new(
-            "simple-f64-source",
-            events.clone(),
-        ))));
+        let f64_source = expect_simple_index(
+            collection.push_simple_f64(Box::new(TestParameter::<f64>::new("simple-f64-source", events.clone()))),
+        );
         let u64_index = expect_simple_index(
-            collection.push_simple_u64(Box::new(LifecycleProbe::<u64>::new("simple-u64", events.clone()))),
+            collection.push_simple_u64(Box::new(TestParameter::<u64>::new("simple-u64", events.clone()))),
         );
         let multi_index = expect_simple_index(collection.push_simple_multi(Box::new(
-            LifecycleProbe::<MultiValue>::new("simple-multi", events.clone()),
+            TestParameter::<MultiValue>::new("simple-multi", events.clone()),
         )));
         let f64_dependent = expect_simple_index(collection.push_simple_f64(Box::new(
-            LifecycleProbe::<f64>::new("simple-f64-dependent", events.clone()).with_simple_dependency(f64_source),
+            TestParameter::<f64>::new("simple-f64-dependent", events.clone()).with_simple_dependency(f64_source),
         )));
 
         let domain = default_domain();
@@ -4653,28 +4057,28 @@ mod tests {
         assert_eq!(values.get_u64(u64_index).unwrap(), 12);
         assert_eq!(values.get_multi_f64(multi_index, "value").unwrap(), 13.0);
         assert_eq!(values.get_multi_u64(multi_index, "index").unwrap(), 14);
-        assert_probe_state(
+        assert_test_parameter_state(
             internal_states.get_simple_f64_state(f64_source).unwrap(),
             "simple-f64-source",
             timesteps.len(),
             0,
             2,
         );
-        assert_probe_state(
+        assert_test_parameter_state(
             internal_states.get_simple_f64_state(f64_dependent).unwrap(),
             "simple-f64-dependent",
             timesteps.len(),
             0,
             2,
         );
-        assert_probe_state(
+        assert_test_parameter_state(
             internal_states.get_simple_mut_u64_state(u64_index).unwrap(),
             "simple-u64",
             timesteps.len(),
             0,
             2,
         );
-        assert_probe_state(
+        assert_test_parameter_state(
             internal_states.get_simple_mut_multi_state(multi_index).unwrap(),
             "simple-multi",
             timesteps.len(),
@@ -4692,9 +4096,9 @@ mod tests {
 
         let mut const_collection = ParameterCollection::default();
         const_collection.push_const_f64(Box::new(
-            LifecycleProbe::<f64>::new("broken-const", events.clone()).failing(ProbeFailure::Const),
+            TestParameter::<f64>::new("broken-const", events.clone()).failing(TestParameterFailure::Const),
         ));
-        const_collection.push_const_f64(Box::new(LifecycleProbe::<f64>::new("not-run-const", events.clone())));
+        const_collection.push_const_f64(Box::new(TestParameter::<f64>::new("not-run-const", events.clone())));
         let mut const_states = ParameterStates::from_collection(&const_collection, timesteps, &scenario).unwrap();
         let mut const_state = StateBuilder::new(Vec::new(), 0)
             .with_parameters(&const_collection)
@@ -4709,9 +4113,9 @@ mod tests {
 
         let mut simple_collection = ParameterCollection::default();
         simple_collection.push_simple_f64(Box::new(
-            LifecycleProbe::<f64>::new("broken-simple", events.clone()).failing(ProbeFailure::Simple),
+            TestParameter::<f64>::new("broken-simple", events.clone()).failing(TestParameterFailure::Simple),
         ));
-        simple_collection.push_simple_f64(Box::new(LifecycleProbe::<f64>::new("not-run-simple", events.clone())));
+        simple_collection.push_simple_f64(Box::new(TestParameter::<f64>::new("not-run-simple", events.clone())));
         let mut simple_states = ParameterStates::from_collection(&simple_collection, timesteps, &scenario).unwrap();
         let mut simple_state = StateBuilder::new(Vec::new(), 0)
             .with_parameters(&simple_collection)
@@ -4737,7 +4141,7 @@ mod tests {
         let timestep = &timesteps[0];
 
         let mut f64_collection = ParameterCollection::default();
-        let f64_index = expect_simple_index(f64_collection.push_simple_f64(Box::new(LifecycleProbe::<f64>::new(
+        let f64_index = expect_simple_index(f64_collection.push_simple_f64(Box::new(TestParameter::<f64>::new(
             "simple-f64-mismatch",
             Arc::new(Mutex::new(Vec::new())),
         ))));
@@ -4752,7 +4156,7 @@ mod tests {
         ));
 
         let mut u64_collection = ParameterCollection::default();
-        let u64_index = expect_simple_index(u64_collection.push_simple_u64(Box::new(LifecycleProbe::<u64>::new(
+        let u64_index = expect_simple_index(u64_collection.push_simple_u64(Box::new(TestParameter::<u64>::new(
             "simple-u64-mismatch",
             Arc::new(Mutex::new(Vec::new())),
         ))));
@@ -4767,7 +4171,7 @@ mod tests {
 
         let mut multi_collection = ParameterCollection::default();
         let multi_index = expect_simple_index(multi_collection.push_simple_multi(Box::new(
-            LifecycleProbe::<MultiValue>::new("simple-multi-mismatch", Arc::new(Mutex::new(Vec::new()))),
+            TestParameter::<MultiValue>::new("simple-multi-mismatch", Arc::new(Mutex::new(Vec::new()))),
         )));
         let mut empty_states = ParameterStates::from_collection(&empty_collection, timesteps, &scenario).unwrap();
         let mut multi_state = StateBuilder::new(Vec::new(), 0)
@@ -4805,22 +4209,22 @@ mod tests {
         let events = Arc::new(Mutex::new(Vec::new()));
         let mut collection = ParameterCollection::default();
         let f64_before = expect_general_registration(collection.push_general_f64(GeneralParameterEntry::before(
-            LifecycleProbe::<f64>::new("f64-before-order", events.clone()),
+            TestParameter::<f64>::new("f64-before-order", events.clone()),
         )));
         let u64_both = expect_general_registration(collection.push_general_u64(GeneralParameterEntry::both(
-            LifecycleProbe::<u64>::new("u64-both-order", events.clone()),
+            TestParameter::<u64>::new("u64-both-order", events.clone()),
         )));
         let multi_after = expect_general_registration(collection.push_general_multi(GeneralParameterEntry::after(
-            LifecycleProbe::<MultiValue>::new("multi-after-order", events.clone()),
+            TestParameter::<MultiValue>::new("multi-after-order", events.clone()),
         )));
         let multi_before = expect_general_registration(collection.push_general_multi(GeneralParameterEntry::before(
-            LifecycleProbe::<MultiValue>::new("multi-before-order", events.clone()),
+            TestParameter::<MultiValue>::new("multi-before-order", events.clone()),
         )));
         let f64_both = expect_general_registration(collection.push_general_f64(GeneralParameterEntry::both(
-            LifecycleProbe::<f64>::new("f64-both-order", events.clone()),
+            TestParameter::<f64>::new("f64-both-order", events.clone()),
         )));
         let u64_after = expect_general_registration(collection.push_general_u64(GeneralParameterEntry::after(
-            LifecycleProbe::<u64>::new("u64-after-order", events.clone()),
+            TestParameter::<u64>::new("u64-after-order", events.clone()),
         )));
 
         let domain = default_domain();
@@ -4923,7 +4327,7 @@ mod tests {
         let events = Arc::new(Mutex::new(Vec::new()));
         let mut collection = ParameterCollection::default();
         let registration = expect_general_registration(collection.push_general_f64(GeneralParameterEntry::both(
-            LifecycleProbe::<f64>::new("shared-general-state", events.clone()),
+            TestParameter::<f64>::new("shared-general-state", events.clone()),
         )));
         let domain = default_domain();
         let timesteps = domain.time().timesteps();
@@ -4969,7 +4373,7 @@ mod tests {
                 .unwrap(),
             21.0
         );
-        assert_probe_state(
+        assert_test_parameter_state(
             internal_states.get_general_f64_state(registration.parameter).unwrap(),
             "shared-general-state",
             timesteps.len(),
@@ -4987,8 +4391,8 @@ mod tests {
 
         let mut before_collection = ParameterCollection::default();
         before_collection.push_general_f64(GeneralParameterEntry::before(
-            LifecycleProbe::<f64>::new("broken-before", Arc::new(Mutex::new(Vec::new())))
-                .failing(ProbeFailure::GeneralBefore),
+            TestParameter::<f64>::new("broken-before", Arc::new(Mutex::new(Vec::new())))
+                .failing(TestParameterFailure::GeneralBefore),
         ));
         let mut before_states = ParameterStates::from_collection(&before_collection, timesteps, &scenario).unwrap();
         let mut before_state = StateBuilder::new(Vec::new(), 0)
@@ -5008,8 +4412,8 @@ mod tests {
 
         let mut after_collection = ParameterCollection::default();
         after_collection.push_general_f64(GeneralParameterEntry::after(
-            LifecycleProbe::<f64>::new("broken-after", Arc::new(Mutex::new(Vec::new())))
-                .failing(ProbeFailure::GeneralAfter),
+            TestParameter::<f64>::new("broken-after", Arc::new(Mutex::new(Vec::new())))
+                .failing(TestParameterFailure::GeneralAfter),
         ));
         let mut after_states = ParameterStates::from_collection(&after_collection, timesteps, &scenario).unwrap();
         let mut after_state = StateBuilder::new(Vec::new(), 0)
@@ -5030,8 +4434,8 @@ mod tests {
         let mut hook_collection = ParameterCollection::default();
         let hook_registration = expect_general_registration(
             hook_collection.push_general_f64(GeneralParameterEntry::before_with_after_hook(
-                LifecycleProbe::<f64>::new("broken-hook", Arc::new(Mutex::new(Vec::new())))
-                    .failing(ProbeFailure::GeneralHook),
+                TestParameter::<f64>::new("broken-hook", Arc::new(Mutex::new(Vec::new())))
+                    .failing(TestParameterFailure::GeneralHook),
             )),
         );
         assert!(hook_registration.after.is_none());
@@ -5065,12 +4469,12 @@ mod tests {
     #[test]
     fn timings_reject_another_parameter_collection() {
         let mut source_collection = ParameterCollection::default();
-        source_collection.push_general_f64(GeneralParameterEntry::both(LifecycleProbe::<f64>::new(
+        source_collection.push_general_f64(GeneralParameterEntry::both(TestParameter::<f64>::new(
             "timing-source",
             Arc::new(Mutex::new(Vec::new())),
         )));
         let mut other_collection = ParameterCollection::default();
-        other_collection.push_general_f64(GeneralParameterEntry::both(LifecycleProbe::<f64>::new(
+        other_collection.push_general_f64(GeneralParameterEntry::both(TestParameter::<f64>::new(
             "timing-other",
             Arc::new(Mutex::new(Vec::new())),
         )));
@@ -5116,106 +4520,13 @@ mod tests {
         assert!(error.context.contains("same ID"));
     }
 
-    #[derive(Debug)]
-    struct PhaseTestParameter {
-        meta: ParameterMeta,
-        events: Arc<Mutex<Vec<String>>>,
-    }
-
-    impl PhaseTestParameter {
-        fn new(name: &str, events: Arc<Mutex<Vec<String>>>) -> Self {
-            Self {
-                meta: ParameterMeta::new(name.into()),
-                events,
-            }
-        }
-
-        fn record(&self, phase: &str) {
-            self.events.lock().unwrap().push(format!("{}:{phase}", self.name()));
-        }
-    }
-
-    impl Parameter for PhaseTestParameter {
-        fn meta(&self) -> &ParameterMeta {
-            &self.meta
-        }
-    }
-
-    impl SimpleParameter<f64> for PhaseTestParameter {
-        fn compute(
-            &self,
-            _context: SimpleParameterContext<'_>,
-            _internal_state: &mut Option<Box<dyn ParameterState>>,
-        ) -> Result<f64, SimpleCalculationError> {
-            self.record("before");
-            Ok(11.0)
-        }
-
-        fn as_parameter(&self) -> &dyn Parameter {
-            self
-        }
-    }
-
-    impl GeneralParameter for PhaseTestParameter {
-        fn as_parameter(&self) -> &dyn Parameter {
-            self
-        }
-    }
-
-    impl GeneralBeforeParameter<f64> for PhaseTestParameter {
-        fn before(
-            &self,
-            _context: GeneralParameterContext<'_>,
-            _internal_state: &mut Option<Box<dyn ParameterState>>,
-        ) -> Result<f64, GeneralCalculationError> {
-            self.record("before");
-            Ok(11.0)
-        }
-    }
-
-    impl GeneralAfterParameter<f64> for PhaseTestParameter {
-        fn after(
-            &self,
-            _context: GeneralParameterContext<'_>,
-            _internal_state: &mut Option<Box<dyn ParameterState>>,
-        ) -> Result<f64, GeneralCalculationError> {
-            self.record("after");
-            Ok(22.0)
-        }
-    }
-
-    impl GeneralAfterParameterHook<f64> for PhaseTestParameter {
-        fn after(
-            &self,
-            _context: GeneralParameterContext<'_>,
-            _internal_state: &mut Option<Box<dyn ParameterState>>,
-        ) -> Result<(), GeneralCalculationError> {
-            self.record("hook");
-            Ok(())
-        }
-    }
-
-    fn simple_index(index: ParameterIndex<f64>) -> super::SimpleParameterIndex<f64> {
-        match index {
-            ParameterIndex::Simple(index) => index,
-            _ => panic!("expected a simple parameter index"),
-        }
-    }
-
-    fn general_index(index: ParameterIndex<f64>) -> super::GeneralParameterRegistration<f64> {
-        match index {
-            ParameterIndex::General(index) => index,
-            _ => panic!("expected a general parameter index"),
-        }
-    }
-
     #[test]
     fn simple_parameters_run() {
         let events = Arc::new(Mutex::new(Vec::new()));
         let mut collection = ParameterCollection::default();
 
-        let before_index = simple_index(
-            collection.push_simple_f64(Box::new(PhaseTestParameter::new("simple-before", events.clone()))),
+        let before_index = expect_simple_index(
+            collection.push_simple_f64(Box::new(TestParameter::<f64>::phase("simple-before", events.clone()))),
         );
 
         let domain = default_domain();
@@ -5252,24 +4563,21 @@ mod tests {
         let events = Arc::new(Mutex::new(Vec::new()));
         let mut collection = ParameterCollection::default();
 
-        let before_reg = general_index(collection.push_general_f64(GeneralParameterEntry::before(
-            PhaseTestParameter::new("general-before", events.clone()),
+        let before_reg = expect_general_registration(collection.push_general_f64(GeneralParameterEntry::before(
+            TestParameter::<f64>::phase("general-before", events.clone()),
         )));
 
-        let after_reg = general_index(collection.push_general_f64(GeneralParameterEntry::after(
-            PhaseTestParameter::new("general-after", events.clone()),
+        let after_reg = expect_general_registration(collection.push_general_f64(GeneralParameterEntry::after(
+            TestParameter::<f64>::phase("general-after", events.clone()),
         )));
 
-        let both_index = general_index(collection.push_general_f64(GeneralParameterEntry::both(
-            PhaseTestParameter::new("general-both", events.clone()),
+        let both_index = expect_general_registration(collection.push_general_f64(GeneralParameterEntry::both(
+            TestParameter::<f64>::phase("general-both", events.clone()),
         )));
 
-        let hook_reg = general_index(
-            collection.push_general_f64(GeneralParameterEntry::before_with_after_hook(PhaseTestParameter::new(
-                "general-hook",
-                events.clone(),
-            ))),
-        );
+        let hook_reg = expect_general_registration(collection.push_general_f64(
+            GeneralParameterEntry::before_with_after_hook(TestParameter::<f64>::phase("general-hook", events.clone())),
+        ));
 
         let domain = default_domain();
         let timesteps = domain.time().timesteps();

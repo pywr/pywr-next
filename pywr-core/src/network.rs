@@ -2230,12 +2230,10 @@ mod tests {
     use crate::agg_funcs::AggFuncF64;
     use crate::metric::{MetricF64ResolutionError, UnresolvedMetricF64};
     use crate::models::ModelBuilder;
+    use crate::parameters::test_utils::{TestParameterBuilder, test_parameter_state};
     use crate::parameters::{
-        ActivationFunction, AggregatedParameterBuilder, Array1ParameterBuilder, BuiltParameter,
-        ConstantParameterBuilder, ControlCurveInterpolatedParameterBuilder, GeneralAfterParameter,
-        GeneralBeforeParameter, GeneralCalculationError, GeneralParameter, GeneralParameterContext,
-        GeneralParameterEntry, MaxParameterBuilder, MaybeBuiltParameter, Parameter, ParameterBuildError,
-        ParameterBuilder, ParameterIndex, ParameterMeta, ParameterName, ParameterSetupError, ParameterState,
+        ActivationFunction, AggregatedParameterBuilder, Array1ParameterBuilder, ConstantParameterBuilder,
+        ControlCurveInterpolatedParameterBuilder, MaxParameterBuilder, ParameterIndex, ParameterName,
     };
     use crate::recorders::AssertionF64RecorderBuilder;
     use crate::scenario::{ScenarioDomainBuilder, ScenarioGroupBuilder};
@@ -2249,136 +2247,6 @@ mod tests {
     use std::default::Default;
     use std::ops::Deref;
     use std::sync::{Arc, Mutex};
-
-    #[derive(Debug, Clone, Copy)]
-    enum NetworkProbeMode {
-        Lifecycle,
-        ScenarioCounter,
-    }
-
-    #[derive(Debug)]
-    struct NetworkProbeState {
-        scenario_id: usize,
-        calls: usize,
-    }
-
-    #[derive(Debug)]
-    struct NetworkGeneralProbe {
-        meta: ParameterMeta,
-        events: Arc<Mutex<Vec<String>>>,
-        mode: NetworkProbeMode,
-    }
-
-    impl Parameter for NetworkGeneralProbe {
-        fn meta(&self) -> &ParameterMeta {
-            &self.meta
-        }
-
-        fn setup(
-            &self,
-            _timesteps: &[Timestep],
-            scenario_index: &ScenarioIndex,
-        ) -> Result<Option<Box<dyn ParameterState>>, ParameterSetupError> {
-            if matches!(self.mode, NetworkProbeMode::Lifecycle) {
-                self.events.lock().unwrap().push(format!("{}:setup", self.meta.name));
-            }
-            Ok(Some(Box::new(NetworkProbeState {
-                scenario_id: scenario_index.simulation_id(),
-                calls: 0,
-            })))
-        }
-    }
-
-    impl GeneralParameter for NetworkGeneralProbe {
-        fn as_parameter(&self) -> &dyn Parameter {
-            self
-        }
-    }
-
-    impl GeneralBeforeParameter<f64> for NetworkGeneralProbe {
-        fn before(
-            &self,
-            context: GeneralParameterContext<'_>,
-            internal_state: &mut Option<Box<dyn ParameterState>>,
-        ) -> Result<f64, GeneralCalculationError> {
-            let state = internal_state
-                .as_deref_mut()
-                .and_then(|state| state.as_any_mut().downcast_mut::<NetworkProbeState>())
-                .ok_or_else(|| GeneralCalculationError::Internal {
-                    message: "missing network probe state".to_string(),
-                })?;
-            if state.scenario_id != context.scenario_index.simulation_id() {
-                return Err(GeneralCalculationError::Internal {
-                    message: "network probe state belongs to another scenario".to_string(),
-                });
-            }
-            state.calls += 1;
-            match self.mode {
-                NetworkProbeMode::Lifecycle => {
-                    self.events.lock().unwrap().push(format!("{}:before", self.meta.name));
-                    Ok(30.0)
-                }
-                NetworkProbeMode::ScenarioCounter => Ok(state.scenario_id as f64 * 100.0 + state.calls as f64),
-            }
-        }
-    }
-
-    impl GeneralAfterParameter<f64> for NetworkGeneralProbe {
-        fn after(
-            &self,
-            _context: GeneralParameterContext<'_>,
-            internal_state: &mut Option<Box<dyn ParameterState>>,
-        ) -> Result<f64, GeneralCalculationError> {
-            let state = internal_state
-                .as_deref_mut()
-                .and_then(|state| state.as_any_mut().downcast_mut::<NetworkProbeState>())
-                .ok_or_else(|| GeneralCalculationError::Internal {
-                    message: "missing network probe state".to_string(),
-                })?;
-            state.calls += 1;
-            self.events.lock().unwrap().push(format!("{}:after", self.meta.name));
-            Ok(40.0)
-        }
-    }
-
-    #[derive(Debug)]
-    struct NetworkGeneralProbeBuilder {
-        meta: ParameterMeta,
-        events: Arc<Mutex<Vec<String>>>,
-        mode: NetworkProbeMode,
-    }
-
-    impl NetworkGeneralProbeBuilder {
-        fn new(name: &str, events: Arc<Mutex<Vec<String>>>, mode: NetworkProbeMode) -> Self {
-            Self {
-                meta: ParameterMeta::new(name.into()),
-                events,
-                mode,
-            }
-        }
-    }
-
-    impl ParameterBuilder<f64> for NetworkGeneralProbeBuilder {
-        fn name(&self) -> &ParameterName {
-            &self.meta.name
-        }
-
-        fn build(
-            self: Box<Self>,
-            _resolution_maps: &ResolutionMaps,
-        ) -> Result<MaybeBuiltParameter<f64>, ParameterBuildError> {
-            let probe = NetworkGeneralProbe {
-                meta: self.meta,
-                events: self.events,
-                mode: self.mode,
-            };
-            let entry = match self.mode {
-                NetworkProbeMode::Lifecycle => GeneralParameterEntry::both(probe),
-                NetworkProbeMode::ScenarioCounter => GeneralParameterEntry::before(probe),
-            };
-            Ok(BuiltParameter::General(entry).into())
-        }
-    }
 
     #[test]
     fn test_simple_network() {
@@ -2697,10 +2565,9 @@ mod tests {
                 "lifecycle-simple".into(),
                 Array::from_elem(domain.time().timesteps().len(), 20.0),
             )))
-            .f64(Box::new(NetworkGeneralProbeBuilder::new(
+            .f64(Box::new(TestParameterBuilder::network_lifecycle(
                 "lifecycle-general",
                 events.clone(),
-                NetworkProbeMode::Lifecycle,
             )));
         let (network, maps) = builder.build(&domain, &HashMap::new()).unwrap();
         let const_index = match maps.parameters_f64[&"lifecycle-const".into()] {
@@ -2802,11 +2669,9 @@ mod tests {
         let domain = domain_builder.build().unwrap();
 
         let mut builder = NetworkBuilder::default();
-        builder.parameters().f64(Box::new(NetworkGeneralProbeBuilder::new(
-            "scenario-counter",
-            Arc::new(Mutex::new(Vec::new())),
-            NetworkProbeMode::ScenarioCounter,
-        )));
+        builder
+            .parameters()
+            .f64(Box::new(TestParameterBuilder::scenario_counter("scenario-counter")));
         let (network, maps) = builder.build(&domain, &HashMap::new()).unwrap();
         let registration = match maps.parameters_f64[&"scenario-counter".into()] {
             ParameterIndex::General(registration) => registration,
@@ -2846,12 +2711,10 @@ mod tests {
             let scenario_id = scenario.simulation_id();
             let state = parameter_internal_states[scenario_id]
                 .get_general_f64_state(registration.parameter)
-                .unwrap()
-                .as_deref()
-                .and_then(|state| state.as_any().downcast_ref::<NetworkProbeState>())
-                .expect("expected network probe state");
-            assert_eq!(state.scenario_id, scenario_id);
-            assert_eq!(state.calls, 2);
+                .unwrap();
+            let state = test_parameter_state(state).expect("expected test parameter state");
+            assert_eq!(state.scenario_id(), scenario_id);
+            assert_eq!(state.calls(), 2);
         }
     }
 
