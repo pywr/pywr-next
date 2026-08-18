@@ -194,7 +194,7 @@ impl ParameterBuilder<u64> for AggregatedIndexParameterBuilder {
                         agg_func,
                     }))
                 } else {
-                    BuiltParameter::General(GeneralParameterEntry::both(AggregatedIndexParameter::<MetricU64> {
+                    BuiltParameter::General(GeneralParameterEntry::before(AggregatedIndexParameter::<MetricU64> {
                         meta,
                         metrics,
                         agg_func,

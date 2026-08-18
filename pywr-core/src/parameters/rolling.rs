@@ -363,9 +363,9 @@ impl ParameterBuilder<u64> for RollingParameterBuilder<UnresolvedMetricU64, u64,
         self: Box<Self>,
         resolution_maps: &ResolutionMaps,
     ) -> Result<MaybeBuiltParameter<u64>, ParameterBuildError> {
-        // Phase is hardcoded to "both" for this parameter, as it only implements the
-        // `GeneralBeforeParameter` and `GeneralAfterParameterHook` traits.
-        let phase = MetricConsumerPhase::Both;
+        // Phase is hardcoded to "after" for this parameter, as it only uses the metric
+        // values in the after phase to update internal state.
+        let phase = MetricConsumerPhase::After;
         let metric = resolve_metric_u64!(self, self.metric, resolution_maps, phase, "metric");
 
         // We can make a simple version if the metric can be simplified

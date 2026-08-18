@@ -207,14 +207,31 @@ impl ParameterBuilder<f64> for HydropowerTargetParameterBuilder {
         };
 
         // Actual flow and target are used to determine the phases calculated.
-        let actual_flow = resolve_optional_metric_f64!(self, &self.actual_flow, resolution_maps, phase, "actual_flow");
-        let target = resolve_optional_metric_f64!(self, &self.target, resolution_maps, phase, "target");
+        let actual_flow = resolve_optional_metric_f64!(
+            self,
+            &self.actual_flow,
+            resolution_maps,
+            MetricConsumerPhase::After,
+            "actual_flow"
+        );
+        let target = resolve_optional_metric_f64!(
+            self,
+            &self.target,
+            resolution_maps,
+            MetricConsumerPhase::Before,
+            "target"
+        );
         // Water elevation is used in both phases; so can be safely resolved if provided.
-        let water_elevation =
-            resolve_optional_metric_f64!(self, &self.water_elevation, resolution_maps, phase, "water_elevation");
+        let water_elevation = resolve_optional_metric_f64!(
+            self,
+            &self.water_elevation,
+            resolution_maps,
+            MetricConsumerPhase::Both,
+            "water_elevation"
+        );
         // min and max flow have a chance of being unused if they are supplied but "before" is not computed.
         let (min_flow, max_flow) = match phase {
-            MetricConsumerPhase::Before => {
+            MetricConsumerPhase::After => {
                 if self.min_flow.is_some() {
                     return Err(ParameterBuildError::UnusedMetric {
                         attr: "min_flow".to_string(),
@@ -233,9 +250,21 @@ impl ParameterBuilder<f64> for HydropowerTargetParameterBuilder {
 
                 (None, None)
             }
-            MetricConsumerPhase::After | MetricConsumerPhase::Both => {
-                let max_flow = resolve_optional_metric_f64!(self, &self.max_flow, resolution_maps, phase, "max_flow");
-                let min_flow = resolve_optional_metric_f64!(self, &self.min_flow, resolution_maps, phase, "min_flow");
+            MetricConsumerPhase::Before | MetricConsumerPhase::Both => {
+                let max_flow = resolve_optional_metric_f64!(
+                    self,
+                    &self.max_flow,
+                    resolution_maps,
+                    MetricConsumerPhase::Before,
+                    "max_flow"
+                );
+                let min_flow = resolve_optional_metric_f64!(
+                    self,
+                    &self.min_flow,
+                    resolution_maps,
+                    MetricConsumerPhase::Before,
+                    "min_flow"
+                );
 
                 (min_flow, max_flow)
             }
