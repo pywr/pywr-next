@@ -1,5 +1,5 @@
 use super::{
-    BuiltParameter, GeneralBeforeParameter, GeneralParameterContext, GeneralParameterEntry, MaybeBuiltParameter,
+    BuiltParameter, GeneralBeforeParameter, GeneralAfterParameter, GeneralParameterContext, GeneralParameterEntry, MaybeBuiltParameter,
     Parameter, ParameterBuildError, ParameterBuilder, ParameterName, SimpleParameter, SimpleParameterContext,
 };
 use crate::metric::{MetricConsumerPhase, MetricF64, SimpleMetricF64, UnresolvedMetricF64};
@@ -65,6 +65,30 @@ impl GeneralBeforeParameter<f64> for DifferenceParameter<MetricF64> {
     }
 }
 
+impl GeneralAfterParameter<f64> for DifferenceParameter<MetricF64> {
+    fn after(
+        &self,
+        ctx: GeneralParameterContext<'_>,
+        _interal_state: &mut Option<Box<dyn ParameterState>>,
+    ) -> Result<f64, GeneralCalculationError> {
+        let a = self.a.get_value(ctx.network, ctx.state)?;
+        let b = self.b.get_value(ctx.network, ctx.state)?;
+        let min = self
+            .min
+            .as_ref()
+            .map(|m| m.get_value(ctx.network, ctx.state))
+            .transpose()?;
+        let max = self
+            .max
+            .as_ref()
+            .map(|m| m.get_value(ctx.network, ctx.state))
+            .transpose()?;
+
+        Ok(difference(a, b, min, max))
+    }
+}
+
+
 impl SimpleParameter<f64> for DifferenceParameter<SimpleMetricF64> {
     fn compute(
         &self,
@@ -110,16 +134,40 @@ pub struct DifferenceParameterBuilder {
     b: UnresolvedMetricF64,
     min: Option<UnresolvedMetricF64>,
     max: Option<UnresolvedMetricF64>,
+    phase: MetricConsumerPhase
 }
 
 impl DifferenceParameterBuilder {
-    pub fn new(name: ParameterName, a: UnresolvedMetricF64, b: UnresolvedMetricF64) -> Self {
+    pub fn before(name: ParameterName, a: UnresolvedMetricF64, b: UnresolvedMetricF64) -> Self {
         Self {
             meta: ParameterMeta::new(name),
             a,
             b,
             min: None,
             max: None,
+            phase: MetricConsumerPhase::Before,
+        }
+    }
+
+    pub fn after(name: ParameterName, a: UnresolvedMetricF64, b: UnresolvedMetricF64) -> Self {
+        Self {
+            meta: ParameterMeta::new(name),
+            a,
+            b,
+            min: None,
+            max: None,
+            phase: MetricConsumerPhase::After,
+        }
+    }
+
+    pub fn both(name: ParameterName, a: UnresolvedMetricF64, b: UnresolvedMetricF64) -> Self {
+        Self {
+            meta: ParameterMeta::new(name),
+            a,
+            b,
+            min: None,
+            max: None,
+            phase: MetricConsumerPhase::Both,
         }
     }
 
@@ -142,47 +190,67 @@ impl ParameterBuilder<f64> for DifferenceParameterBuilder {
         self: Box<Self>,
         resolution_maps: &ResolutionMaps,
     ) -> Result<MaybeBuiltParameter<f64>, ParameterBuildError> {
-        // Phase is hardcoded to "before" for this parameter, as it only implements the `GeneralBeforeParameter` trait.
-        let phase = MetricConsumerPhase::Before;
-        let a = resolve_metric_f64!(self, self.a, resolution_maps, phase, "a");
-        let b = resolve_metric_f64!(self, self.b, resolution_maps, phase, "b");
+
+        let a = resolve_metric_f64!(self, self.a, resolution_maps, self.phase, "a");
+        let b = resolve_metric_f64!(self, self.b, resolution_maps, self.phase, "b");
         let min = match &self.min {
-            Some(min) => Some(resolve_metric_f64!(self, min, resolution_maps, phase, "min")),
+            Some(min) => Some(resolve_metric_f64!(self, min, resolution_maps, self.phase, "min")),
             None => None,
         };
         let max = match &self.max {
-            Some(max) => Some(resolve_metric_f64!(self, max, resolution_maps, phase, "max")),
+            Some(max) => Some(resolve_metric_f64!(self, max, resolution_maps, self.phase, "max")),
             None => None,
         };
 
-        {
-            // We can make a simple version if all metrics can be simplified
-            let a: Result<SimpleMetricF64, _> = a.clone().try_into();
-            let b: Result<SimpleMetricF64, _> = b.clone().try_into();
-            let min: Result<Option<SimpleMetricF64>, _> = min.as_ref().map(|m| m.clone().try_into()).transpose();
-            let max: Result<Option<SimpleMetricF64>, _> = max.as_ref().map(|m| m.clone().try_into()).transpose();
+        let built = match self.phase {
+            MetricConsumerPhase::Before => {
+                // We can make a simple version if all metrics can be simplified
+                let asimple: Result<SimpleMetricF64, _> = a.clone().try_into();
+                let bsimple: Result<SimpleMetricF64, _> = b.clone().try_into();
+                let minsimple: Result<Option<SimpleMetricF64>, _> = min.as_ref().map(|m| m.clone().try_into()).transpose();
+                let maxsimple: Result<Option<SimpleMetricF64>, _> = max.as_ref().map(|m| m.clone().try_into()).transpose();
 
-            if let (Ok(a), Ok(b), Ok(min), Ok(max)) = (a, b, min, max) {
-                let p = DifferenceParameter {
+                if let (Ok(asimple), Ok(bsimple), Ok(minsimple), Ok(maxsimple)) = (asimple, bsimple, minsimple, maxsimple) {
+                    let p = DifferenceParameter {
+                        meta: self.meta,
+                        a:asimple,
+                        b:bsimple,
+                        min:minsimple,
+                        max:maxsimple,
+                    };
+                    BuiltParameter::Simple(Box::new(p))
+                } else {
+                    BuiltParameter::General(GeneralParameterEntry::before(DifferenceParameter {
+                        meta: self.meta,
+                        a,
+                        b,
+                        min,
+                        max
+                    }))
+                }
+            }
+            MetricConsumerPhase::After => {
+                BuiltParameter::General(GeneralParameterEntry::after( DifferenceParameter {
                     meta: self.meta,
                     a,
                     b,
                     min,
-                    max,
-                };
-                return Ok(BuiltParameter::Simple(Box::new(p)).into());
+                    max
+                }))
             }
-        }
+            MetricConsumerPhase::Both => {
+                BuiltParameter::General(GeneralParameterEntry::both( DifferenceParameter {
+                    meta: self.meta,
+                    a,
+                    b,
+                    min,
+                    max
+                }))
+            }
 
-        let p = DifferenceParameter {
-            meta: self.meta,
-            a,
-            b,
-            min,
-            max,
         };
 
-        Ok(BuiltParameter::General(GeneralParameterEntry::before(p)).into())
+        Ok(built.into())
     }
 }
 
