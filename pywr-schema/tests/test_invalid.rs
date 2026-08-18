@@ -1,6 +1,6 @@
-use pywr_schema::ModelSchema;
+use pywr_schema::{ModelSchema, ValidationError};
 #[cfg(feature = "core")]
-use pywr_schema::ModelSchemaBuildError;
+use pywr_schema::{ModelSchemaBuildError, NetworkSchemaBuildError};
 use std::fs;
 use std::path::Path;
 #[cfg(feature = "core")]
@@ -38,6 +38,53 @@ macro_rules! invalid_tests {
 
 invalid_tests! {
     agg_storage_with_flow_node: "agg-storage-with-flow-node.json", NetworkBuildError,
+}
+
+/// Models that are rejected by [`ModelSchema::validate`].
+macro_rules! invalid_schema_tests {
+    ($($test_func:ident: $value:expr, $expected_err:ident,)*) => {
+    $(
+        #[test]
+        fn $test_func() {
+            let input: &str = $value;
+            let input_pth = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("invalid").join(input);
+
+            let schema = deserialise_test_model(&input_pth);
+
+            match schema.validate() {
+                Ok(()) => panic!("Expected validation to fail, but the schema was valid!"),
+                Err(e) => {
+                    if !matches!(e, ValidationError::$expected_err { .. }) {
+                        panic!("Expected error: ValidationError::{}, but got: {:?}", stringify!($expected_err), e);
+                    }
+                }
+            }
+
+            // The same error must also stop the model being built.
+            #[cfg(feature = "core")]
+            {
+                match build_test_model(&schema) {
+                    ModelSchemaBuildError::NetworkBuildError { source } => {
+                        if !matches!(*source, NetworkSchemaBuildError::Validation { .. }) {
+                            panic!("Expected a validation error when building, but got: {:?}", source);
+                        }
+                    }
+                    e => panic!("Expected ModelSchemaBuildError::NetworkBuildError, but got: {e:?}"),
+                }
+            }
+        }
+    )*
+    }
+}
+
+invalid_schema_tests! {
+    // Two virtual nodes sharing a name. The two are built into separate pywr-core collections,
+    // so the core builder never sees a clash.
+    duplicate_virtual_node_name: "duplicate-virtual-node-name.json", DuplicateNodeNames,
+    // A simple and a composite node sharing a name. The composite node expands only to
+    // sub-named core nodes, so again the core builder never sees a clash. Validation is the
+    // only thing standing between this model and a silently wrong network.
+    duplicate_node_name_with_composite: "duplicate-node-name-with-composite.json", DuplicateNodeNames,
 }
 
 fn deserialise_test_model(model_path: &Path) -> ModelSchema {

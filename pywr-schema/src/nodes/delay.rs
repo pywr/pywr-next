@@ -1,13 +1,13 @@
 use crate::error::{ComponentConversionError, ConversionError};
 use crate::nodes::NodeMeta;
 use crate::parameters::{ConstantValue, Parameter};
+use crate::v1::try_convert_node_meta;
 #[cfg(feature = "core")]
 use crate::{
     error::SchemaError,
     network::LoadArgs,
     nodes::{NodeAttribute, NodeComponent, NodeSlot},
 };
-use crate::v1::try_convert_node_meta;
 use crate::{mermaid, node_attribute_subset_enum, node_component_subset_enum};
 #[cfg(feature = "core")]
 use pywr_core::{metric::UnresolvedMetricF64, node::UnresolvedNode, parameters::ParameterName};

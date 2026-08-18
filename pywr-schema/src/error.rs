@@ -10,6 +10,38 @@ use pyo3::prelude::*;
 use std::path::PathBuf;
 use thiserror::Error;
 
+/// A node name that is used by more than one node in a network.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DuplicateNodeName {
+    /// The duplicated name.
+    pub name: String,
+    /// The number of nodes with this name.
+    pub nodes: usize,
+    /// The number of virtual nodes with this name.
+    pub virtual_nodes: usize,
+}
+
+impl std::fmt::Display for DuplicateNodeName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "`{}` ({} node(s), {} virtual node(s))",
+            self.name, self.nodes, self.virtual_nodes
+        )
+    }
+}
+
+/// A problem found by [`crate::NetworkSchema::validate`].
+#[derive(Error, Debug, Clone, PartialEq, Eq)]
+pub enum ValidationError {
+    /// One or more names are used by more than one node.
+    #[error(
+        "Node names must be unique. Each name may be used by only one entry of `nodes` or `virtual_nodes`. Duplicate name(s) found: {}",
+        .0.iter().map(|d| d.to_string()).collect::<Vec<_>>().join("; ")
+    )]
+    DuplicateNodeNames(Vec<DuplicateNodeName>),
+}
+
 #[derive(Error, Debug)]
 pub enum SchemaError {
     // Catch infallible errors here rather than unwrapping at call site. This should be safer
