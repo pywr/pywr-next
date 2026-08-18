@@ -1,6 +1,8 @@
 #[cfg(feature = "core")]
 use crate::data_tables::LoadedTableCollection;
-use crate::error::{ComponentConversionError, SchemaError};
+#[cfg(feature = "core")]
+use crate::error::SchemaError;
+use crate::error::{ComponentConversionError, ValidationError};
 use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::network::{LoadArgs, NetworkSchemaBuildError, NetworkSchemaReadError};
@@ -497,7 +499,7 @@ impl ModelSchema {
     }
 
     /// Validate the model's schema. See [`NetworkSchema::validate`].
-    pub fn validate(&self) -> Result<(), SchemaError> {
+    pub fn validate(&self) -> Result<(), ValidationError> {
         self.network.validate()
     }
 
@@ -808,7 +810,7 @@ impl MultiNetworkModelSchema {
     }
 
     /// Validate the schema of each network in the model. See [`NetworkSchema::validate`].
-    pub fn validate(&self) -> Result<(), SchemaError> {
+    pub fn validate(&self) -> Result<(), ValidationError> {
         for entry in &self.networks {
             if let NetworkSchemaRef::Inline(network) = &entry.network {
                 network.validate()?;

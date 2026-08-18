@@ -31,17 +31,23 @@ impl std::fmt::Display for DuplicateNodeName {
     }
 }
 
+/// A problem found by [`crate::NetworkSchema::validate`].
+#[derive(Error, Debug, Clone, PartialEq, Eq)]
+pub enum ValidationError {
+    /// One or more names are used by more than one node.
+    #[error(
+        "Node names must be unique. Each name may be used by only one entry of `nodes` or `virtual_nodes`. Duplicate name(s) found: {}",
+        .0.iter().map(|d| d.to_string()).collect::<Vec<_>>().join("; ")
+    )]
+    DuplicateNodeNames(Vec<DuplicateNodeName>),
+}
+
 #[derive(Error, Debug)]
 pub enum SchemaError {
     // Catch infallible errors here rather than unwrapping at call site. This should be safer
     // in the long run if an infallible error is changed to a fallible one.
     #[error("Infallible error: {0}")]
     Infallible(#[from] std::convert::Infallible),
-    #[error(
-        "Node names must be unique. Each name may be used by only one entry of `nodes` or `virtual_nodes`. Duplicate name(s) found: {}",
-        .0.iter().map(|d| d.to_string()).collect::<Vec<_>>().join("; ")
-    )]
-    DuplicateNodeNames(Vec<DuplicateNodeName>),
     #[error("IO error on path `{path}`: {error}")]
     IO { path: PathBuf, error: std::io::Error },
     // Use this error when a node is not found in the schema (i.e. while parsing the schema).

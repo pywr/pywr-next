@@ -1,4 +1,4 @@
-use pywr_schema::{ModelSchema, SchemaError};
+use pywr_schema::{ModelSchema, ValidationError};
 #[cfg(feature = "core")]
 use pywr_schema::{ModelSchemaBuildError, NetworkSchemaBuildError};
 use std::fs;
@@ -54,8 +54,8 @@ macro_rules! invalid_schema_tests {
             match schema.validate() {
                 Ok(()) => panic!("Expected validation to fail, but the schema was valid!"),
                 Err(e) => {
-                    if !matches!(e, SchemaError::$expected_err { .. }) {
-                        panic!("Expected error: SchemaError::{}, but got: {:?}", stringify!($expected_err), e);
+                    if !matches!(e, ValidationError::$expected_err { .. }) {
+                        panic!("Expected error: ValidationError::{}, but got: {:?}", stringify!($expected_err), e);
                     }
                 }
             }

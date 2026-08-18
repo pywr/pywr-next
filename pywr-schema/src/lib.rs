@@ -23,7 +23,7 @@ mod v1;
 mod visit;
 
 pub use digest::{Checksum, ChecksumError};
-pub use error::{ComponentConversionError, ConversionError, DuplicateNodeName, SchemaError};
+pub use error::{ComponentConversionError, ConversionError, DuplicateNodeName, SchemaError, ValidationError};
 pub use model::{ModelSchema, ModelSchemaReadError, MultiNetworkModelSchema};
 #[cfg(feature = "core")]
 pub use model::{ModelSchemaBuildError, MultiNetworkModelSchemaBuildError};

@@ -5,7 +5,9 @@ use crate::ConversionError;
 use crate::data_tables::DataTable;
 #[cfg(feature = "core")]
 use crate::data_tables::{LoadedTableCollection, TableCollectionLoadError};
-use crate::error::{ComponentConversionError, DuplicateNodeName, SchemaError};
+#[cfg(feature = "core")]
+use crate::error::SchemaError;
+use crate::error::{ComponentConversionError, DuplicateNodeName, ValidationError};
 use crate::metric::Metric;
 use crate::metric_sets::MetricSet;
 #[cfg(feature = "core")]
@@ -47,7 +49,7 @@ pub enum NetworkSchemaBuildError {
     #[error("Network schema validation failed: {source}")]
     Validation {
         #[source]
-        source: Box<SchemaError>,
+        source: ValidationError,
     },
     #[error("Circular node reference(s) found.")]
     CircularNodeReference,
@@ -456,24 +458,10 @@ impl NetworkSchema {
 
     /// Validate the network schema.
     ///
-    /// Validation is **not** exhaustive. It checks that the schema is internally unambiguous,
-    /// not that it can be built, which should be done using [`NetworkSchema::add_to_network`]
-    /// instead.
-    ///
-    /// # Unique node names
-    ///
-    /// Every entry of [`NetworkSchema::nodes`] and [`NetworkSchema::virtual_nodes`] must have a
-    /// unique name.
-    ///
-    /// Duplicates must be rejected here because name resolution in this crate is
-    /// first-match-wins (see [`NetworkSchema::get_node_by_name`]). A duplicate therefore does
-    /// not fail on its own: it silently binds every reference to whichever entry appears first
-    /// and leaves the other unreachable.
-    ///
-    /// `pywr-core` cannot catch this for us. Its duplicate check runs over the *expanded* core
-    /// nodes, keyed by name **and** sub-name. One schema node may expand to several core nodes,
-    /// and composite types such as [`crate::nodes::DelayNode`] emit only sub-named ones.
-    pub fn validate(&self) -> Result<(), SchemaError> {
+    /// This checks that the schema is unambiguous, not that it can be built; use
+    /// [`NetworkSchema::add_to_network`] for the latter. See [`ValidationError`] for the
+    /// problems that are detected.
+    pub fn validate(&self) -> Result<(), ValidationError> {
         // Count the occurrences of each name in each of the two lists.
         let mut counts: HashMap<&str, (usize, usize)> = HashMap::with_capacity(self.nodes.len());
 
@@ -500,7 +488,7 @@ impl NetworkSchema {
         } else {
             // Sort for a deterministic error message.
             duplicates.sort_by(|a, b| a.name.cmp(&b.name));
-            Err(SchemaError::DuplicateNodeNames(duplicates))
+            Err(ValidationError::DuplicateNodeNames(duplicates))
         }
     }
 
@@ -514,9 +502,8 @@ impl NetworkSchema {
         inter_network_transfers: &[MultiNetworkTransfer],
     ) -> Result<(LoadedTableCollection, LoadedTimeseriesCollection), NetworkSchemaBuildError> {
         // Reject an invalid schema before doing any work to build it.
-        self.validate().map_err(|source| NetworkSchemaBuildError::Validation {
-            source: Box::new(source),
-        })?;
+        self.validate()
+            .map_err(|source| NetworkSchemaBuildError::Validation { source })?;
 
         let tables = LoadedTableCollection::from_schema(self.tables.as_deref(), data_path)?;
         let timeseries = LoadedTimeseriesCollection::from_schema(self.timeseries.as_deref(), domain, data_path)?;
@@ -625,14 +612,13 @@ pub enum NetworkSchemaRef {
 #[cfg(test)]
 mod tests {
     use super::NetworkSchema;
-    use crate::error::{DuplicateNodeName, SchemaError};
+    use crate::error::{DuplicateNodeName, ValidationError};
     use std::str::FromStr;
 
     /// Return the duplicates reported by [`NetworkSchema::validate`], or panic if it succeeded.
     fn expect_duplicates(network: &NetworkSchema) -> Vec<DuplicateNodeName> {
         match network.validate() {
-            Err(SchemaError::DuplicateNodeNames(duplicates)) => duplicates,
-            Err(e) => panic!("Expected a duplicate name error, got: {e}"),
+            Err(ValidationError::DuplicateNodeNames(duplicates)) => duplicates,
             Ok(()) => panic!("Expected validation to fail, but it succeeded"),
         }
     }
