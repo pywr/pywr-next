@@ -104,10 +104,12 @@ where
 }
 
 impl VisitMetrics for u8 {}
+impl VisitMetrics for i8 {}
 impl VisitMetrics for u16 {}
+impl VisitMetrics for i16 {}
 impl VisitMetrics for u32 {}
 impl VisitMetrics for i32 {}
-impl VisitMetrics for chrono::Month {}
+
 impl VisitMetrics for f32 {}
 impl VisitMetrics for f64 {}
 impl<const N: usize> VisitMetrics for [f64; N] {}
@@ -209,10 +211,12 @@ where
 }
 
 impl VisitPaths for u8 {}
+impl VisitPaths for i8 {}
 impl VisitPaths for u16 {}
+impl VisitPaths for i16 {}
 impl VisitPaths for u32 {}
 impl VisitPaths for i32 {}
-impl VisitPaths for chrono::Month {}
+
 impl VisitPaths for f32 {}
 impl VisitPaths for f64 {}
 impl<const N: usize> VisitPaths for [f64; N] {}
@@ -232,3 +236,190 @@ impl VisitPaths for PathBuf {
 impl VisitPaths for NonZeroUsize {}
 
 impl VisitPaths for serde_json::Value {}
+
+#[cfg(test)]
+mod tests {
+    use crate::metric::Metric;
+    use crate::network::NetworkSchema;
+    use crate::nodes::VirtualNode;
+    use crate::visit::VisitMetrics;
+    use std::str::FromStr;
+
+    /// A network containing a metric in every location a metric can appear.
+    const NETWORK_WITH_METRICS: &str = r#"
+    {
+        "nodes": [
+            {
+                "meta": { "name": "supply1" },
+                "type": "Input",
+                "parameters": [
+                    {
+                        "meta": { "name": "supply1-local" },
+                        "type": "Negative",
+                        "parameter": { "type": "Parameter", "name": "node-local-parameter" }
+                    }
+                ],
+                "max_flow": { "type": "Parameter", "name": "node-max-flow" }
+            },
+            {
+                "meta": { "name": "reservoir1" },
+                "type": "Storage",
+                "max_volume": { "type": "Parameter", "name": "storage-node-max-volume" },
+                "initial_volume": { "type": "Proportional", "proportion": 0.0 }
+            },
+            {
+                "meta": { "name": "demand1" },
+                "type": "Output"
+            }
+        ],
+        "virtual_nodes": [
+            {
+                "meta": { "name": "licence" },
+                "type": "VirtualStorage",
+                "nodes": [{ "name": "supply1" }],
+                "parameters": [
+                    {
+                        "meta": { "name": "licence-local" },
+                        "type": "Negative",
+                        "parameter": { "type": "Parameter", "name": "virtual-storage-local-parameter" }
+                    }
+                ],
+                "max_volume": { "type": "Parameter", "name": "virtual-storage-max-volume" },
+                "min_volume": { "type": "Parameter", "name": "virtual-storage-min-volume" },
+                "cost": { "type": "Parameter", "name": "virtual-storage-cost" },
+                "initial_volume": { "type": "Proportional", "proportion": 0.0 }
+            },
+            {
+                "meta": { "name": "agg" },
+                "type": "Aggregated",
+                "nodes": [{ "name": "supply1" }, { "name": "demand1" }],
+                "max_flow": { "type": "Parameter", "name": "aggregated-max-flow" },
+                "min_flow": { "type": "Parameter", "name": "aggregated-min-flow" },
+                "relationship": {
+                    "type": "Coefficients",
+                    "factors": [
+                        { "type": "Parameter", "name": "aggregated-relationship-factor-1" },
+                        { "type": "Parameter", "name": "aggregated-relationship-factor-2" }
+                    ],
+                    "rhs": { "type": "Parameter", "name": "aggregated-relationship-rhs" }
+                }
+            },
+            {
+                "meta": { "name": "agg-storage" },
+                "type": "AggregatedStorage",
+                "storage_nodes": [{ "name": "reservoir1" }],
+                "parameters": [
+                    {
+                        "meta": { "name": "agg-storage-local" },
+                        "type": "Negative",
+                        "parameter": { "type": "Parameter", "name": "aggregated-storage-local-parameter" }
+                    }
+                ]
+            }
+        ],
+        "edges": [
+            { "from_node": "supply1", "to_node": "reservoir1" },
+            { "from_node": "reservoir1", "to_node": "demand1" }
+        ],
+        "parameters": [
+            {
+                "meta": { "name": "demand" },
+                "type": "Negative",
+                "parameter": { "type": "Parameter", "name": "global-parameter" }
+            }
+        ],
+        "metric_sets": [
+            {
+                "name": "ms1",
+                "metrics": [{ "type": "Parameter", "name": "metric-set-metric" }]
+            }
+        ]
+    }
+    "#;
+
+    /// Every location holding a metric in [`NETWORK_WITH_METRICS`], sorted.
+    const EXPECTED_LOCATIONS: [&str; 15] = [
+        "aggregated-max-flow",
+        "aggregated-min-flow",
+        "aggregated-relationship-factor-1",
+        "aggregated-relationship-factor-2",
+        "aggregated-relationship-rhs",
+        "aggregated-storage-local-parameter",
+        "global-parameter",
+        "metric-set-metric",
+        "node-local-parameter",
+        "node-max-flow",
+        "storage-node-max-volume",
+        "virtual-storage-cost",
+        "virtual-storage-local-parameter",
+        "virtual-storage-max-volume",
+        "virtual-storage-min-volume",
+    ];
+
+    /// The location a metric of [`NETWORK_WITH_METRICS`] appears in.
+    fn location(metric: &Metric) -> String {
+        match metric {
+            Metric::Parameter(reference) => reference.name.clone(),
+            _ => panic!("Unexpected metric in the fixture: {metric:?}"),
+        }
+    }
+
+    /// Collect the location of every visited metric, sorted, so that the assertions do not depend
+    /// on the order in which the schema happens to be walked.
+    fn collect(network: &NetworkSchema) -> Vec<String> {
+        let mut locations = Vec::new();
+        network.visit_metrics(&mut |metric| locations.push(location(metric)));
+        locations.sort();
+        locations
+    }
+
+    /// As [`collect`], but using the mutable visitor.
+    fn collect_mut(network: &mut NetworkSchema) -> Vec<String> {
+        let mut locations = Vec::new();
+        network.visit_metrics_mut(&mut |metric| locations.push(location(metric)));
+        locations.sort();
+        locations
+    }
+
+    /// Every location a metric can appear should be reachable from the visitor.
+    #[test]
+    fn test_visit_metrics_reaches_every_metric() {
+        let network = NetworkSchema::from_str(NETWORK_WITH_METRICS).unwrap();
+
+        assert_eq!(collect(&network), EXPECTED_LOCATIONS);
+    }
+
+    /// The mutable visitor should visit the same metrics.
+    #[test]
+    fn test_visit_metrics_mut_reaches_every_metric() {
+        let mut network = NetworkSchema::from_str(NETWORK_WITH_METRICS).unwrap();
+
+        assert_eq!(collect_mut(&mut network), EXPECTED_LOCATIONS);
+    }
+
+    /// The mutable visitor should hand out references into the schema, so that a metric it
+    /// rewrites is replaced in the network itself.
+    #[test]
+    fn test_visit_metrics_mut_rewrites_every_metric() {
+        const NEW_METRIC: Metric = Metric::Literal { value: 42.0 };
+
+        let mut network = NetworkSchema::from_str(NETWORK_WITH_METRICS).unwrap();
+
+        network.visit_metrics_mut(&mut |metric| *metric = NEW_METRIC);
+
+        // Any location left un-rewritten is one the mutable visitor failed to reach.
+        let mut count = 0;
+        network.visit_metrics(&mut |metric| {
+            assert_eq!(metric, &NEW_METRIC);
+            count += 1;
+        });
+        assert_eq!(count, EXPECTED_LOCATIONS.len());
+
+        // Check a rewritten metric directly, rather than through the visitor being tested.
+        let virtual_node = network.get_virtual_node_by_name("licence").unwrap();
+        match virtual_node {
+            VirtualNode::VirtualStorage(n) => assert_eq!(n.max_volume, Some(NEW_METRIC)),
+            _ => panic!("Expected a VirtualStorage node"),
+        }
+    }
+}

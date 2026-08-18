@@ -59,8 +59,6 @@ pub enum TimeseriesError {
     TimeseriesColumnOrScenarioRequired(String),
     #[error("The timeseries dataset '{0}' has no columns")]
     TimeseriesDataframeHasNoColumns(String),
-    #[error("Model time domain has no timesteps.")]
-    NoTimestepsDefined,
     #[cfg(feature = "pyo3")]
     #[error("Python error: {0}")]
     PythonError(#[from] PyErr),

@@ -4,7 +4,8 @@ use crate::parameters::{
     BuiltParameter, MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder, ParameterMeta,
     ParameterName, ParameterState, SimpleParameter, SimpleParameterContext,
 };
-use chrono::{Datelike, NaiveDateTime, Timelike};
+use jiff::ToSpan;
+use jiff::civil::DateTime;
 
 #[derive(Debug, Copy, Clone)]
 pub enum MonthlyInterpDay {
@@ -19,46 +20,38 @@ pub struct MonthlyProfileParameter {
     interp_day: Option<MonthlyInterpDay>,
 }
 
-fn days_in_year_month(datetime: &NaiveDateTime) -> u32 {
-    match datetime.month() {
-        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
-        4 | 6 | 9 | 11 => 30,
-        2 if datetime.date().leap_year() => 29,
-        2 => 28,
-        _ => panic!("Invalid month"),
-    }
-}
-
-/// Interpolate between first_value and last value based on the day of the month. The last
+/// Interpolate between `first_value` and `last_value` based on the day of the month. The last
 /// value is assumed to correspond to the first day of the next month.
-fn interpolate_first(date: &NaiveDateTime, first_value: f64, last_value: f64) -> f64 {
-    let days_in_month = days_in_year_month(date);
+fn interpolate_first(date: &DateTime, first_value: f64, last_value: f64) -> f64 {
+    let start_of_month = date.first_of_month().start_of_day();
+    let start_of_next_month = date
+        .checked_add(1.months())
+        .expect("Datetime overflowed!")
+        .first_of_month()
+        .start_of_day();
 
-    if date.day() <= 1 {
-        first_value
-    } else if date.day() > days_in_month {
-        last_value
-    } else {
-        first_value
-            + (last_value - first_value) * (date.day() as f64 + date.num_seconds_from_midnight() as f64 / 86400.0 - 1.0)
-                / days_in_month as f64
-    }
+    let duration_of_month = start_of_next_month.duration_since(start_of_month);
+    let since_start_of_month = date.duration_since(start_of_month);
+    let fraction_of_month = since_start_of_month.as_secs_f64() / duration_of_month.as_secs_f64();
+
+    first_value + (last_value - first_value) * fraction_of_month
 }
 
-/// Interpolate between first_value and last value based on the day of the month. The first
+/// Interpolate between `first_value` and `last_value` based on the day of the month. The first
 /// value is assumed to correspond to the last day of the previous month.
-fn interpolate_last(date: &NaiveDateTime, first_value: f64, last_value: f64) -> f64 {
-    let days_in_month = days_in_year_month(date);
+fn interpolate_last(date: &DateTime, first_value: f64, last_value: f64) -> f64 {
+    let end_of_last_month = date
+        .checked_add(-1.months())
+        .expect("Datetime overflowed!")
+        .last_of_month()
+        .start_of_day();
+    let end_of_month = date.last_of_month().start_of_day();
 
-    if date.day() < 1 {
-        first_value
-    } else if date.day() >= days_in_month {
-        last_value
-    } else {
-        first_value
-            + (last_value - first_value) * (date.day() as f64 + date.num_seconds_from_midnight() as f64 / 86400.0)
-                / days_in_month as f64
-    }
+    let duration_of_month = end_of_month.duration_since(end_of_last_month);
+    let since_end_of_last_month = date.duration_since(end_of_last_month);
+    let fraction_of_month = since_end_of_last_month.as_secs_f64() / duration_of_month.as_secs_f64();
+
+    first_value + (last_value - first_value) * fraction_of_month
 }
 
 impl Parameter for MonthlyProfileParameter {
@@ -75,8 +68,8 @@ impl SimpleParameter<f64> for MonthlyProfileParameter {
         let v = match &self.interp_day {
             Some(interp_day) => match interp_day {
                 MonthlyInterpDay::First => {
-                    let next_month0 = (ctx.timestep.date.month0() + 1) % 12;
-                    let first_value = self.values[ctx.timestep.date.month0() as usize];
+                    let next_month0 = ctx.timestep.date.month() % 12;
+                    let first_value = self.values[(ctx.timestep.date.month() - 1) as usize];
                     let last_value = self.values[next_month0 as usize];
 
                     interpolate_first(&ctx.timestep.date, first_value, last_value)

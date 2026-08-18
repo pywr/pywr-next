@@ -13,7 +13,7 @@ use pywr_core::recorders::UnresolvedOutputMetric;
 use pywr_schema_macros::skip_serializing_none;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use std::num::NonZeroUsize;
+use std::num::NonZeroI64;
 #[cfg(feature = "core")]
 use std::path::Path;
 use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumString, IntoStaticStr};
@@ -25,7 +25,7 @@ use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumString, IntoStaticS
 pub enum MetricAggFrequency {
     Monthly,
     Annual,
-    Days { days: NonZeroUsize },
+    Days { days: NonZeroI64 },
 }
 
 #[cfg(feature = "core")]

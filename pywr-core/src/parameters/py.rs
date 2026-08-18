@@ -831,7 +831,6 @@ mod tests {
     use crate::scenario::ScenarioIndexBuilder;
     use crate::state::StateBuilder;
     use crate::test_utils::default_time_domain_builder;
-    use chrono::Datelike;
     use float_cmp::assert_approx_eq;
     use pyo3::ffi::c_str;
     use std::assert_matches;

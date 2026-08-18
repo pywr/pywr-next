@@ -1,4 +1,5 @@
 use crate::timeseries::TimeseriesError;
+use chrono::{NaiveDate, NaiveDateTime, NaiveTime};
 use polars::{prelude::*, series::ops::NullBehavior};
 use pywr_core::timestep::TimeDomain;
 use std::cmp::Ordering;
@@ -45,7 +46,8 @@ pub fn align_and_resample(
         None => return Err(TimeseriesError::TimeseriesDurationNotFound(name.to_string())),
     };
 
-    let model_duration = domain.step_duration();
+    // Use the first timestep of the domain to determine if the timeseries needs to be upsampled or downsampled.
+    let model_duration = domain.first_timestep().duration;
     let model_duration_string = model_duration.duration_string();
 
     let df = match model_duration.milliseconds().cmp(&timeseries_duration) {
@@ -92,20 +94,34 @@ pub fn align_and_resample(
 }
 
 fn slice_start(df: DataFrame, time_col: &str, domain: &TimeDomain) -> Result<DataFrame, TimeseriesError> {
-    let start = domain
-        .first_timestep()
-        .ok_or_else(|| TimeseriesError::NoTimestepsDefined)?
-        .date;
-    let df = df.clone().lazy().filter(col(time_col).gt_eq(lit(start))).collect()?;
+    let start = domain.first_timestep().date;
+
+    let chrono_start = NaiveDateTime::new(
+        NaiveDate::from_ymd_opt(start.year() as i32, start.month() as u32, start.day() as u32).expect("Invalid date"),
+        NaiveTime::from_hms_opt(start.hour() as u32, start.minute() as u32, start.second() as u32)
+            .expect("Invalid time"),
+    );
+
+    let df = df
+        .clone()
+        .lazy()
+        .filter(col(time_col).gt_eq(lit(chrono_start)))
+        .collect()?;
     Ok(df)
 }
 
 fn slice_end(df: DataFrame, time_col: &str, domain: &TimeDomain) -> Result<DataFrame, TimeseriesError> {
-    let end = domain
-        .last_timestep()
-        .ok_or_else(|| TimeseriesError::NoTimestepsDefined)?
-        .date;
-    let df = df.clone().lazy().filter(col(time_col).lt_eq(lit(end))).collect()?;
+    let end = domain.last_timestep().date;
+
+    let chrono_end = NaiveDateTime::new(
+        NaiveDate::from_ymd_opt(end.year() as i32, end.month() as u32, end.day() as u32).expect("Invalid date"),
+        NaiveTime::from_hms_opt(end.hour() as u32, end.minute() as u32, end.second() as u32).expect("Invalid time"),
+    );
+    let df = df
+        .clone()
+        .lazy()
+        .filter(col(time_col).lt_eq(lit(chrono_end)))
+        .collect()?;
     Ok(df)
 }
 
@@ -113,6 +129,7 @@ fn slice_end(df: DataFrame, time_col: &str, domain: &TimeDomain) -> Result<DataF
 mod tests {
     use crate::timeseries::align_and_resample::align_and_resample;
     use chrono::{NaiveDate, NaiveDateTime};
+    use jiff::civil::DateTime;
     use polars::prelude::*;
     use pywr_core::models::ModelDomainBuilder;
     use pywr_core::{
@@ -123,8 +140,8 @@ mod tests {
 
     #[test]
     fn test_downsample_and_slice() {
-        let start = NaiveDateTime::parse_from_str("2021-01-07 00:00:00", "%Y-%m-%d %H:%M:%S").unwrap();
-        let end = NaiveDateTime::parse_from_str("2021-01-20 00:00:00", "%Y-%m-%d %H:%M:%S").unwrap();
+        let start: DateTime = "2021-01-07 00:00:00".parse().unwrap();
+        let end: DateTime = "2021-01-20 00:00:00".parse().unwrap();
         let timestep = TimestepDuration::Days(NonZeroU64::new(7).unwrap());
         let time_builder = TimeDomainBuilder::new(start, end, timestep);
         let scenario_builder = ScenarioDomainBuilder::default();
@@ -177,8 +194,8 @@ mod tests {
 
     #[test]
     fn test_upsample_and_slice() {
-        let start = NaiveDateTime::parse_from_str("2021-01-01 00:00:00", "%Y-%m-%d %H:%M:%S").unwrap();
-        let end = NaiveDateTime::parse_from_str("2021-01-14 00:00:00", "%Y-%m-%d %H:%M:%S").unwrap();
+        let start: DateTime = "2021-01-01 00:00:00".parse().unwrap();
+        let end: DateTime = "2021-01-14 00:00:00".parse().unwrap();
         let timestep = TimestepDuration::Days(NonZeroU64::new(1).unwrap());
         let time_builder = TimeDomainBuilder::new(start, end, timestep);
         let scenario_builder = ScenarioDomainBuilder::default();
@@ -217,8 +234,8 @@ mod tests {
     #[test]
     #[cfg(feature = "core")]
     fn test_no_resample_slice() {
-        let start = NaiveDateTime::parse_from_str("2021-01-01 00:00:00", "%Y-%m-%d %H:%M:%S").unwrap();
-        let end = NaiveDateTime::parse_from_str("2021-01-03 00:00:00", "%Y-%m-%d %H:%M:%S").unwrap();
+        let start: DateTime = "2021-01-01 00:00:00".parse().unwrap();
+        let end: DateTime = "2021-01-03 00:00:00".parse().unwrap();
         let timestep = TimestepDuration::Days(NonZeroU64::new(1).unwrap());
         let time_builder = TimeDomainBuilder::new(start, end, timestep);
         let scenario_builder = ScenarioDomainBuilder::default();
