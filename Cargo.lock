@@ -1262,9 +1262,9 @@ dependencies = [
 
 [[package]]
 name = "hdf5-metno"
-version = "0.13.0"
+version = "0.14.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "845de82d327e55f72a16db43ddc875ad3b1dc8f8b5860b9df135851c5f4e11a3"
+checksum = "f72d6ab4f6d6d79bd350c23f6fe17c99d86d8dd05c0e86f6291a366d47e1fece"
 dependencies = [
  "bitflags 2.9.1",
  "cfg-if",
@@ -1300,9 +1300,9 @@ dependencies = [
 
 [[package]]
 name = "hdf5-metno-sys"
-version = "0.12.0"
+version = "0.12.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5588d150d10fc4ef9407c5b9f01735e3de0d71367b730b940cbd5be08f3e1d82"
+checksum = "4960600abde637480bd1c21430baece56bcbafe5303cede311f67c27f50a9f4a"
 dependencies = [
  "hdf5-metno-src",
  "libc",
@@ -3787,7 +3787,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -4320,7 +4320,7 @@ dependencies = [
  "getrandom 0.4.2",
  "once_cell",
  "rustix",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -5262,7 +5262,7 @@ checksum = "7d6f32a0ff4a9f6f01231eb2059cc85479330739333e0e58cadf03b6af2cca10"
 dependencies = [
  "cfg-if",
  "serde",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
