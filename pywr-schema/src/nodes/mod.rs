@@ -55,14 +55,14 @@ mod water_treatment_works;
 // `virtual` is a reserved keyword in Rust, so we use `virtual_nodes` as the module name
 mod virtual_nodes;
 
-use crate::error::{ComponentConversionError, ConversionError};
+use crate::error::{ComponentConversionError, ConversionError, SchemaError};
 use crate::metric::Metric;
+#[cfg(feature = "core")]
+use crate::network::LoadArgs;
 use crate::network::NetworkSchema;
 use crate::parameters::Parameter;
 use crate::v1::{ConversionData, TryFromV1, TryIntoV2};
 use crate::visit::{VisitMetrics, VisitPaths};
-#[cfg(feature = "core")]
-use crate::{error::SchemaError, network::LoadArgs};
 pub use abstraction::AbstractionNode;
 pub use attributes::NodeAttribute;
 pub use components::NodeComponent;
