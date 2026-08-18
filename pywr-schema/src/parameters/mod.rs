@@ -25,6 +25,7 @@ mod python;
 mod rolling;
 mod tables;
 mod thresholds;
+mod difference;
 
 #[cfg(feature = "core")]
 pub use super::data_tables::LoadedTableCollection;
