@@ -110,6 +110,7 @@ node_component_subset_enum! {
     }
 }
 
+#[derive(PartialEq)]
 pub enum ReservoirOutputNodeSlot {
     Storage,
     Compensation,
@@ -240,6 +241,7 @@ pub struct ReservoirNode {
 
 impl ReservoirNode {
     pub const DEFAULT_COMPONENT: ReservoirNodeComponent = ReservoirNodeComponent::Compensation;
+    const DEFAULT_OUTPUT_SLOT: ReservoirOutputNodeSlot = ReservoirOutputNodeSlot::Storage;
 
     /// Get the node's metadata.
     pub(crate) fn meta(&self) -> &NodeMeta {
@@ -251,13 +253,33 @@ impl ReservoirNode {
         &mut self.storage.meta
     }
 
-    pub fn iter_output_slots(&self) -> impl Iterator<Item = NodeSlot> + '_ {
-        [
-            ReservoirOutputNodeSlot::Storage.into(),
-            ReservoirOutputNodeSlot::Compensation.into(),
-            ReservoirOutputNodeSlot::Spill.into(),
-        ]
-        .into_iter()
+    pub fn iter_output_slots(&self) -> impl Iterator<Item = ReservoirOutputNodeSlot> + '_ {
+        let mut slots = vec![ReservoirOutputNodeSlot::Storage, ReservoirOutputNodeSlot::Compensation];
+
+        // There is only a Spill slot if the spill node is a LinkNode.
+        if matches!(self.spill, Some(SpillNodeType::LinkNode)) {
+            slots.push(ReservoirOutputNodeSlot::Spill);
+        }
+
+        slots.into_iter()
+    }
+
+    /// Validate the output slot and return the corresponding `ReservoirOutputNodeSlot`.
+    pub fn output_slot(&self, slot: Option<&NodeSlot>) -> Result<ReservoirOutputNodeSlot, SchemaError> {
+        let slot = match slot {
+            Some(s) => {
+                let slot = s.clone().try_into()?;
+                // Check if the slot is valid for this node
+                if !self.iter_output_slots().any(|s| s == slot) {
+                    return Err(SchemaError::OutputNodeSlotNotSupported { slot: s.clone() });
+                }
+
+                slot
+            }
+            None => Self::DEFAULT_OUTPUT_SLOT,
+        };
+
+        Ok(slot)
     }
 
     pub fn default_attribute(&self) -> ReservoirNodeAttribute {
@@ -271,7 +293,6 @@ impl ReservoirNode {
 
 #[cfg(feature = "core")]
 impl ReservoirNode {
-    const DEFAULT_OUTPUT_SLOT: ReservoirOutputNodeSlot = ReservoirOutputNodeSlot::Storage;
     /// The sub-name of the compensation link node.
     fn compensation_node_sub_name(&self) -> UnresolvedNode {
         UnresolvedNode::new(&self.storage.meta.name, Some("compensation"))
@@ -292,10 +313,7 @@ impl ReservoirNode {
 
     pub fn output_connectors(&self, slot: Option<&NodeSlot>) -> Result<Vec<UnresolvedNode>, SchemaError> {
         // Use the default slot if none is specified
-        let slot = match slot {
-            Some(c) => c.clone().try_into()?,
-            None => Self::DEFAULT_OUTPUT_SLOT,
-        };
+        let slot = self.output_slot(slot)?;
 
         let indices = match slot {
             ReservoirOutputNodeSlot::Storage => {
@@ -309,6 +327,8 @@ impl ReservoirNode {
                     vec![self.spill_node_sub_name()]
                 }
                 _ => {
+                    // This should not happen because we already validated the slot in `output_slot`,
+                    // but we include this for completeness.
                     return Err(SchemaError::OutputNodeSlotNotSupported { slot: slot.into() });
                 }
             },
