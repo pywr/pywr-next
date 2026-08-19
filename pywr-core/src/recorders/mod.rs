@@ -8,8 +8,8 @@ mod metric_set;
 mod py;
 
 use crate::metric::{
-    MetricF64, MetricF64Error, MetricF64ResolutionError, MetricU64, MetricU64Error, MetricU64ResolutionError,
-    UnresolvedMetricF64, UnresolvedMetricU64,
+    MetricConsumerPhase, MetricF64, MetricF64Error, MetricF64ResolutionError, MetricU64, MetricU64Error,
+    MetricU64ResolutionError, UnresolvedMetricF64, UnresolvedMetricU64,
 };
 use crate::models::ModelDomain;
 use crate::network::{MetricSetIndex, Network, ResolutionMaps};
@@ -303,13 +303,13 @@ impl RecorderBuilder for Array2RecorderBuilder {
         self.meta.name.as_str()
     }
     fn build(self: Box<Self>, resolution_maps: &ResolutionMaps) -> Result<Box<dyn Recorder>, RecorderBuilderError> {
-        let metric =
-            self.metric
-                .resolve(resolution_maps)
-                .map_err(|source| RecorderBuilderError::ResolveMetricF64Error {
-                    attr: "metric".to_string(),
-                    source,
-                })?;
+        let metric = self
+            .metric
+            .resolve(resolution_maps, MetricConsumerPhase::After)
+            .map_err(|source| RecorderBuilderError::ResolveMetricF64Error {
+                attr: "metric".to_string(),
+                source,
+            })?;
 
         let r = Array2Recorder {
             meta: self.meta,
@@ -420,13 +420,13 @@ impl RecorderBuilder for AssertionF64RecorderBuilder {
         &self.meta.name
     }
     fn build(self: Box<Self>, resolution_maps: &ResolutionMaps) -> Result<Box<dyn Recorder>, RecorderBuilderError> {
-        let metric =
-            self.metric
-                .resolve(resolution_maps)
-                .map_err(|source| RecorderBuilderError::ResolveMetricF64Error {
-                    attr: "metric".to_string(),
-                    source,
-                })?;
+        let metric = self
+            .metric
+            .resolve(resolution_maps, MetricConsumerPhase::After)
+            .map_err(|source| RecorderBuilderError::ResolveMetricF64Error {
+                attr: "metric".to_string(),
+                source,
+            })?;
 
         let r = AssertionF64Recorder {
             meta: self.meta,
@@ -518,13 +518,13 @@ impl RecorderBuilder for AssertionU64RecorderBuilder {
         &self.meta.name
     }
     fn build(self: Box<Self>, resolution_maps: &ResolutionMaps) -> Result<Box<dyn Recorder>, RecorderBuilderError> {
-        let metric =
-            self.metric
-                .resolve(resolution_maps)
-                .map_err(|source| RecorderBuilderError::ResolveMetricU64Error {
-                    attr: "metric".to_string(),
-                    source,
-                })?;
+        let metric = self
+            .metric
+            .resolve(resolution_maps, MetricConsumerPhase::After)
+            .map_err(|source| RecorderBuilderError::ResolveMetricU64Error {
+                attr: "metric".to_string(),
+                source,
+            })?;
 
         let r = AssertionU64Recorder {
             meta: self.meta,
@@ -649,13 +649,13 @@ where
         &self.meta.name
     }
     fn build(self: Box<Self>, resolution_maps: &ResolutionMaps) -> Result<Box<dyn Recorder>, RecorderBuilderError> {
-        let metric =
-            self.metric
-                .resolve(resolution_maps)
-                .map_err(|source| RecorderBuilderError::ResolveMetricF64Error {
-                    attr: "metric".to_string(),
-                    source,
-                })?;
+        let metric = self
+            .metric
+            .resolve(resolution_maps, MetricConsumerPhase::After)
+            .map_err(|source| RecorderBuilderError::ResolveMetricF64Error {
+                attr: "metric".to_string(),
+                source,
+            })?;
 
         let r = AssertionFnRecorder {
             meta: self.meta,

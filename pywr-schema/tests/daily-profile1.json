@@ -112,6 +112,7 @@
         "agg_func": {
           "type": "Sum"
         },
+        "phase": "Before",
         "metrics": [
           {
             "type": "Parameter",

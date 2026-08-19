@@ -3,11 +3,11 @@ use crate::agg_funcs::AggFunc;
 use crate::error::SchemaError;
 use crate::metric::Metric;
 #[cfg(feature = "core")]
-use crate::metric::{EdgeReference, VirtualNodeAttrReference};
+use crate::metric::{EdgeReference, ParameterReferenceBuilder, ParameterReturnValue, VirtualNodeAttrReference};
 #[cfg(feature = "core")]
 use crate::network::LoadArgs;
 #[cfg(feature = "core")]
-use crate::parameters::{Parameter, PythonReturnType};
+use crate::parameters::{Parameter, ParameterPhase, PythonReturnType};
 #[cfg(feature = "core")]
 use pywr_core::recorders::UnresolvedOutputMetric;
 use pywr_schema_macros::skip_serializing_none;
@@ -92,7 +92,7 @@ pub struct MetricSetFilters {
 #[cfg(feature = "core")]
 impl MetricSetFilters {
     fn create_metrics(&self, args: &LoadArgs) -> Vec<Metric> {
-        use crate::metric::{NodeAttrReference, ParameterReference};
+        use crate::metric::NodeAttrReference;
 
         let mut metrics = vec![];
 
@@ -124,7 +124,25 @@ impl MetricSetFilters {
                         }
                     }
 
-                    metrics.push(Metric::Parameter(ParameterReference::new(parameter.name(), None)));
+                    // Make sure we create a reference to the correct phase(s) that the parameter
+                    // will produce a value in.
+                    let (add_before, add_after) = match parameter.phase() {
+                        ParameterPhase::Before => (true, false),
+                        ParameterPhase::After => (false, true),
+                        ParameterPhase::Both => (true, true),
+                    };
+
+                    if add_before {
+                        let mut p_ref_builder = ParameterReferenceBuilder::new(parameter.name());
+                        p_ref_builder.return_value(ParameterReturnValue::Before);
+                        metrics.push(Metric::Parameter(p_ref_builder.build()));
+                    }
+
+                    if add_after {
+                        let mut p_ref_builder = ParameterReferenceBuilder::new(parameter.name());
+                        p_ref_builder.return_value(ParameterReturnValue::After);
+                        metrics.push(Metric::Parameter(p_ref_builder.build()));
+                    }
                 }
             }
         }

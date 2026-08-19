@@ -86,7 +86,7 @@ pub fn simple_network(builder: &mut NetworkBuilder, inflow_scenario: &str, num_i
     let demand_factor = ConstantParameterBuilder::new("demand-factor".into(), 1.2);
     builder.parameters().f64(Box::new(demand_factor));
 
-    let mut total_demand = AggregatedParameterBuilder::new("total-demand".into(), AggFuncF64::Product);
+    let mut total_demand = AggregatedParameterBuilder::before("total-demand".into(), AggFuncF64::Product);
     total_demand.metric(base_demand.into());
     total_demand.metric(UnresolvedMetricF64::new_parameter_before("demand-factor"));
 

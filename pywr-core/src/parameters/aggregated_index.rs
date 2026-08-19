@@ -7,8 +7,8 @@ use super::{
 };
 use crate::agg_funcs::AggFuncU64;
 use crate::metric::{
-    ConstantMetricU64, MetricU64, SimpleMetricU64, UnresolvedMetricU64, try_into_constant_metrics_u64,
-    try_into_simple_metrics_u64,
+    ConstantMetricU64, MetricConsumerPhase, MetricU64, SimpleMetricU64, UnresolvedMetricU64,
+    try_into_constant_metrics_u64, try_into_simple_metrics_u64,
 };
 use crate::network::ResolutionMaps;
 use crate::parameters::errors::{ConstCalculationError, GeneralCalculationError, SimpleCalculationError};
@@ -126,14 +126,36 @@ pub struct AggregatedIndexParameterBuilder {
     meta: ParameterMeta,
     metrics: Vec<UnresolvedMetricU64>,
     agg_func: AggFuncU64,
+    phase: MetricConsumerPhase,
 }
 
 impl AggregatedIndexParameterBuilder {
-    pub fn new(name: ParameterName, agg_func: AggFuncU64) -> Self {
+    /// Create a new builder for [`AggregatedIndexParameter`] that is evaluated in the "before" phase.
+    pub fn before(name: ParameterName, agg_func: AggFuncU64) -> Self {
         Self {
             meta: ParameterMeta::new(name),
             metrics: Vec::new(),
             agg_func,
+            phase: MetricConsumerPhase::Before,
+        }
+    }
+    /// Create a new builder for [`AggregatedIndexParameter`] that is evaluated in the "after" phase.
+    pub fn after(name: ParameterName, agg_func: AggFuncU64) -> Self {
+        Self {
+            meta: ParameterMeta::new(name),
+            metrics: Vec::new(),
+            agg_func,
+            phase: MetricConsumerPhase::After,
+        }
+    }
+
+    /// Create a new builder for [`AggregatedIndexParameter`] that is evaluated in both "before" and "after" phases.
+    pub fn both(name: ParameterName, agg_func: AggFuncU64) -> Self {
+        Self {
+            meta: ParameterMeta::new(name),
+            metrics: Vec::new(),
+            agg_func,
+            phase: MetricConsumerPhase::Both,
         }
     }
 
@@ -152,41 +174,49 @@ impl ParameterBuilder<u64> for AggregatedIndexParameterBuilder {
         self: Box<Self>,
         resolution_maps: &ResolutionMaps,
     ) -> Result<MaybeBuiltParameter<u64>, ParameterBuildError> {
-        let metrics = resolve_metric_u64_vec!(self, &self.metrics, resolution_maps, "metrics");
+        let metrics = resolve_metric_u64_vec!(self, &self.metrics, resolution_maps, self.phase, "metrics");
 
         let meta = self.meta;
         let agg_func = self.agg_func;
 
-        // Try the narrowest dependency class first.
-        if let Some(metrics) = try_into_constant_metrics_u64(&metrics) {
-            return Ok(
-                BuiltParameter::Const(Box::new(AggregatedIndexParameter::<ConstantMetricU64> {
+        let built = match self.phase {
+            MetricConsumerPhase::Before => {
+                if let Some(metrics) = try_into_constant_metrics_u64(&metrics) {
+                    BuiltParameter::Const(Box::new(AggregatedIndexParameter::<ConstantMetricU64> {
+                        meta,
+                        metrics,
+                        agg_func,
+                    }))
+                } else if let Some(metrics) = try_into_simple_metrics_u64(&metrics) {
+                    BuiltParameter::Simple(Box::new(AggregatedIndexParameter::<SimpleMetricU64> {
+                        meta,
+                        metrics,
+                        agg_func,
+                    }))
+                } else {
+                    BuiltParameter::General(GeneralParameterEntry::before(AggregatedIndexParameter::<MetricU64> {
+                        meta,
+                        metrics,
+                        agg_func,
+                    }))
+                }
+            }
+            MetricConsumerPhase::After => {
+                BuiltParameter::General(GeneralParameterEntry::after(AggregatedIndexParameter::<MetricU64> {
                     meta,
                     metrics,
                     agg_func,
                 }))
-                .into(),
-            );
-        }
-
-        if let Some(metrics) = try_into_simple_metrics_u64(&metrics) {
-            return Ok(
-                BuiltParameter::Simple(Box::new(AggregatedIndexParameter::<SimpleMetricU64> {
+            }
+            MetricConsumerPhase::Both => {
+                BuiltParameter::General(GeneralParameterEntry::both(AggregatedIndexParameter::<MetricU64> {
                     meta,
                     metrics,
                     agg_func,
                 }))
-                .into(),
-            );
-        }
+            }
+        };
 
-        Ok(
-            BuiltParameter::General(GeneralParameterEntry::both(AggregatedIndexParameter::<MetricU64> {
-                meta,
-                metrics,
-                agg_func,
-            }))
-            .into(),
-        )
+        Ok(built.into())
     }
 }

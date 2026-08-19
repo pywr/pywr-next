@@ -1,4 +1,4 @@
-use crate::metric::{MetricF64, MetricU64, UnresolvedMetricF64, UnresolvedMetricU64};
+use crate::metric::{MetricConsumerPhase, MetricF64, MetricU64, UnresolvedMetricF64, UnresolvedMetricU64};
 use crate::network::ResolutionMaps;
 use crate::parameters::errors::GeneralCalculationError;
 use crate::parameters::{
@@ -82,8 +82,11 @@ impl ParameterBuilder<f64> for IndexedArrayParameterBuilder {
         self: Box<Self>,
         resolution_maps: &ResolutionMaps,
     ) -> Result<MaybeBuiltParameter<f64>, ParameterBuildError> {
-        let index_parameter = resolve_metric_u64!(self, self.index_parameter, resolution_maps, "index_parameter");
-        let metrics = resolve_metric_f64_vec!(self, &self.metrics, resolution_maps, "metrics");
+        // Phase is hardcoded to "before" for this parameter, as it only implements the `GeneralBeforeParameter` trait.
+        let phase = MetricConsumerPhase::Before;
+        let index_parameter =
+            resolve_metric_u64!(self, self.index_parameter, resolution_maps, phase, "index_parameter");
+        let metrics = resolve_metric_f64_vec!(self, &self.metrics, resolution_maps, phase, "metrics");
 
         let p = IndexedArrayParameter {
             meta: self.meta,

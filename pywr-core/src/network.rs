@@ -1036,8 +1036,8 @@ impl Network {
     /// Undertake "after" for network components after solve.
     ///
     /// This method iterates through the network components (nodes, parameters, etc) to perform
-    /// pre-solve calculations. For nodes this can be adjustments to storage volume (e.g. to
-    /// set initial volume). For parameters this involves computing the current value for the
+    /// post-solve calculations. For nodes this can be adjustments to storage volume (e.g. to
+    /// set initial volume). For parameters this involves computing the "after" value for
     /// the timestep. The `state` object is progressively updated with these values during this
     /// method.
     fn after(
@@ -2227,18 +2227,26 @@ impl NetworkBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::agg_funcs::AggFuncF64;
     use crate::metric::{MetricF64ResolutionError, UnresolvedMetricF64};
     use crate::models::ModelBuilder;
-    use crate::parameters::{ActivationFunction, ControlCurveInterpolatedParameterBuilder};
+    use crate::parameters::test_utils::{TestParameterBuilder, test_parameter_state};
+    use crate::parameters::{
+        ActivationFunction, AggregatedParameterBuilder, Array1ParameterBuilder, ConstantParameterBuilder,
+        ControlCurveInterpolatedParameterBuilder, MaxParameterBuilder, ParameterIndex, ParameterName,
+    };
     use crate::recorders::AssertionF64RecorderBuilder;
+    use crate::scenario::{ScenarioDomainBuilder, ScenarioGroupBuilder};
     use crate::solvers::{ClpSolver, ClpSolverSettings};
     use crate::test_utils::{
-        default_domain, run_all_solvers, simple_model, simple_storage_model, simple_storage_network,
+        default_domain, default_domain_builder, run_all_solvers, simple_model, simple_storage_model,
+        simple_storage_network,
     };
     use float_cmp::assert_approx_eq;
     use ndarray::{Array, Array2};
     use std::default::Default;
     use std::ops::Deref;
+    use std::sync::{Arc, Mutex};
 
     #[test]
     fn test_simple_network() {
@@ -2484,6 +2492,271 @@ mod tests {
         }
     }
 
+    fn reverse_parameter_chain_network() -> NetworkBuilder {
+        let mut builder = NetworkBuilder::default();
+        let mut input = NodeBuilder::input("input");
+        input
+            .min_flow(UnresolvedMetricF64::new_parameter_before("a"))
+            .max_flow(UnresolvedMetricF64::new_parameter_before("a"));
+        builder.node(input).node(NodeBuilder::output("output"));
+        builder.connect("input", "output");
+
+        builder.parameters().f64(Box::new(MaxParameterBuilder::new(
+            "a".into(),
+            UnresolvedMetricF64::new_parameter_before("b"),
+            0.0,
+        )));
+        let mut b = AggregatedParameterBuilder::before("b".into(), AggFuncF64::Sum);
+        b.metric(UnresolvedMetricF64::new_parameter_before("c"))
+            .metric(1.0.into());
+        builder.parameters().f64(Box::new(b));
+        builder
+            .parameters()
+            .f64(Box::new(ConstantParameterBuilder::new("c".into(), 5.0)));
+        builder
+    }
+
+    #[test]
+    fn network_build_resolves_reverse_order_parameter_chain() {
+        let domain = default_domain();
+        let (_, maps) = reverse_parameter_chain_network()
+            .build(&domain, &HashMap::new())
+            .unwrap();
+        assert!(matches!(
+            maps.parameters_f64.get(&"a".into()),
+            Some(ParameterIndex::General(_))
+        ));
+        assert!(matches!(
+            maps.parameters_f64.get(&"b".into()),
+            Some(ParameterIndex::Const(_))
+        ));
+        assert!(matches!(
+            maps.parameters_f64.get(&"c".into()),
+            Some(ParameterIndex::Const(_))
+        ));
+
+        let model = ModelBuilder::new(domain, reverse_parameter_chain_network())
+            .build()
+            .unwrap();
+        let mut state = model.setup::<ClpSolver>(&ClpSolverSettings::default()).unwrap();
+        let mut timings = NetworkTimings::new_without_component_timings();
+        model.step(&mut state, None, &mut timings).unwrap();
+
+        let scenario = &model.domain().scenarios().indices()[0];
+        let output = model.network().get_node_by_name("output", None).unwrap();
+        let flow = state
+            .network_state()
+            .state(scenario)
+            .get_network_state()
+            .get_node_in_flow(&output.index())
+            .unwrap();
+        assert_approx_eq!(f64, flow, 6.0);
+    }
+
+    #[test]
+    fn network_lifecycle_runs_parameter_classes_in_expected_phases() {
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let domain = default_domain();
+        let mut builder = NetworkBuilder::default();
+        builder
+            .parameters()
+            .f64(Box::new(ConstantParameterBuilder::new("lifecycle-const".into(), 10.0)))
+            .f64(Box::new(Array1ParameterBuilder::new(
+                "lifecycle-simple".into(),
+                Array::from_elem(domain.time().timesteps().len(), 20.0),
+            )))
+            .f64(Box::new(TestParameterBuilder::network_lifecycle(
+                "lifecycle-general",
+                events.clone(),
+            )));
+        let (network, maps) = builder.build(&domain, &HashMap::new()).unwrap();
+        let const_index = match maps.parameters_f64[&"lifecycle-const".into()] {
+            ParameterIndex::Const(index) => index,
+            _ => panic!("expected a constant parameter"),
+        };
+        let simple_index = match maps.parameters_f64[&"lifecycle-simple".into()] {
+            ParameterIndex::Simple(index) => index,
+            _ => panic!("expected a simple parameter"),
+        };
+        let general = match maps.parameters_f64[&"lifecycle-general".into()] {
+            ParameterIndex::General(registration) => registration,
+            _ => panic!("expected a general parameter"),
+        };
+
+        let scenarios = domain.scenarios().indices();
+        let scenario = &scenarios[0];
+        let timesteps = domain.time().timesteps();
+        let mut network_state = network.setup_network(timesteps, scenarios, 0).unwrap();
+        assert_eq!(events.lock().unwrap().as_slice(), ["lifecycle-general:setup"]);
+        assert_eq!(
+            network_state
+                .state(scenario)
+                .get_const_parameter_values()
+                .get_f64(const_index)
+                .unwrap(),
+            10.0
+        );
+        assert_eq!(
+            network_state
+                .state(scenario)
+                .get_simple_parameter_values()
+                .get_f64(simple_index)
+                .unwrap(),
+            0.0
+        );
+
+        let NetworkState {
+            states,
+            parameter_internal_states,
+            metric_set_internal_states,
+        } = &mut network_state;
+        network
+            .compute_components(
+                &timesteps[0],
+                scenario,
+                &mut states[0],
+                &mut parameter_internal_states[0],
+                None,
+            )
+            .unwrap();
+        assert_eq!(
+            events.lock().unwrap().as_slice(),
+            ["lifecycle-general:setup", "lifecycle-general:before"]
+        );
+        assert_eq!(
+            states[0].get_simple_parameter_values().get_f64(simple_index).unwrap(),
+            20.0
+        );
+        assert_eq!(
+            states[0]
+                .get_general_parameter_f64_before(general.before.unwrap())
+                .unwrap(),
+            30.0
+        );
+
+        network
+            .after(
+                &timesteps[0],
+                scenario,
+                &mut states[0],
+                &mut parameter_internal_states[0],
+                &mut metric_set_internal_states[0],
+                None,
+            )
+            .unwrap();
+        assert_eq!(
+            events.lock().unwrap().as_slice(),
+            [
+                "lifecycle-general:setup",
+                "lifecycle-general:before",
+                "lifecycle-general:after"
+            ]
+        );
+        assert_eq!(
+            states[0]
+                .get_general_parameter_f64_after(general.after.unwrap())
+                .unwrap(),
+            40.0
+        );
+    }
+
+    #[test]
+    fn parameter_internal_state_is_isolated_per_scenario() {
+        let scenario_group = ScenarioGroupBuilder::new("scenario", 2).build().unwrap();
+        let scenarios = ScenarioDomainBuilder::default().with_group(scenario_group).unwrap();
+        let mut domain_builder = default_domain_builder();
+        domain_builder.scenario(scenarios);
+        let domain = domain_builder.build().unwrap();
+
+        let mut builder = NetworkBuilder::default();
+        builder
+            .parameters()
+            .f64(Box::new(TestParameterBuilder::scenario_counter("scenario-counter")));
+        let (network, maps) = builder.build(&domain, &HashMap::new()).unwrap();
+        let registration = match maps.parameters_f64[&"scenario-counter".into()] {
+            ParameterIndex::General(registration) => registration,
+            _ => panic!("expected a general parameter"),
+        };
+        let scenarios = domain.scenarios().indices();
+        let timesteps = domain.time().timesteps();
+        let mut network_state = network.setup_network(timesteps, scenarios, 0).unwrap();
+        let NetworkState {
+            states,
+            parameter_internal_states,
+            ..
+        } = &mut network_state;
+
+        for (timestep_number, timestep) in timesteps.iter().take(2).enumerate() {
+            for scenario in scenarios {
+                let scenario_id = scenario.simulation_id();
+                network
+                    .compute_components(
+                        timestep,
+                        scenario,
+                        &mut states[scenario_id],
+                        &mut parameter_internal_states[scenario_id],
+                        None,
+                    )
+                    .unwrap();
+                assert_eq!(
+                    states[scenario_id]
+                        .get_general_parameter_f64_before(registration.before.unwrap())
+                        .unwrap(),
+                    scenario_id as f64 * 100.0 + timestep_number as f64 + 1.0
+                );
+            }
+        }
+
+        for scenario in scenarios {
+            let scenario_id = scenario.simulation_id();
+            let state = parameter_internal_states[scenario_id]
+                .get_general_f64_state(registration.parameter)
+                .unwrap();
+            let state = test_parameter_state(state).expect("expected test parameter state");
+            assert_eq!(state.scenario_id(), scenario_id);
+            assert_eq!(state.calls(), 2);
+        }
+    }
+
+    #[test]
+    fn general_after_parameter_reads_solved_network_state() {
+        let domain = default_domain();
+        let mut builder = NetworkBuilder::default();
+        let mut input = NodeBuilder::input("input");
+        input.min_flow(7.0.into()).max_flow(7.0.into());
+        builder.node(input).node(NodeBuilder::output("output"));
+        builder.connect("input", "output");
+        let mut solved_flow = AggregatedParameterBuilder::after("solved-flow".into(), AggFuncF64::Sum);
+        solved_flow.metric(UnresolvedMetricF64::NodeOutFlow("input".into()));
+        builder.parameters().f64(Box::new(solved_flow));
+
+        let model = ModelBuilder::new(domain, builder).build().unwrap();
+        let registration = match model
+            .network()
+            .get_parameter_index_by_name(&ParameterName::from("solved-flow"))
+            .unwrap()
+        {
+            ParameterIndex::General(registration) => registration,
+            _ => panic!("expected a general parameter"),
+        };
+        let mut state = model.setup::<ClpSolver>(&ClpSolverSettings::default()).unwrap();
+        let mut timings = NetworkTimings::new_without_component_timings();
+        model.step(&mut state, None, &mut timings).unwrap();
+
+        let scenario = &model.domain().scenarios().indices()[0];
+        let input = model.network().get_node_by_name("input", None).unwrap();
+        let scenario_state = state.network_state().state(scenario);
+        let solved_node_flow = scenario_state
+            .get_network_state()
+            .get_node_out_flow(&input.index())
+            .unwrap();
+        let parameter_value = scenario_state
+            .get_general_parameter_f64_after(registration.after.unwrap())
+            .unwrap();
+        assert_approx_eq!(f64, solved_node_flow, 7.0);
+        assert_approx_eq!(f64, parameter_value, solved_node_flow);
+    }
+
     #[test]
     fn test_step() {
         const NUM_SCENARIOS: usize = 2;
@@ -2605,7 +2878,7 @@ mod tests {
 
         // Set-up a control curve that uses the proportional volume
         // This should be use the initial proportion (100%) on the first time-step, and then the previous day's end value
-        let mut cc = ControlCurveInterpolatedParameterBuilder::new(
+        let mut cc = ControlCurveInterpolatedParameterBuilder::before(
             "interp".into(),
             UnresolvedMetricF64::NodeProportionalVolume("reservoir".into()),
         );

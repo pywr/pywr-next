@@ -479,18 +479,16 @@ pub enum ParameterReturnValue {
     #[default]
     Before,
     After,
-    BeforeOrElseAfter,
-    AfterOrElseBefore,
+    AfterOrElseInitial,
 }
 
 #[cfg(feature = "core")]
-impl From<ParameterReturnValue> for pywr_core::state::ParameterReturnValue {
+impl From<ParameterReturnValue> for pywr_core::parameters::ParameterReturnValue {
     fn from(v: ParameterReturnValue) -> Self {
         match v {
             ParameterReturnValue::Before => Self::Before,
             ParameterReturnValue::After => Self::After,
-            ParameterReturnValue::BeforeOrElseAfter => Self::BeforeOrElseAfter,
-            ParameterReturnValue::AfterOrElseBefore => Self::AfterOrElseBefore,
+            ParameterReturnValue::AfterOrElseInitial => Self::AfterOrElseInitial,
         }
     }
 }
@@ -509,14 +507,6 @@ pub struct ParameterReference {
 }
 
 impl ParameterReference {
-    pub fn new(name: &str, key: Option<String>) -> Self {
-        Self {
-            name: name.to_string(),
-            key,
-            return_value: None,
-        }
-    }
-
     /// Load a parameter reference into a [`MetricF64`] by attempting to retrieve the parameter
     /// from the `network`. If `parent` is the optional parameter name space from which to load
     /// the parameter.
@@ -578,6 +568,41 @@ impl ParameterReference {
         match &self.key {
             Some(key) => key.clone(),
             None => self.return_value.unwrap_or_default().to_string().to_lowercase(),
+        }
+    }
+}
+
+/// A builder for creating a [`ParameterReference`].
+pub struct ParameterReferenceBuilder {
+    name: String,
+    key: Option<String>,
+    return_value: Option<ParameterReturnValue>,
+}
+
+impl ParameterReferenceBuilder {
+    pub fn new(name: &str) -> Self {
+        Self {
+            name: name.to_string(),
+            key: None,
+            return_value: None,
+        }
+    }
+
+    pub fn key(&mut self, key: &str) -> &mut Self {
+        self.key = Some(key.to_string());
+        self
+    }
+
+    pub fn return_value(&mut self, return_value: ParameterReturnValue) -> &mut Self {
+        self.return_value = Some(return_value);
+        self
+    }
+
+    pub fn build(self) -> ParameterReference {
+        ParameterReference {
+            name: self.name,
+            key: self.key,
+            return_value: self.return_value,
         }
     }
 }

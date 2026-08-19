@@ -1,4 +1,4 @@
-use crate::metric::{MetricF64, UnresolvedMetricF64};
+use crate::metric::{MetricConsumerPhase, MetricF64, UnresolvedMetricF64};
 use crate::network::ResolutionMaps;
 use crate::parameters::errors::GeneralCalculationError;
 use crate::parameters::{
@@ -91,7 +91,9 @@ impl ParameterBuilder<f64> for Polynomial1DParameterBuilder {
         self: Box<Self>,
         resolution_maps: &ResolutionMaps,
     ) -> Result<MaybeBuiltParameter<f64>, ParameterBuildError> {
-        let metric = resolve_metric_f64!(self, self.metric, resolution_maps, "metric");
+        // Phase is hardcoded to "before" for this parameter, as it only implements the `GeneralBeforeParameter` trait.
+        let phase = MetricConsumerPhase::Before;
+        let metric = resolve_metric_f64!(self, self.metric, resolution_maps, phase, "metric");
 
         let p = Polynomial1DParameter {
             meta: self.meta,

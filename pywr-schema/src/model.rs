@@ -1123,7 +1123,7 @@ mod core_tests {
     use super::{ModelSchema, MultiNetworkModelSchema};
     use crate::agg_funcs::AggFunc;
     use crate::metric::{Metric, ParameterReference};
-    use crate::parameters::{AggregatedParameter, ConstantParameter, Parameter, ParameterMeta};
+    use crate::parameters::{AggregatedParameter, ConstantParameter, Parameter, ParameterMeta, ParameterPhase};
     use ndarray::{Array1, Array2, Axis};
     use pywr_core::metric::UnresolvedMetricF64;
     use pywr_core::recorders::AssertionF64RecorderBuilder;
@@ -1178,6 +1178,7 @@ mod core_tests {
                         tags: Default::default(),
                     },
                     agg_func: AggFunc::Sum,
+                    phase: ParameterPhase::Before,
                     metrics: vec![
                         Metric::Parameter(ParameterReference {
                             name: "p1".to_string(),
@@ -1207,6 +1208,7 @@ mod core_tests {
                         tags: Default::default(),
                     },
                     agg_func: AggFunc::Sum,
+                    phase: ParameterPhase::Before,
                     metrics: vec![
                         Metric::Parameter(ParameterReference {
                             name: "p1".to_string(),
@@ -1243,6 +1245,7 @@ mod core_tests {
                         tags: Default::default(),
                     },
                     agg_func: AggFunc::Sum,
+                    phase: ParameterPhase::Before,
                     metrics: vec![
                         Metric::Parameter(ParameterReference {
                             name: "p1".to_string(),

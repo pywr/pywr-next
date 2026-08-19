@@ -1,5 +1,5 @@
 use crate::FLOAT_EQ_TOLERANCE;
-use crate::metric::{MetricF64, UnresolvedMetricF64};
+use crate::metric::{MetricConsumerPhase, MetricF64, UnresolvedMetricF64};
 use crate::network::ResolutionMaps;
 use crate::parameters::errors::{GeneralCalculationError, ParameterSetupError};
 use crate::parameters::{
@@ -140,8 +140,10 @@ impl ParameterBuilder<u64> for ThresholdParameterBuilder {
         self: Box<Self>,
         resolution_maps: &ResolutionMaps,
     ) -> Result<MaybeBuiltParameter<u64>, ParameterBuildError> {
-        let metric = resolve_metric_f64!(self, self.metric, resolution_maps, "metric");
-        let threshold = resolve_metric_f64!(self, self.threshold, resolution_maps, "threshold");
+        // Phase is hardcoded to "before" for this parameter, as it only implements the `GeneralBeforeParameter` trait.
+        let phase = MetricConsumerPhase::Before;
+        let metric = resolve_metric_f64!(self, self.metric, resolution_maps, phase, "metric");
+        let threshold = resolve_metric_f64!(self, self.threshold, resolution_maps, phase, "threshold");
 
         let p = ThresholdParameter {
             meta: self.meta,

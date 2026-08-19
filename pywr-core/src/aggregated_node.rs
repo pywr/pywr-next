@@ -1,7 +1,10 @@
 #![warn(clippy::pedantic)]
 
 use crate::NodeIndex;
-use crate::metric::{ConstantMetricF64Error, MetricF64, MetricF64Error, MetricF64ResolutionError, UnresolvedMetricF64};
+use crate::metric::{
+    ConstantMetricF64Error, MetricConsumerPhase, MetricF64, MetricF64Error, MetricF64ResolutionError,
+    UnresolvedMetricF64,
+};
 use crate::network::{AggregatedNodeIndex, Network, ResolutionMaps};
 use crate::node::{FlowConstraints, NodeMeta, UnresolvedNode};
 use crate::state::{ConstParameterValues, State};
@@ -57,7 +60,7 @@ impl RelationshipBuilder for ProportionalFactorsBuilder {
         let factors = self
             .factors
             .iter()
-            .map(|f| f.resolve(resolution_maps))
+            .map(|f| f.resolve(resolution_maps, MetricConsumerPhase::Before))
             .collect::<Result<Vec<_>, _>>()
             .map_err(|source| RelationshipBuildError::ResolveMetricF64Error {
                 attr: "factors".to_string(),
@@ -85,7 +88,7 @@ impl RelationshipBuilder for RatioFactorsBuilder {
         let factors = self
             .factors
             .iter()
-            .map(|f| f.resolve(resolution_maps))
+            .map(|f| f.resolve(resolution_maps, MetricConsumerPhase::Before))
             .collect::<Result<Vec<_>, _>>()
             .map_err(|source| RelationshipBuildError::ResolveMetricF64Error {
                 attr: "factors".to_string(),
@@ -119,7 +122,7 @@ impl RelationshipBuilder for CoefficientFactorsBuilder {
         let factors = self
             .factors
             .iter()
-            .map(|f| f.resolve(resolution_maps))
+            .map(|f| f.resolve(resolution_maps, MetricConsumerPhase::Before))
             .collect::<Result<Vec<_>, _>>()
             .map_err(|source| RelationshipBuildError::ResolveMetricF64Error {
                 attr: "factors".to_string(),
@@ -129,7 +132,7 @@ impl RelationshipBuilder for CoefficientFactorsBuilder {
         let rhs = self
             .rhs
             .as_ref()
-            .map(|r| r.resolve(resolution_maps))
+            .map(|r| r.resolve(resolution_maps, MetricConsumerPhase::Before))
             .transpose()
             .map_err(|source| RelationshipBuildError::ResolveMetricF64Error {
                 attr: "rhs".to_string(),
@@ -610,7 +613,7 @@ impl AggregatedNodeBuilder {
             .as_ref()
             .map(|min_flow| {
                 min_flow
-                    .resolve(resolution_maps)
+                    .resolve(resolution_maps, MetricConsumerPhase::Before)
                     .map_err(|source| AggregatedNodeBuilderError::ResolveMetricF64Error {
                         attr: "min_flow".to_string(),
                         source,
@@ -623,7 +626,7 @@ impl AggregatedNodeBuilder {
             .as_ref()
             .map(|max_flow| {
                 max_flow
-                    .resolve(resolution_maps)
+                    .resolve(resolution_maps, MetricConsumerPhase::Before)
                     .map_err(|source| AggregatedNodeBuilderError::ResolveMetricF64Error {
                         attr: "max_flow".to_string(),
                         source,
@@ -1089,9 +1092,8 @@ mod tests {
     use crate::models::ModelBuilder;
     use crate::network::NetworkBuilder;
     use crate::node::{NodeBuilder, UnresolvedNode};
-    use crate::parameters::{MonthlyProfileParameterBuilder, ParameterName};
+    use crate::parameters::{MonthlyProfileParameterBuilder, ParameterName, ParameterReturnValue};
     use crate::recorders::AssertionF64RecorderBuilder;
-    use crate::state::ParameterReturnValue;
     use crate::test_utils::{default_domain, run_all_solvers};
     use ndarray::Array2;
 

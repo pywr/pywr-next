@@ -127,6 +127,7 @@
         "agg_func": {
           "type": "Product"
         },
+        "phase": "Before",
         "metrics": [
           {
             "type": "Timeseries",

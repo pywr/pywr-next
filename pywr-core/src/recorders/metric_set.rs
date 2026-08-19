@@ -1,4 +1,4 @@
-use crate::metric::{MetricF64, MetricF64Error, MetricF64ResolutionError, UnresolvedMetricF64};
+use crate::metric::{MetricConsumerPhase, MetricF64, MetricF64Error, MetricF64ResolutionError, UnresolvedMetricF64};
 use crate::network::{Network, ResolutionMaps};
 use crate::recorders::aggregator::{Aggregator, AggregatorState, PeriodValue};
 use crate::scenario::ScenarioIndex;
@@ -65,7 +65,7 @@ impl UnresolvedOutputMetric {
     }
 
     pub fn resolve(self, resolution_maps: &ResolutionMaps) -> Result<OutputMetric, MetricF64ResolutionError> {
-        let metric = self.metric.resolve(resolution_maps)?;
+        let metric = self.metric.resolve(resolution_maps, MetricConsumerPhase::After)?;
         Ok(OutputMetric {
             name: self.name,
             attribute: self.attribute,

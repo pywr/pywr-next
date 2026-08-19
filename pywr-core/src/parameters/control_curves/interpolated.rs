@@ -1,4 +1,4 @@
-use crate::metric::{MetricF64, UnresolvedMetricF64};
+use crate::metric::{MetricConsumerPhase, MetricF64, UnresolvedMetricF64};
 use crate::network::ResolutionMaps;
 use crate::parameters::errors::GeneralCalculationError;
 use crate::parameters::interpolate::interpolate;
@@ -74,7 +74,8 @@ pub struct ControlCurveInterpolatedParameterBuilder {
 }
 
 impl ControlCurveInterpolatedParameterBuilder {
-    pub fn new(name: ParameterName, metric: UnresolvedMetricF64) -> Self {
+    /// Create a new builder for [`ControlCurveInterpolatedParameter`] that is evaluated in the "before" phase.
+    pub fn before(name: ParameterName, metric: UnresolvedMetricF64) -> Self {
         Self {
             meta: ParameterMeta::new(name),
             metric,
@@ -103,9 +104,12 @@ impl ParameterBuilder<f64> for ControlCurveInterpolatedParameterBuilder {
         self: Box<Self>,
         resolution_maps: &ResolutionMaps,
     ) -> Result<MaybeBuiltParameter<f64>, ParameterBuildError> {
-        let metric = resolve_metric_f64!(self, self.metric, resolution_maps, "metric");
-        let control_curves = resolve_metric_f64_vec!(self, &self.control_curves, resolution_maps, "control_curves");
-        let values = resolve_metric_f64_vec!(self, &self.values, resolution_maps, "values");
+        // Phase is hardcoded to "before" for this parameter, as it only implements the `GeneralBeforeParameter` trait.
+        let phase = MetricConsumerPhase::Before;
+        let metric = resolve_metric_f64!(self, self.metric, resolution_maps, phase, "metric");
+        let control_curves =
+            resolve_metric_f64_vec!(self, &self.control_curves, resolution_maps, phase, "control_curves");
+        let values = resolve_metric_f64_vec!(self, &self.values, resolution_maps, phase, "values");
 
         let p = ControlCurveInterpolatedParameter {
             meta: self.meta,

@@ -41,6 +41,7 @@
       "max_flow": {
         "type": "aggregated",
         "agg_func": "product",
+        "phase": "Before",
         "parameters": [
           {
             "type": "constant",

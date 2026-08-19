@@ -2,7 +2,7 @@ use super::{
     BuiltParameter, GeneralBeforeParameter, GeneralParameterContext, GeneralParameterEntry, MaybeBuiltParameter,
     Parameter, ParameterBuildError, ParameterBuilder, ParameterName,
 };
-use crate::metric::{MetricF64, UnresolvedMetricF64};
+use crate::metric::{MetricConsumerPhase, MetricF64, UnresolvedMetricF64};
 use crate::network::ResolutionMaps;
 use crate::parameters::errors::GeneralCalculationError;
 use crate::parameters::{GeneralParameter, ParameterMeta, ParameterState};
@@ -72,8 +72,10 @@ impl ParameterBuilder<f64> for DivisionParameterBuilder {
         self: Box<Self>,
         resolution_maps: &ResolutionMaps,
     ) -> Result<MaybeBuiltParameter<f64>, ParameterBuildError> {
-        let numerator = resolve_metric_f64!(self, self.numerator, resolution_maps, "numerator");
-        let denominator = resolve_metric_f64!(self, self.denominator, resolution_maps, "denominator");
+        // Phase is hardcoded to "before" for this parameter, as it only implements the `GeneralBeforeParameter` trait.
+        let phase = MetricConsumerPhase::Before;
+        let numerator = resolve_metric_f64!(self, self.numerator, resolution_maps, phase, "numerator");
+        let denominator = resolve_metric_f64!(self, self.denominator, resolution_maps, phase, "denominator");
 
         let p = DivisionParameter {
             meta: self.meta,

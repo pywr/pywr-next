@@ -84,6 +84,13 @@ pub struct ParameterMeta {
     pub tags: HashMap<String, String>,
 }
 
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
+pub enum ParameterPhase {
+    Before,
+    After,
+    Both,
+}
+
 #[derive(serde::Deserialize, serde::Serialize, Debug, EnumDiscriminants, Clone, JsonSchema, Display)]
 #[serde(tag = "type")]
 #[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
@@ -177,6 +184,47 @@ impl Parameter {
     pub fn parameter_type(&self) -> ParameterType {
         // Implementation provided by the `EnumDiscriminants` derive macro.
         self.into()
+    }
+
+    pub fn phase(&self) -> ParameterPhase {
+        match self {
+            Self::Aggregated(p) => p.phase.clone(),
+            Self::AggregatedIndex(p) => p.phase.clone(),
+            Self::AsymmetricSwitchIndex(_) => ParameterPhase::Before,
+            Self::Constant(_) => ParameterPhase::Before,
+            Self::ConstantScenario(_) => ParameterPhase::Before,
+            Self::ControlCurvePiecewiseInterpolated(_) => ParameterPhase::Before,
+            Self::ControlCurveInterpolated(_) => ParameterPhase::Before,
+            Self::ControlCurveIndex(_) => ParameterPhase::Before,
+            Self::ControlCurve(_) => ParameterPhase::Before,
+            Self::DailyProfile(_) => ParameterPhase::Before,
+            Self::IndexedArray(_) => ParameterPhase::Before,
+            Self::MonthlyProfile(_) => ParameterPhase::Before,
+            Self::WeeklyProfile(_) => ParameterPhase::Before,
+            Self::UniformDrawdownProfile(_) => ParameterPhase::Before,
+            Self::Max(_) => ParameterPhase::Before,
+            Self::Min(_) => ParameterPhase::Before,
+            Self::MultiThreshold(_) => ParameterPhase::Before,
+            Self::Negative(_) => ParameterPhase::Before,
+            Self::Polynomial1D(_) => ParameterPhase::Before,
+            Self::Threshold(_) => ParameterPhase::Before,
+            Self::TablesArray(_) => ParameterPhase::Before,
+            Self::Python(_) => ParameterPhase::Before,
+            Self::Delay(_) => ParameterPhase::Before,
+            Self::DelayIndex(_) => ParameterPhase::Before,
+            Self::Division(_) => ParameterPhase::Before,
+            Self::Offset(_) => ParameterPhase::Before,
+            Self::DiscountFactor(_) => ParameterPhase::Before,
+            Self::Interpolated(_) => ParameterPhase::Before,
+            Self::HydropowerTarget(_) => ParameterPhase::Before,
+            Self::RbfProfile(_) => ParameterPhase::Before,
+            Self::NegativeMax(_) => ParameterPhase::Before,
+            Self::NegativeMin(_) => ParameterPhase::Before,
+            Self::Rolling(_) => ParameterPhase::Before,
+            Self::RollingIndex(_) => ParameterPhase::Before,
+            Self::Placeholder(_) => ParameterPhase::Before,
+            Self::DiurnalProfile(_) => ParameterPhase::Before,
+        }
     }
 }
 

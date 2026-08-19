@@ -160,7 +160,7 @@ impl PiecewiseStorageNode {
 
             let prior_max_volume_name =
                 ParameterName::new(&format!("store-{i:02}-prior-max-volume"), Some(&self.meta.name));
-            let mut prior_max_volume = pywr_core::parameters::AggregatedParameterBuilder::new(
+            let mut prior_max_volume = pywr_core::parameters::AggregatedParameterBuilder::before(
                 prior_max_volume_name.clone(),
                 pywr_core::agg_funcs::AggFuncF64::Sum,
             );
@@ -234,7 +234,7 @@ impl PiecewiseStorageNode {
             Some(&self.meta.name),
         );
 
-        let mut prior_max_volume = pywr_core::parameters::AggregatedParameterBuilder::new(
+        let mut prior_max_volume = pywr_core::parameters::AggregatedParameterBuilder::before(
             prior_max_volume_name.clone(),
             pywr_core::agg_funcs::AggFuncF64::Sum,
         );
