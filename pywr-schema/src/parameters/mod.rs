@@ -56,6 +56,7 @@ pub use indexed_array::IndexedArrayParameter;
 pub use interpolated::InterpolatedParameter;
 pub use offset::OffsetParameter;
 pub use placeholder::PlaceholderParameter;
+pub use difference::DifferenceParameter;
 pub use polynomial::Polynomial1DParameter;
 pub use profiles::{
     DailyProfileParameter, DirunalProfileParameter, MonthlyInterpDay, MonthlyProfileParameter, RadialBasisFunction,
@@ -126,6 +127,7 @@ pub enum Parameter {
     Delay(DelayParameter),
     DelayIndex(DelayIndexParameter),
     Division(DivisionParameter),
+    Difference(DifferenceParameter),
     Offset(OffsetParameter),
     DiscountFactor(DiscountFactorParameter),
     Interpolated(InterpolatedParameter),
@@ -166,6 +168,7 @@ impl Parameter {
             Self::TablesArray(p) => &p.meta,
             Self::Python(p) => &p.meta,
             Self::Division(p) => &p.meta,
+            Self::Difference(p) => &p.meta,
             Self::Delay(p) => &p.meta,
             Self::DelayIndex(p) => &p.meta,
             Self::Offset(p) => &p.meta,
@@ -214,6 +217,7 @@ impl Parameter {
             Self::Delay(_) => ParameterPhase::Before,
             Self::DelayIndex(_) => ParameterPhase::Before,
             Self::Division(_) => ParameterPhase::Before,
+            Self::Difference(p) => p.phase.clone(),
             Self::Offset(_) => ParameterPhase::Before,
             Self::DiscountFactor(_) => ParameterPhase::Before,
             Self::Interpolated(_) => ParameterPhase::Before,
@@ -262,6 +266,7 @@ impl Parameter {
             Self::Delay(p) => p.add_to_network(network, args, parent),
             Self::DelayIndex(p) => p.add_to_network(network, args, parent),
             Self::Division(p) => p.add_to_network(network, args, parent),
+            Self::Difference(p) => p.add_to_network(network, args, parent),
             Self::Offset(p) => p.add_to_network(network, args, parent),
             Self::DiscountFactor(p) => p.add_to_network(network, args, parent),
             Self::Interpolated(p) => p.add_to_network(network, args, parent),
@@ -306,6 +311,7 @@ impl VisitMetrics for Parameter {
             Self::Delay(p) => p.visit_metrics(visitor),
             Self::DelayIndex(p) => p.visit_metrics(visitor),
             Self::Division(p) => p.visit_metrics(visitor),
+            Self::Difference(p) => p.visit_metrics(visitor),
             Self::Offset(p) => p.visit_metrics(visitor),
             Self::DiscountFactor(p) => p.visit_metrics(visitor),
             Self::Interpolated(p) => p.visit_metrics(visitor),
@@ -347,6 +353,7 @@ impl VisitMetrics for Parameter {
             Self::Delay(p) => p.visit_metrics_mut(visitor),
             Self::DelayIndex(p) => p.visit_metrics_mut(visitor),
             Self::Division(p) => p.visit_metrics_mut(visitor),
+            Self::Difference(p) => p.visit_metrics_mut(visitor),
             Self::Offset(p) => p.visit_metrics_mut(visitor),
             Self::DiscountFactor(p) => p.visit_metrics_mut(visitor),
             Self::Interpolated(p) => p.visit_metrics_mut(visitor),
@@ -390,6 +397,7 @@ impl VisitPaths for Parameter {
             Self::Delay(p) => p.visit_paths(visitor),
             Self::DelayIndex(p) => p.visit_paths(visitor),
             Self::Division(p) => p.visit_paths(visitor),
+            Self::Difference(p) =>p.visit_paths(visitor),
             Self::Offset(p) => p.visit_paths(visitor),
             Self::DiscountFactor(p) => p.visit_paths(visitor),
             Self::Interpolated(p) => p.visit_paths(visitor),
@@ -431,6 +439,7 @@ impl VisitPaths for Parameter {
             Self::Delay(p) => p.visit_paths_mut(visitor),
             Self::DelayIndex(p) => p.visit_paths_mut(visitor),
             Self::Division(p) => p.visit_paths_mut(visitor),
+            Self::Difference(p) =>p.visit_paths_mut(visitor),
             Self::Offset(p) => p.visit_paths_mut(visitor),
             Self::DiscountFactor(p) => p.visit_paths_mut(visitor),
             Self::Interpolated(p) => p.visit_paths_mut(visitor),
