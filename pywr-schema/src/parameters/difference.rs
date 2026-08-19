@@ -1,12 +1,9 @@
-use std::collections::HashMap;
 use schemars::JsonSchema;
 use pywr_core::parameters::ParameterName;
-use pywr_schema_macros::PywrVisitAll;
-use crate::agg_funcs::{AggFunc, IndexAggFunc};
-use crate::{ComponentConversionError, ConversionData, LoadArgs, SchemaError, TryFromV1};
-use crate::metric::{IndexMetric, Metric};
+use crate::{LoadArgs, SchemaError};
+use crate::metric::Metric;
 use crate::parameters::{ParameterMeta, ParameterPhase};
-use crate::v1::try_convert_parameter_attr;
+use pywr_schema_macros::PywrVisitAll;
 
 /// Schema for a parameter that computes the difference between two metrics, with optional minimum and maximum bounds.
 ///
@@ -30,7 +27,7 @@ use crate::v1::try_convert_parameter_attr;
 /// ```
 
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct DifferenceParameter {
     pub meta: ParameterMeta,
