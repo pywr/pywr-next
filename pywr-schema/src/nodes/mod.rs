@@ -277,6 +277,9 @@ impl Node {
         self.into()
     }
 
+    pub fn is_placeholder(&self) -> bool {
+        matches!(self, Self::Placeholder(_))
+    }
     pub fn meta(&self) -> &NodeMeta {
         match self {
             Node::Input(n) => &n.meta,

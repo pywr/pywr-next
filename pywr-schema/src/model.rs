@@ -436,7 +436,7 @@ impl From<ModelSchemaBuildError> for PyErr {
 ///
 ///
 #[skip_serializing_none]
-#[derive(serde::Deserialize, serde::Serialize, Clone, JsonSchema)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, JsonSchema, Default)]
 #[cfg_attr(feature = "pyo3", pyclass(skip_from_py_object))]
 pub struct ModelSchema {
     pub metadata: Metadata,
