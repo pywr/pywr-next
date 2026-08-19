@@ -1,0 +1,86 @@
+{
+  "metadata": {
+    "title": "Invalid model with two virtual nodes sharing a name",
+    "minimum_version": "0.1"
+  },
+  "time": {
+    "start": "2015-01-01",
+    "end": "2015-01-10",
+    "timestep": {
+      "type": "Days",
+      "days": 1
+    }
+  },
+  "network": {
+    "nodes": [
+      {
+        "meta": {
+          "name": "supply1"
+        },
+        "type": "Input",
+        "max_flow": {
+          "type": "Literal",
+          "value": 5
+        }
+      },
+      {
+        "meta": {
+          "name": "storage1"
+        },
+        "type": "Storage",
+        "max_volume": {
+          "type": "Literal",
+          "value": 100
+        },
+        "initial_volume": {
+          "type": "Proportional",
+          "proportion": 1.0
+        }
+      },
+      {
+        "meta": {
+          "name": "demand1"
+        },
+        "type": "Output",
+        "cost": {
+          "type": "Literal",
+          "value": -10
+        }
+      }
+    ],
+    "virtual_nodes": [
+      {
+        "meta": {
+          "name": "total"
+        },
+        "type": "Aggregated",
+        "nodes": [
+          {
+            "name": "supply1"
+          }
+        ]
+      },
+      {
+        "meta": {
+          "name": "total"
+        },
+        "type": "AggregatedStorage",
+        "storage_nodes": [
+          {
+            "name": "storage1"
+          }
+        ]
+      }
+    ],
+    "edges": [
+      {
+        "from_node": "supply1",
+        "to_node": "storage1"
+      },
+      {
+        "from_node": "storage1",
+        "to_node": "demand1"
+      }
+    ]
+  }
+}

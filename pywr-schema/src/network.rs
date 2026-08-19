@@ -5,9 +5,9 @@ use crate::ConversionError;
 use crate::data_tables::DataTable;
 #[cfg(feature = "core")]
 use crate::data_tables::{LoadedTableCollection, TableCollectionLoadError};
-use crate::error::ComponentConversionError;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
+use crate::error::{ComponentConversionError, DuplicateNodeName, ValidationError};
 use crate::metric::Metric;
 use crate::metric_sets::MetricSet;
 #[cfg(feature = "core")]
@@ -27,6 +27,7 @@ use pywr_core::models::ModelDomain;
 use pywr_schema_macros::skip_serializing_none;
 use pywr_v1_schema::nodes::{CoreNode as CoreNodeV1, Node as NodeV1};
 use schemars::JsonSchema;
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumString, IntoStaticStr};
@@ -45,6 +46,11 @@ pub enum NetworkSchemaReadError {
 #[cfg(feature = "core")]
 #[derive(Error, Debug)]
 pub enum NetworkSchemaBuildError {
+    #[error("Network schema validation failed: {source}")]
+    Validation {
+        #[source]
+        source: ValidationError,
+    },
     #[error("Circular node reference(s) found.")]
     CircularNodeReference,
     #[error("Circular parameters reference(s) found. Unable to load the following parameters: {0:?}")]
@@ -453,6 +459,47 @@ impl NetworkSchema {
         }
     }
 
+    /// Returns true if any node or virtual node in the network is called `name`.
+    pub fn node_name_exists(&self, name: &str) -> bool {
+        self.get_node_by_name(name).is_some() || self.get_virtual_node_by_name(name).is_some()
+    }
+
+    /// Validate the network schema.
+    ///
+    /// This checks that the schema is unambiguous, not that it can be built; use
+    /// [`NetworkSchema::add_to_network`] for the latter. See [`ValidationError`] for the
+    /// problems that are detected.
+    pub fn validate(&self) -> Result<(), ValidationError> {
+        // Count the occurrences of each name in each of the two lists.
+        let mut counts: HashMap<&str, (usize, usize)> = HashMap::with_capacity(self.nodes.len());
+
+        for node in &self.nodes {
+            counts.entry(node.name()).or_default().0 += 1;
+        }
+
+        for virtual_node in self.virtual_nodes.as_deref().into_iter().flatten() {
+            counts.entry(virtual_node.name()).or_default().1 += 1;
+        }
+
+        let mut duplicates: Vec<DuplicateNodeName> = counts
+            .into_iter()
+            .filter(|(_, (nodes, virtual_nodes))| nodes + virtual_nodes > 1)
+            .map(|(name, (nodes, virtual_nodes))| DuplicateNodeName {
+                name: name.to_string(),
+                nodes,
+                virtual_nodes,
+            })
+            .collect();
+
+        if duplicates.is_empty() {
+            Ok(())
+        } else {
+            // Sort for a deterministic error message.
+            duplicates.sort_by(|a, b| a.name.cmp(&b.name));
+            Err(ValidationError::DuplicateNodeNames(duplicates))
+        }
+    }
+
     #[cfg(feature = "core")]
     pub fn add_to_network(
         &self,
@@ -462,6 +509,10 @@ impl NetworkSchema {
         output_path: Option<&Path>,
         inter_network_transfers: &[MultiNetworkTransfer],
     ) -> Result<(LoadedTableCollection, LoadedTimeseriesCollection), NetworkSchemaBuildError> {
+        // Reject an invalid schema before doing any work to build it.
+        self.validate()
+            .map_err(|source| NetworkSchemaBuildError::Validation { source })?;
+
         let tables = LoadedTableCollection::from_schema(self.tables.as_deref(), data_path)?;
         let timeseries = LoadedTimeseriesCollection::from_schema(self.timeseries.as_deref(), domain, data_path)?;
 
@@ -564,4 +615,97 @@ impl NetworkSchema {
 pub enum NetworkSchemaRef {
     Path(PathBuf),
     Inline(NetworkSchema),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::NetworkSchema;
+    use crate::error::{DuplicateNodeName, ValidationError};
+    use std::str::FromStr;
+
+    /// Return the duplicates reported by [`NetworkSchema::validate`], or panic if it succeeded.
+    fn expect_duplicates(network: &NetworkSchema) -> Vec<DuplicateNodeName> {
+        match network.validate() {
+            Err(ValidationError::DuplicateNodeNames(duplicates)) => duplicates,
+            Ok(()) => panic!("Expected validation to fail, but it succeeded"),
+        }
+    }
+
+    /// A network where a node and a virtual node are both called `licence`.
+    const NETWORK_WITH_SHARED_NODE_AND_VIRTUAL_NODE_NAME: &str = r#"
+    {
+        "nodes": [
+            { "meta": { "name": "licence" }, "type": "Input" },
+            { "meta": { "name": "demand1" }, "type": "Output" }
+        ],
+        "virtual_nodes": [
+            {
+                "meta": { "name": "licence" },
+                "type": "Aggregated",
+                "nodes": [{ "name": "demand1" }]
+            }
+        ],
+        "edges": [
+            { "from_node": "licence", "to_node": "demand1" }
+        ]
+    }
+    "#;
+
+    /// Nodes and virtual nodes are a single name-space, so a name shared between the two lists
+    /// is a duplicate.
+    #[test]
+    fn test_validate_rejects_name_shared_with_virtual_node() {
+        let network = NetworkSchema::from_str(NETWORK_WITH_SHARED_NODE_AND_VIRTUAL_NODE_NAME).unwrap();
+
+        assert_eq!(
+            expect_duplicates(&network),
+            vec![DuplicateNodeName {
+                name: "licence".to_string(),
+                nodes: 1,
+                virtual_nodes: 1,
+            }]
+        );
+    }
+
+    /// A network with two separately duplicated names, plus a unique one.
+    const NETWORK_WITH_SEVERAL_DUPLICATES: &str = r#"
+    {
+        "nodes": [
+            { "meta": { "name": "zzz" }, "type": "Input" },
+            { "meta": { "name": "zzz" }, "type": "Input" },
+            { "meta": { "name": "aaa" }, "type": "Output" },
+            { "meta": { "name": "unique" }, "type": "Output" }
+        ],
+        "virtual_nodes": [
+            {
+                "meta": { "name": "aaa" },
+                "type": "Aggregated",
+                "nodes": [{ "name": "unique" }]
+            }
+        ],
+        "edges": []
+    }
+    "#;
+
+    /// Every duplicate is reported, not just the first one found.
+    #[test]
+    fn test_validate_reports_all_duplicates() {
+        let network = NetworkSchema::from_str(NETWORK_WITH_SEVERAL_DUPLICATES).unwrap();
+
+        assert_eq!(
+            expect_duplicates(&network),
+            vec![
+                DuplicateNodeName {
+                    name: "aaa".to_string(),
+                    nodes: 1,
+                    virtual_nodes: 1,
+                },
+                DuplicateNodeName {
+                    name: "zzz".to_string(),
+                    nodes: 2,
+                    virtual_nodes: 0,
+                },
+            ]
+        );
+    }
 }
