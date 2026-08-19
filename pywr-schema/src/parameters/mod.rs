@@ -181,6 +181,48 @@ impl Parameter {
         }
     }
 
+    /// Get a mutable reference to the parameter's metadata.
+    pub fn meta_mut(&mut self) -> &mut ParameterMeta {
+        match self {
+            Self::Constant(p) => &mut p.meta,
+            Self::ConstantScenario(p) => &mut p.meta,
+            Self::ControlCurveInterpolated(p) => &mut p.meta,
+            Self::Aggregated(p) => &mut p.meta,
+            Self::AggregatedIndex(p) => &mut p.meta,
+            Self::AsymmetricSwitchIndex(p) => &mut p.meta,
+            Self::ControlCurvePiecewiseInterpolated(p) => &mut p.meta,
+            Self::ControlCurveIndex(p) => &mut p.meta,
+            Self::ControlCurve(p) => &mut p.meta,
+            Self::DailyProfile(p) => &mut p.meta,
+            Self::IndexedArray(p) => &mut p.meta,
+            Self::MonthlyProfile(p) => &mut p.meta,
+            Self::WeeklyProfile(p) => &mut p.meta,
+            Self::UniformDrawdownProfile(p) => &mut p.meta,
+            Self::Max(p) => &mut p.meta,
+            Self::Min(p) => &mut p.meta,
+            Self::MultiThreshold(p) => &mut p.meta,
+            Self::Negative(p) => &mut p.meta,
+            Self::Polynomial1D(p) => &mut p.meta,
+            Self::Threshold(p) => &mut p.meta,
+            Self::TablesArray(p) => &mut p.meta,
+            Self::Python(p) => &mut p.meta,
+            Self::Division(p) => &mut p.meta,
+            Self::Delay(p) => &mut p.meta,
+            Self::DelayIndex(p) => &mut p.meta,
+            Self::Offset(p) => &mut p.meta,
+            Self::DiscountFactor(p) => &mut p.meta,
+            Self::Interpolated(p) => &mut p.meta,
+            Self::HydropowerTarget(p) => &mut p.meta,
+            Self::RbfProfile(p) => &mut p.meta,
+            Self::NegativeMax(p) => &mut p.meta,
+            Self::NegativeMin(p) => &mut p.meta,
+            Self::Rolling(p) => &mut p.meta,
+            Self::RollingIndex(p) => &mut p.meta,
+            Self::Placeholder(p) => &mut p.meta,
+            Self::DiurnalProfile(p) => &mut p.meta,
+        }
+    }
+
     pub fn parameter_type(&self) -> ParameterType {
         // Implementation provided by the `EnumDiscriminants` derive macro.
         self.into()
@@ -855,6 +897,24 @@ mod tests {
     use crate::parameters::Parameter;
     use std::fs;
     use std::path::PathBuf;
+
+    /// The mutable metadata accessor should return the same metadata as [`Parameter::meta`].
+    #[test]
+    fn test_parameter_meta_mut() {
+        let data = r#"
+        {
+            "meta": { "name": "a-parameter" },
+            "type": "Constant",
+            "value": { "type": "Literal", "value": 1.0 }
+        }
+        "#;
+
+        let mut parameter: Parameter = serde_json::from_str(data).unwrap();
+        assert_eq!(parameter.name(), "a-parameter");
+
+        parameter.meta_mut().name = "renamed".to_string();
+        assert_eq!(parameter.name(), "renamed");
+    }
 
     /// Test all the documentation examples successfully deserialize.
     #[test]
