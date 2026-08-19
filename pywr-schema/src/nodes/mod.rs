@@ -55,14 +55,14 @@ mod water_treatment_works;
 // `virtual` is a reserved keyword in Rust, so we use `virtual_nodes` as the module name
 mod virtual_nodes;
 
-use crate::error::{ComponentConversionError, ConversionError};
+use crate::error::{ComponentConversionError, ConversionError, SchemaError};
 use crate::metric::Metric;
+#[cfg(feature = "core")]
+use crate::network::LoadArgs;
 use crate::network::NetworkSchema;
 use crate::parameters::Parameter;
 use crate::v1::{ConversionData, TryFromV1, TryIntoV2};
 use crate::visit::{VisitMetrics, VisitPaths};
-#[cfg(feature = "core")]
-use crate::{error::SchemaError, network::LoadArgs};
 pub use abstraction::AbstractionNode;
 pub use attributes::NodeAttribute;
 pub use components::NodeComponent;
@@ -364,6 +364,38 @@ impl Node {
         }
     }
 
+    /// Validate the provided input slot converting it into a [`NodeSlot`] if a default is available.
+    ///
+    /// [`None`] is returned if the node does not support slots and the provided slot is [`None`].
+    /// If the node does support slots, then the provided slot is validated and returned as a [`NodeSlot`].
+    /// If the provided slot is [`None`] and the node has a default slot, then the default slot is returned.
+    ///
+    /// [`Node::Placeholder`] nodes will accept any slot and return it as a [`NodeSlot`].
+    pub fn validate_input_slot(&self, slot: Option<&NodeSlot>) -> Result<Option<NodeSlot>, SchemaError> {
+        match self {
+            Node::Input(_)
+            | Node::Link(_)
+            | Node::Output(_)
+            | Node::Storage(_)
+            | Node::Catchment(_)
+            | Node::RiverGauge(_)
+            | Node::LossLink(_)
+            | Node::Delay(_)
+            | Node::PiecewiseLink(_)
+            | Node::PiecewiseStorage(_)
+            | Node::River(_)
+            | Node::RiverSplitWithGauge(_)
+            | Node::WaterTreatmentWorks(_)
+            | Node::Turbine(_)
+            | Node::Reservoir(_)
+            | Node::Abstraction(_) => match slot {
+                Some(s) => Err(SchemaError::InputNodeSlotNotSupported { slot: s.clone() }),
+                None => Ok(None),
+            },
+            Node::Placeholder(_) => Ok(slot.cloned()),
+        }
+    }
+
     /// Get any output (or "from") slots that this node has.
     pub fn iter_output_slots(&self) -> Option<Box<dyn Iterator<Item = NodeSlot> + '_>> {
         match self {
@@ -378,12 +410,44 @@ impl Node {
             Node::PiecewiseLink(_) => None,
             Node::PiecewiseStorage(_) => None,
             Node::River(_) => None,
-            Node::RiverSplitWithGauge(n) => Some(Box::new(n.iter_output_slots())),
+            Node::RiverSplitWithGauge(n) => Some(Box::new(n.iter_output_slots().map(|s| s.into()))),
             Node::WaterTreatmentWorks(_) => None,
             Node::Turbine(_) => None,
-            Node::Reservoir(n) => Some(Box::new(n.iter_output_slots())),
+            Node::Reservoir(n) => Some(Box::new(n.iter_output_slots().map(|s| s.into()))),
             Node::Placeholder(_) => None,
-            Node::Abstraction(n) => Some(Box::new(n.iter_output_slots())),
+            Node::Abstraction(n) => Some(Box::new(n.iter_output_slots().map(|s| s.into()))),
+        }
+    }
+
+    /// Validate the provided output slot converting it into a [`NodeSlot`] if a default is available.
+    ///
+    /// [`None`] is returned if the node does not support slots and the provided slot is [`None`].
+    /// If the node does support slots, then the provided slot is validated and returned as a [`NodeSlot`].
+    /// If the provided slot is [`None`] and the node has a default slot, then the default slot is returned.
+    ///
+    /// [`Node::Placeholder`] nodes will accept any slot and return it as a [`NodeSlot`].
+    pub fn validate_output_slot(&self, slot: Option<&NodeSlot>) -> Result<Option<NodeSlot>, SchemaError> {
+        match self {
+            Node::Input(_)
+            | Node::Link(_)
+            | Node::Output(_)
+            | Node::Storage(_)
+            | Node::Catchment(_)
+            | Node::RiverGauge(_)
+            | Node::LossLink(_)
+            | Node::Delay(_)
+            | Node::PiecewiseLink(_)
+            | Node::PiecewiseStorage(_)
+            | Node::River(_)
+            | Node::WaterTreatmentWorks(_)
+            | Node::Turbine(_) => match slot {
+                Some(s) => Err(SchemaError::OutputNodeSlotNotSupported { slot: s.clone() }),
+                None => Ok(None),
+            },
+            Node::Placeholder(_) => Ok(slot.cloned()),
+            Node::RiverSplitWithGauge(n) => n.output_slot(slot).map(|s| Some(s.into())),
+            Node::Reservoir(n) => n.output_slot(slot).map(|s| Some(s.into())),
+            Node::Abstraction(n) => n.output_slot(slot).map(|s| Some(s.into())),
         }
     }
 
