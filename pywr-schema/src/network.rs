@@ -17,7 +17,7 @@ use crate::timeseries::Timeseries;
 #[cfg(feature = "core")]
 use crate::timeseries::{LoadTimeseriesError, LoadedTimeseriesCollection};
 use crate::v1::{ConversionData, TryIntoV2};
-use crate::visit::{VisitMetrics, VisitPaths};
+use crate::visit::{VisitMetrics, VisitNodeReferences, VisitPaths};
 #[cfg(all(feature = "core", feature = "pyo3"))]
 use pyo3::PyErr;
 #[cfg(feature = "pyo3")]
@@ -252,6 +252,52 @@ impl VisitMetrics for NetworkSchema {
                     }
                 }
             }
+        }
+    }
+}
+
+impl VisitNodeReferences for NetworkSchema {
+    fn visit_node_references<F: FnMut(&str)>(&self, visitor: &mut F) {
+        for node in &self.nodes {
+            node.visit_node_references(visitor);
+        }
+
+        for edge in &self.edges {
+            edge.visit_node_references(visitor);
+        }
+
+        for virtual_node in self.virtual_nodes.as_deref().into_iter().flatten() {
+            virtual_node.visit_node_references(visitor);
+        }
+
+        for parameter in self.parameters.as_deref().into_iter().flatten() {
+            parameter.visit_node_references(visitor);
+        }
+
+        for metric_set in self.metric_sets.as_deref().into_iter().flatten() {
+            metric_set.metrics.visit_node_references(visitor);
+        }
+    }
+
+    fn visit_node_references_mut<F: FnMut(&mut String)>(&mut self, visitor: &mut F) {
+        for node in self.nodes.iter_mut() {
+            node.visit_node_references_mut(visitor);
+        }
+
+        for edge in self.edges.iter_mut() {
+            edge.visit_node_references_mut(visitor);
+        }
+
+        for virtual_node in self.virtual_nodes.as_deref_mut().into_iter().flatten() {
+            virtual_node.visit_node_references_mut(visitor);
+        }
+
+        for parameter in self.parameters.as_deref_mut().into_iter().flatten() {
+            parameter.visit_node_references_mut(visitor);
+        }
+
+        for metric_set in self.metric_sets.as_deref_mut().into_iter().flatten() {
+            metric_set.metrics.visit_node_references_mut(visitor);
         }
     }
 }
