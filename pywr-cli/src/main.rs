@@ -129,6 +129,39 @@ enum Commands {
         /// Path to save the JSON schema.
         out: PathBuf,
     },
+    RunProject {
+        /// Path to Pywr project JSON.
+        project: PathBuf,
+        /// Name of the definition to build.
+        #[arg(short = 'd', long = "definition")]
+        definition: String,
+        /// Solver to use.
+        #[arg(short, long, default_value_t=Solver::Clp)]
+        solver: Solver,
+        #[arg(long)]
+        data_path: Option<PathBuf>,
+        #[arg(short, long)]
+        output_path: Option<PathBuf>,
+        /// The number of threads to use in parallel simulation.
+        #[arg(short, long, default_value_t = 1)]
+        threads: usize,
+        /// Ignore the feature requirements of a solver.
+        #[arg(short, long, default_value_t = false)]
+        ignore_feature_requirements: bool,
+    },
+    // InitProject {
+    //     /// Location to initialise the project directory.
+    //     location: PathBuf,
+    //     /// Project filename (e.g. pywr-project.json).
+    //     #[arg(short = 'f', long = "file", default_value = "pywr-project.json")]
+    //     project_filename: String,
+    //     /// Relative path for base model JSON.
+    //     #[arg(short = 'b', long = "base", default_value = "models/base.json")]
+    //     base_model_rel: String,
+    //     /// Option set directories in the project (comma-separated name=dir pairs, e.g. "upgrades=options/upgrades,policy=options/policy").
+    //     #[arg(short = 'o', long = "options")]
+    //     option_sets: Vec<String>,
+    // },
 }
 
 fn main() -> Result<()> {
@@ -171,6 +204,29 @@ fn main() -> Result<()> {
             solver,
         } => run_random(*num_systems, *density, *num_scenarios, solver),
         Commands::ExportSchema { out } => export_schema(out)?,
+        Commands::RunProject {
+            project,
+            definition,
+            solver,
+            data_path,
+            output_path,
+            threads,
+            ignore_feature_requirements,
+        } => run_project(
+            project,
+            definition,
+            solver,
+            data_path.as_deref(),
+            output_path.as_deref(),
+            *threads,
+            *ignore_feature_requirements,
+        ),
+        // Commands::InitProject {
+        //     location,
+        //     project_filename,
+        //     base_model_rel,
+        //     option_sets,
+        // } => init_project_cli(location, project_filename, base_model_rel, option_sets)?,
     }
 
     Ok(())
@@ -439,3 +495,144 @@ fn export_schema(out_path: &Path) -> Result<()> {
 
     Ok(())
 }
+
+fn run_project(
+    path: &Path,
+    definition: &str,
+    solver: &Solver,
+    data_path: Option<&Path>,
+    output_path: Option<&Path>,
+    threads: usize,
+    ignore_feature_requirements: bool,
+) {
+    let data_path = data_path.or_else(|| path.parent());
+    let project = pywr_project::ProjectManifest::from_path(path).unwrap();
+    let composed_model = project.compose(path.parent().unwrap(), definition).unwrap();
+    let composed_schemas = composed_model.load().unwrap();
+    let schema_v2 = composed_schemas.into_model_schema().unwrap();
+    let model_builder = schema_v2.create_model_builder(data_path, output_path).unwrap();
+    let model = model_builder.build().unwrap();
+
+    match *solver {
+        Solver::Clp => {
+            let mut settings_builder = ClpSolverSettingsBuilder::default();
+            if threads > 1 {
+                settings_builder = settings_builder.parallel();
+                settings_builder = settings_builder.threads(threads);
+            }
+            if ignore_feature_requirements {
+                settings_builder = settings_builder.ignore_feature_requirements();
+            }
+            let settings = settings_builder.build();
+            model.run::<ClpSolver>(&settings)
+        }
+        #[cfg(feature = "cbc")]
+        Solver::Cbc => {
+            let mut settings_builder = CbcSolverSettingsBuilder::default();
+            if threads > 1 {
+                settings_builder = settings_builder.parallel();
+                settings_builder = settings_builder.threads(threads);
+            }
+            if ignore_feature_requirements {
+                settings_builder = settings_builder.ignore_feature_requirements();
+            }
+            let settings = settings_builder.build();
+            model.run::<CbcSolver>(&settings)
+        }
+        #[cfg(feature = "highs")]
+        Solver::Highs => {
+            let mut settings_builder = HighsSolverSettingsBuilder::default();
+            if threads > 1 {
+                settings_builder = settings_builder.parallel();
+                settings_builder = settings_builder.threads(threads);
+            }
+            if ignore_feature_requirements {
+                settings_builder = settings_builder.ignore_feature_requirements();
+            }
+            let settings = settings_builder.build();
+            model.run::<HighsSolver>(&settings)
+        }
+        #[cfg(feature = "ipm-ocl")]
+        Solver::CLIPMF32 => {
+            let mut settings_builder = ClIpmSolverSettingsBuilder::default();
+            if threads > 1 {
+                settings_builder = settings_builder.parallel();
+                settings_builder = settings_builder.threads(threads);
+            }
+            if ignore_feature_requirements {
+                settings_builder = settings_builder.ignore_feature_requirements();
+            }
+
+            let settings = settings_builder.build();
+            model.run_multi_scenario::<ClIpmF32Solver>(&settings)
+        }
+        #[cfg(feature = "ipm-ocl")]
+        Solver::CLIPMF64 => {
+            let mut settings_builder = ClIpmSolverSettingsBuilder::default();
+            if threads > 1 {
+                settings_builder = settings_builder.parallel();
+                settings_builder = settings_builder.threads(threads);
+            }
+            if ignore_feature_requirements {
+                settings_builder = settings_builder.ignore_feature_requirements();
+            }
+
+            let settings = settings_builder.build();
+            model.run_multi_scenario::<ClIpmF64Solver>(&settings)
+        }
+        #[cfg(feature = "ipm-simd")]
+        Solver::IpmSimd => {
+            let mut settings_builder = SimdIpmSolverSettingsBuilder::default();
+            if threads > 1 {
+                settings_builder = settings_builder.parallel();
+                settings_builder = settings_builder.threads(threads);
+            }
+            if ignore_feature_requirements {
+                settings_builder = settings_builder.ignore_feature_requirements();
+            }
+
+            let settings = settings_builder.build();
+            model.run_multi_scenario::<SimdIpmF64Solver>(&settings)
+        }
+        #[cfg(feature = "microlp")]
+        Solver::Microlp => {
+            let mut settings_builder = MicroLpSolverSettingsBuilder::default();
+            if threads > 1 {
+                settings_builder = settings_builder.parallel();
+                settings_builder = settings_builder.threads(threads);
+            }
+            if ignore_feature_requirements {
+                settings_builder = settings_builder.ignore_feature_requirements();
+            }
+            let settings = settings_builder.build();
+            model.run::<MicroLpSolver>(&settings)
+        }
+    }
+    .unwrap();
+}
+
+// fn init_project_cli(
+//     location: &Path,
+//     project_filename: &str,
+//     base_model_rel: &str,
+//     option_sets: &[String],
+// ) -> Result<()> {
+//     use pywr_project::NetworkSet;
+//     // Parse option set definitions from name=dir strings
+//     let sets: Vec<NetworkSet> = option_sets
+//         .iter()
+//         .map(|s| {
+//             let (name, dir) = s.split_once('=').unwrap_or((s.as_str(), s.as_str()));
+//             NetworkSet {
+//                 name: name.to_string(),
+//                 dir: PathBuf::from(dir),
+//                 min_files: None,
+//                 max_files: None,
+//             }
+//         })
+//         .collect();
+//     let project_path =
+//         pywr_project::Project::init_project(location, project_filename, Path::new(base_model_rel), &sets)?;
+//     info!("Initialised project at {}", project_path.display());
+//     Ok(())
+// }

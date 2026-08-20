@@ -95,6 +95,37 @@ fn export_schema(_py: Python, out_path: PathBuf) -> PyResult<()> {
     Ok(())
 }
 
+// /// Build a model from a project JSON and definition name, returning a Model ready to run.
+// #[pyfunction]
+// fn build_model_from_project_json(
+//     path: PathBuf,
+//     definition: String,
+//     data_path: Option<PathBuf>,
+//     output_path: Option<PathBuf>,
+// ) -> PyResult<Model> {
+//     let contents = std::fs::read_to_string(&path).map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+//     let project: pywr_project::Project =
+//         serde_json::from_str(&contents).map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+//     // Help type inference by binding borrows explicitly
+//     let proj_path: &std::path::Path = &path;
+//     let def_str: &str = &definition;
+//     let data_path_ref: Option<&std::path::Path> = data_path.as_deref();
+//     let output_path_ref: Option<&std::path::Path> = output_path.as_deref();
+//     let schema_v2 = project
+//         .build_model_schema_for(proj_path, def_str)
+//         .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+//
+//     let model_builder = schema_v2
+//         .create_model_builder(data_path_ref, output_path_ref)
+//         .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+//
+//     let model = model_builder
+//         .build()
+//         .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+//
+//     Ok(model)
+// }
+
 /// A Python module implemented in Rust.
 #[pymodule]
 fn pywr(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
@@ -103,6 +134,7 @@ fn pywr(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(convert_model_from_v1_json_string, m)?)?;
     m.add_function(wrap_pyfunction!(convert_metric_from_v1_json_string, m)?)?;
     m.add_function(wrap_pyfunction!(export_schema, m)?)?;
+    // m.add_function(wrap_pyfunction!(build_model_from_project_json, m)?)?;
     m.add_class::<ModelSchema>()?;
     m.add_class::<MultiNetworkModelSchema>()?;
     m.add_class::<Model>()?;
