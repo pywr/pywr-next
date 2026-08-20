@@ -342,7 +342,7 @@ impl PiecewiseStorageNode {
         // The minimum volume is the difference between the total volume and
         // the maximum volume of the previous steps, but limited to be between zero and the maximum volume of this step.
         let mut min_volume_parameter =
-            DifferenceParameterBuilder::new(min_volume_name.clone(), total_min_volume, prior_max_volume.clone());
+            DifferenceParameterBuilder::before(min_volume_name.clone(), total_min_volume, prior_max_volume.clone());
 
         min_volume_parameter.min(0.0.into()).max(max_volume_parameter);
 
