@@ -530,6 +530,7 @@ fn pywr(py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(convert_model_from_v1_json_string, m)?)?;
     m.add_function(wrap_pyfunction!(convert_metric_from_v1_json_string, m)?)?;
     m.add_function(wrap_pyfunction!(export_schema, m)?)?;
+    // m.add_function(wrap_pyfunction!(build_model_from_project_json, m)?)?;
     m.add_class::<PyModelSchema>()?;
     m.add_class::<PyMultiNetworkModelSchema>()?;
     m.add_class::<PyModel>()?;
