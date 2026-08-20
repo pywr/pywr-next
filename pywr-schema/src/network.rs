@@ -148,8 +148,10 @@ pub enum NetworkMergeError {
     DuplicateTableName(String),
     #[error("Duplicate timeseries name found when merging networks: {0}")]
     DuplicateTimeseriesName(String),
-    #[error("Duplicate metric set name found when merging networks: {0}")]
+    #[error("Duplicate output name found when merging networks: {0}")]
     DuplicateOutputName(String),
+    #[error("Duplicate metric found when merging metric sets with name `{0}`")]
+    DuplicateMetric(String),
 }
 
 #[cfg(feature = "core")]
@@ -849,7 +851,7 @@ impl NetworkSchema {
                                 // Check for duplicate metrics
                                 for new_metric in &new_metrics {
                                     if existing_metrics.iter().any(|m| m == new_metric) {
-                                        return Err(NetworkMergeError::DuplicateOutputName(ms.name.clone()));
+                                        return Err(NetworkMergeError::DuplicateMetric(ms.name.clone()));
                                     }
                                 }
 
