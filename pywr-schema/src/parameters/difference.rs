@@ -1,6 +1,10 @@
 use schemars::JsonSchema;
+#[cfg(feature = "core")]
 use pywr_core::parameters::ParameterName;
-use crate::{LoadArgs, SchemaError};
+#[cfg(feature = "core")]
+use crate::error::SchemaError;
+#[cfg(feature = "core")]
+use crate::network::LoadArgs;
 use crate::metric::Metric;
 use crate::parameters::{ParameterMeta, ParameterPhase};
 use pywr_schema_macros::PywrVisitAll;
