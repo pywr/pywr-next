@@ -205,18 +205,18 @@ impl ParameterBuilder<f64> for DifferenceParameterBuilder {
         let built = match self.phase {
             MetricConsumerPhase::Before => {
                 // We can make a simple version if all metrics can be simplified
-                let asimple: Result<SimpleMetricF64, _> = a.clone().try_into();
-                let bsimple: Result<SimpleMetricF64, _> = b.clone().try_into();
-                let minsimple: Result<Option<SimpleMetricF64>, _> = min.as_ref().map(|m| m.clone().try_into()).transpose();
-                let maxsimple: Result<Option<SimpleMetricF64>, _> = max.as_ref().map(|m| m.clone().try_into()).transpose();
+                let a_simple: Result<SimpleMetricF64, _> = a.clone().try_into();
+                let b_simple: Result<SimpleMetricF64, _> = b.clone().try_into();
+                let min_simple: Result<Option<SimpleMetricF64>, _> = min.as_ref().map(|m| m.clone().try_into()).transpose();
+                let max_simple: Result<Option<SimpleMetricF64>, _> = max.as_ref().map(|m| m.clone().try_into()).transpose();
 
-                if let (Ok(asimple), Ok(bsimple), Ok(minsimple), Ok(maxsimple)) = (asimple, bsimple, minsimple, maxsimple) {
+                if let (Ok(a_simple), Ok(b_simple), Ok(min_simple), Ok(max_simple)) = (a_simple, b_simple, min_simple, max_simple) {
                     let p = DifferenceParameter {
                         meta: self.meta,
-                        a:asimple,
-                        b:bsimple,
-                        min:minsimple,
-                        max:maxsimple,
+                        a:a_simple,
+                        b:b_simple,
+                        min:min_simple,
+                        max:max_simple,
                     };
                     BuiltParameter::Simple(Box::new(p))
                 } else {

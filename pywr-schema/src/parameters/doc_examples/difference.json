@@ -3,6 +3,7 @@
     "name": "my-difference1"
   },
   "type": "Difference",
+  "phase": "Before",
   "a": {
     "type": "Parameter",
     "name": "my-monthly-profile"
