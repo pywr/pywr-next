@@ -246,6 +246,11 @@ impl ReservoirNode {
         &self.storage.meta
     }
 
+    /// Get a mutable reference to the node's metadata.
+    pub(crate) fn meta_mut(&mut self) -> &mut NodeMeta {
+        &mut self.storage.meta
+    }
+
     pub fn iter_output_slots(&self) -> impl Iterator<Item = NodeSlot> + '_ {
         [
             ReservoirOutputNodeSlot::Storage.into(),

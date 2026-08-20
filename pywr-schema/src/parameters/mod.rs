@@ -38,7 +38,7 @@ use crate::metric::Metric;
 use crate::network::LoadArgs;
 use crate::timeseries::ConvertedTimeseriesReference;
 use crate::v1::{ConversionData, TryFromV1, TryIntoV2};
-use crate::visit::{VisitMetrics, VisitPaths};
+use crate::visit::{VisitMetrics, VisitNodeReferences, VisitPaths};
 pub use aggregated::{AggregatedIndexParameter, AggregatedParameter};
 pub use asymmetric_switch::AsymmetricSwitchIndexParameter;
 pub use control_curves::{
@@ -182,6 +182,48 @@ impl Parameter {
             Self::RollingIndex(p) => &p.meta,
             Self::Placeholder(p) => &p.meta,
             Self::DiurnalProfile(p) => &p.meta,
+        }
+    }
+
+    /// Get a mutable reference to the parameter's metadata.
+    pub fn meta_mut(&mut self) -> &mut ParameterMeta {
+        match self {
+            Self::Constant(p) => &mut p.meta,
+            Self::ConstantScenario(p) => &mut p.meta,
+            Self::ControlCurveInterpolated(p) => &mut p.meta,
+            Self::Aggregated(p) => &mut p.meta,
+            Self::AggregatedIndex(p) => &mut p.meta,
+            Self::AsymmetricSwitchIndex(p) => &mut p.meta,
+            Self::ControlCurvePiecewiseInterpolated(p) => &mut p.meta,
+            Self::ControlCurveIndex(p) => &mut p.meta,
+            Self::ControlCurve(p) => &mut p.meta,
+            Self::DailyProfile(p) => &mut p.meta,
+            Self::IndexedArray(p) => &mut p.meta,
+            Self::MonthlyProfile(p) => &mut p.meta,
+            Self::WeeklyProfile(p) => &mut p.meta,
+            Self::UniformDrawdownProfile(p) => &mut p.meta,
+            Self::Max(p) => &mut p.meta,
+            Self::Min(p) => &mut p.meta,
+            Self::MultiThreshold(p) => &mut p.meta,
+            Self::Negative(p) => &mut p.meta,
+            Self::Polynomial1D(p) => &mut p.meta,
+            Self::Threshold(p) => &mut p.meta,
+            Self::TablesArray(p) => &mut p.meta,
+            Self::Python(p) => &mut p.meta,
+            Self::Division(p) => &mut p.meta,
+            Self::Delay(p) => &mut p.meta,
+            Self::DelayIndex(p) => &mut p.meta,
+            Self::Offset(p) => &mut p.meta,
+            Self::DiscountFactor(p) => &mut p.meta,
+            Self::Interpolated(p) => &mut p.meta,
+            Self::HydropowerTarget(p) => &mut p.meta,
+            Self::RbfProfile(p) => &mut p.meta,
+            Self::NegativeMax(p) => &mut p.meta,
+            Self::NegativeMin(p) => &mut p.meta,
+            Self::Rolling(p) => &mut p.meta,
+            Self::RollingIndex(p) => &mut p.meta,
+            Self::Placeholder(p) => &mut p.meta,
+            Self::DiurnalProfile(p) => &mut p.meta,
         }
     }
 
@@ -455,6 +497,90 @@ impl VisitPaths for Parameter {
     }
 }
 
+impl VisitNodeReferences for Parameter {
+    fn visit_node_references<F: FnMut(&str)>(&self, visitor: &mut F) {
+        match self {
+            Self::Constant(p) => p.visit_node_references(visitor),
+            Self::ConstantScenario(p) => p.visit_node_references(visitor),
+            Self::ControlCurveInterpolated(p) => p.visit_node_references(visitor),
+            Self::Aggregated(p) => p.visit_node_references(visitor),
+            Self::AggregatedIndex(p) => p.visit_node_references(visitor),
+            Self::AsymmetricSwitchIndex(p) => p.visit_node_references(visitor),
+            Self::ControlCurvePiecewiseInterpolated(p) => p.visit_node_references(visitor),
+            Self::ControlCurveIndex(p) => p.visit_node_references(visitor),
+            Self::ControlCurve(p) => p.visit_node_references(visitor),
+            Self::DailyProfile(p) => p.visit_node_references(visitor),
+            Self::IndexedArray(p) => p.visit_node_references(visitor),
+            Self::MonthlyProfile(p) => p.visit_node_references(visitor),
+            Self::WeeklyProfile(p) => p.visit_node_references(visitor),
+            Self::UniformDrawdownProfile(p) => p.visit_node_references(visitor),
+            Self::Max(p) => p.visit_node_references(visitor),
+            Self::Min(p) => p.visit_node_references(visitor),
+            Self::MultiThreshold(p) => p.visit_node_references(visitor),
+            Self::Negative(p) => p.visit_node_references(visitor),
+            Self::Polynomial1D(p) => p.visit_node_references(visitor),
+            Self::Threshold(p) => p.visit_node_references(visitor),
+            Self::TablesArray(p) => p.visit_node_references(visitor),
+            Self::Python(p) => p.visit_node_references(visitor),
+            Self::Delay(p) => p.visit_node_references(visitor),
+            Self::DelayIndex(p) => p.visit_node_references(visitor),
+            Self::Division(p) => p.visit_node_references(visitor),
+            Self::Offset(p) => p.visit_node_references(visitor),
+            Self::DiscountFactor(p) => p.visit_node_references(visitor),
+            Self::Interpolated(p) => p.visit_node_references(visitor),
+            Self::RbfProfile(p) => p.visit_node_references(visitor),
+            Self::NegativeMax(p) => p.visit_node_references(visitor),
+            Self::NegativeMin(p) => p.visit_node_references(visitor),
+            Self::HydropowerTarget(p) => p.visit_node_references(visitor),
+            Self::Rolling(p) => p.visit_node_references(visitor),
+            Self::RollingIndex(p) => p.visit_node_references(visitor),
+            Self::Placeholder(p) => p.visit_node_references(visitor),
+            Self::DiurnalProfile(p) => p.visit_node_references(visitor),
+        }
+    }
+
+    fn visit_node_references_mut<F: FnMut(&mut String)>(&mut self, visitor: &mut F) {
+        match self {
+            Self::Constant(p) => p.visit_node_references_mut(visitor),
+            Self::ConstantScenario(p) => p.visit_node_references_mut(visitor),
+            Self::ControlCurveInterpolated(p) => p.visit_node_references_mut(visitor),
+            Self::Aggregated(p) => p.visit_node_references_mut(visitor),
+            Self::AggregatedIndex(p) => p.visit_node_references_mut(visitor),
+            Self::AsymmetricSwitchIndex(p) => p.visit_node_references_mut(visitor),
+            Self::ControlCurvePiecewiseInterpolated(p) => p.visit_node_references_mut(visitor),
+            Self::ControlCurveIndex(p) => p.visit_node_references_mut(visitor),
+            Self::ControlCurve(p) => p.visit_node_references_mut(visitor),
+            Self::DailyProfile(p) => p.visit_node_references_mut(visitor),
+            Self::IndexedArray(p) => p.visit_node_references_mut(visitor),
+            Self::MonthlyProfile(p) => p.visit_node_references_mut(visitor),
+            Self::WeeklyProfile(p) => p.visit_node_references_mut(visitor),
+            Self::UniformDrawdownProfile(p) => p.visit_node_references_mut(visitor),
+            Self::Max(p) => p.visit_node_references_mut(visitor),
+            Self::Min(p) => p.visit_node_references_mut(visitor),
+            Self::MultiThreshold(p) => p.visit_node_references_mut(visitor),
+            Self::Negative(p) => p.visit_node_references_mut(visitor),
+            Self::Polynomial1D(p) => p.visit_node_references_mut(visitor),
+            Self::Threshold(p) => p.visit_node_references_mut(visitor),
+            Self::TablesArray(p) => p.visit_node_references_mut(visitor),
+            Self::Python(p) => p.visit_node_references_mut(visitor),
+            Self::Delay(p) => p.visit_node_references_mut(visitor),
+            Self::DelayIndex(p) => p.visit_node_references_mut(visitor),
+            Self::Division(p) => p.visit_node_references_mut(visitor),
+            Self::Offset(p) => p.visit_node_references_mut(visitor),
+            Self::DiscountFactor(p) => p.visit_node_references_mut(visitor),
+            Self::Interpolated(p) => p.visit_node_references_mut(visitor),
+            Self::RbfProfile(p) => p.visit_node_references_mut(visitor),
+            Self::NegativeMax(p) => p.visit_node_references_mut(visitor),
+            Self::NegativeMin(p) => p.visit_node_references_mut(visitor),
+            Self::HydropowerTarget(p) => p.visit_node_references_mut(visitor),
+            Self::Rolling(p) => p.visit_node_references_mut(visitor),
+            Self::RollingIndex(p) => p.visit_node_references_mut(visitor),
+            Self::Placeholder(p) => p.visit_node_references_mut(visitor),
+            Self::DiurnalProfile(p) => p.visit_node_references_mut(visitor),
+        }
+    }
+}
+
 #[derive(Clone)]
 pub enum ParameterOrTimeseriesRef {
     // Boxed due to large size difference.
@@ -685,48 +811,60 @@ impl Default for ConstantValue<u64> {
     }
 }
 
-// The Derive does not work for the generic type T
-mod constant_value_visit_metrics {
-    use super::*;
-    use crate::metric::Metric;
-    use crate::visit::VisitMetrics;
-    impl<T> VisitMetrics for ConstantValue<T>
-    where
-        T: VisitMetrics,
-    {
-        fn visit_metrics<F: FnMut(&Metric)>(&self, visitor: &mut F) {
-            match self {
-                Self::Literal { value } => value.visit_metrics(visitor),
-                Self::Table(v) => v.visit_metrics(visitor),
-            }
+// The derive does not work for the generic type T, so these are written out by hand.
+impl<T> VisitMetrics for ConstantValue<T>
+where
+    T: VisitMetrics,
+{
+    fn visit_metrics<F: FnMut(&Metric)>(&self, visitor: &mut F) {
+        match self {
+            Self::Literal { value } => value.visit_metrics(visitor),
+            Self::Table(v) => v.visit_metrics(visitor),
         }
-        fn visit_metrics_mut<F: FnMut(&mut Metric)>(&mut self, visitor: &mut F) {
-            match self {
-                Self::Literal { value } => value.visit_metrics_mut(visitor),
-                Self::Table(v) => v.visit_metrics_mut(visitor),
-            }
+    }
+
+    fn visit_metrics_mut<F: FnMut(&mut Metric)>(&mut self, visitor: &mut F) {
+        match self {
+            Self::Literal { value } => value.visit_metrics_mut(visitor),
+            Self::Table(v) => v.visit_metrics_mut(visitor),
         }
     }
 }
-mod constant_value_visit_paths {
-    use super::*;
-    use crate::visit::VisitPaths;
-    use std::path::{Path, PathBuf};
-    impl<T> VisitPaths for ConstantValue<T>
-    where
-        T: VisitPaths,
-    {
-        fn visit_paths<F: FnMut(&Path)>(&self, visitor: &mut F) {
-            match self {
-                Self::Literal { value } => value.visit_paths(visitor),
-                Self::Table(v) => v.visit_paths(visitor),
-            }
+
+impl<T> VisitPaths for ConstantValue<T>
+where
+    T: VisitPaths,
+{
+    fn visit_paths<F: FnMut(&Path)>(&self, visitor: &mut F) {
+        match self {
+            Self::Literal { value } => value.visit_paths(visitor),
+            Self::Table(v) => v.visit_paths(visitor),
         }
-        fn visit_paths_mut<F: FnMut(&mut PathBuf)>(&mut self, visitor: &mut F) {
-            match self {
-                Self::Literal { value } => value.visit_paths_mut(visitor),
-                Self::Table(v) => v.visit_paths_mut(visitor),
-            }
+    }
+
+    fn visit_paths_mut<F: FnMut(&mut PathBuf)>(&mut self, visitor: &mut F) {
+        match self {
+            Self::Literal { value } => value.visit_paths_mut(visitor),
+            Self::Table(v) => v.visit_paths_mut(visitor),
+        }
+    }
+}
+
+impl<T> VisitNodeReferences for ConstantValue<T>
+where
+    T: VisitNodeReferences,
+{
+    fn visit_node_references<F: FnMut(&str)>(&self, visitor: &mut F) {
+        match self {
+            Self::Literal { value } => value.visit_node_references(visitor),
+            Self::Table(v) => v.visit_node_references(visitor),
+        }
+    }
+
+    fn visit_node_references_mut<F: FnMut(&mut String)>(&mut self, visitor: &mut F) {
+        match self {
+            Self::Literal { value } => value.visit_node_references_mut(visitor),
+            Self::Table(v) => v.visit_node_references_mut(visitor),
         }
     }
 }
@@ -865,6 +1003,24 @@ mod tests {
     use crate::parameters::Parameter;
     use std::fs;
     use std::path::PathBuf;
+
+    /// The mutable metadata accessor should return the same metadata as [`Parameter::meta`].
+    #[test]
+    fn test_parameter_meta_mut() {
+        let data = r#"
+        {
+            "meta": { "name": "a-parameter" },
+            "type": "Constant",
+            "value": { "type": "Literal", "value": 1.0 }
+        }
+        "#;
+
+        let mut parameter: Parameter = serde_json::from_str(data).unwrap();
+        assert_eq!(parameter.name(), "a-parameter");
+
+        parameter.meta_mut().name = "renamed".to_string();
+        assert_eq!(parameter.name(), "renamed");
+    }
 
     /// Test all the documentation examples successfully deserialize.
     #[test]

@@ -4,6 +4,7 @@ use crate::SchemaError;
 #[cfg(feature = "core")]
 use crate::network::LoadArgs;
 use crate::nodes::NodeSlot;
+use crate::visit::VisitNodeReferences;
 #[cfg(feature = "core")]
 use pywr_core::{metric::UnresolvedMetricF64, network::UnresolvedEdge, node::UnresolvedNode};
 use pywr_schema_macros::skip_serializing_none;
@@ -38,6 +39,18 @@ impl TryFrom<pywr_v1_schema::edge::Edge> for Edge {
             from_slot,
             to_slot,
         })
+    }
+}
+
+impl VisitNodeReferences for Edge {
+    fn visit_node_references<F: FnMut(&str)>(&self, visitor: &mut F) {
+        visitor(&self.from_node);
+        visitor(&self.to_node);
+    }
+
+    fn visit_node_references_mut<F: FnMut(&mut String)>(&mut self, visitor: &mut F) {
+        visitor(&mut self.from_node);
+        visitor(&mut self.to_node);
     }
 }
 

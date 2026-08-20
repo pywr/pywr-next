@@ -4,6 +4,7 @@ mod virtual_storage;
 use crate::metric::Metric;
 use crate::nodes::{NodeAttribute, NodeComponent, NodeMeta, NodePosition, PlaceholderNode};
 use crate::parameters::Parameter;
+use crate::visit::VisitNodeReferences;
 #[cfg(feature = "core")]
 use crate::{LoadArgs, SchemaError};
 use crate::{VisitMetrics, VisitPaths};
@@ -19,6 +20,20 @@ pub use virtual_storage::{
     AnnualReset, RollingWindow, VirtualStorageNode, VirtualStorageNodeAttribute, VirtualStorageReset,
     VirtualStorageResetVolume,
 };
+
+/// Create a blank [`VirtualNode`] of the given type.
+///
+/// Every field of the returned node is at its default value, including the node's name.
+impl From<VirtualNodeType> for VirtualNode {
+    fn from(node_type: VirtualNodeType) -> Self {
+        match node_type {
+            VirtualNodeType::Aggregated => VirtualNode::Aggregated(AggregatedNode::default()),
+            VirtualNodeType::AggregatedStorage => VirtualNode::AggregatedStorage(AggregatedStorageNode::default()),
+            VirtualNodeType::VirtualStorage => VirtualNode::VirtualStorage(VirtualStorageNode::default()),
+            VirtualNodeType::Placeholder => VirtualNode::Placeholder(PlaceholderNode::default()),
+        }
+    }
+}
 
 /// The main enum for all nodes in the model.
 #[derive(serde::Deserialize, serde::Serialize, Clone, EnumDiscriminants, Debug, JsonSchema, Display)]
@@ -55,6 +70,16 @@ impl VirtualNode {
             VirtualNode::AggregatedStorage(n) => &n.meta,
             VirtualNode::VirtualStorage(n) => &n.meta,
             VirtualNode::Placeholder(n) => &n.meta,
+        }
+    }
+
+    /// Get a mutable reference to the node's metadata.
+    pub fn meta_mut(&mut self) -> &mut NodeMeta {
+        match self {
+            VirtualNode::Aggregated(n) => &mut n.meta,
+            VirtualNode::AggregatedStorage(n) => &mut n.meta,
+            VirtualNode::VirtualStorage(n) => &mut n.meta,
+            VirtualNode::Placeholder(n) => &mut n.meta,
         }
     }
 
@@ -157,11 +182,51 @@ impl VisitPaths for VirtualNode {
     }
 }
 
+impl VisitNodeReferences for VirtualNode {
+    fn visit_node_references<F: FnMut(&str)>(&self, visitor: &mut F) {
+        match self {
+            VirtualNode::Aggregated(n) => n.visit_node_references(visitor),
+            VirtualNode::AggregatedStorage(n) => n.visit_node_references(visitor),
+            VirtualNode::VirtualStorage(n) => n.visit_node_references(visitor),
+            VirtualNode::Placeholder(n) => n.visit_node_references(visitor),
+        }
+    }
+
+    fn visit_node_references_mut<F: FnMut(&mut String)>(&mut self, visitor: &mut F) {
+        match self {
+            VirtualNode::Aggregated(n) => n.visit_node_references_mut(visitor),
+            VirtualNode::AggregatedStorage(n) => n.visit_node_references_mut(visitor),
+            VirtualNode::VirtualStorage(n) => n.visit_node_references_mut(visitor),
+            VirtualNode::Placeholder(n) => n.visit_node_references_mut(visitor),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::VirtualNode;
+    use super::{VirtualNode, VirtualNodeType};
     use std::fs;
     use std::path::PathBuf;
+    use strum::IntoEnumIterator;
+
+    /// Every [`VirtualNodeType`] should convert to the [`VirtualNode`] variant it discriminates.
+    #[test]
+    fn test_virtual_node_from_virtual_node_type() {
+        for node_type in VirtualNodeType::iter() {
+            let node: VirtualNode = node_type.into();
+            assert_eq!(node.node_type(), node_type);
+        }
+    }
+
+    /// The mutable metadata accessor should reach the metadata of every virtual node variant.
+    #[test]
+    fn test_virtual_node_meta_mut() {
+        for node_type in VirtualNodeType::iter() {
+            let mut node: VirtualNode = node_type.into();
+            node.meta_mut().name = "renamed".to_string();
+            assert_eq!(node.name(), "renamed");
+        }
+    }
 
     /// Test all the documentation examples successfully deserialize.
     #[test]

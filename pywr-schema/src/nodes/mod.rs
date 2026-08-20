@@ -60,7 +60,7 @@ use crate::metric::Metric;
 use crate::network::NetworkSchema;
 use crate::parameters::Parameter;
 use crate::v1::{ConversionData, TryFromV1, TryIntoV2};
-use crate::visit::{VisitMetrics, VisitPaths};
+use crate::visit::{VisitMetrics, VisitNodeReferences, VisitPaths};
 #[cfg(feature = "core")]
 use crate::{error::SchemaError, network::LoadArgs};
 pub use abstraction::AbstractionNode;
@@ -198,81 +198,39 @@ impl NodeBuilder {
     /// Build the [`Node`].
     pub fn build(self) -> Node {
         let name = self.name.unwrap_or_else(|| self.ty.to_string());
-        let meta = NodeMeta {
-            name,
-            position: self.position,
-            ..Default::default()
-        };
 
-        match self.ty {
-            NodeType::Input => Node::Input(InputNode {
-                meta,
-                ..Default::default()
-            }),
-            NodeType::Link => Node::Link(LinkNode {
-                meta,
-                ..Default::default()
-            }),
-            NodeType::Output => Node::Output(OutputNode {
-                meta,
-                ..Default::default()
-            }),
-            NodeType::Storage => Node::Storage(StorageNode {
-                meta,
-                ..Default::default()
-            }),
-            NodeType::Catchment => Node::Catchment(CatchmentNode {
-                meta,
-                ..Default::default()
-            }),
-            NodeType::RiverGauge => Node::RiverGauge(RiverGaugeNode {
-                meta,
-                ..Default::default()
-            }),
-            NodeType::LossLink => Node::LossLink(LossLinkNode {
-                meta,
-                ..Default::default()
-            }),
-            NodeType::Delay => Node::Delay(DelayNode {
-                meta,
-                ..Default::default()
-            }),
-            NodeType::PiecewiseLink => Node::PiecewiseLink(PiecewiseLinkNode {
-                meta,
-                ..Default::default()
-            }),
-            NodeType::PiecewiseStorage => Node::PiecewiseStorage(PiecewiseStorageNode {
-                meta,
-                ..Default::default()
-            }),
-            NodeType::River => Node::River(RiverNode {
-                meta,
-                ..Default::default()
-            }),
-            NodeType::RiverSplitWithGauge => Node::RiverSplitWithGauge(RiverSplitWithGaugeNode {
-                meta,
-                ..Default::default()
-            }),
-            NodeType::WaterTreatmentWorks => Node::WaterTreatmentWorks(WaterTreatmentWorksNode {
-                meta,
-                ..Default::default()
-            }),
-            NodeType::Turbine => Node::Turbine(TurbineNode {
-                meta,
-                ..Default::default()
-            }),
-            NodeType::Reservoir => Node::Reservoir(ReservoirNode {
-                storage: StorageNode {
-                    meta,
-                    ..Default::default()
-                },
-                ..Default::default()
-            }),
-            NodeType::Placeholder => Node::Placeholder(PlaceholderNode { meta }),
-            NodeType::Abstraction => Node::Abstraction(AbstractionNode {
-                meta,
-                ..Default::default()
-            }),
+        let mut node: Node = self.ty.into();
+        let meta = node.meta_mut();
+        meta.name = name;
+        meta.position = self.position;
+
+        node
+    }
+}
+
+/// Create a blank [`Node`] of the given type.
+///
+/// Every field of the returned node is at its default value, including the node's name.
+impl From<NodeType> for Node {
+    fn from(node_type: NodeType) -> Self {
+        match node_type {
+            NodeType::Input => Node::Input(InputNode::default()),
+            NodeType::Link => Node::Link(LinkNode::default()),
+            NodeType::Output => Node::Output(OutputNode::default()),
+            NodeType::Storage => Node::Storage(StorageNode::default()),
+            NodeType::Catchment => Node::Catchment(CatchmentNode::default()),
+            NodeType::RiverGauge => Node::RiverGauge(RiverGaugeNode::default()),
+            NodeType::LossLink => Node::LossLink(LossLinkNode::default()),
+            NodeType::Delay => Node::Delay(DelayNode::default()),
+            NodeType::PiecewiseLink => Node::PiecewiseLink(PiecewiseLinkNode::default()),
+            NodeType::PiecewiseStorage => Node::PiecewiseStorage(PiecewiseStorageNode::default()),
+            NodeType::River => Node::River(RiverNode::default()),
+            NodeType::RiverSplitWithGauge => Node::RiverSplitWithGauge(RiverSplitWithGaugeNode::default()),
+            NodeType::WaterTreatmentWorks => Node::WaterTreatmentWorks(WaterTreatmentWorksNode::default()),
+            NodeType::Turbine => Node::Turbine(TurbineNode::default()),
+            NodeType::Reservoir => Node::Reservoir(ReservoirNode::default()),
+            NodeType::Placeholder => Node::Placeholder(PlaceholderNode::default()),
+            NodeType::Abstraction => Node::Abstraction(AbstractionNode::default()),
         }
     }
 }
@@ -338,6 +296,29 @@ impl Node {
             Node::Reservoir(n) => n.meta(),
             Node::Placeholder(n) => &n.meta,
             Node::Abstraction(n) => &n.meta,
+        }
+    }
+
+    /// Get a mutable reference to the node's metadata.
+    pub fn meta_mut(&mut self) -> &mut NodeMeta {
+        match self {
+            Node::Input(n) => &mut n.meta,
+            Node::Link(n) => &mut n.meta,
+            Node::Output(n) => &mut n.meta,
+            Node::Storage(n) => &mut n.meta,
+            Node::Catchment(n) => &mut n.meta,
+            Node::RiverGauge(n) => &mut n.meta,
+            Node::LossLink(n) => &mut n.meta,
+            Node::River(n) => &mut n.meta,
+            Node::RiverSplitWithGauge(n) => &mut n.meta,
+            Node::WaterTreatmentWorks(n) => &mut n.meta,
+            Node::PiecewiseLink(n) => &mut n.meta,
+            Node::PiecewiseStorage(n) => &mut n.meta,
+            Node::Delay(n) => &mut n.meta,
+            Node::Turbine(n) => &mut n.meta,
+            Node::Reservoir(n) => n.meta_mut(),
+            Node::Placeholder(n) => &mut n.meta,
+            Node::Abstraction(n) => &mut n.meta,
         }
     }
 
@@ -830,14 +811,80 @@ impl VisitPaths for Node {
     }
 }
 
+impl VisitNodeReferences for Node {
+    fn visit_node_references<F: FnMut(&str)>(&self, visitor: &mut F) {
+        match self {
+            Node::Input(n) => n.visit_node_references(visitor),
+            Node::Link(n) => n.visit_node_references(visitor),
+            Node::Output(n) => n.visit_node_references(visitor),
+            Node::Storage(n) => n.visit_node_references(visitor),
+            Node::Catchment(n) => n.visit_node_references(visitor),
+            Node::RiverGauge(n) => n.visit_node_references(visitor),
+            Node::LossLink(n) => n.visit_node_references(visitor),
+            Node::River(n) => n.visit_node_references(visitor),
+            Node::RiverSplitWithGauge(n) => n.visit_node_references(visitor),
+            Node::WaterTreatmentWorks(n) => n.visit_node_references(visitor),
+            Node::PiecewiseLink(n) => n.visit_node_references(visitor),
+            Node::PiecewiseStorage(n) => n.visit_node_references(visitor),
+            Node::Delay(n) => n.visit_node_references(visitor),
+            Node::Turbine(n) => n.visit_node_references(visitor),
+            Node::Reservoir(n) => n.visit_node_references(visitor),
+            Node::Placeholder(n) => n.visit_node_references(visitor),
+            Node::Abstraction(n) => n.visit_node_references(visitor),
+        }
+    }
+
+    fn visit_node_references_mut<F: FnMut(&mut String)>(&mut self, visitor: &mut F) {
+        match self {
+            Node::Input(n) => n.visit_node_references_mut(visitor),
+            Node::Link(n) => n.visit_node_references_mut(visitor),
+            Node::Output(n) => n.visit_node_references_mut(visitor),
+            Node::Storage(n) => n.visit_node_references_mut(visitor),
+            Node::Catchment(n) => n.visit_node_references_mut(visitor),
+            Node::RiverGauge(n) => n.visit_node_references_mut(visitor),
+            Node::LossLink(n) => n.visit_node_references_mut(visitor),
+            Node::River(n) => n.visit_node_references_mut(visitor),
+            Node::RiverSplitWithGauge(n) => n.visit_node_references_mut(visitor),
+            Node::WaterTreatmentWorks(n) => n.visit_node_references_mut(visitor),
+            Node::PiecewiseLink(n) => n.visit_node_references_mut(visitor),
+            Node::PiecewiseStorage(n) => n.visit_node_references_mut(visitor),
+            Node::Delay(n) => n.visit_node_references_mut(visitor),
+            Node::Turbine(n) => n.visit_node_references_mut(visitor),
+            Node::Reservoir(n) => n.visit_node_references_mut(visitor),
+            Node::Placeholder(n) => n.visit_node_references_mut(visitor),
+            Node::Abstraction(n) => n.visit_node_references_mut(visitor),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::metric::Metric;
-    use crate::nodes::{Node, NodeOrVirtualNode};
+    use crate::nodes::{Node, NodeOrVirtualNode, NodeType};
     use crate::v1::{ConversionData, TryIntoV2};
     use pywr_v1_schema::nodes::Node as NodeV1;
     use std::fs;
     use std::path::PathBuf;
+    use strum::IntoEnumIterator;
+
+    /// Every [`NodeType`] should convert to the [`Node`] variant it discriminates.
+    #[test]
+    fn test_node_from_node_type() {
+        for node_type in NodeType::iter() {
+            let node: Node = node_type.into();
+            assert_eq!(node.node_type(), node_type);
+        }
+    }
+
+    /// The mutable metadata accessor should reach the metadata of every node variant.
+    #[test]
+    fn test_node_meta_mut() {
+        for node_type in NodeType::iter() {
+            let mut node: Node = node_type.into();
+            node.meta_mut().name = "renamed".to_string();
+            assert_eq!(node.name(), "renamed");
+        }
+    }
 
     #[test]
     fn test_ts_inline() {
