@@ -4,7 +4,7 @@ use crate::error::SchemaError;
 use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::network::LoadArgs;
-use crate::parameters::{ConstantFloatVec, ConstantValue, ConversionData, ParameterMeta};
+use crate::parameters::{ConstantFloatVec, ConstantValue, ConversionData, ParameterMeta, ParameterPhase};
 use crate::v1::{TryFromV1, TryIntoV2, try_convert_parameter_attr, try_convert_values};
 #[cfg(feature = "core")]
 use pywr_core::parameters::ParameterName;
@@ -342,6 +342,7 @@ impl TryFromV1<MaxParameterV1> for MaxParameter {
 #[serde(deny_unknown_fields)]
 pub struct DivisionParameter {
     pub meta: ParameterMeta,
+    pub phase: ParameterPhase,
     pub numerator: Metric,
     pub denominator: Metric,
 }
@@ -357,9 +358,15 @@ impl DivisionParameter {
         let n = self.numerator.load(network, args, None)?;
         let d = self.denominator.load(network, args, None)?;
 
-        let p = pywr_core::parameters::DivisionParameterBuilder::new(ParameterName::new(&self.meta.name, parent), n, d);
+        let name = ParameterName::new(&self.meta.name, parent);
 
-        network.parameters().f64(Box::new(p));
+        let builder = match self.phase {
+            ParameterPhase::Before => pywr_core::parameters::DivisionParameterBuilder::before(name, n, d),
+            ParameterPhase::After => pywr_core::parameters::DivisionParameterBuilder::after(name, n, d),
+            ParameterPhase::Both => pywr_core::parameters::DivisionParameterBuilder::both(name, n, d),
+        };
+
+        network.parameters().f64(Box::new(builder));
         Ok(())
     }
 }
@@ -383,6 +390,7 @@ impl TryFromV1<DivisionParameterV1> for DivisionParameter {
             meta,
             numerator,
             denominator,
+            phase: ParameterPhase::Before,
         };
         Ok(p)
     }
