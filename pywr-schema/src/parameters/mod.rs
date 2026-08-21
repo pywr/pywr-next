@@ -254,7 +254,7 @@ impl Parameter {
             Self::Python(_) => ParameterPhase::Before,
             Self::Delay(_) => ParameterPhase::Before,
             Self::DelayIndex(_) => ParameterPhase::Before,
-            Self::Division(_) => ParameterPhase::Before,
+            Self::Division(p) => p.phase.clone(),
             Self::Offset(_) => ParameterPhase::Before,
             Self::DiscountFactor(_) => ParameterPhase::Before,
             Self::Interpolated(_) => ParameterPhase::Before,

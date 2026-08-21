@@ -3,6 +3,7 @@
     "name": "my-division"
   },
   "type": "Division",
+  "phase": "Before",
   "numerator": {
     "type": "Parameter",
     "name": "my-monthly-profile"
