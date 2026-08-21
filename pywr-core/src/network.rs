@@ -2425,7 +2425,7 @@ mod tests {
 
         builder.connect("input", "output");
 
-        let broken_parameter = parameters::MaxParameterBuilder::new(
+        let broken_parameter = parameters::MaxParameterBuilder::before(
             "my-max".into(),
             UnresolvedMetricF64::new_parameter_before("this-is-missing"),
             0.0,
@@ -2460,14 +2460,14 @@ mod tests {
 
         builder.connect("input", "output");
 
-        let max_param = parameters::MaxParameterBuilder::new(
+        let max_param = parameters::MaxParameterBuilder::before(
             "my-max".into(),
             UnresolvedMetricF64::new_parameter_before("my-other-max"),
             0.0,
         );
         builder.parameters().f64(Box::new(max_param));
 
-        let max_param = parameters::MaxParameterBuilder::new(
+        let max_param = parameters::MaxParameterBuilder::before(
             "my-other-max".into(),
             UnresolvedMetricF64::new_parameter_before("my-max"),
             0.0,
@@ -2501,7 +2501,7 @@ mod tests {
         builder.node(input).node(NodeBuilder::output("output"));
         builder.connect("input", "output");
 
-        builder.parameters().f64(Box::new(MaxParameterBuilder::new(
+        builder.parameters().f64(Box::new(MaxParameterBuilder::before(
             "a".into(),
             UnresolvedMetricF64::new_parameter_before("b"),
             0.0,
