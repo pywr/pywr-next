@@ -5,7 +5,7 @@ use crate::error::SchemaError;
 use crate::metric::{Metric, NodeAttrReference};
 #[cfg(feature = "core")]
 use crate::network::LoadArgs;
-use crate::parameters::{ConversionData, ParameterMeta};
+use crate::parameters::{ConversionData, ParameterMeta, ParameterPhase};
 use crate::v1::{TryFromV1, TryIntoV2, try_convert_parameter_attr};
 #[cfg(feature = "core")]
 use pywr_core::{metric::UnresolvedMetricU64, parameters::ParameterName};
@@ -88,6 +88,7 @@ impl From<Predicate> for pywr_core::parameters::Predicate {
 #[serde(deny_unknown_fields)]
 pub struct ThresholdParameter {
     pub meta: ParameterMeta,
+    pub phase: ParameterPhase,
     /// The metric to compare against the threshold.
     pub metric: Metric,
     /// The threshold to compare against.
@@ -124,12 +125,26 @@ impl ThresholdParameter {
             ParameterName::new(&self.meta.name, parent)
         };
 
-        let mut builder = pywr_core::parameters::ThresholdParameterBuilder::new(
-            name.clone(),
-            metric,
-            threshold,
-            self.predicate.into(),
-        );
+        let mut builder = match self.phase {
+            ParameterPhase::Before => pywr_core::parameters::ThresholdParameterBuilder::before(
+                name.clone(),
+                metric,
+                threshold,
+                self.predicate.into()
+            ),
+            ParameterPhase::After => pywr_core::parameters::ThresholdParameterBuilder::after(
+                name.clone(),
+                metric,
+                threshold,
+                self.predicate.into()
+            ),
+            ParameterPhase::Both => pywr_core::parameters::ThresholdParameterBuilder::both(
+                name.clone(),
+                metric,
+                threshold,
+                self.predicate.into()
+            ),
+        };
 
         if self.ratchet {
             builder.ratchet();
@@ -138,10 +153,21 @@ impl ThresholdParameter {
         network.parameters().u64(Box::new(builder));
 
         if let Some(values) = &self.returned_metrics {
-            let mut values_builder = pywr_core::parameters::IndexedArrayParameterBuilder::new(
-                ParameterName::new(&self.meta.name, parent),
-                UnresolvedMetricU64::new_parameter_before(name),
-            );
+
+            let mut values_builder = match self.phase {
+                ParameterPhase::Before => pywr_core::parameters::IndexedArrayParameterBuilder::before(
+                    ParameterName::new(&self.meta.name, parent),
+                    UnresolvedMetricU64::new_parameter_before(name),
+                ),
+                ParameterPhase::After => pywr_core::parameters::IndexedArrayParameterBuilder::after(
+                    ParameterName::new(&self.meta.name, parent),
+                    UnresolvedMetricU64::new_parameter_before(name),
+                ),
+                ParameterPhase::Both => pywr_core::parameters::IndexedArrayParameterBuilder::both(
+                    ParameterName::new(&self.meta.name, parent),
+                    UnresolvedMetricU64::new_parameter_before(name),
+                ),
+            };
 
             for v in values {
                 values_builder.metric(v.load(network, args, None)?);
@@ -194,6 +220,7 @@ impl TryFromV1<ParameterThresholdParameterV1> for ThresholdParameter {
             threshold,
             predicate: v1.predicate.into(),
             ratchet: false,
+            phase: ParameterPhase::Before,
         };
         Ok(p)
     }
@@ -241,6 +268,7 @@ impl TryFromV1<NodeThresholdParameterV1> for ThresholdParameter {
             threshold,
             predicate: v1.predicate.into(),
             ratchet: false,
+            phase: ParameterPhase::Before,
         };
         Ok(p)
     }
@@ -288,6 +316,7 @@ impl TryFromV1<StorageThresholdParameterV1> for ThresholdParameter {
             threshold,
             predicate: v1.predicate.into(),
             ratchet: false,
+            phase: ParameterPhase::Before,
         };
         Ok(p)
     }
@@ -313,6 +342,7 @@ impl TryFromV1<StorageThresholdParameterV1> for ThresholdParameter {
 #[serde(deny_unknown_fields)]
 pub struct MultiThresholdParameter {
     pub meta: ParameterMeta,
+    pub phase: ParameterPhase,
     /// The metric to compare against the threshold.
     pub metric: Metric,
     /// The thresholds to compare against.
@@ -343,8 +373,23 @@ impl MultiThresholdParameter {
             self.meta.name.as_str().into()
         };
 
-        let mut builder =
-            pywr_core::parameters::MultiThresholdParameterBuilder::new(name.clone(), metric, self.predicate.into());
+        let mut builder = match self.phase {
+            ParameterPhase::Before => pywr_core::parameters::MultiThresholdParameterBuilder::before(
+                name.clone(),
+                metric,
+                self.predicate.into()
+            ),
+            ParameterPhase::After => pywr_core::parameters::MultiThresholdParameterBuilder::after(
+                name.clone(),
+                metric,
+                self.predicate.into()
+            ),
+            ParameterPhase::Both => pywr_core::parameters::MultiThresholdParameterBuilder::both(
+                name.clone(),
+                metric,
+                self.predicate.into()
+            ),
+        };
 
         for t in &self.thresholds {
             builder.threshold(t.load(network, args, parent)?);
@@ -357,10 +402,20 @@ impl MultiThresholdParameter {
         network.parameters().u64(Box::new(builder));
 
         if let Some(values) = &self.returned_metrics {
-            let mut values_builder = pywr_core::parameters::IndexedArrayParameterBuilder::new(
-                ParameterName::new(&self.meta.name, parent),
-                UnresolvedMetricU64::new_parameter_before(name),
-            );
+            let mut values_builder = match self.phase {
+                ParameterPhase::Before => pywr_core::parameters::IndexedArrayParameterBuilder::before(
+                    ParameterName::new(&self.meta.name, parent),
+                    UnresolvedMetricU64::new_parameter_before(name),
+                ),
+                ParameterPhase::After => pywr_core::parameters::IndexedArrayParameterBuilder::after(
+                    ParameterName::new(&self.meta.name, parent),
+                    UnresolvedMetricU64::new_parameter_before(name),
+                ),
+                ParameterPhase::Both => pywr_core::parameters::IndexedArrayParameterBuilder::both(
+                    ParameterName::new(&self.meta.name, parent),
+                    UnresolvedMetricU64::new_parameter_before(name),
+                ),
+            };
 
             for v in values {
                 values_builder.metric(v.load(network, args, None)?);
@@ -398,6 +453,7 @@ impl TryFromV1<MultiThresholdIndexParameterV1> for MultiThresholdParameter {
             thresholds,
             predicate: Predicate::GE, // v1 assumed GE and this was not configurable
             ratchet: false,
+            phase: ParameterPhase::Before,
         };
         Ok(p)
     }
@@ -428,6 +484,7 @@ impl TryFromV1<MultipleThresholdParameterIndexParameterV1> for MultiThresholdPar
             thresholds,
             predicate: Predicate::GE, // v1 assumed GE and this was not configurable
             ratchet: false,
+            phase: ParameterPhase::Before,
         };
         Ok(p)
     }
