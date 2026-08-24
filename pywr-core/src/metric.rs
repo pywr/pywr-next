@@ -7,7 +7,7 @@ use crate::network::{
 use crate::node::{NodeError, UnresolvedNode};
 use crate::parameters::{
     ConstParameterIndex, GeneralAfterValueIndex, GeneralBeforeValueIndex, ParameterIndex, ParameterName,
-    ParameterReturnValue, SimpleParameterIndex,
+    SimpleParameterIndex, UnresolvedParameterReturnValue,
 };
 use crate::state::{
     ConstParameterValues, ConstParameterValuesError, MultiValue, NetworkStateError, SimpleParameterValues,
@@ -109,6 +109,16 @@ impl SimpleMetricF64 {
     }
 }
 
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub enum ParameterReturnValue<T> {
+    Before(GeneralBeforeValueIndex<T>),
+    After(GeneralAfterValueIndex<T>),
+    // Returns the value corresponding to the requested phase.
+    Requested {
+        before: GeneralBeforeValueIndex<T>,
+        after: GeneralAfterValueIndex<T>,
+    },
+}
 #[derive(Debug, Error)]
 pub enum MetricF64Error {
     #[error("Node index not found: {0}")]
@@ -150,16 +160,14 @@ pub enum MetricF64 {
         indices: Vec<EdgeIndex>,
         name: String,
     },
-    ParameterBeforeF64(GeneralBeforeValueIndex<f64>),
-    ParameterAfterF64(GeneralAfterValueIndex<f64>),
-    ParameterBeforeU64(GeneralBeforeValueIndex<u64>),
-    ParameterAfterU64(GeneralAfterValueIndex<u64>),
-    ParameterBeforeMulti {
-        index: GeneralBeforeValueIndex<MultiValue>,
-        key: String,
+    ParameterF64 {
+        indices: ParameterReturnValue<f64>,
     },
-    ParameterAfterMulti {
-        index: GeneralAfterValueIndex<MultiValue>,
+    ParameterU64 {
+        indices: ParameterReturnValue<u64>,
+    },
+    ParameterMulti {
+        indices: ParameterReturnValue<MultiValue>,
         key: String,
     },
     VirtualStorageVolume(VirtualStorageIndex),
@@ -176,6 +184,12 @@ pub enum MetricF64 {
     // TODO implement other MultiNodeXXX variants
     InterNetworkTransfer(MultiNetworkTransferIndex),
     Simple(SimpleMetricF64),
+}
+
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub enum CalculationPhase {
+    Before,
+    After,
 }
 
 impl MetricF64 {
@@ -236,19 +250,31 @@ impl MetricF64 {
                     .sum::<Result<_, _>>()?;
                 Ok(flow)
             }
-            MetricF64::ParameterBeforeF64(idx) => Ok(state.get_general_parameter_f64_before(*idx)?),
-            MetricF64::ParameterAfterF64(idx) => Ok(state.get_general_parameter_f64_after(*idx)?),
-            MetricF64::ParameterBeforeU64(idx) => Ok(state.get_general_parameter_u64_before(*idx)? as f64),
-            MetricF64::ParameterAfterU64(idx) => Ok(state.get_general_parameter_u64_after(*idx)? as f64),
-            MetricF64::ParameterBeforeMulti { index, key } => {
-                let mv = state.get_general_parameter_multi_before(*index)?;
-                let value = mv
-                    .get_value(key)
-                    .ok_or_else(|| MetricF64Error::GeneralMultiValueParameterKeyNotFound { key: key.clone() })?;
-                Ok(*value)
-            }
-            MetricF64::ParameterAfterMulti { index, key } => {
-                let mv = state.get_general_parameter_multi_after(*index)?;
+            MetricF64::ParameterF64 { indices } => match indices {
+                ParameterReturnValue::Before(index) => Ok(state.get_general_parameter_f64_before(*index)?),
+                ParameterReturnValue::After(index) => Ok(state.get_general_parameter_f64_after(*index)?),
+                ParameterReturnValue::Requested { before, after } => match state.get_calculation_phase() {
+                    CalculationPhase::Before => Ok(state.get_general_parameter_f64_before(*before)?),
+                    CalculationPhase::After => Ok(state.get_general_parameter_f64_after(*after)?),
+                },
+            },
+            MetricF64::ParameterU64 { indices } => match indices {
+                ParameterReturnValue::Before(index) => Ok(state.get_general_parameter_u64_before(*index)? as f64),
+                ParameterReturnValue::After(index) => Ok(state.get_general_parameter_u64_after(*index)? as f64),
+                ParameterReturnValue::Requested { before, after } => match state.get_calculation_phase() {
+                    CalculationPhase::Before => Ok(state.get_general_parameter_u64_before(*before)? as f64),
+                    CalculationPhase::After => Ok(state.get_general_parameter_u64_after(*after)? as f64),
+                },
+            },
+            MetricF64::ParameterMulti { indices, key } => {
+                let mv = match indices {
+                    ParameterReturnValue::Before(index) => state.get_general_parameter_multi_before(*index)?,
+                    ParameterReturnValue::After(index) => state.get_general_parameter_multi_after(*index)?,
+                    ParameterReturnValue::Requested { before, after } => match state.get_calculation_phase() {
+                        CalculationPhase::Before => state.get_general_parameter_multi_before(*before)?,
+                        CalculationPhase::After => state.get_general_parameter_multi_after(*after)?,
+                    },
+                };
                 let value = mv
                     .get_value(key)
                     .ok_or_else(|| MetricF64Error::GeneralMultiValueParameterKeyNotFound { key: key.clone() })?;
@@ -450,7 +476,7 @@ pub enum MetricF64ResolutionError {
     ParameterNotRegisteredInCorrectPhase {
         parameter: ParameterName,
         consumer_phase: MetricConsumerPhase,
-        return_value: ParameterReturnValue,
+        return_value: UnresolvedParameterReturnValue,
     },
 }
 
@@ -473,12 +499,12 @@ pub enum UnresolvedMetricF64 {
     },
     ParameterValue {
         name: ParameterName,
-        return_value: ParameterReturnValue,
+        return_value: UnresolvedParameterReturnValue,
     },
     MultiParameterValue {
         name: ParameterName,
         key: String,
-        return_value: ParameterReturnValue,
+        return_value: UnresolvedParameterReturnValue,
     },
     VirtualStorageVolume(UnresolvedNode),
     VirtualStorageProportionalVolume(UnresolvedNode),
@@ -497,49 +523,49 @@ pub enum UnresolvedMetricF64 {
 
 impl UnresolvedMetricF64 {
     /// Create a new [`Self::ParameterValue`] variant with the given parameter name and a return
-    /// value of [`ParameterReturnValue::Before`].
+    /// value of [`UnresolvedParameterReturnValue::Before`].
     pub fn new_parameter_before<N: Into<ParameterName>>(name: N) -> Self {
         Self::ParameterValue {
             name: name.into(),
-            return_value: ParameterReturnValue::Before,
+            return_value: UnresolvedParameterReturnValue::Before,
         }
     }
 
     /// Create a new [`Self::MultiParameterValue`] variant with the given parameter name and a return
-    /// value of [`ParameterReturnValue::Before`].
+    /// value of [`UnresolvedParameterReturnValue::Before`].
     pub fn new_parameter_before_key<N: Into<ParameterName>>(name: N, key: &str) -> Self {
         Self::MultiParameterValue {
             name: name.into(),
             key: key.to_string(),
-            return_value: ParameterReturnValue::Before,
+            return_value: UnresolvedParameterReturnValue::Before,
         }
     }
 
     /// Create a new [`Self::ParameterValue`] variant with the given parameter name and a return
-    /// value of [`ParameterReturnValue::After`].
+    /// value of [`UnresolvedParameterReturnValue::After`].
     pub fn new_parameter_after<N: Into<ParameterName>>(name: N) -> Self {
         Self::ParameterValue {
             name: name.into(),
-            return_value: ParameterReturnValue::After,
+            return_value: UnresolvedParameterReturnValue::After,
         }
     }
 
     /// Create a new [`Self::ParameterValue`] variant with the given parameter name and a return
-    /// value of [`ParameterReturnValue::AfterOrElseInitial`].
+    /// value of [`UnresolvedParameterReturnValue::AfterOrElseInitial`].
     pub fn new_parameter_after_else_initial<N: Into<ParameterName>>(name: N) -> Self {
         Self::ParameterValue {
             name: name.into(),
-            return_value: ParameterReturnValue::AfterOrElseInitial,
+            return_value: UnresolvedParameterReturnValue::AfterOrElseInitial,
         }
     }
 
     /// Create a new [`Self::MultiParameterValue`] variant with the given parameter name and a return
-    /// value of [`ParameterReturnValue::After`].
+    /// value of [`UnresolvedParameterReturnValue::After`].
     pub fn new_parameter_after_key<N: Into<ParameterName>>(name: N, key: &str) -> Self {
         Self::MultiParameterValue {
             name: name.into(),
             key: key.to_string(),
-            return_value: ParameterReturnValue::After,
+            return_value: UnresolvedParameterReturnValue::After,
         }
     }
 
@@ -789,7 +815,7 @@ impl From<f64> for UnresolvedMetricF64 {
     }
 }
 
-/// Resolve a [`ParameterIndex<f64>`] to a [`MetricF64`] using the provided [`ParameterReturnValue`]
+/// Resolve a [`ParameterIndex<f64>`] to a [`MetricF64`] using the provided [`UnresolvedParameterReturnValue`]
 /// and [`MetricConsumerPhase`]. This function is used to determine if a parameter can be resolved to a metric
 /// based on the phase in which the consumer is using the metric and the return value of the parameter.
 ///
@@ -797,15 +823,17 @@ impl From<f64> for UnresolvedMetricF64 {
 fn resolve_parameter_index_f64_to_metric_f64(
     name: &ParameterName,
     idx: ParameterIndex<f64>,
-    parameter_return_value: ParameterReturnValue,
+    parameter_return_value: UnresolvedParameterReturnValue,
     consumer_phase: MetricConsumerPhase,
 ) -> Result<MetricF64, MetricF64ResolutionError> {
     match idx {
         // Constant and simple can always be resolved to a metric, regardless of the consumer phase
         // as long as the parameter return value is "before".
         ParameterIndex::Const(idx) => match parameter_return_value {
-            ParameterReturnValue::Before => Ok(ConstantMetricF64::ParameterValue(idx).into()),
-            ParameterReturnValue::After | ParameterReturnValue::AfterOrElseInitial => {
+            UnresolvedParameterReturnValue::Before => Ok(ConstantMetricF64::ParameterValue(idx).into()),
+            UnresolvedParameterReturnValue::After
+            | UnresolvedParameterReturnValue::AfterOrElseInitial
+            | UnresolvedParameterReturnValue::Both => {
                 Err(MetricF64ResolutionError::ParameterNotRegisteredInCorrectPhase {
                     parameter: name.clone(),
                     consumer_phase,
@@ -814,8 +842,10 @@ fn resolve_parameter_index_f64_to_metric_f64(
             }
         },
         ParameterIndex::Simple(idx) => match parameter_return_value {
-            ParameterReturnValue::Before => Ok(SimpleMetricF64::ParameterValue { index: idx }.into()),
-            ParameterReturnValue::After | ParameterReturnValue::AfterOrElseInitial => {
+            UnresolvedParameterReturnValue::Before => Ok(SimpleMetricF64::ParameterValue { index: idx }.into()),
+            UnresolvedParameterReturnValue::After
+            | UnresolvedParameterReturnValue::AfterOrElseInitial
+            | UnresolvedParameterReturnValue::Both => {
                 Err(MetricF64ResolutionError::ParameterNotRegisteredInCorrectPhase {
                     parameter: name.clone(),
                     consumer_phase,
@@ -826,12 +856,14 @@ fn resolve_parameter_index_f64_to_metric_f64(
         // General parameters must be validated against the consumer phase to determine if they can be resolved to a metric.
         ParameterIndex::General(idx) => {
             match (parameter_return_value, consumer_phase) {
-                (ParameterReturnValue::Before, MetricConsumerPhase::Before) => {
+                (UnresolvedParameterReturnValue::Before, MetricConsumerPhase::Before) => {
                     // The consumer is using the metric in the "before" phase, and the parameter is
                     // providing a "before" value, so we can resolve it to a metric provided the
                     // parameter index contains a "before" index.
                     match idx.before {
-                        Some(before_idx) => Ok(MetricF64::ParameterBeforeF64(before_idx)),
+                        Some(before_idx) => Ok(MetricF64::ParameterF64 {
+                            indices: ParameterReturnValue::Before(before_idx),
+                        }),
                         None => Err(MetricF64ResolutionError::ParameterNotRegisteredInCorrectPhase {
                             parameter: name.clone(),
                             consumer_phase,
@@ -839,13 +871,15 @@ fn resolve_parameter_index_f64_to_metric_f64(
                         }),
                     }
                 }
-                (ParameterReturnValue::Before, MetricConsumerPhase::After) => {
+                (UnresolvedParameterReturnValue::Before, MetricConsumerPhase::After) => {
                     // The consumer is using the metric in the "after" phase, but the parameter is
                     // providing a "before" value. This is fine because the "before" value is still
                     // valid in the "after" phase, so we can resolve it to a metric provided the
                     // parameter index contains a "before" index.
                     match idx.before {
-                        Some(before_idx) => Ok(MetricF64::ParameterBeforeF64(before_idx)),
+                        Some(before_idx) => Ok(MetricF64::ParameterF64 {
+                            indices: ParameterReturnValue::Before(before_idx),
+                        }),
                         None => Err(MetricF64ResolutionError::ParameterNotRegisteredInCorrectPhase {
                             parameter: name.clone(),
                             consumer_phase,
@@ -853,13 +887,15 @@ fn resolve_parameter_index_f64_to_metric_f64(
                         }),
                     }
                 }
-                (ParameterReturnValue::Before, MetricConsumerPhase::Both) => {
+                (UnresolvedParameterReturnValue::Before, MetricConsumerPhase::Both) => {
                     // The consumer is using the metric in both "before" and "after" phases, and the
                     // parameter is providing a "before" value. This is fine because the "before"
                     // value is valid in both phases, so we can resolve it to a metric provided the
                     // parameter index contains a "before" index.
                     match idx.before {
-                        Some(before_idx) => Ok(MetricF64::ParameterBeforeF64(before_idx)),
+                        Some(before_idx) => Ok(MetricF64::ParameterF64 {
+                            indices: ParameterReturnValue::Before(before_idx),
+                        }),
                         None => Err(MetricF64ResolutionError::ParameterNotRegisteredInCorrectPhase {
                             parameter: name.clone(),
                             consumer_phase,
@@ -867,8 +903,8 @@ fn resolve_parameter_index_f64_to_metric_f64(
                         }),
                     }
                 }
-                (ParameterReturnValue::After, MetricConsumerPhase::Before)
-                | (ParameterReturnValue::After, MetricConsumerPhase::Both) => {
+                (UnresolvedParameterReturnValue::After, MetricConsumerPhase::Before)
+                | (UnresolvedParameterReturnValue::After, MetricConsumerPhase::Both) => {
                     // The consumer is using the metric in the "before" phase, but the parameter is
                     // providing an "after" value. This is not valid because the "after" value is not
                     // valid in the "before" phase, so we cannot resolve it to a metric.
@@ -878,12 +914,14 @@ fn resolve_parameter_index_f64_to_metric_f64(
                         return_value: parameter_return_value,
                     })
                 }
-                (ParameterReturnValue::After, MetricConsumerPhase::After) => {
+                (UnresolvedParameterReturnValue::After, MetricConsumerPhase::After) => {
                     // The consumer is using the metric in the "after" phase, and the parameter is
                     // providing an "after" value, so we can resolve it to a metric provided the
                     // parameter index contains an "after" index.
                     match idx.after {
-                        Some(after_idx) => Ok(MetricF64::ParameterAfterF64(after_idx)),
+                        Some(after_idx) => Ok(MetricF64::ParameterF64 {
+                            indices: ParameterReturnValue::After(after_idx),
+                        }),
                         None => Err(MetricF64ResolutionError::ParameterNotRegisteredInCorrectPhase {
                             parameter: name.clone(),
                             consumer_phase,
@@ -891,13 +929,15 @@ fn resolve_parameter_index_f64_to_metric_f64(
                         }),
                     }
                 }
-                (ParameterReturnValue::AfterOrElseInitial, MetricConsumerPhase::Before) => {
+                (UnresolvedParameterReturnValue::AfterOrElseInitial, MetricConsumerPhase::Before) => {
                     // The consumer is using the metric in the "before" phase, but the parameter is
                     // providing an "after" value. However, they have specified that using any
                     // initial value is acceptable, so we can resolve it to a metric provided the
                     // parameter index contains an "after" index.
                     match idx.after {
-                        Some(after_idx) => Ok(MetricF64::ParameterAfterF64(after_idx)),
+                        Some(after_idx) => Ok(MetricF64::ParameterF64 {
+                            indices: ParameterReturnValue::After(after_idx),
+                        }),
                         None => Err(MetricF64ResolutionError::ParameterNotRegisteredInCorrectPhase {
                             parameter: name.clone(),
                             consumer_phase,
@@ -905,12 +945,14 @@ fn resolve_parameter_index_f64_to_metric_f64(
                         }),
                     }
                 }
-                (ParameterReturnValue::AfterOrElseInitial, MetricConsumerPhase::After) => {
+                (UnresolvedParameterReturnValue::AfterOrElseInitial, MetricConsumerPhase::After) => {
                     // The consumer is using the metric in the "after" phase, and the parameter is
                     // providing an "after" value, so we can resolve it to a metric provided the
                     // parameter index contains an "after" index.
                     match idx.after {
-                        Some(after_idx) => Ok(MetricF64::ParameterAfterF64(after_idx)),
+                        Some(after_idx) => Ok(MetricF64::ParameterF64 {
+                            indices: ParameterReturnValue::After(after_idx),
+                        }),
                         None => Err(MetricF64ResolutionError::ParameterNotRegisteredInCorrectPhase {
                             parameter: name.clone(),
                             consumer_phase,
@@ -918,14 +960,64 @@ fn resolve_parameter_index_f64_to_metric_f64(
                         }),
                     }
                 }
-                (ParameterReturnValue::AfterOrElseInitial, MetricConsumerPhase::Both) => {
+                (UnresolvedParameterReturnValue::AfterOrElseInitial, MetricConsumerPhase::Both) => {
                     // The consumer is using the metric in both "before" and "after" phases, and the
                     // parameter is providing an "after" value. However, they have specified that using any
                     // initial value is acceptable in the "before" phase, so we can resolve it to a metric provided the
                     // parameter index contains an "after" index.
                     match idx.after {
-                        Some(after_idx) => Ok(MetricF64::ParameterAfterF64(after_idx)),
+                        Some(after_idx) => Ok(MetricF64::ParameterF64 {
+                            indices: ParameterReturnValue::After(after_idx),
+                        }),
                         None => Err(MetricF64ResolutionError::ParameterNotRegisteredInCorrectPhase {
+                            parameter: name.clone(),
+                            consumer_phase,
+                            return_value: parameter_return_value,
+                        }),
+                    }
+                }
+                (UnresolvedParameterReturnValue::Both, MetricConsumerPhase::Before) => {
+                    // The consumer is using the metric in the "before" phase, and the parameter is
+                    // providing both "before" and "after" values. We can resolve it to a metric provided the
+                    // parameter index contains a "before" index.
+                    match idx.before {
+                        Some(before_idx) => Ok(MetricF64::ParameterF64 {
+                            indices: ParameterReturnValue::Before(before_idx),
+                        }),
+                        None => Err(MetricF64ResolutionError::ParameterNotRegisteredInCorrectPhase {
+                            parameter: name.clone(),
+                            consumer_phase,
+                            return_value: parameter_return_value,
+                        }),
+                    }
+                }
+                (UnresolvedParameterReturnValue::Both, MetricConsumerPhase::After) => {
+                    // The consumer is using the metric in the "after" phase, and the parameter is
+                    // providing both "before" and "after" values. We can resolve it to a metric provided the
+                    // parameter index contains an "after" index.
+                    match idx.after {
+                        Some(after_idx) => Ok(MetricF64::ParameterF64 {
+                            indices: ParameterReturnValue::After(after_idx),
+                        }),
+                        None => Err(MetricF64ResolutionError::ParameterNotRegisteredInCorrectPhase {
+                            parameter: name.clone(),
+                            consumer_phase,
+                            return_value: parameter_return_value,
+                        }),
+                    }
+                }
+                (UnresolvedParameterReturnValue::Both, MetricConsumerPhase::Both) => {
+                    // The consumer is using the metric in both "before" and "after" phases, and the
+                    // parameter is providing both "before" and "after" values. We can resolve it to a metric provided the
+                    // parameter index contains both a "before" and an "after" index.
+                    match (idx.before, idx.after) {
+                        (Some(before_idx), Some(after_idx)) => Ok(MetricF64::ParameterF64 {
+                            indices: ParameterReturnValue::Requested {
+                                before: before_idx,
+                                after: after_idx,
+                            },
+                        }),
+                        _ => Err(MetricF64ResolutionError::ParameterNotRegisteredInCorrectPhase {
                             parameter: name.clone(),
                             consumer_phase,
                             return_value: parameter_return_value,
@@ -937,7 +1029,7 @@ fn resolve_parameter_index_f64_to_metric_f64(
     }
 }
 
-/// Resolve a [`ParameterIndex<u64>`] to a [`MetricF64`] using the provided [`ParameterReturnValue`]
+/// Resolve a [`ParameterIndex<u64>`] to a [`MetricF64`] using the provided [`UnresolvedParameterReturnValue`]
 /// and [`MetricConsumerPhase`]. This function is used to determine if a parameter can be resolved to a metric
 /// based on the phase in which the consumer is using the metric and the return value of the parameter.
 ///
@@ -945,15 +1037,17 @@ fn resolve_parameter_index_f64_to_metric_f64(
 fn resolve_parameter_index_u64_to_metric_f64(
     name: &ParameterName,
     idx: ParameterIndex<u64>,
-    parameter_return_value: ParameterReturnValue,
+    parameter_return_value: UnresolvedParameterReturnValue,
     consumer_phase: MetricConsumerPhase,
 ) -> Result<MetricF64, MetricF64ResolutionError> {
     match idx {
         // Constant and simple can always be resolved to a metric, regardless of the consumer phase
         // as long as the parameter return value is "before".
         ParameterIndex::Const(idx) => match parameter_return_value {
-            ParameterReturnValue::Before => Ok(ConstantMetricF64::IndexParameterValue(idx).into()),
-            ParameterReturnValue::After | ParameterReturnValue::AfterOrElseInitial => {
+            UnresolvedParameterReturnValue::Before => Ok(ConstantMetricF64::IndexParameterValue(idx).into()),
+            UnresolvedParameterReturnValue::After
+            | UnresolvedParameterReturnValue::AfterOrElseInitial
+            | UnresolvedParameterReturnValue::Both => {
                 Err(MetricF64ResolutionError::ParameterNotRegisteredInCorrectPhase {
                     parameter: name.clone(),
                     consumer_phase,
@@ -962,8 +1056,10 @@ fn resolve_parameter_index_u64_to_metric_f64(
             }
         },
         ParameterIndex::Simple(idx) => match parameter_return_value {
-            ParameterReturnValue::Before => Ok(SimpleMetricF64::IndexParameterValue { index: idx }.into()),
-            ParameterReturnValue::After | ParameterReturnValue::AfterOrElseInitial => {
+            UnresolvedParameterReturnValue::Before => Ok(SimpleMetricF64::IndexParameterValue { index: idx }.into()),
+            UnresolvedParameterReturnValue::After
+            | UnresolvedParameterReturnValue::AfterOrElseInitial
+            | UnresolvedParameterReturnValue::Both => {
                 Err(MetricF64ResolutionError::ParameterNotRegisteredInCorrectPhase {
                     parameter: name.clone(),
                     consumer_phase,
@@ -974,12 +1070,14 @@ fn resolve_parameter_index_u64_to_metric_f64(
         // General parameters must be validated against the consumer phase to determine if they can be resolved to a metric.
         ParameterIndex::General(idx) => {
             match (parameter_return_value, consumer_phase) {
-                (ParameterReturnValue::Before, MetricConsumerPhase::Before) => {
+                (UnresolvedParameterReturnValue::Before, MetricConsumerPhase::Before) => {
                     // The consumer is using the metric in the "before" phase, and the parameter is
                     // providing a "before" value, so we can resolve it to a metric provided the
                     // parameter index contains a "before" index.
                     match idx.before {
-                        Some(before_idx) => Ok(MetricF64::ParameterBeforeU64(before_idx)),
+                        Some(before_idx) => Ok(MetricF64::ParameterU64 {
+                            indices: ParameterReturnValue::Before(before_idx),
+                        }),
                         None => Err(MetricF64ResolutionError::ParameterNotRegisteredInCorrectPhase {
                             parameter: name.clone(),
                             consumer_phase,
@@ -987,13 +1085,15 @@ fn resolve_parameter_index_u64_to_metric_f64(
                         }),
                     }
                 }
-                (ParameterReturnValue::Before, MetricConsumerPhase::After) => {
+                (UnresolvedParameterReturnValue::Before, MetricConsumerPhase::After) => {
                     // The consumer is using the metric in the "after" phase, but the parameter is
                     // providing a "before" value. This is fine because the "before" value is still
                     // valid in the "after" phase, so we can resolve it to a metric provided the
                     // parameter index contains a "before" index.
                     match idx.before {
-                        Some(before_idx) => Ok(MetricF64::ParameterBeforeU64(before_idx)),
+                        Some(before_idx) => Ok(MetricF64::ParameterU64 {
+                            indices: ParameterReturnValue::Before(before_idx),
+                        }),
                         None => Err(MetricF64ResolutionError::ParameterNotRegisteredInCorrectPhase {
                             parameter: name.clone(),
                             consumer_phase,
@@ -1001,13 +1101,15 @@ fn resolve_parameter_index_u64_to_metric_f64(
                         }),
                     }
                 }
-                (ParameterReturnValue::Before, MetricConsumerPhase::Both) => {
+                (UnresolvedParameterReturnValue::Before, MetricConsumerPhase::Both) => {
                     // The consumer is using the metric in both "before" and "after" phases, and the
                     // parameter is providing a "before" value. This is fine because the "before"
                     // value is valid in both phases, so we can resolve it to a metric provided the
                     // parameter index contains a "before" index.
                     match idx.before {
-                        Some(before_idx) => Ok(MetricF64::ParameterBeforeU64(before_idx)),
+                        Some(before_idx) => Ok(MetricF64::ParameterU64 {
+                            indices: ParameterReturnValue::Before(before_idx),
+                        }),
                         None => Err(MetricF64ResolutionError::ParameterNotRegisteredInCorrectPhase {
                             parameter: name.clone(),
                             consumer_phase,
@@ -1015,8 +1117,8 @@ fn resolve_parameter_index_u64_to_metric_f64(
                         }),
                     }
                 }
-                (ParameterReturnValue::After, MetricConsumerPhase::Before)
-                | (ParameterReturnValue::After, MetricConsumerPhase::Both) => {
+                (UnresolvedParameterReturnValue::After, MetricConsumerPhase::Before)
+                | (UnresolvedParameterReturnValue::After, MetricConsumerPhase::Both) => {
                     // The consumer is using the metric in the "before" phase, but the parameter is
                     // providing an "after" value. This is not valid because the "after" value is not
                     // valid in the "before" phase, so we cannot resolve it to a metric.
@@ -1026,12 +1128,14 @@ fn resolve_parameter_index_u64_to_metric_f64(
                         return_value: parameter_return_value,
                     })
                 }
-                (ParameterReturnValue::After, MetricConsumerPhase::After) => {
+                (UnresolvedParameterReturnValue::After, MetricConsumerPhase::After) => {
                     // The consumer is using the metric in the "after" phase, and the parameter is
                     // providing an "after" value, so we can resolve it to a metric provided the
                     // parameter index contains an "after" index.
                     match idx.after {
-                        Some(after_idx) => Ok(MetricF64::ParameterAfterU64(after_idx)),
+                        Some(after_idx) => Ok(MetricF64::ParameterU64 {
+                            indices: ParameterReturnValue::After(after_idx),
+                        }),
                         None => Err(MetricF64ResolutionError::ParameterNotRegisteredInCorrectPhase {
                             parameter: name.clone(),
                             consumer_phase,
@@ -1039,13 +1143,15 @@ fn resolve_parameter_index_u64_to_metric_f64(
                         }),
                     }
                 }
-                (ParameterReturnValue::AfterOrElseInitial, MetricConsumerPhase::Before) => {
+                (UnresolvedParameterReturnValue::AfterOrElseInitial, MetricConsumerPhase::Before) => {
                     // The consumer is using the metric in the "before" phase, but the parameter is
                     // providing an "after" value. However, they have specified that using any
                     // initial value is acceptable, so we can resolve it to a metric provided the
                     // parameter index contains an "after" index.
                     match idx.after {
-                        Some(after_idx) => Ok(MetricF64::ParameterAfterU64(after_idx)),
+                        Some(after_idx) => Ok(MetricF64::ParameterU64 {
+                            indices: ParameterReturnValue::After(after_idx),
+                        }),
                         None => Err(MetricF64ResolutionError::ParameterNotRegisteredInCorrectPhase {
                             parameter: name.clone(),
                             consumer_phase,
@@ -1053,12 +1159,14 @@ fn resolve_parameter_index_u64_to_metric_f64(
                         }),
                     }
                 }
-                (ParameterReturnValue::AfterOrElseInitial, MetricConsumerPhase::After) => {
+                (UnresolvedParameterReturnValue::AfterOrElseInitial, MetricConsumerPhase::After) => {
                     // The consumer is using the metric in the "after" phase, and the parameter is
                     // providing an "after" value, so we can resolve it to a metric provided the
                     // parameter index contains an "after" index.
                     match idx.after {
-                        Some(after_idx) => Ok(MetricF64::ParameterAfterU64(after_idx)),
+                        Some(after_idx) => Ok(MetricF64::ParameterU64 {
+                            indices: ParameterReturnValue::After(after_idx),
+                        }),
                         None => Err(MetricF64ResolutionError::ParameterNotRegisteredInCorrectPhase {
                             parameter: name.clone(),
                             consumer_phase,
@@ -1066,14 +1174,64 @@ fn resolve_parameter_index_u64_to_metric_f64(
                         }),
                     }
                 }
-                (ParameterReturnValue::AfterOrElseInitial, MetricConsumerPhase::Both) => {
+                (UnresolvedParameterReturnValue::AfterOrElseInitial, MetricConsumerPhase::Both) => {
                     // The consumer is using the metric in both "before" and "after" phases, and the
                     // parameter is providing an "after" value. However, they have specified that using any
                     // initial value is acceptable in the "before" phase, so we can resolve it to a metric provided the
                     // parameter index contains an "after" index.
                     match idx.after {
-                        Some(after_idx) => Ok(MetricF64::ParameterAfterU64(after_idx)),
+                        Some(after_idx) => Ok(MetricF64::ParameterU64 {
+                            indices: ParameterReturnValue::After(after_idx),
+                        }),
                         None => Err(MetricF64ResolutionError::ParameterNotRegisteredInCorrectPhase {
+                            parameter: name.clone(),
+                            consumer_phase,
+                            return_value: parameter_return_value,
+                        }),
+                    }
+                }
+                (UnresolvedParameterReturnValue::Both, MetricConsumerPhase::Before) => {
+                    // The consumer is using the metric in the "before" phase, and the parameter is
+                    // providing both "before" and "after" values. We can resolve it to a metric provided the
+                    // parameter index contains a "before" index.
+                    match idx.before {
+                        Some(before_idx) => Ok(MetricF64::ParameterU64 {
+                            indices: ParameterReturnValue::Before(before_idx),
+                        }),
+                        None => Err(MetricF64ResolutionError::ParameterNotRegisteredInCorrectPhase {
+                            parameter: name.clone(),
+                            consumer_phase,
+                            return_value: parameter_return_value,
+                        }),
+                    }
+                }
+                (UnresolvedParameterReturnValue::Both, MetricConsumerPhase::After) => {
+                    // The consumer is using the metric in the "after" phase, and the parameter is
+                    // providing both "before" and "after" values. We can resolve it to a metric provided the
+                    // parameter index contains an "after" index.
+                    match idx.after {
+                        Some(after_idx) => Ok(MetricF64::ParameterU64 {
+                            indices: ParameterReturnValue::After(after_idx),
+                        }),
+                        None => Err(MetricF64ResolutionError::ParameterNotRegisteredInCorrectPhase {
+                            parameter: name.clone(),
+                            consumer_phase,
+                            return_value: parameter_return_value,
+                        }),
+                    }
+                }
+                (UnresolvedParameterReturnValue::Both, MetricConsumerPhase::Both) => {
+                    // The consumer is using the metric in both "before" and "after" phases, and the
+                    // parameter is providing both "before" and "after" values. We can resolve it to a metric provided the
+                    // parameter index contains both a "before" and an "after" index.
+                    match (idx.before, idx.after) {
+                        (Some(before_idx), Some(after_idx)) => Ok(MetricF64::ParameterU64 {
+                            indices: ParameterReturnValue::Requested {
+                                before: before_idx,
+                                after: after_idx,
+                            },
+                        }),
+                        _ => Err(MetricF64ResolutionError::ParameterNotRegisteredInCorrectPhase {
                             parameter: name.clone(),
                             consumer_phase,
                             return_value: parameter_return_value,
@@ -1085,7 +1243,7 @@ fn resolve_parameter_index_u64_to_metric_f64(
     }
 }
 
-/// Resolve a [`ParameterIndex<MultiValue>`] to a [`MetricF64`] using the provided [`ParameterReturnValue`]
+/// Resolve a [`ParameterIndex<MultiValue>`] to a [`MetricF64`] using the provided [`UnresolvedParameterReturnValue`]
 /// and [`MetricConsumerPhase`]. This function is used to determine if a parameter can be resolved to a metric
 /// based on the phase in which the consumer is using the metric and the return value of the parameter.
 ///
@@ -1094,19 +1252,21 @@ fn resolve_parameter_index_multi_to_metric_f64(
     name: &ParameterName,
     idx: ParameterIndex<MultiValue>,
     key: &str,
-    parameter_return_value: ParameterReturnValue,
+    parameter_return_value: UnresolvedParameterReturnValue,
     consumer_phase: MetricConsumerPhase,
 ) -> Result<MetricF64, MetricF64ResolutionError> {
     match idx {
         // Constant and simple can always be resolved to a metric, regardless of the consumer phase
         // as long as the parameter return value is "before".
         ParameterIndex::Const(index) => match parameter_return_value {
-            ParameterReturnValue::Before => Ok(ConstantMetricF64::MultiParameterValue {
+            UnresolvedParameterReturnValue::Before => Ok(ConstantMetricF64::MultiParameterValue {
                 index,
                 key: key.to_string(),
             }
             .into()),
-            ParameterReturnValue::After | ParameterReturnValue::AfterOrElseInitial => {
+            UnresolvedParameterReturnValue::After
+            | UnresolvedParameterReturnValue::AfterOrElseInitial
+            | UnresolvedParameterReturnValue::Both => {
                 Err(MetricF64ResolutionError::ParameterNotRegisteredInCorrectPhase {
                     parameter: name.clone(),
                     consumer_phase,
@@ -1115,12 +1275,14 @@ fn resolve_parameter_index_multi_to_metric_f64(
             }
         },
         ParameterIndex::Simple(index) => match parameter_return_value {
-            ParameterReturnValue::Before => Ok(SimpleMetricF64::MultiParameterValue {
+            UnresolvedParameterReturnValue::Before => Ok(SimpleMetricF64::MultiParameterValue {
                 index,
                 key: key.to_string(),
             }
             .into()),
-            ParameterReturnValue::After | ParameterReturnValue::AfterOrElseInitial => {
+            UnresolvedParameterReturnValue::After
+            | UnresolvedParameterReturnValue::AfterOrElseInitial
+            | UnresolvedParameterReturnValue::Both => {
                 Err(MetricF64ResolutionError::ParameterNotRegisteredInCorrectPhase {
                     parameter: name.clone(),
                     consumer_phase,
@@ -1131,13 +1293,13 @@ fn resolve_parameter_index_multi_to_metric_f64(
         // General parameters must be validated against the consumer phase to determine if they can be resolved to a metric.
         ParameterIndex::General(idx) => {
             match (parameter_return_value, consumer_phase) {
-                (ParameterReturnValue::Before, MetricConsumerPhase::Before) => {
+                (UnresolvedParameterReturnValue::Before, MetricConsumerPhase::Before) => {
                     // The consumer is using the metric in the "before" phase, and the parameter is
                     // providing a "before" value, so we can resolve it to a metric provided the
                     // parameter index contains a "before" index.
                     match idx.before {
-                        Some(before_idx) => Ok(MetricF64::ParameterBeforeMulti {
-                            index: before_idx,
+                        Some(before_idx) => Ok(MetricF64::ParameterMulti {
+                            indices: ParameterReturnValue::Before(before_idx),
                             key: key.to_string(),
                         }),
                         None => Err(MetricF64ResolutionError::ParameterNotRegisteredInCorrectPhase {
@@ -1147,14 +1309,14 @@ fn resolve_parameter_index_multi_to_metric_f64(
                         }),
                     }
                 }
-                (ParameterReturnValue::Before, MetricConsumerPhase::After) => {
+                (UnresolvedParameterReturnValue::Before, MetricConsumerPhase::After) => {
                     // The consumer is using the metric in the "after" phase, but the parameter is
                     // providing a "before" value. This is fine because the "before" value is still
                     // valid in the "after" phase, so we can resolve it to a metric provided the
                     // parameter index contains a "before" index.
                     match idx.before {
-                        Some(before_idx) => Ok(MetricF64::ParameterBeforeMulti {
-                            index: before_idx,
+                        Some(before_idx) => Ok(MetricF64::ParameterMulti {
+                            indices: ParameterReturnValue::Before(before_idx),
                             key: key.to_string(),
                         }),
                         None => Err(MetricF64ResolutionError::ParameterNotRegisteredInCorrectPhase {
@@ -1164,14 +1326,14 @@ fn resolve_parameter_index_multi_to_metric_f64(
                         }),
                     }
                 }
-                (ParameterReturnValue::Before, MetricConsumerPhase::Both) => {
+                (UnresolvedParameterReturnValue::Before, MetricConsumerPhase::Both) => {
                     // The consumer is using the metric in both "before" and "after" phases, and the
                     // parameter is providing a "before" value. This is fine because the "before"
                     // value is valid in both phases, so we can resolve it to a metric provided the
                     // parameter index contains a "before" index.
                     match idx.before {
-                        Some(before_idx) => Ok(MetricF64::ParameterBeforeMulti {
-                            index: before_idx,
+                        Some(before_idx) => Ok(MetricF64::ParameterMulti {
+                            indices: ParameterReturnValue::Before(before_idx),
                             key: key.to_string(),
                         }),
                         None => Err(MetricF64ResolutionError::ParameterNotRegisteredInCorrectPhase {
@@ -1181,8 +1343,8 @@ fn resolve_parameter_index_multi_to_metric_f64(
                         }),
                     }
                 }
-                (ParameterReturnValue::After, MetricConsumerPhase::Before)
-                | (ParameterReturnValue::After, MetricConsumerPhase::Both) => {
+                (UnresolvedParameterReturnValue::After, MetricConsumerPhase::Before)
+                | (UnresolvedParameterReturnValue::After, MetricConsumerPhase::Both) => {
                     // The consumer is using the metric in the "before" phase, but the parameter is
                     // providing an "after" value. This is not valid because the "after" value is not
                     // valid in the "before" phase, so we cannot resolve it to a metric.
@@ -1192,13 +1354,13 @@ fn resolve_parameter_index_multi_to_metric_f64(
                         return_value: parameter_return_value,
                     })
                 }
-                (ParameterReturnValue::After, MetricConsumerPhase::After) => {
+                (UnresolvedParameterReturnValue::After, MetricConsumerPhase::After) => {
                     // The consumer is using the metric in the "after" phase, and the parameter is
                     // providing an "after" value, so we can resolve it to a metric provided the
                     // parameter index contains an "after" index.
                     match idx.after {
-                        Some(after_idx) => Ok(MetricF64::ParameterAfterMulti {
-                            index: after_idx,
+                        Some(after_idx) => Ok(MetricF64::ParameterMulti {
+                            indices: ParameterReturnValue::After(after_idx),
                             key: key.to_string(),
                         }),
                         None => Err(MetricF64ResolutionError::ParameterNotRegisteredInCorrectPhase {
@@ -1208,14 +1370,14 @@ fn resolve_parameter_index_multi_to_metric_f64(
                         }),
                     }
                 }
-                (ParameterReturnValue::AfterOrElseInitial, MetricConsumerPhase::Before) => {
+                (UnresolvedParameterReturnValue::AfterOrElseInitial, MetricConsumerPhase::Before) => {
                     // The consumer is using the metric in the "before" phase, but the parameter is
                     // providing an "after" value. However, they have specified that using any
                     // initial value is acceptable, so we can resolve it to a metric provided the
                     // parameter index contains an "after" index.
                     match idx.after {
-                        Some(after_idx) => Ok(MetricF64::ParameterAfterMulti {
-                            index: after_idx,
+                        Some(after_idx) => Ok(MetricF64::ParameterMulti {
+                            indices: ParameterReturnValue::After(after_idx),
                             key: key.to_string(),
                         }),
                         None => Err(MetricF64ResolutionError::ParameterNotRegisteredInCorrectPhase {
@@ -1225,13 +1387,13 @@ fn resolve_parameter_index_multi_to_metric_f64(
                         }),
                     }
                 }
-                (ParameterReturnValue::AfterOrElseInitial, MetricConsumerPhase::After) => {
+                (UnresolvedParameterReturnValue::AfterOrElseInitial, MetricConsumerPhase::After) => {
                     // The consumer is using the metric in the "after" phase, and the parameter is
                     // providing an "after" value, so we can resolve it to a metric provided the
                     // parameter index contains an "after" index.
                     match idx.after {
-                        Some(after_idx) => Ok(MetricF64::ParameterAfterMulti {
-                            index: after_idx,
+                        Some(after_idx) => Ok(MetricF64::ParameterMulti {
+                            indices: ParameterReturnValue::After(after_idx),
                             key: key.to_string(),
                         }),
                         None => Err(MetricF64ResolutionError::ParameterNotRegisteredInCorrectPhase {
@@ -1241,17 +1403,68 @@ fn resolve_parameter_index_multi_to_metric_f64(
                         }),
                     }
                 }
-                (ParameterReturnValue::AfterOrElseInitial, MetricConsumerPhase::Both) => {
+                (UnresolvedParameterReturnValue::AfterOrElseInitial, MetricConsumerPhase::Both) => {
                     // The consumer is using the metric in both "before" and "after" phases, and the
                     // parameter is providing an "after" value. However, they have specified that using any
                     // initial value is acceptable in the "before" phase, so we can resolve it to a metric provided the
                     // parameter index contains an "after" index.
                     match idx.after {
-                        Some(after_idx) => Ok(MetricF64::ParameterAfterMulti {
-                            index: after_idx,
+                        Some(after_idx) => Ok(MetricF64::ParameterMulti {
+                            indices: ParameterReturnValue::After(after_idx),
                             key: key.to_string(),
                         }),
                         None => Err(MetricF64ResolutionError::ParameterNotRegisteredInCorrectPhase {
+                            parameter: name.clone(),
+                            consumer_phase,
+                            return_value: parameter_return_value,
+                        }),
+                    }
+                }
+                (UnresolvedParameterReturnValue::Both, MetricConsumerPhase::Before) => {
+                    // The consumer is using the metric in the "before" phase, and the parameter is
+                    // providing both "before" and "after" values. We can resolve it to a metric provided the
+                    // parameter index contains a "before" index.
+                    match idx.before {
+                        Some(before_idx) => Ok(MetricF64::ParameterMulti {
+                            indices: ParameterReturnValue::Before(before_idx),
+                            key: key.to_string(),
+                        }),
+                        None => Err(MetricF64ResolutionError::ParameterNotRegisteredInCorrectPhase {
+                            parameter: name.clone(),
+                            consumer_phase,
+                            return_value: parameter_return_value,
+                        }),
+                    }
+                }
+                (UnresolvedParameterReturnValue::Both, MetricConsumerPhase::After) => {
+                    // The consumer is using the metric in the "after" phase, and the parameter is
+                    // providing both "before" and "after" values. We can resolve it to a metric provided the
+                    // parameter index contains an "after" index.
+                    match idx.after {
+                        Some(after_idx) => Ok(MetricF64::ParameterMulti {
+                            indices: ParameterReturnValue::After(after_idx),
+                            key: key.to_string(),
+                        }),
+                        None => Err(MetricF64ResolutionError::ParameterNotRegisteredInCorrectPhase {
+                            parameter: name.clone(),
+                            consumer_phase,
+                            return_value: parameter_return_value,
+                        }),
+                    }
+                }
+                (UnresolvedParameterReturnValue::Both, MetricConsumerPhase::Both) => {
+                    // The consumer is using the metric in both "before" and "after" phases, and the
+                    // parameter is providing both "before" and "after" values. We can resolve it to a metric provided the
+                    // parameter index contains both a "before" and an "after" index.
+                    match (idx.before, idx.after) {
+                        (Some(before_idx), Some(after_idx)) => Ok(MetricF64::ParameterMulti {
+                            indices: ParameterReturnValue::Requested {
+                                before: before_idx,
+                                after: after_idx,
+                            },
+                            key: key.to_string(),
+                        }),
+                        _ => Err(MetricF64ResolutionError::ParameterNotRegisteredInCorrectPhase {
                             parameter: name.clone(),
                             consumer_phase,
                             return_value: parameter_return_value,
@@ -1342,14 +1555,11 @@ pub enum MetricU64Error {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum MetricU64 {
-    ParameterBeforeU64(GeneralBeforeValueIndex<u64>),
-    ParameterAfterU64(GeneralAfterValueIndex<u64>),
-    ParameterBeforeMulti {
-        index: GeneralBeforeValueIndex<MultiValue>,
-        key: String,
+    ParameterU64 {
+        indices: ParameterReturnValue<u64>,
     },
-    ParameterAfterMulti {
-        index: GeneralAfterValueIndex<MultiValue>,
+    ParameterMulti {
+        indices: ParameterReturnValue<MultiValue>,
         key: String,
     },
     Simple(SimpleMetricU64),
@@ -1359,17 +1569,23 @@ pub enum MetricU64 {
 impl MetricU64 {
     pub fn get_value(&self, _network: &Network, state: &State) -> Result<u64, MetricU64Error> {
         match self {
-            Self::ParameterBeforeU64(idx) => Ok(state.get_general_parameter_u64_before(*idx)?),
-            Self::ParameterAfterU64(idx) => Ok(state.get_general_parameter_u64_after(*idx)?),
-            Self::ParameterBeforeMulti { index, key } => {
-                let mv = state.get_general_parameter_multi_before(*index)?;
-                let value = mv
-                    .get_index(key)
-                    .ok_or_else(|| MetricU64Error::GeneralMultiValueParameterKeyNotFound { key: key.clone() })?;
-                Ok(*value)
-            }
-            Self::ParameterAfterMulti { index, key } => {
-                let mv = state.get_general_parameter_multi_after(*index)?;
+            Self::ParameterU64 { indices } => match indices {
+                ParameterReturnValue::Before(index) => Ok(state.get_general_parameter_u64_before(*index)?),
+                ParameterReturnValue::After(index) => Ok(state.get_general_parameter_u64_after(*index)?),
+                ParameterReturnValue::Requested { before, after } => match state.get_calculation_phase() {
+                    CalculationPhase::Before => Ok(state.get_general_parameter_u64_before(*before)?),
+                    CalculationPhase::After => Ok(state.get_general_parameter_u64_after(*after)?),
+                },
+            },
+            Self::ParameterMulti { indices, key } => {
+                let mv = match indices {
+                    ParameterReturnValue::Before(index) => state.get_general_parameter_multi_before(*index)?,
+                    ParameterReturnValue::After(index) => state.get_general_parameter_multi_after(*index)?,
+                    ParameterReturnValue::Requested { before, after } => match state.get_calculation_phase() {
+                        CalculationPhase::Before => state.get_general_parameter_multi_before(*before)?,
+                        CalculationPhase::After => state.get_general_parameter_multi_after(*after)?,
+                    },
+                };
                 let value = mv
                     .get_index(key)
                     .ok_or_else(|| MetricU64Error::GeneralMultiValueParameterKeyNotFound { key: key.clone() })?;
@@ -1471,7 +1687,7 @@ pub enum MetricU64ResolutionError {
     ParameterNotRegisteredInCorrectPhase {
         parameter: ParameterName,
         consumer_phase: MetricConsumerPhase,
-        return_value: ParameterReturnValue,
+        return_value: UnresolvedParameterReturnValue,
     },
 }
 
@@ -1479,12 +1695,12 @@ pub enum MetricU64ResolutionError {
 pub enum UnresolvedMetricU64 {
     ParameterValue {
         name: ParameterName,
-        return_value: ParameterReturnValue,
+        return_value: UnresolvedParameterReturnValue,
     },
     MultiParameterValue {
         name: ParameterName,
         key: String,
-        return_value: ParameterReturnValue,
+        return_value: UnresolvedParameterReturnValue,
     },
     InterNetworkTransfer(String),
     Constant(u64),
@@ -1494,7 +1710,7 @@ impl UnresolvedMetricU64 {
     pub fn new_parameter_before<N: Into<ParameterName>>(name: N) -> Self {
         Self::ParameterValue {
             name: name.into(),
-            return_value: ParameterReturnValue::Before,
+            return_value: UnresolvedParameterReturnValue::Before,
         }
     }
     pub fn resolve(
@@ -1547,7 +1763,7 @@ impl From<u64> for UnresolvedMetricU64 {
     }
 }
 
-/// Resolve a [`ParameterIndex<u64>`] to a [`MetricU64`] using the provided [`ParameterReturnValue`]
+/// Resolve a [`ParameterIndex<u64>`] to a [`MetricU64`] using the provided [`UnresolvedParameterReturnValue`]
 /// and [`MetricConsumerPhase`]. This function is used to determine if a parameter can be resolved to a metric
 /// based on the phase in which the consumer is using the metric and the return value of the parameter.
 ///
@@ -1555,7 +1771,7 @@ impl From<u64> for UnresolvedMetricU64 {
 fn resolve_parameter_index_u64_to_metric_u64(
     name: &ParameterName,
     idx: ParameterIndex<u64>,
-    parameter_return_value: ParameterReturnValue,
+    parameter_return_value: UnresolvedParameterReturnValue,
     consumer_phase: MetricConsumerPhase,
 ) -> Result<MetricU64, MetricU64ResolutionError> {
     match idx {
@@ -1565,12 +1781,14 @@ fn resolve_parameter_index_u64_to_metric_u64(
         // General parameters must be validated against the consumer phase to determine if they can be resolved to a metric.
         ParameterIndex::General(idx) => {
             match (parameter_return_value, consumer_phase) {
-                (ParameterReturnValue::Before, MetricConsumerPhase::Before) => {
+                (UnresolvedParameterReturnValue::Before, MetricConsumerPhase::Before) => {
                     // The consumer is using the metric in the "before" phase, and the parameter is
                     // providing a "before" value, so we can resolve it to a metric provided the
                     // parameter index contains a "before" index.
                     match idx.before {
-                        Some(before_idx) => Ok(MetricU64::ParameterBeforeU64(before_idx)),
+                        Some(before_idx) => Ok(MetricU64::ParameterU64 {
+                            indices: ParameterReturnValue::Before(before_idx),
+                        }),
                         None => Err(MetricU64ResolutionError::ParameterNotRegisteredInCorrectPhase {
                             parameter: name.clone(),
                             consumer_phase,
@@ -1578,13 +1796,15 @@ fn resolve_parameter_index_u64_to_metric_u64(
                         }),
                     }
                 }
-                (ParameterReturnValue::Before, MetricConsumerPhase::After) => {
+                (UnresolvedParameterReturnValue::Before, MetricConsumerPhase::After) => {
                     // The consumer is using the metric in the "after" phase, but the parameter is
                     // providing a "before" value. This is fine because the "before" value is still
                     // valid in the "after" phase, so we can resolve it to a metric provided the
                     // parameter index contains a "before" index.
                     match idx.before {
-                        Some(before_idx) => Ok(MetricU64::ParameterBeforeU64(before_idx)),
+                        Some(before_idx) => Ok(MetricU64::ParameterU64 {
+                            indices: ParameterReturnValue::Before(before_idx),
+                        }),
                         None => Err(MetricU64ResolutionError::ParameterNotRegisteredInCorrectPhase {
                             parameter: name.clone(),
                             consumer_phase,
@@ -1592,13 +1812,15 @@ fn resolve_parameter_index_u64_to_metric_u64(
                         }),
                     }
                 }
-                (ParameterReturnValue::Before, MetricConsumerPhase::Both) => {
+                (UnresolvedParameterReturnValue::Before, MetricConsumerPhase::Both) => {
                     // The consumer is using the metric in both "before" and "after" phases, and the
                     // parameter is providing a "before" value. This is fine because the "before"
                     // value is valid in both phases, so we can resolve it to a metric provided the
                     // parameter index contains a "before" index.
                     match idx.before {
-                        Some(before_idx) => Ok(MetricU64::ParameterBeforeU64(before_idx)),
+                        Some(before_idx) => Ok(MetricU64::ParameterU64 {
+                            indices: ParameterReturnValue::Before(before_idx),
+                        }),
                         None => Err(MetricU64ResolutionError::ParameterNotRegisteredInCorrectPhase {
                             parameter: name.clone(),
                             consumer_phase,
@@ -1606,8 +1828,8 @@ fn resolve_parameter_index_u64_to_metric_u64(
                         }),
                     }
                 }
-                (ParameterReturnValue::After, MetricConsumerPhase::Before)
-                | (ParameterReturnValue::After, MetricConsumerPhase::Both) => {
+                (UnresolvedParameterReturnValue::After, MetricConsumerPhase::Before)
+                | (UnresolvedParameterReturnValue::After, MetricConsumerPhase::Both) => {
                     // The consumer is using the metric in the "before" phase, but the parameter is
                     // providing an "after" value. This is not valid because the "after" value is not
                     // valid in the "before" phase, so we cannot resolve it to a metric.
@@ -1617,12 +1839,14 @@ fn resolve_parameter_index_u64_to_metric_u64(
                         return_value: parameter_return_value,
                     })
                 }
-                (ParameterReturnValue::After, MetricConsumerPhase::After) => {
+                (UnresolvedParameterReturnValue::After, MetricConsumerPhase::After) => {
                     // The consumer is using the metric in the "after" phase, and the parameter is
                     // providing an "after" value, so we can resolve it to a metric provided the
                     // parameter index contains an "after" index.
                     match idx.after {
-                        Some(after_idx) => Ok(MetricU64::ParameterAfterU64(after_idx)),
+                        Some(after_idx) => Ok(MetricU64::ParameterU64 {
+                            indices: ParameterReturnValue::After(after_idx),
+                        }),
                         None => Err(MetricU64ResolutionError::ParameterNotRegisteredInCorrectPhase {
                             parameter: name.clone(),
                             consumer_phase,
@@ -1630,13 +1854,15 @@ fn resolve_parameter_index_u64_to_metric_u64(
                         }),
                     }
                 }
-                (ParameterReturnValue::AfterOrElseInitial, MetricConsumerPhase::Before) => {
+                (UnresolvedParameterReturnValue::AfterOrElseInitial, MetricConsumerPhase::Before) => {
                     // The consumer is using the metric in the "before" phase, but the parameter is
                     // providing an "after" value. However, they have specified that using any
                     // initial value is acceptable, so we can resolve it to a metric provided the
                     // parameter index contains an "after" index.
                     match idx.after {
-                        Some(after_idx) => Ok(MetricU64::ParameterAfterU64(after_idx)),
+                        Some(after_idx) => Ok(MetricU64::ParameterU64 {
+                            indices: ParameterReturnValue::After(after_idx),
+                        }),
                         None => Err(MetricU64ResolutionError::ParameterNotRegisteredInCorrectPhase {
                             parameter: name.clone(),
                             consumer_phase,
@@ -1644,12 +1870,14 @@ fn resolve_parameter_index_u64_to_metric_u64(
                         }),
                     }
                 }
-                (ParameterReturnValue::AfterOrElseInitial, MetricConsumerPhase::After) => {
+                (UnresolvedParameterReturnValue::AfterOrElseInitial, MetricConsumerPhase::After) => {
                     // The consumer is using the metric in the "after" phase, and the parameter is
                     // providing an "after" value, so we can resolve it to a metric provided the
                     // parameter index contains an "after" index.
                     match idx.after {
-                        Some(after_idx) => Ok(MetricU64::ParameterAfterU64(after_idx)),
+                        Some(after_idx) => Ok(MetricU64::ParameterU64 {
+                            indices: ParameterReturnValue::After(after_idx),
+                        }),
                         None => Err(MetricU64ResolutionError::ParameterNotRegisteredInCorrectPhase {
                             parameter: name.clone(),
                             consumer_phase,
@@ -1657,14 +1885,64 @@ fn resolve_parameter_index_u64_to_metric_u64(
                         }),
                     }
                 }
-                (ParameterReturnValue::AfterOrElseInitial, MetricConsumerPhase::Both) => {
+                (UnresolvedParameterReturnValue::AfterOrElseInitial, MetricConsumerPhase::Both) => {
                     // The consumer is using the metric in both "before" and "after" phases, and the
                     // parameter is providing an "after" value. However, they have specified that using any
                     // initial value is acceptable in the "before" phase, so we can resolve it to a metric provided the
                     // parameter index contains an "after" index.
                     match idx.after {
-                        Some(after_idx) => Ok(MetricU64::ParameterAfterU64(after_idx)),
+                        Some(after_idx) => Ok(MetricU64::ParameterU64 {
+                            indices: ParameterReturnValue::After(after_idx),
+                        }),
                         None => Err(MetricU64ResolutionError::ParameterNotRegisteredInCorrectPhase {
+                            parameter: name.clone(),
+                            consumer_phase,
+                            return_value: parameter_return_value,
+                        }),
+                    }
+                }
+                (UnresolvedParameterReturnValue::Both, MetricConsumerPhase::Before) => {
+                    // The consumer is using the metric in the "before" phase, and the parameter is
+                    // providing both "before" and "after" values. We can resolve it to a metric provided the
+                    // parameter index contains a "before" index.
+                    match idx.before {
+                        Some(before_idx) => Ok(MetricU64::ParameterU64 {
+                            indices: ParameterReturnValue::Before(before_idx),
+                        }),
+                        None => Err(MetricU64ResolutionError::ParameterNotRegisteredInCorrectPhase {
+                            parameter: name.clone(),
+                            consumer_phase,
+                            return_value: parameter_return_value,
+                        }),
+                    }
+                }
+                (UnresolvedParameterReturnValue::Both, MetricConsumerPhase::After) => {
+                    // The consumer is using the metric in the "after" phase, and the parameter is
+                    // providing both "before" and "after" values. We can resolve it to a metric provided the
+                    // parameter index contains an "after" index.
+                    match idx.after {
+                        Some(after_idx) => Ok(MetricU64::ParameterU64 {
+                            indices: ParameterReturnValue::After(after_idx),
+                        }),
+                        None => Err(MetricU64ResolutionError::ParameterNotRegisteredInCorrectPhase {
+                            parameter: name.clone(),
+                            consumer_phase,
+                            return_value: parameter_return_value,
+                        }),
+                    }
+                }
+                (UnresolvedParameterReturnValue::Both, MetricConsumerPhase::Both) => {
+                    // The consumer is using the metric in both "before" and "after" phases, and the
+                    // parameter is providing both "before" and "after" values. We can resolve it to a metric provided the
+                    // parameter index contains both a "before" and an "after" index.
+                    match (idx.before, idx.after) {
+                        (Some(before_idx), Some(after_idx)) => Ok(MetricU64::ParameterU64 {
+                            indices: ParameterReturnValue::Requested {
+                                before: before_idx,
+                                after: after_idx,
+                            },
+                        }),
+                        _ => Err(MetricU64ResolutionError::ParameterNotRegisteredInCorrectPhase {
                             parameter: name.clone(),
                             consumer_phase,
                             return_value: parameter_return_value,
@@ -1676,7 +1954,7 @@ fn resolve_parameter_index_u64_to_metric_u64(
     }
 }
 
-/// Resolve a [`ParameterIndex<MultiValue>`] to a [`MetricU64`] using the provided [`ParameterReturnValue`]
+/// Resolve a [`ParameterIndex<MultiValue>`] to a [`MetricU64`] using the provided [`UnresolvedParameterReturnValue`]
 /// and [`MetricConsumerPhase`]. This function is used to determine if a parameter can be resolved to a metric
 /// based on the phase in which the consumer is using the metric and the return value of the parameter.
 ///
@@ -1685,7 +1963,7 @@ fn resolve_parameter_index_multi_to_metric_u64(
     name: &ParameterName,
     idx: ParameterIndex<MultiValue>,
     key: &str,
-    parameter_return_value: ParameterReturnValue,
+    parameter_return_value: UnresolvedParameterReturnValue,
     consumer_phase: MetricConsumerPhase,
 ) -> Result<MetricU64, MetricU64ResolutionError> {
     match idx {
@@ -1703,13 +1981,13 @@ fn resolve_parameter_index_multi_to_metric_u64(
         // General parameters must be validated against the consumer phase to determine if they can be resolved to a metric.
         ParameterIndex::General(idx) => {
             match (parameter_return_value, consumer_phase) {
-                (ParameterReturnValue::Before, MetricConsumerPhase::Before) => {
+                (UnresolvedParameterReturnValue::Before, MetricConsumerPhase::Before) => {
                     // The consumer is using the metric in the "before" phase, and the parameter is
                     // providing a "before" value, so we can resolve it to a metric provided the
                     // parameter index contains a "before" index.
                     match idx.before {
-                        Some(before_idx) => Ok(MetricU64::ParameterBeforeMulti {
-                            index: before_idx,
+                        Some(before_idx) => Ok(MetricU64::ParameterMulti {
+                            indices: ParameterReturnValue::Before(before_idx),
                             key: key.to_string(),
                         }),
                         None => Err(MetricU64ResolutionError::ParameterNotRegisteredInCorrectPhase {
@@ -1719,14 +1997,14 @@ fn resolve_parameter_index_multi_to_metric_u64(
                         }),
                     }
                 }
-                (ParameterReturnValue::Before, MetricConsumerPhase::After) => {
+                (UnresolvedParameterReturnValue::Before, MetricConsumerPhase::After) => {
                     // The consumer is using the metric in the "after" phase, but the parameter is
                     // providing a "before" value. This is fine because the "before" value is still
                     // valid in the "after" phase, so we can resolve it to a metric provided the
                     // parameter index contains a "before" index.
                     match idx.before {
-                        Some(before_idx) => Ok(MetricU64::ParameterBeforeMulti {
-                            index: before_idx,
+                        Some(before_idx) => Ok(MetricU64::ParameterMulti {
+                            indices: ParameterReturnValue::Before(before_idx),
                             key: key.to_string(),
                         }),
                         None => Err(MetricU64ResolutionError::ParameterNotRegisteredInCorrectPhase {
@@ -1736,14 +2014,14 @@ fn resolve_parameter_index_multi_to_metric_u64(
                         }),
                     }
                 }
-                (ParameterReturnValue::Before, MetricConsumerPhase::Both) => {
+                (UnresolvedParameterReturnValue::Before, MetricConsumerPhase::Both) => {
                     // The consumer is using the metric in both "before" and "after" phases, and the
                     // parameter is providing a "before" value. This is fine because the "before"
                     // value is valid in both phases, so we can resolve it to a metric provided the
                     // parameter index contains a "before" index.
                     match idx.before {
-                        Some(before_idx) => Ok(MetricU64::ParameterBeforeMulti {
-                            index: before_idx,
+                        Some(before_idx) => Ok(MetricU64::ParameterMulti {
+                            indices: ParameterReturnValue::Before(before_idx),
                             key: key.to_string(),
                         }),
                         None => Err(MetricU64ResolutionError::ParameterNotRegisteredInCorrectPhase {
@@ -1753,8 +2031,8 @@ fn resolve_parameter_index_multi_to_metric_u64(
                         }),
                     }
                 }
-                (ParameterReturnValue::After, MetricConsumerPhase::Before)
-                | (ParameterReturnValue::After, MetricConsumerPhase::Both) => {
+                (UnresolvedParameterReturnValue::After, MetricConsumerPhase::Before)
+                | (UnresolvedParameterReturnValue::After, MetricConsumerPhase::Both) => {
                     // The consumer is using the metric in the "before" phase, but the parameter is
                     // providing an "after" value. This is not valid because the "after" value is not
                     // valid in the "before" phase, so we cannot resolve it to a metric.
@@ -1764,13 +2042,13 @@ fn resolve_parameter_index_multi_to_metric_u64(
                         return_value: parameter_return_value,
                     })
                 }
-                (ParameterReturnValue::After, MetricConsumerPhase::After) => {
+                (UnresolvedParameterReturnValue::After, MetricConsumerPhase::After) => {
                     // The consumer is using the metric in the "after" phase, and the parameter is
                     // providing an "after" value, so we can resolve it to a metric provided the
                     // parameter index contains an "after" index.
                     match idx.after {
-                        Some(after_idx) => Ok(MetricU64::ParameterAfterMulti {
-                            index: after_idx,
+                        Some(after_idx) => Ok(MetricU64::ParameterMulti {
+                            indices: ParameterReturnValue::After(after_idx),
                             key: key.to_string(),
                         }),
                         None => Err(MetricU64ResolutionError::ParameterNotRegisteredInCorrectPhase {
@@ -1780,14 +2058,14 @@ fn resolve_parameter_index_multi_to_metric_u64(
                         }),
                     }
                 }
-                (ParameterReturnValue::AfterOrElseInitial, MetricConsumerPhase::Before) => {
+                (UnresolvedParameterReturnValue::AfterOrElseInitial, MetricConsumerPhase::Before) => {
                     // The consumer is using the metric in the "before" phase, but the parameter is
                     // providing an "after" value. However, they have specified that using any
                     // initial value is acceptable, so we can resolve it to a metric provided the
                     // parameter index contains an "after" index.
                     match idx.after {
-                        Some(after_idx) => Ok(MetricU64::ParameterAfterMulti {
-                            index: after_idx,
+                        Some(after_idx) => Ok(MetricU64::ParameterMulti {
+                            indices: ParameterReturnValue::After(after_idx),
                             key: key.to_string(),
                         }),
                         None => Err(MetricU64ResolutionError::ParameterNotRegisteredInCorrectPhase {
@@ -1797,13 +2075,13 @@ fn resolve_parameter_index_multi_to_metric_u64(
                         }),
                     }
                 }
-                (ParameterReturnValue::AfterOrElseInitial, MetricConsumerPhase::After) => {
+                (UnresolvedParameterReturnValue::AfterOrElseInitial, MetricConsumerPhase::After) => {
                     // The consumer is using the metric in the "after" phase, and the parameter is
                     // providing an "after" value, so we can resolve it to a metric provided the
                     // parameter index contains an "after" index.
                     match idx.after {
-                        Some(after_idx) => Ok(MetricU64::ParameterAfterMulti {
-                            index: after_idx,
+                        Some(after_idx) => Ok(MetricU64::ParameterMulti {
+                            indices: ParameterReturnValue::After(after_idx),
                             key: key.to_string(),
                         }),
                         None => Err(MetricU64ResolutionError::ParameterNotRegisteredInCorrectPhase {
@@ -1813,17 +2091,68 @@ fn resolve_parameter_index_multi_to_metric_u64(
                         }),
                     }
                 }
-                (ParameterReturnValue::AfterOrElseInitial, MetricConsumerPhase::Both) => {
+                (UnresolvedParameterReturnValue::AfterOrElseInitial, MetricConsumerPhase::Both) => {
                     // The consumer is using the metric in both "before" and "after" phases, and the
                     // parameter is providing an "after" value. However, they have specified that using any
                     // initial value is acceptable in the "before" phase, so we can resolve it to a metric provided the
                     // parameter index contains an "after" index.
                     match idx.after {
-                        Some(after_idx) => Ok(MetricU64::ParameterAfterMulti {
-                            index: after_idx,
+                        Some(after_idx) => Ok(MetricU64::ParameterMulti {
+                            indices: ParameterReturnValue::After(after_idx),
                             key: key.to_string(),
                         }),
                         None => Err(MetricU64ResolutionError::ParameterNotRegisteredInCorrectPhase {
+                            parameter: name.clone(),
+                            consumer_phase,
+                            return_value: parameter_return_value,
+                        }),
+                    }
+                }
+                (UnresolvedParameterReturnValue::Both, MetricConsumerPhase::Before) => {
+                    // The consumer is using the metric in the "before" phase, and the parameter is
+                    // providing both "before" and "after" values. We can resolve it to a metric provided the
+                    // parameter index contains a "before" index.
+                    match idx.before {
+                        Some(before_idx) => Ok(MetricU64::ParameterMulti {
+                            indices: ParameterReturnValue::Before(before_idx),
+                            key: key.to_string(),
+                        }),
+                        None => Err(MetricU64ResolutionError::ParameterNotRegisteredInCorrectPhase {
+                            parameter: name.clone(),
+                            consumer_phase,
+                            return_value: parameter_return_value,
+                        }),
+                    }
+                }
+                (UnresolvedParameterReturnValue::Both, MetricConsumerPhase::After) => {
+                    // The consumer is using the metric in the "after" phase, and the parameter is
+                    // providing both "before" and "after" values. We can resolve it to a metric provided the
+                    // parameter index contains an "after" index.
+                    match idx.after {
+                        Some(after_idx) => Ok(MetricU64::ParameterMulti {
+                            indices: ParameterReturnValue::After(after_idx),
+                            key: key.to_string(),
+                        }),
+                        None => Err(MetricU64ResolutionError::ParameterNotRegisteredInCorrectPhase {
+                            parameter: name.clone(),
+                            consumer_phase,
+                            return_value: parameter_return_value,
+                        }),
+                    }
+                }
+                (UnresolvedParameterReturnValue::Both, MetricConsumerPhase::Both) => {
+                    // The consumer is using the metric in both "before" and "after" phases, and the
+                    // parameter is providing both "before" and "after" values. We can resolve it to a metric provided the
+                    // parameter index contains both a "before" and an "after" index.
+                    match (idx.before, idx.after) {
+                        (Some(before_idx), Some(after_idx)) => Ok(MetricU64::ParameterMulti {
+                            indices: ParameterReturnValue::Requested {
+                                before: before_idx,
+                                after: after_idx,
+                            },
+                            key: key.to_string(),
+                        }),
+                        _ => Err(MetricU64ResolutionError::ParameterNotRegisteredInCorrectPhase {
                             parameter: name.clone(),
                             consumer_phase,
                             return_value: parameter_return_value,

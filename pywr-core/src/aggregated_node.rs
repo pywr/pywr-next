@@ -1092,7 +1092,7 @@ mod tests {
     use crate::models::ModelBuilder;
     use crate::network::NetworkBuilder;
     use crate::node::{NodeBuilder, UnresolvedNode};
-    use crate::parameters::{MonthlyProfileParameterBuilder, ParameterName, ParameterReturnValue};
+    use crate::parameters::{MonthlyProfileParameterBuilder, ParameterName, UnresolvedParameterReturnValue};
     use crate::recorders::AssertionF64RecorderBuilder;
     use crate::test_utils::{default_domain, run_all_solvers};
     use ndarray::Array2;
@@ -1221,7 +1221,7 @@ mod tests {
         relationship
             .factor(UnresolvedMetricF64::ParameterValue {
                 name: factor_profile_name,
-                return_value: ParameterReturnValue::Before,
+                return_value: UnresolvedParameterReturnValue::Before,
             })
             .factor(1.0.into());
 

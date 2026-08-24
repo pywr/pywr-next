@@ -2,7 +2,7 @@ mod flow;
 mod storage;
 
 use crate::edge::Edge;
-use crate::metric::SimpleMetricF64Error;
+use crate::metric::{CalculationPhase, SimpleMetricF64Error};
 use crate::models::MultiNetworkTransferIndex;
 use crate::network::{EdgeIndex, Network, NodeIndex, VirtualStorageIndex};
 use crate::node::Node;
@@ -793,9 +793,19 @@ pub struct State {
     parameters_general_after: ParameterValues,
 
     inter_network_values: Vec<f64>,
+    // The current phase of the calculation
+    current_phase: CalculationPhase,
 }
 
 impl State {
+    pub fn get_calculation_phase(&self) -> CalculationPhase {
+        self.current_phase
+    }
+
+    pub fn set_calculation_phase(&mut self, phase: CalculationPhase) {
+        self.current_phase = phase;
+    }
+
     /// Get a reference to the network state.
     pub fn get_network_state(&self) -> &NetworkState {
         &self.network
@@ -1261,6 +1271,7 @@ impl StateBuilder {
             parameters_general_before,
             parameters_general_after,
             inter_network_values: vec![0.0; self.num_inter_network_values.unwrap_or(0)],
+            current_phase: CalculationPhase::Before,
         }
     }
 }

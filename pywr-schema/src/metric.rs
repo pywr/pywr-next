@@ -517,15 +517,17 @@ pub enum ParameterReturnValue {
     Before,
     After,
     AfterOrElseInitial,
+    Both,
 }
 
 #[cfg(feature = "core")]
-impl From<ParameterReturnValue> for pywr_core::parameters::ParameterReturnValue {
+impl From<ParameterReturnValue> for pywr_core::parameters::UnresolvedParameterReturnValue {
     fn from(v: ParameterReturnValue) -> Self {
         match v {
             ParameterReturnValue::Before => Self::Before,
             ParameterReturnValue::After => Self::After,
             ParameterReturnValue::AfterOrElseInitial => Self::AfterOrElseInitial,
+            ParameterReturnValue::Both => Self::Both,
         }
     }
 }

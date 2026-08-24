@@ -1,0 +1,174 @@
+{
+  "metadata": {
+    "title": "Turbine 1",
+    "description": "An example of using the HydropowerTarget parameter.",
+    "minimum_version": "0.1"
+  },
+  "time": {
+    "start": "2015-01-01",
+    "end": "2015-01-03",
+    "timestep": {
+      "type": "Days",
+      "days": 1
+    }
+  },
+  "network": {
+    "nodes": [
+      {
+        "meta": {
+          "name": "supply1"
+        },
+        "type": "Input",
+        "max_flow": {
+          "type": "Literal",
+          "value": 15.0
+        }
+      },
+      {
+        "meta": {
+          "name": "link1"
+        },
+        "type": "Link",
+        "max_flow": {
+          "type": "Parameter",
+          "name": "turbine1",
+          "return_value": "Before"
+        }
+      },
+      {
+        "meta": {
+          "name": "demand1"
+        },
+        "type": "Output",
+        "max_flow": {
+          "type": "Parameter",
+          "name": "demand"
+        },
+        "cost": {
+          "type": "Literal",
+          "value": -10
+        }
+      }
+    ],
+    "edges": [
+      {
+        "from_node": "supply1",
+        "to_node": "link1"
+      },
+      {
+        "from_node": "link1",
+        "to_node": "demand1"
+      }
+    ],
+    "parameters": [
+      {
+        "meta": {
+          "name": "demand"
+        },
+        "type": "Constant",
+        "value": {
+          "type": "Literal",
+          "value": 10.0
+        }
+      },
+      {
+        "meta": {
+          "name": "turbine1"
+        },
+        "type": "HydropowerTarget",
+        "actual_flow": {
+          "type": "Node",
+          "name": "link1",
+          "attribute": "Inflow"
+        },
+        "target": {
+          "type": "Literal",
+          "value": 9.81
+        },
+        "turbine_elevation": 100.0,
+        "min_head": 0.0,
+        "efficiency": 1.0,
+        "water_density": 1000.0,
+        "flow_unit_conversion": 1.0,
+        "energy_unit_conversion": 1e-6
+      },
+      {
+        "meta": {
+          "name": "total_flow_target"
+        },
+        "type": "Aggregated",
+        "phase": "Before",
+        "agg_func": {
+          "type": "Sum"
+        },
+        "metrics": [
+          {
+            "type": "Parameter",
+            "name": "turbine1",
+            "return_value": "Before"
+          }
+        ]
+      },
+      {
+        "meta": {
+          "name": "total_power"
+        },
+        "type": "Aggregated",
+        "phase": "After",
+        "agg_func": {
+          "type": "Sum"
+        },
+        "metrics": [
+          {
+            "type": "Parameter",
+            "name": "turbine1",
+            "return_value": "After"
+          }
+        ]
+      },
+      {
+        "meta": {
+          "name": "total_turbines"
+        },
+        "type": "Aggregated",
+        "phase": "Both",
+        "agg_func": {
+          "type": "Sum"
+        },
+        "metrics": [
+          {
+            "type": "Parameter",
+            "name": "turbine1",
+            "return_value": "Both"
+          }
+        ]
+      }
+    ],
+    "metric_sets": [
+      {
+        "name": "parameters",
+        "metrics": [
+          {
+            "type": "Parameter",
+            "name": "total_turbines",
+            "return_value": "Before"
+          },
+          {
+            "type": "Parameter",
+            "name": "total_turbines",
+            "return_value": "After"
+          }
+        ]
+      }
+    ],
+    "outputs": [
+      {
+        "name": "nodes",
+        "type": "CSV",
+        "format": "Long",
+        "filename": "hydropower1-expected.csv",
+        "metric_set": "parameters"
+      }
+    ]
+  }
+}
