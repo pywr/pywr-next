@@ -1,6 +1,7 @@
 #[cfg(feature = "core")]
 mod align_and_resample;
 mod pandas;
+mod placeholder;
 mod polars_dataset;
 
 use crate::ConversionError;
@@ -12,6 +13,7 @@ use crate::visit::VisitPaths;
 #[cfg(feature = "core")]
 use ndarray::{Array2, ShapeError};
 pub use pandas::PandasTimeseries;
+pub use placeholder::PlaceholderTimeseries;
 #[cfg(feature = "core")]
 use polars::error::PolarsError;
 #[cfg(feature = "core")]
@@ -80,6 +82,8 @@ pub enum TimeseriesError {
     #[error("Checksum error: {0}")]
     #[cfg(feature = "core")]
     ChecksumError(#[from] crate::digest::ChecksumError),
+    #[error("Placeholder timeseries `{name}` cannot be loaded.")]
+    PlaceholderTimeseriesNotAllowed { name: String },
 }
 
 #[cfg(feature = "pyo3")]
@@ -100,6 +104,7 @@ impl TryFrom<TimeseriesError> for PyErr {
 pub enum Timeseries {
     Pandas(PandasTimeseries),
     Polars(PolarsTimeseries),
+    Placeholder(PlaceholderTimeseries),
 }
 
 impl Timeseries {
@@ -108,6 +113,7 @@ impl Timeseries {
         match &self {
             Timeseries::Polars(dataset) => dataset.load(data_path, domain),
             Timeseries::Pandas(dataset) => dataset.load(data_path, domain),
+            Timeseries::Placeholder(dataset) => dataset.load(),
         }
     }
 
@@ -115,7 +121,20 @@ impl Timeseries {
         match &self {
             Timeseries::Polars(dataset) => dataset.meta.name.as_str(),
             Timeseries::Pandas(dataset) => dataset.meta.name.as_str(),
+            Timeseries::Placeholder(dataset) => dataset.meta.name.as_str(),
         }
+    }
+
+    pub fn meta(&self) -> &ParameterMeta {
+        match &self {
+            Timeseries::Polars(dataset) => &dataset.meta,
+            Timeseries::Pandas(dataset) => &dataset.meta,
+            Timeseries::Placeholder(dataset) => &dataset.meta,
+        }
+    }
+
+    pub fn is_placeholder(&self) -> bool {
+        matches!(self, Timeseries::Placeholder(_))
     }
 }
 
@@ -124,6 +143,7 @@ impl VisitPaths for Timeseries {
         match &self {
             Timeseries::Polars(dataset) => dataset.visit_paths(visitor),
             Timeseries::Pandas(dataset) => dataset.visit_paths(visitor),
+            Timeseries::Placeholder(dataset) => dataset.visit_paths(visitor),
         }
     }
 
@@ -131,6 +151,7 @@ impl VisitPaths for Timeseries {
         match self {
             Timeseries::Polars(dataset) => dataset.visit_paths_mut(visitor),
             Timeseries::Pandas(dataset) => dataset.visit_paths_mut(visitor),
+            Timeseries::Placeholder(dataset) => dataset.visit_paths_mut(visitor),
         }
     }
 }
