@@ -728,6 +728,10 @@ impl NetworkSchema {
     ///
     /// Metric sets are merged by name, with the metrics of any metric sets with the same name being
     /// combined. Other information in the metric set (e.g. filters) is **not** merged.
+    ///
+    /// If an error occurs during the merge, the network will be left in a partially merged state.
+    /// It is recommended to clone the network before merging if you want to keep the original network
+    /// intact.
     pub fn merge(&mut self, other: NetworkSchema) -> Result<(), NetworkMergeError> {
         // Merge nodes replacing placeholders at their index if they exist, otherwise appending
         // to the end of the list, or returning an error if a duplicate name is found.
@@ -763,8 +767,8 @@ impl NetworkSchema {
                         }
                     }
                     None => {
-                        // Check if the node name exists in the virtual nodes list
-                        if self.get_virtual_node_index_by_name(v_node.name()).is_some() {
+                        // Check if the node name exists as a regular node
+                        if self.get_node_index_by_name(v_node.name()).is_some() {
                             return Err(NetworkMergeError::DuplicateNodeName(v_node.name().to_string()));
                         }
 

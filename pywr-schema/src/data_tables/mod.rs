@@ -144,7 +144,7 @@ impl CsvDataTable {
     }
 }
 
-/// An external table of data that can be referenced
+/// A placeholder for an external table of data that can be referenced
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
 pub struct PlaceholderTable {
     pub meta: TableMeta,
