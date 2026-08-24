@@ -92,7 +92,7 @@ mod tests {
         std::fs::write(&manifest_path, serde_json::to_string_pretty(&manifest).unwrap()).unwrap();
 
         let project = Project::open(manifest_path).unwrap();
-        assert_eq!(project.root, tmp_dir.path());
+        assert_eq!(project.root, tmp_dir.path().canonicalize().unwrap());
         assert_eq!(project.manifest_filename(), OsStr::new("project.json"));
     }
 }
