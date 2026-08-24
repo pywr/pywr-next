@@ -75,10 +75,10 @@ impl GeneralBeforeParameter<u64> for ThresholdParameter {
     fn before(
         &self,
         ctx: GeneralParameterContext<'_>,
-        _internal_state: &mut Option<Box<dyn ParameterState>>,
+        internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<u64, GeneralCalculationError> {
         // Downcast the internal state to the correct type
-        let previously_activated = downcast_internal_state_mut::<bool>(_internal_state);
+        let previously_activated = downcast_internal_state_mut::<bool>(internal_state);
 
         // Return early if ratchet has been hit
         if self.ratchet & *previously_activated {
@@ -103,10 +103,10 @@ impl GeneralAfterParameter<u64> for ThresholdParameter {
     fn after(
         &self,
         ctx: GeneralParameterContext<'_>,
-        _internal_state: &mut Option<Box<dyn ParameterState>>,
+        internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<u64, GeneralCalculationError> {
         // Downcast the internal state to the correct type
-        let previously_activated = downcast_internal_state_mut::<bool>(_internal_state);
+        let previously_activated = downcast_internal_state_mut::<bool>(internal_state);
 
         // Return early if ratchet has been hit
         if self.ratchet & *previously_activated {

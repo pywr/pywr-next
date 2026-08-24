@@ -48,10 +48,10 @@ impl GeneralBeforeParameter<u64> for MultiThresholdParameter {
     fn before(
         &self,
         ctx: GeneralParameterContext<'_>,
-        _internal_state: &mut Option<Box<dyn ParameterState>>,
+        internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<u64, GeneralCalculationError> {
         // Downcast the internal state to the correct type
-        let previous_max = downcast_internal_state_mut::<u64>(_internal_state);
+        let previous_max = downcast_internal_state_mut::<u64>(internal_state);
 
         let value = self.metric.get_value(ctx.network, ctx.state)?;
 
@@ -84,10 +84,10 @@ impl GeneralAfterParameter<u64> for MultiThresholdParameter {
     fn after(
         &self,
         ctx: GeneralParameterContext<'_>,
-        _internal_state: &mut Option<Box<dyn ParameterState>>,
+        internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<u64, GeneralCalculationError> {
         // Downcast the internal state to the correct type
-        let previous_max = downcast_internal_state_mut::<u64>(_internal_state);
+        let previous_max = downcast_internal_state_mut::<u64>(internal_state);
 
         let value = self.metric.get_value(ctx.network, ctx.state)?;
 
