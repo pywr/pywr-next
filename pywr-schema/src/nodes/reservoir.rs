@@ -254,7 +254,11 @@ impl ReservoirNode {
     }
 
     pub fn iter_output_slots(&self) -> impl Iterator<Item = ReservoirOutputNodeSlot> + '_ {
-        let mut slots = vec![ReservoirOutputNodeSlot::Storage, ReservoirOutputNodeSlot::Compensation];
+        let mut slots = vec![ReservoirOutputNodeSlot::Storage];
+
+        if self.compensation.is_some() {
+            slots.push(ReservoirOutputNodeSlot::Compensation);
+        }
 
         // There is only a Spill slot if the spill node is a LinkNode.
         if matches!(self.spill, Some(SpillNodeType::LinkNode)) {

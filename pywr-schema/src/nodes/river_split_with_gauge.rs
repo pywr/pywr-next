@@ -183,16 +183,25 @@ impl RiverSplitWithGaugeNode {
 
         let indices = match &slot {
             RiverSplitWithGaugeOutputNodeSlot::River => self.default_connectors(),
-            RiverSplitWithGaugeOutputNodeSlot::Split { position } => {
-                if *position < self.splits.len() {
+            RiverSplitWithGaugeOutputNodeSlot::Split { position } => match self.splits.get(*position) {
+                Some(split) => {
+                    // If the split has a slot name, then it should be accessed via the user slot, not the index.
+                    if split.slot_name.is_some() {
+                        return Err(SchemaError::NodeConnectionSlotNotFound {
+                            node: self.meta.name.clone(),
+                            slot: slot.into(),
+                        });
+                    }
+
                     vec![self.split_sub_name(*position)]
-                } else {
+                }
+                None => {
                     return Err(SchemaError::NodeConnectionSlotNotFound {
                         node: self.meta.name.clone(),
                         slot: slot.into(),
                     });
                 }
-            }
+            },
             RiverSplitWithGaugeOutputNodeSlot::User { name } => {
                 match self
                     .splits
