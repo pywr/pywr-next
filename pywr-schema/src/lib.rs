@@ -32,4 +32,4 @@ pub use network::{LoadArgs, NetworkSchemaBuildError};
 pub use network::{NetworkSchema, NetworkSchemaReadError, NetworkSchemaRef};
 pub use py_utils::{PythonSource, PythonSourceType, PythonSourceTypeIter};
 pub use v1::{ConversionData, TryFromV1, TryIntoV2};
-pub use visit::{VisitMetrics, VisitPaths};
+pub use visit::{VisitMetrics, VisitNodeReferences, VisitPaths};

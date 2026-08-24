@@ -4,6 +4,7 @@ mod virtual_storage;
 use crate::metric::Metric;
 use crate::nodes::{NodeAttribute, NodeComponent, NodeMeta, NodePosition, PlaceholderNode};
 use crate::parameters::Parameter;
+use crate::visit::VisitNodeReferences;
 #[cfg(feature = "core")]
 use crate::{LoadArgs, SchemaError};
 use crate::{VisitMetrics, VisitPaths};
@@ -181,6 +182,26 @@ impl VisitPaths for VirtualNode {
             VirtualNode::AggregatedStorage(n) => n.visit_paths_mut(visitor),
             VirtualNode::VirtualStorage(n) => n.visit_paths_mut(visitor),
             VirtualNode::Placeholder(n) => n.visit_paths_mut(visitor),
+        }
+    }
+}
+
+impl VisitNodeReferences for VirtualNode {
+    fn visit_node_references<F: FnMut(&str)>(&self, visitor: &mut F) {
+        match self {
+            VirtualNode::Aggregated(n) => n.visit_node_references(visitor),
+            VirtualNode::AggregatedStorage(n) => n.visit_node_references(visitor),
+            VirtualNode::VirtualStorage(n) => n.visit_node_references(visitor),
+            VirtualNode::Placeholder(n) => n.visit_node_references(visitor),
+        }
+    }
+
+    fn visit_node_references_mut<F: FnMut(&mut String)>(&mut self, visitor: &mut F) {
+        match self {
+            VirtualNode::Aggregated(n) => n.visit_node_references_mut(visitor),
+            VirtualNode::AggregatedStorage(n) => n.visit_node_references_mut(visitor),
+            VirtualNode::VirtualStorage(n) => n.visit_node_references_mut(visitor),
+            VirtualNode::Placeholder(n) => n.visit_node_references_mut(visitor),
         }
     }
 }
