@@ -140,6 +140,10 @@ impl Parameter {
         self.meta().name.as_str()
     }
 
+    pub fn is_placeholder(&self) -> bool {
+        matches!(self, Self::Placeholder(_))
+    }
+
     pub fn meta(&self) -> &ParameterMeta {
         match self {
             Self::Constant(p) => &p.meta,

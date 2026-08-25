@@ -57,6 +57,7 @@ pub struct TableMeta {
 #[strum_discriminants(name(DataTableType))]
 pub enum DataTable {
     CSV(CsvDataTable),
+    Placeholder(PlaceholderTable),
 }
 
 impl DataTable {
@@ -67,13 +68,21 @@ impl DataTable {
     pub fn meta(&self) -> &TableMeta {
         match self {
             DataTable::CSV(tbl) => &tbl.meta,
+            DataTable::Placeholder(tbl) => &tbl.meta,
         }
+    }
+
+    pub fn is_placeholder(&self) -> bool {
+        matches!(self, DataTable::Placeholder(_))
     }
 
     #[cfg(feature = "core")]
     pub fn load(&self, data_path: Option<&Path>) -> Result<LoadedTable, TableError> {
         match self {
             DataTable::CSV(tbl) => tbl.load_f64(data_path),
+            DataTable::Placeholder(tbl) => Err(TableError::PlaceholderTableNotAllowed {
+                name: tbl.meta.name.clone(),
+            }),
         }
     }
 }
@@ -135,6 +144,12 @@ impl CsvDataTable {
     }
 }
 
+/// A placeholder for an external table of data that can be referenced
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
+pub struct PlaceholderTable {
+    pub meta: TableMeta,
+}
+
 /// Make a finalised path for reading data from.
 ///
 /// If `table_path` is relative and `data_path` is some path then join `table_path` to `data_path`.
@@ -191,6 +206,8 @@ pub enum TableError {
     U64ConversionError,
     #[error("Checksum error: {0}")]
     ChecksumError(#[from] ChecksumError),
+    #[error("Placeholder table `{name}` cannot be loaded.")]
+    PlaceholderTableNotAllowed { name: String },
 }
 
 #[cfg(feature = "core")]

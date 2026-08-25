@@ -64,6 +64,10 @@ impl VirtualNode {
         self.into()
     }
 
+    pub fn is_placeholder(&self) -> bool {
+        matches!(self, Self::Placeholder(_))
+    }
+
     pub fn meta(&self) -> &NodeMeta {
         match self {
             VirtualNode::Aggregated(n) => &n.meta,
