@@ -2,6 +2,12 @@
 
 All notable changes to this project since v2.0.0-beta will be documented in this file.
 
+## [2.0.0-beta6] - 2026-08-25
+
+### ⚙️ Miscellaneous Tasks
+
+- Fix wheel path for PyPI publish action. (#772)
+
 ## [2.0.0-beta5] - 2026-08-25
 
 ### 🚀 Features
