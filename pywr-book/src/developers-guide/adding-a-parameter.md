@@ -45,7 +45,7 @@ To allow the parameter to be used in the model a "builder" is required. This str
 `ParameterBuilder<T>` trait. This builder will be used by the schema to create the parameter when it is loaded from a model
 file. Builders will typically have the same fields as the parameter itself, but will use "unresolved" types
 (e.g. `UnresolvedMetricF64` or `UnresolvedNode`). This allows the builder to be created without first resolving the
-dependencies of the parameter. he `build` function is then used to resolve the dependencies and create the parameter
+dependencies of the parameter. The `build` function is then used to resolve the dependencies and create the parameter
 used in the model.
 
 The builder may also have a `phase` field which allows the parameter to be evaluated
