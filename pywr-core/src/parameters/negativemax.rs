@@ -2,7 +2,7 @@ use crate::metric::{MetricConsumerPhase, MetricF64, UnresolvedMetricF64};
 use crate::network::ResolutionMaps;
 use crate::parameters::errors::GeneralCalculationError;
 use crate::parameters::{
-    BuiltParameter, GeneralBeforeParameter, GeneralParameter, GeneralParameterContext, GeneralParameterEntry,
+    BuiltParameter, GeneralBeforeParameter, GeneralAfterParameter, GeneralParameter, GeneralParameterContext, GeneralParameterEntry,
     MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder, ParameterMeta, ParameterName,
     ParameterState,
 };
@@ -40,19 +40,55 @@ impl GeneralBeforeParameter<f64> for NegativeMaxParameter {
     }
 }
 
+impl GeneralAfterParameter<f64> for NegativeMaxParameter {
+    fn after(
+        &self,
+        ctx: GeneralParameterContext<'_>,
+        _internal_state: &mut Option<Box<dyn ParameterState>>,
+    ) -> Result<f64, GeneralCalculationError> {
+        let x = -self.metric.get_value(ctx.network, ctx.state)?;
+        Ok(x.max(self.threshold))
+    }
+}
+
+
+/// Builder for creating a [`NegativeMaxParameter`].
 #[derive(Debug)]
 pub struct NegativeMaxParameterBuilder {
     meta: ParameterMeta,
     metric: UnresolvedMetricF64,
     threshold: f64,
+    phase: MetricConsumerPhase,
 }
 
 impl NegativeMaxParameterBuilder {
-    pub fn new(name: ParameterName, metric: UnresolvedMetricF64, threshold: f64) -> Self {
+    /// Create a new builder for [`NegativeMaxParameter`] that is evaluated in "before" phase.
+    pub fn before(name: ParameterName, metric: UnresolvedMetricF64, threshold: f64) -> Self {
         Self {
             meta: ParameterMeta::new(name),
             metric,
             threshold,
+            phase: MetricConsumerPhase::Before,
+        }
+    }
+
+    /// Create a new builder for [`NegativeMaxParameter`] that is evaluated in "after" phase.
+    pub fn after(name: ParameterName, metric: UnresolvedMetricF64, threshold: f64) -> Self {
+        Self {
+            meta: ParameterMeta::new(name),
+            metric,
+            threshold,
+            phase: MetricConsumerPhase::After,
+        }
+    }
+
+    /// Create a new builder for [`NegativeMaxParameter`] that is evaluated in both "before" and "after" phases.
+    pub fn both(name: ParameterName, metric: UnresolvedMetricF64, threshold: f64) -> Self {
+        Self {
+            meta: ParameterMeta::new(name),
+            metric,
+            threshold,
+            phase: MetricConsumerPhase::Both,
         }
     }
 }
@@ -66,9 +102,8 @@ impl ParameterBuilder<f64> for NegativeMaxParameterBuilder {
         self: Box<Self>,
         resolution_maps: &ResolutionMaps,
     ) -> Result<MaybeBuiltParameter<f64>, ParameterBuildError> {
-        // Phase is hardcoded to "before" for this parameter, as it only implements the `GeneralBeforeParameter` trait.
-        let phase = MetricConsumerPhase::Before;
-        let metric = resolve_metric_f64!(self, self.metric, resolution_maps, phase, "metric");
+
+        let metric = resolve_metric_f64!(self, self.metric, resolution_maps, self.phase, "metric");
 
         let p = NegativeMaxParameter {
             meta: self.meta,
@@ -76,6 +111,18 @@ impl ParameterBuilder<f64> for NegativeMaxParameterBuilder {
             threshold: self.threshold,
         };
 
-        Ok(BuiltParameter::General(GeneralParameterEntry::before(p)).into())
+        let built = match self.phase {
+            MetricConsumerPhase::Before => {
+                BuiltParameter::General(GeneralParameterEntry::before(p))
+            },
+            MetricConsumerPhase::After => {
+                BuiltParameter::General(GeneralParameterEntry::after(p))
+            },
+            MetricConsumerPhase::Both => {
+                BuiltParameter::General(GeneralParameterEntry::both(p))
+            }
+        };
+
+        Ok(built.into())
     }
 }

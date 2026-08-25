@@ -42,11 +42,16 @@ The `ParameterMeta` struct is used to store the metadata for all parameters and 
 ```
 
 To allow the parameter to be used in the model a "builder" is required. This struct must implement the
-`ParameterBuilder<T>` trait. This builder be used by the schema to create the parameter when it is loaded from a model
+`ParameterBuilder<T>` trait. This builder will be used by the schema to create the parameter when it is loaded from a model
 file. Builders will typically have the same fields as the parameter itself, but will use "unresolved" types
 (e.g. `UnresolvedMetricF64` or `UnresolvedNode`). This allows the builder to be created without first resolving the
 dependencies of the parameter. The `build` function is then used to resolve the dependencies and create the parameter
 used in the model.
+
+The builder may also have a `phase` field which allows the parameter to be evaluated
+in either the `before`, `after` or `both` phase. This determines whether the calculation is evaluated at the beginning or end
+of the timestep. Parameters evaluated in the `before` phase will be available to other parameters and calculations in the same 
+timestep often using values from the end of the previous timestep.
 
 ```rust,ignore
 {{#rustdoc_include ../../listings/adding-a-parameter/src/main.rs:impl-builder}}
@@ -88,8 +93,8 @@ This is typically done by implementing a `add_to_model` method for the parameter
 This method should be feature-gated with the `core` feature to ensure it is only available when the `core` feature is
 enabled.
 The method should take a mutable reference to the network and a reference to the `LoadArgs` struct.
-The method should load the metric from the model using the `load` method, and then create a new `MaxParameter` using
-the `new` method implemented above.
+The method should load the metric from the model using the `load` method, and then create a new `MaxParameter` by matching to 
+the given phase and using one of the `before`, `after` or `both` methods implemented above.
 Finally, the method should add the parameter to the network using the `add_parameter` method.
 
 ```rust,ignore
