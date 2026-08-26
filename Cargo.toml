@@ -48,6 +48,8 @@ criterion = "0.8"
 digest = "0.11"
 digest-io = "0.1"
 env_logger = "0.11"
+fearless_simd = "1.0"
+fearless_simd_macros = "0.1"
 float-cmp = "0.10"
 hdf5-metno = { version = "0.15", features = ["static", "zlib"] }
 highs-sys = "1.14"
@@ -59,10 +61,9 @@ libc = "0.2"
 log = "0.4"
 md-5 = "0.11"
 microlp = "0.6.0"
+nalgebra = "0.35"
 nalgebra-sparse = "0.12.0"
 ndarray = "0.17"
-nalgebra = "0.35"
-nalgebra-sparse = "0.12"
 num = "0.4"
 ocl = "0.19"
 parquet = { version = "59.3", features = ["arrow"] }
@@ -84,7 +85,6 @@ syn = "3.0"
 tempfile = "3.27"
 thiserror = "2.0"
 uuid = { version = "1", features = ["v4"] }
-wide = "1.4.0"
 
 [workspace.metadata.docs.rs]
 rustdoc-args = ["--html-in-header", "katex-header.html"]

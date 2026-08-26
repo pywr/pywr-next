@@ -1,8 +1,8 @@
 use super::{Matrix, dual_feasibility, primal_feasibility};
 use crate::Tolerances;
 use crate::common::{compute_dx_dz_dw, dot_product, normal_eqn_rhs, vector_norm, vector_set, vector_update};
+use fearless_simd::{Select, Simd, SimdBase, SimdFloat, SimdMask};
 use ipm_common::SparseNormalCholeskyIndices;
-use wide::f64x4;
 
 pub struct ANormIndices {
     indptr: Vec<usize>,
@@ -72,16 +72,18 @@ impl LTIndices {
 
 /// Compute the Cholesky decomposition of the normal matrix
 #[allow(clippy::too_many_arguments)]
-pub fn normal_matrix_cholesky_decomposition(
-    a: &Matrix,
+#[inline(always)]
+pub fn normal_matrix_cholesky_decomposition<S: Simd>(
+    simd: S,
+    a: &Matrix<S>,
     a_norm_ptr: &ANormIndices,
     l_decomp_ptr: &LDecompositionIndices,
-    x: &[f64x4],
-    z: &[f64x4],
-    y: &[f64x4],
-    w: &[f64x4],
+    x: &[S::f64s],
+    z: &[S::f64s],
+    y: &[S::f64s],
+    w: &[S::f64s],
     l_ptr: &LIndices,
-    l_data: &mut [f64x4],
+    l_data: &mut [S::f64s],
 ) {
     let mut l_entry = 0;
     for row in 0..a.size {
@@ -96,7 +98,7 @@ pub fn normal_matrix_cholesky_decomposition(
             let mut val = if (row == col) && (row < w.len()) {
                 w[row] / y[row]
             } else {
-                f64x4::splat(0.0)
+                S::f64s::splat(simd, 0.0)
             };
 
             let ind_start = a_norm_ptr.indptr[l_entry];
@@ -130,7 +132,16 @@ pub fn normal_matrix_cholesky_decomposition(
 /// L is a lower triangular matrix. Entries are stored such that the lth
 /// entry of L is the i(i + 1)/2 + j entry in dense i, j  coordinates.
 ///
-fn cholesky_solve(a_size: usize, l_ptr: &LIndices, lt_ptr: &LTIndices, l_data: &[f64x4], b: &[f64x4], x: &mut [f64x4]) {
+#[inline(always)]
+fn cholesky_solve<S: Simd>(
+    _: S,
+    a_size: usize,
+    l_ptr: &LIndices,
+    lt_ptr: &LTIndices,
+    l_data: &[S::f64s],
+    b: &[S::f64s],
+    x: &mut [S::f64s],
+) {
     // Forward substitution
     for i in 0..a_size {
         x[i] = b[i];
@@ -167,46 +178,43 @@ fn cholesky_solve(a_size: usize, l_ptr: &LIndices, lt_ptr: &LTIndices, l_data: &
 
 /// Perform a single step of the path-following algorithm.
 #[allow(clippy::too_many_arguments)]
-pub fn normal_eqn_step(
-    a: &Matrix,  // Sparse A matrix
-    at: &Matrix, // Sparse transpose of A matrix
+#[inline(always)]
+pub fn normal_eqn_step<S: Simd>(
+    simd: S,
+    a: &Matrix<S>,  // Sparse A matrix
+    at: &Matrix<S>, // Sparse transpose of A matrix
     a_norm_ptr: &ANormIndices,
     l_decomp_ptr: &LDecompositionIndices,
     l_ptr: &LIndices,
     lt_ptr: &LTIndices,
-    l_data: &mut [f64x4],
-    x: &mut [f64x4],
-    z: &mut [f64x4],
-    y: &mut [f64x4],
-    w: &mut [f64x4],
-    b: &[f64x4],
-    c: &[f64x4],
-    delta: f64x4,
-    dx: &mut [f64x4],
-    dz: &mut [f64x4],
-    dy: &mut [f64x4],
-    dw: &mut [f64x4],
-    tmp: &mut [f64x4],
-    tmp2: &mut [f64x4],
+    l_data: &mut [S::f64s],
+    x: &mut [S::f64s],
+    z: &mut [S::f64s],
+    y: &mut [S::f64s],
+    w: &mut [S::f64s],
+    b: &[S::f64s],
+    c: &[S::f64s],
+    delta: S::f64s,
+    dx: &mut [S::f64s],
+    dz: &mut [S::f64s],
+    dy: &mut [S::f64s],
+    dw: &mut [S::f64s],
+    tmp: &mut [S::f64s],
+    tmp2: &mut [S::f64s],
     tolerances: &Tolerances,
-) -> f64x4 {
+) -> S::mask64s {
     // printf("%d %d", gid, wsize);
 
     // Compute feasibilities
-    let normr = primal_feasibility(a, x, w, b);
-    let norms = dual_feasibility(at, y, c, z);
+    let normr = primal_feasibility(simd, a, x, w, b);
+    let norms = dual_feasibility(simd, at, y, c, z);
 
     // Compute optimality
-    let mut gamma = dot_product(z, x) + dot_product(w, y);
+    let mut gamma = dot_product(simd, z, x) + dot_product(simd, w, y);
 
     let mu = delta * gamma / (at.size + w.len()) as f64;
     // update relative tolerance
-    gamma /= 1.0 + vector_norm(x) + vector_norm(y);
-
-    let is_nan = gamma.is_nan();
-    if is_nan.any() {
-        panic!("NaN encountered during IPM solve!")
-    }
+    gamma /= S::f64s::splat(simd, 1.0) + vector_norm(simd, x) + vector_norm(simd, y);
 
     // #ifdef DEBUG_GID
     // if (gid == DEBUG_GID) {
@@ -218,51 +226,52 @@ pub fn normal_eqn_step(
         & norms.simd_lt(tolerances.dual_feasibility)
         & gamma.simd_lt(tolerances.optimality);
 
-    if status.all() {
+    if status.all_true() {
         // Feasible and optimal; no further work!
         return status;
     }
 
     // Solve normal equations
     //   1. Calculate the RHS (into tmp2)
-    normal_eqn_rhs(a, at, x, z, y, b, c, mu, w.len(), tmp, tmp2);
+    normal_eqn_rhs(simd, a, at, x, z, y, b, c, mu, w.len(), tmp, tmp2);
 
     //   2. Compute decomposition of normal matrix
-    normal_matrix_cholesky_decomposition(a, a_norm_ptr, l_decomp_ptr, x, z, y, w, l_ptr, l_data);
+    normal_matrix_cholesky_decomposition(simd, a, a_norm_ptr, l_decomp_ptr, x, z, y, w, l_ptr, l_data);
 
     //   3. Solve system directly
-    cholesky_solve(a.size, l_ptr, lt_ptr, l_data, tmp2, dy);
+    cholesky_solve(simd, a.size, l_ptr, lt_ptr, l_data, tmp2, dy);
 
     // Calculate dx and dz
     //     dx = (c - AT.dot(y) - AT.dot(dy) + mu/x)*x/z
     //     dz = (mu - z*dx)/x - z
     //     dw = (mu - w*dy)/y - w
-    let mut theta = compute_dx_dz_dw(at, x, z, y, w, c, dy, mu, dx, dz, dw);
+    let mut theta = compute_dx_dz_dw(simd, at, x, z, y, w, c, dy, mu, dx, dz, dw);
 
     // println!("x: {:?}, z: {:?}, y: {:?}, w: {:?}", x, z, y, w);
     // println!("dx: {:?}, dz: {:?}, dy: {:?}, dw: {:?}", dx, dz, dy, dw);
     // println!("Theta: {:?}", theta);
 
-    theta = (0.9995 / theta).min(f64x4::splat(1.0));
+    theta = (S::f64s::splat(simd, 0.9995) / theta).min(S::f64s::splat(simd, 1.0));
     // if (gid == 0) {
     //     printf("%d theta: %g", gid, theta);
     // }
 
     // println!("Theta: {:?}", theta);
     // Set theta to zero for lanes that have completed (status == True)
-    theta = status.select(f64x4::splat(0.0), theta);
+    theta = status.select(S::f64s::splat(simd, 0.0), theta);
 
-    vector_update(x, dx, f64x4::splat(1.0), theta);
-    vector_update(z, dz, f64x4::splat(1.0), theta);
-    vector_update(y, dy, f64x4::splat(1.0), theta);
-    vector_update(w, dw, f64x4::splat(1.0), theta);
+    vector_update(simd, x, dx, S::f64s::splat(simd, 1.0), theta);
+    vector_update(simd, z, dz, S::f64s::splat(simd, 1.0), theta);
+    vector_update(simd, y, dy, S::f64s::splat(simd, 1.0), theta);
+    vector_update(simd, w, dw, S::f64s::splat(simd, 1.0), theta);
 
     status
 }
 
-pub fn normal_eqn_init(x: &mut [f64x4], z: &mut [f64x4], y: &mut [f64x4], w: &mut [f64x4]) {
-    vector_set(x, f64x4::splat(1000.0));
-    vector_set(z, f64x4::splat(1000.0));
-    vector_set(y, f64x4::splat(1000.0));
-    vector_set(w, f64x4::splat(1000.0));
+#[inline(always)]
+pub fn normal_eqn_init<S: Simd>(simd: S, x: &mut [S::f64s], z: &mut [S::f64s], y: &mut [S::f64s], w: &mut [S::f64s]) {
+    vector_set(simd, x, S::f64s::splat(simd, 1000.0));
+    vector_set(simd, z, S::f64s::splat(simd, 1000.0));
+    vector_set(simd, y, S::f64s::splat(simd, 1000.0));
+    vector_set(simd, w, S::f64s::splat(simd, 1000.0));
 }

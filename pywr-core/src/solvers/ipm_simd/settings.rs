@@ -1,7 +1,6 @@
 use crate::solvers::SolverSettings;
 use ipm_simd::Tolerances;
 use std::num::NonZeroUsize;
-use wide::f64x4;
 
 /// Settings for the OpenCL IPM solvers.
 ///
@@ -104,17 +103,17 @@ impl SimdIpmSolverSettingsBuilder {
     }
 
     pub fn primal_feasibility(mut self, tolerance: f64) -> Self {
-        self.tolerances.primal_feasibility = f64x4::splat(tolerance);
+        self.tolerances.primal_feasibility = tolerance;
         self
     }
 
     pub fn dual_feasibility(mut self, tolerance: f64) -> Self {
-        self.tolerances.dual_feasibility = f64x4::splat(tolerance);
+        self.tolerances.dual_feasibility = tolerance;
         self
     }
 
     pub fn optimality(mut self, tolerance: f64) -> Self {
-        self.tolerances.optimality = f64x4::splat(tolerance);
+        self.tolerances.optimality = tolerance;
         self
     }
 

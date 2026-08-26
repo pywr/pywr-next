@@ -8,6 +8,7 @@ use crate::solvers::{
 };
 use crate::state::State;
 use crate::timestep::Timestep;
+use fearless_simd::{Level, Simd, SimdBase, dispatch};
 use ipm_simd::{PathFollowingDirectSimdSolver, Tolerances};
 use rayon::iter::IndexedParallelIterator;
 use rayon::iter::ParallelIterator;
@@ -16,7 +17,6 @@ pub use settings::{SimdIpmSolverSettings, SimdIpmSolverSettingsBuilder};
 use std::collections::BTreeMap;
 use std::num::NonZeroUsize;
 use std::time::Instant;
-use wide::f64x4;
 
 const B_MAX: f64 = 999999.0;
 
@@ -52,56 +52,63 @@ impl Matrix {
     }
 }
 
-struct Lp {
+struct Lp<S: Simd> {
     inequality: Matrix,
     equality: Matrix,
     num_cols: usize,
-    row_upper: Vec<f64x4>,
-    col_obj_coef: Vec<f64x4>,
+    row_upper: Vec<S::f64s>,
+    col_obj_coef: Vec<S::f64s>,
 }
 
-impl Lp {
+impl<S> Lp<S>
+where
+    S: Simd,
+{
     /// Zero all objective coefficients.
-    fn zero_obj_coefficients(&mut self) {
-        self.col_obj_coef.fill(f64x4::splat(0.0));
+    #[inline(always)]
+    fn zero_obj_coefficients(&mut self, simd: S) {
+        self.col_obj_coef.fill(S::f64s::splat(simd, 0.0));
     }
 
-    pub fn add_obj_coefficient(&mut self, col: usize, obj_coef: &[f64]) {
+    #[inline(always)]
+    pub fn add_obj_coefficient(&mut self, simd: S, col: usize, obj_coef: &[f64]) {
         let value = if obj_coef.is_empty() {
             panic!("Row bound vector is empty!")
         } else if obj_coef.len() > 4 {
             panic!("Row bound vector is larger than the number of SIMD lanes.")
         } else if obj_coef.len() == 4 {
-            f64x4::from(obj_coef)
+            S::f64s::from_slice(simd, obj_coef)
         } else {
             // Pad the last entry to ensure it is the full width
             let pad: Vec<_> = (0..4 - obj_coef.len()).map(|_| *obj_coef.last().unwrap()).collect();
             let values = [obj_coef, &pad].concat();
-            f64x4::from(values.as_slice())
+            S::f64s::from_slice(simd, values.as_slice())
         };
 
         self.col_obj_coef[col] += value;
     }
 
     /// Reset the row bounds to `FMIN` and `FMAX` for all rows with a mask.
-    fn reset_row_bounds(&mut self) {
+    #[inline(always)]
+    fn reset_row_bounds(&mut self, simd: S) {
         for ub in self.row_upper.iter_mut().take(self.inequality.nrows()) {
-            *ub = f64x4::splat(B_MAX)
+            *ub = S::f64s::splat(simd, B_MAX)
         }
     }
 
-    pub fn apply_row_bounds(&mut self, row: usize, ub: &[f64]) {
+    #[inline(always)]
+    pub fn apply_row_bounds(&mut self, simd: S, row: usize, ub: &[f64]) {
         let value = if ub.is_empty() {
             panic!("Row bound vector is empty!")
         } else if ub.len() > 4 {
             panic!("Row bound vector is larger than the number of SIMD lanes.")
         } else if ub.len() == 4 {
-            f64x4::from(ub)
+            S::f64s::from_slice(simd, ub)
         } else {
             // Pad the last entry to ensure it is the full width
             let pad: Vec<_> = (0..4 - ub.len()).map(|_| *ub.last().unwrap()).collect();
             let values = [ub, &pad].concat();
-            f64x4::from(values.as_slice())
+            S::f64s::from_slice(simd, values.as_slice())
         };
 
         self.row_upper[row] = self.row_upper[row].min(value);
@@ -176,16 +183,16 @@ impl LpBuilder {
     }
 
     /// Build the LP into a final sparse form
-    fn build(self) -> Lp {
+    fn build<S: Simd>(self, simd: S) -> Lp<S> {
         let num_rows = self.equality.len() + self.inequality.len();
 
         // By using chunks we make sure any scenarios that do not divide in to the number
         // of lanes are padded at the end.
         // let row_range: Vec<_> = (0..num_rows).collect();
-        let row_upper = (0..num_rows).map(|_| f64x4::splat(0.0)).collect();
+        let row_upper = (0..num_rows).map(|_| S::f64s::splat(simd, 0.0)).collect();
 
         // let col_range: Vec<_> = (0..self.num_cols).collect();
-        let col_obj_coef = (0..self.num_cols).map(|_| f64x4::splat(0.0)).collect();
+        let col_obj_coef = (0..self.num_cols).map(|_| S::f64s::splat(simd, 0.0)).collect();
 
         // println!("Number of columns: {}", self.num_cols);
         // println!("Number of rows: {num_rows}");
@@ -271,18 +278,21 @@ impl RowBuilder {
     }
 }
 
-struct BuiltSolver {
-    lp: Lp,
+struct BuiltSolver<S: Simd> {
+    lp: Lp<S>,
     col_edge_map: ColumnEdgeMap<usize>,
     node_constraints_row_ids: Vec<usize>,
 }
 
-impl BuiltSolver {
-    pub fn col_obj_coef(&self) -> &[f64x4] {
+impl<S> BuiltSolver<S>
+where
+    S: Simd,
+{
+    pub fn col_obj_coef(&self) -> &[S::f64s] {
         &self.lp.col_obj_coef
     }
 
-    pub fn row_upper(&self) -> &[f64x4] {
+    pub fn row_upper(&self) -> &[S::f64s] {
         &self.lp.row_upper
     }
 
@@ -292,19 +302,20 @@ impl BuiltSolver {
 
     fn update(
         &mut self,
+        simd: S,
         network: &Network,
         timestep: &Timestep,
         states: &[State],
         timings: &mut SolverTimings,
     ) -> Result<(), SolverSolveError> {
         let start_objective_update = Instant::now();
-        self.update_edge_objectives(network, states)?;
+        self.update_edge_objectives(simd, network, states)?;
         timings.update_objective += start_objective_update.elapsed();
 
         let start_constraint_update = Instant::now();
 
-        self.lp.reset_row_bounds();
-        self.update_node_constraint_bounds(network, timestep, states)?;
+        self.lp.reset_row_bounds(simd);
+        self.update_node_constraint_bounds(simd, network, timestep, states)?;
         // self.update_aggregated_node_constraint_bounds(network, state)?;
         timings.update_constraints += start_constraint_update.elapsed();
 
@@ -312,8 +323,8 @@ impl BuiltSolver {
     }
 
     /// Update edge objective coefficients
-    fn update_edge_objectives(&mut self, network: &Network, states: &[State]) -> Result<(), SolverSolveError> {
-        self.lp.zero_obj_coefficients();
+    fn update_edge_objectives(&mut self, simd: S, network: &Network, states: &[State]) -> Result<(), SolverSolveError> {
+        self.lp.zero_obj_coefficients(simd);
         for edge in network.edges() {
             // Collect all of the costs for all states together
             let cost = states
@@ -344,7 +355,7 @@ impl BuiltSolver {
                 })?;
 
             let col = self.col_for_edge(&edge.index());
-            self.lp.add_obj_coefficient(col, &cost);
+            self.lp.add_obj_coefficient(simd, col, &cost);
         }
         Ok(())
     }
@@ -352,6 +363,7 @@ impl BuiltSolver {
     /// Update node constraints
     fn update_node_constraint_bounds(
         &mut self,
+        simd: S,
         network: &Network,
         timestep: &Timestep,
         states: &[State],
@@ -376,7 +388,7 @@ impl BuiltSolver {
                             })
                             .collect();
                         // Apply the bounds to LP
-                        self.lp.apply_row_bounds(*row_ids.next().unwrap(), ub.as_slice());
+                        self.lp.apply_row_bounds(simd, *row_ids.next().unwrap(), ub.as_slice());
                     }
                 }
                 NodeType::Storage => {
@@ -392,9 +404,11 @@ impl BuiltSolver {
                         .unzip();
                     // Storage nodes add two rows the LP. First is the bounds on increase
                     // in volume. The second is the bounds on decrease in volume.
-                    self.lp.apply_row_bounds(*row_ids.next().unwrap(), missing.as_slice());
+                    self.lp
+                        .apply_row_bounds(simd, *row_ids.next().unwrap(), missing.as_slice());
 
-                    self.lp.apply_row_bounds(*row_ids.next().unwrap(), avail.as_slice());
+                    self.lp
+                        .apply_row_bounds(simd, *row_ids.next().unwrap(), avail.as_slice());
                 }
             }
         }
@@ -424,7 +438,7 @@ impl SolverBuilder {
         self.col_edge_map.col_for_edge(edge_index)
     }
 
-    fn create(mut self, network: &Network) -> Result<BuiltSolver, SolverSetupError> {
+    fn create<S: Simd>(mut self, simd: S, network: &Network) -> Result<BuiltSolver<S>, SolverSetupError> {
         // Create the columns
         self.create_columns(network)?;
 
@@ -440,7 +454,7 @@ impl SolverBuilder {
         // builder.create_virtual_storage_constraints(network);
 
         Ok(BuiltSolver {
-            lp: self.builder.build(),
+            lp: self.builder.build(simd),
             col_edge_map: self.col_edge_map.build(),
             node_constraints_row_ids,
         })
@@ -597,8 +611,24 @@ impl SolverBuilder {
 }
 
 pub struct SimdIpmF64Solver {
-    built: Vec<BuiltSolver>,
-    ipm: Vec<PathFollowingDirectSimdSolver>,
+    backend: Box<dyn MultiStateSolver>,
+}
+
+impl MultiStateSolver for SimdIpmF64Solver {
+    fn solve(
+        &mut self,
+        network: &Network,
+        timestep: &Timestep,
+        states: &mut [State],
+    ) -> Result<SolverTimings, SolverSolveError> {
+        self.backend.solve(network, timestep, states)
+    }
+}
+
+struct SimdBackend<S: Simd> {
+    simd: S,
+    built: Vec<BuiltSolver<S>>,
+    ipm: Vec<PathFollowingDirectSimdSolver<S>>,
     tolerances: Tolerances,
     max_iterations: NonZeroUsize,
 }
@@ -615,40 +645,60 @@ impl MultiStateSolverConfig for SimdIpmSolverSettings {
     }
 
     fn setup(&self, network: &Network, num_scenarios: usize) -> Result<Box<Self::Solver>, SolverSetupError> {
-        let mut built_solvers = Vec::new();
-        let mut ipms = Vec::new();
+        let level = Level::new();
 
-        for _ in (0..num_scenarios).collect::<Vec<_>>().chunks(4) {
-            let builder = SolverBuilder::new();
-            let built = builder.create(network)?;
+        let backend: Box<dyn MultiStateSolver> = dispatch!(level, simd => {
+            backend_builder(simd, network, num_scenarios, self.tolerances(), self.max_iterations())
+        })?;
 
-            let matrix = built.lp.get_full_matrix();
-            let num_rows = matrix.row_starts.len() - 1;
-            let num_cols = built.lp.num_cols;
-
-            let ipm = PathFollowingDirectSimdSolver::from_data(
-                num_rows,
-                num_cols,
-                matrix.row_starts,
-                matrix.columns,
-                matrix.elements,
-                built.lp.inequality.nrows(),
-            );
-
-            built_solvers.push(built);
-            ipms.push(ipm)
-        }
-
-        Ok(Box::new(Self::Solver {
-            built: built_solvers,
-            ipm: ipms,
-            tolerances: self.tolerances(),
-            max_iterations: self.max_iterations(),
-        }))
+        Ok(Box::new(SimdIpmF64Solver { backend }) as Box<Self::Solver>)
     }
 }
 
-impl MultiStateSolver for SimdIpmF64Solver {
+fn backend_builder<S: Simd>(
+    simd: S,
+    network: &Network,
+    num_scenarios: usize,
+    tolerances: Tolerances,
+    max_iterations: NonZeroUsize,
+) -> Result<Box<dyn MultiStateSolver>, SolverSetupError> {
+    let mut built_solvers = Vec::new();
+    let mut ipms = Vec::new();
+
+    for _ in (0..num_scenarios).collect::<Vec<_>>().chunks(S::f64s::LEN) {
+        let builder = SolverBuilder::new();
+        let built = builder.create(simd, network)?;
+
+        let matrix = built.lp.get_full_matrix();
+        let num_rows = matrix.row_starts.len() - 1;
+        let num_cols = built.lp.num_cols;
+
+        let ipm = PathFollowingDirectSimdSolver::from_data(
+            simd,
+            num_rows,
+            num_cols,
+            matrix.row_starts,
+            matrix.columns,
+            matrix.elements,
+            built.lp.inequality.nrows(),
+        );
+
+        built_solvers.push(built);
+        ipms.push(ipm);
+    }
+
+    let backend = SimdBackend {
+        simd,
+        built: built_solvers,
+        ipm: ipms,
+        tolerances,
+        max_iterations,
+    };
+
+    Ok(Box::new(backend))
+}
+
+impl<S: Simd> MultiStateSolver for SimdBackend<S> {
     fn solve(
         &mut self,
         network: &Network,
@@ -660,17 +710,20 @@ impl MultiStateSolver for SimdIpmF64Solver {
 
         // TODO this will miss off anything that doesn't divide in to 4
         states
-            .par_chunks_mut(4)
+            .par_chunks_mut(S::f64s::LEN)
             .zip(&mut self.built)
             .zip(&mut self.ipm)
             .for_each(|((chunk_states, built), ipm)| {
                 let mut timings = SolverTimings::default();
 
-                built.update(network, timestep, chunk_states, &mut timings).unwrap();
+                built
+                    .update(self.simd, network, timestep, chunk_states, &mut timings)
+                    .unwrap();
 
                 let now = Instant::now();
 
                 let solution = ipm.solve(
+                    self.simd,
                     built.row_upper(),
                     built.col_obj_coef(),
                     &self.tolerances,
@@ -690,7 +743,7 @@ impl MultiStateSolver for SimdIpmF64Solver {
                     let col = built.col_for_edge(&edge.index());
                     let flows = solution[col];
 
-                    for (state, flow) in chunk_states.iter_mut().zip(flows.as_array()) {
+                    for (state, flow) in chunk_states.iter_mut().zip(flows.as_slice()) {
                         if !flow.is_finite() {
                             panic!("Non-finite flow encountered from solver. Edge: {edge:#?}, value: {flow}")
                         }

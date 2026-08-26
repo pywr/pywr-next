@@ -8,7 +8,8 @@ repository.workspace = true
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+fearless_simd = { workspace = true }
+fearless_simd_macros = { workspace = true }
 ipm-common = { path = "../ipm-common" }
 nalgebra-sparse = { workspace = true }
-wide = { workspace = true }
 

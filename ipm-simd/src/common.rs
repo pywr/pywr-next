@@ -1,16 +1,21 @@
+use fearless_simd::{Simd, SimdBase, SimdFloat};
+use fearless_simd_macros::simd;
 use nalgebra_sparse::CsrMatrix;
-use wide::f64x4;
 
-pub struct Matrix {
+pub struct Matrix<S: Simd> {
     pub indptr: Vec<usize>,
     pub indices: Vec<usize>,
-    pub data: Vec<f64x4>,
+    pub data: Vec<S::f64s>,
     pub size: usize,
 }
 
-impl Matrix {
-    pub fn from_sparse_matrix(a: &CsrMatrix<f64>) -> Self {
-        let data = a.values().iter().map(|&v| f64x4::splat(v)).collect();
+impl<S: Simd> Matrix<S>
+where
+    S: Simd,
+{
+    #[simd]
+    pub fn from_sparse_matrix(simd: S, a: &CsrMatrix<f64>) -> Self {
+        let data = a.values().iter().map(|&v| S::f64s::splat(simd, v)).collect();
         let indptr = a.row_offsets().to_vec();
         let indices = a.col_indices().to_vec();
 
@@ -24,42 +29,57 @@ impl Matrix {
 }
 
 /// Compute `out = Ax`
-pub fn matrix_vector_product(matrix: &Matrix, x: &[f64x4], out: &mut [f64x4]) {
+#[simd]
+pub fn matrix_vector_product<S: Simd>(simd: S, matrix: &Matrix<S>, x: &[S::f64s], out: &mut [S::f64s]) {
     for (row, o) in out.iter_mut().enumerate().take(matrix.size) {
-        let mut val = f64x4::splat(0.0);
+        *o = S::f64s::splat(simd, 0.0);
 
         let first_index = matrix.indptr[row];
         let last_index = matrix.indptr[row + 1];
 
         for index in first_index..last_index {
             let col = matrix.indices[index];
-            val += matrix.data[index] * x[col];
+            *o += matrix.data[index] * x[col];
         }
-
-        *o = val;
     }
 }
 
 /// Return dot product of x and y
-pub fn dot_product(x: &[f64x4], y: &[f64x4]) -> f64x4 {
-    x.iter().zip(y.iter()).map(|(&a, &b)| a * b).sum()
+#[simd]
+pub fn dot_product<S: Simd>(simd: S, x: &[S::f64s], y: &[S::f64s]) -> S::f64s {
+    let mut out = S::f64s::splat(simd, 0.0);
+
+    for (a, b) in x.iter().zip(y.iter()) {
+        out += *a * *b;
+    }
+
+    out
 }
 
 /// `x = x*xscale + y*yscale`
-pub fn vector_update(x: &mut [f64x4], y: &[f64x4], xscale: f64x4, yscale: f64x4) {
+#[simd]
+pub fn vector_update<S: Simd>(_: S, x: &mut [S::f64s], y: &[S::f64s], xscale: S::f64s, yscale: S::f64s) {
     for i in 0..x.len() {
         x[i] = xscale * x[i] + yscale * y[i];
     }
 }
 
 /// `x = scalar`
-pub fn vector_set(x: &mut [f64x4], scalar: f64x4) {
-    x.iter_mut().for_each(|a| *a = scalar)
+#[simd]
+pub fn vector_set<S: Simd>(_: S, x: &mut [S::f64s], scalar: S::f64s) {
+    for a in x.iter_mut() {
+        *a = scalar;
+    }
 }
 
 /// return max(x)
-pub fn vector_norm(x: &[f64x4]) -> f64x4 {
-    x.iter().map(|&a| a * a).sum::<f64x4>().sqrt()
+#[simd]
+pub fn vector_norm<S: Simd>(simd: S, x: &[S::f64s]) -> S::f64s {
+    let mut out = S::f64s::splat(simd, 0.0);
+    for &a in x.iter() {
+        out += a * a;
+    }
+    out.sqrt()
 }
 
 /// Compute the right-hand side of the system of primal normal equations
@@ -67,33 +87,39 @@ pub fn vector_norm(x: &[f64x4]) -> f64x4 {
 /// `rhs = -(b - A.dot(x) - mu/y - A.dot(x * (c - At.dot(y) + mu/x)/z))`
 ///
 #[allow(clippy::too_many_arguments)]
-pub fn normal_eqn_rhs(
-    a: &Matrix,  // Sparse A matrix
-    at: &Matrix, // Sparse transpose of A matrix
-    x: &[f64x4],
-    z: &[f64x4],
-    y: &[f64x4],
-    b: &[f64x4],
-    c: &[f64x4],
-    mu: f64x4,
+#[simd]
+pub fn normal_eqn_rhs<S: Simd>(
+    simd: S,
+    a: &Matrix<S>,  // Sparse A matrix
+    at: &Matrix<S>, // Sparse transpose of A matrix
+    x: &[S::f64s],
+    z: &[S::f64s],
+    y: &[S::f64s],
+    b: &[S::f64s],
+    c: &[S::f64s],
+    mu: S::f64s,
     wsize: usize,
-    tmp: &mut [f64x4], // work array size of x
-    out: &mut [f64x4], // work array size of b
+    tmp: &mut [S::f64s], // work array size of x
+    out: &mut [S::f64s], // work array size of b
 ) {
     // Calculate tmp = At.dot(y)
-    matrix_vector_product(at, y, tmp);
+    matrix_vector_product(simd, at, y, tmp);
 
     // Calculate tmp = x * (c - At.dot(y) + mu/x)/z
     for row in 0..at.size {
         tmp[row] = x[row] * (c[row] - tmp[row] + mu / x[row]) / z[row];
     }
     // Calculate tmp2 = A.dot(tmp)
-    matrix_vector_product(a, tmp, out);
+    matrix_vector_product(simd, a, tmp, out);
 
     // Compute out = -(b - A.dot(x) - mu/y -out)
     for row in 0..a.size {
         // The mu/y term is only applied to rows where w is defined.
-        let mut val = if row < wsize { mu / y[row] } else { f64x4::splat(0.0) };
+        let mut val = if row < wsize {
+            mu / y[row]
+        } else {
+            S::f64s::splat(simd, 0.0)
+        };
 
         let first_index = a.indptr[row];
         let last_index = a.indptr[row + 1];
@@ -111,17 +137,22 @@ pub fn normal_eqn_rhs(
 ///
 /// `normr = || b - A.dot(x) - w || / max(|| b ||, 1)`
 ///
-pub fn primal_feasibility(
-    a: &Matrix, // Sparse A matrix
-    x: &[f64x4],
-    w: &[f64x4],
-    b: &[f64x4],
-) -> f64x4 {
+#[simd]
+pub fn primal_feasibility<S: Simd>(
+    simd: S,
+    a: &Matrix<S>, // Sparse A matrix
+    x: &[S::f64s],
+    w: &[S::f64s],
+    b: &[S::f64s],
+) -> S::f64s {
     // Compute ||x||
-    let normx: f64x4 = x.iter().map(|&a| a * a).sum();
+    let mut normx = S::f64s::splat(simd, 0.0);
+    for &a in x.iter() {
+        normx += a * a;
+    }
 
     // Compute primal feasibility
-    let mut normr = f64x4::splat(0.0);
+    let mut normr = S::f64s::splat(simd, 0.0);
     for row in 0..a.size {
         let mut val = b[row];
 
@@ -140,21 +171,26 @@ pub fn primal_feasibility(
         normr += val * val;
     }
 
-    normr.sqrt() / (1.0 + normx.sqrt())
+    normr.sqrt() / (S::f64s::splat(simd, 1.0) + normx.sqrt())
 }
 
 /// Calculate dual-feasibility
 ///     `norms = || c - AT.dot(y) + z || / max(|| c ||, 1)`
 ///
-pub fn dual_feasibility(
-    at: &Matrix, // Sparse A matrix
-    y: &[f64x4],
-    c: &[f64x4],
-    z: &[f64x4],
-) -> f64x4 {
-    let normy: f64x4 = y.iter().map(|&a| a * a).sum();
+#[simd]
+pub fn dual_feasibility<S: Simd>(
+    simd: S,
+    at: &Matrix<S>, // Sparse A matrix
+    y: &[S::f64s],
+    c: &[S::f64s],
+    z: &[S::f64s],
+) -> S::f64s {
+    let mut normy: S::f64s = S::f64s::splat(simd, 0.0);
+    for &a in c.iter() {
+        normy += a * a;
+    }
 
-    let mut norms = f64x4::splat(0.0);
+    let mut norms = S::f64s::splat(simd, 0.0);
     // Compute primal feasibility
     for row in 0..at.size {
         let mut val = z[row];
@@ -171,7 +207,7 @@ pub fn dual_feasibility(
         norms += val * val;
     }
 
-    norms.sqrt() / (1.0 + normy.sqrt())
+    norms.sqrt() / (S::f64s::splat(simd, 1.0) + normy.sqrt())
 }
 
 /// Compute the path step changes given known dy and return maximum value of theta.
@@ -183,25 +219,27 @@ pub fn dual_feasibility(
 ///  dw = (mu - w*dy)/y - w
 ///
 #[allow(clippy::too_many_arguments)]
-pub fn compute_dx_dz_dw(
-    at: &Matrix, // Sparse A matrix
-    x: &[f64x4],
-    z: &[f64x4],
-    y: &[f64x4],
-    w: &[f64x4],
-    c: &[f64x4],
-    dy: &[f64x4],
-    mu: f64x4,
-    dx: &mut [f64x4],
-    dz: &mut [f64x4],
-    dw: &mut [f64x4],
-) -> f64x4 {
-    let mut theta_xz = f64x4::splat(0.0);
-    let mut theta_wy = f64x4::splat(0.0);
+#[simd]
+pub fn compute_dx_dz_dw<S: Simd>(
+    simd: S,
+    at: &Matrix<S>, // Sparse A matrix
+    x: &[S::f64s],
+    z: &[S::f64s],
+    y: &[S::f64s],
+    w: &[S::f64s],
+    c: &[S::f64s],
+    dy: &[S::f64s],
+    mu: S::f64s,
+    dx: &mut [S::f64s],
+    dz: &mut [S::f64s],
+    dw: &mut [S::f64s],
+) -> S::f64s {
+    let mut theta_xz = S::f64s::splat(simd, 0.0);
+    let mut theta_wy = S::f64s::splat(simd, 0.0);
 
     for row in 0..at.size {
-        let mut val = f64x4::splat(0.0);
-        let mut val2 = f64x4::splat(0.0);
+        let mut val = S::f64s::splat(simd, 0.0);
+        let mut val2 = S::f64s::splat(simd, 0.0);
 
         let first_index = at.indptr[row];
         let last_index = at.indptr[row + 1];

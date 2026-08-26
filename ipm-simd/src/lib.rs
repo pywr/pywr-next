@@ -3,6 +3,7 @@ mod path_following_direct;
 
 use crate::path_following_direct::{normal_eqn_init, normal_eqn_step};
 use common::{Matrix, dual_feasibility, primal_feasibility};
+use fearless_simd::{Simd, SimdBase, SimdMask};
 use ipm_common::SparseNormalCholeskyIndices;
 use nalgebra_sparse::CsrMatrix;
 use path_following_direct::ANormIndices;
@@ -11,50 +12,57 @@ use path_following_direct::{LIndices, LTIndices};
 use std::f64;
 use std::fmt::Debug;
 use std::num::NonZeroUsize;
-use wide::f64x4;
 
-struct PathData {
-    x: Vec<f64x4>,
-    z: Vec<f64x4>,
-    y: Vec<f64x4>,
-    w: Vec<f64x4>,
+struct PathData<S: Simd> {
+    x: Vec<S::f64s>,
+    z: Vec<S::f64s>,
+    y: Vec<S::f64s>,
+    w: Vec<S::f64s>,
 }
 
-impl PathData {
-    pub fn new(num_rows: usize, num_cols: usize, num_inequality_constraints: usize) -> Self {
+impl<S> PathData<S>
+where
+    S: Simd,
+{
+    pub fn new(simd: S, num_rows: usize, num_cols: usize, num_inequality_constraints: usize) -> Self {
         Self {
-            x: (0..num_cols).map(|_| f64x4::splat(0.0)).collect(),
-            z: (0..num_cols).map(|_| f64x4::splat(0.0)).collect(),
-            y: (0..num_rows).map(|_| f64x4::splat(0.0)).collect(),
-            w: (0..num_inequality_constraints).map(|_| f64x4::splat(0.0)).collect(),
+            x: (0..num_cols).map(|_| S::f64s::splat(simd, 0.0)).collect(),
+            z: (0..num_cols).map(|_| S::f64s::splat(simd, 0.0)).collect(),
+            y: (0..num_rows).map(|_| S::f64s::splat(simd, 0.0)).collect(),
+            w: (0..num_inequality_constraints)
+                .map(|_| S::f64s::splat(simd, 0.0))
+                .collect(),
         }
     }
 }
 
-pub struct PathFollowingDirectSimdData {
-    a: Matrix,
-    at: Matrix,
+pub struct PathFollowingDirectSimdData<S: Simd> {
+    a: Matrix<S>,
+    at: Matrix<S>,
     a_norm_ptr: ANormIndices,
     l_decomp_ptr: LDecompositionIndices,
     l_ptr: LIndices,
     lt_ptr: LTIndices,
-    l_data: Vec<f64x4>,
+    l_data: Vec<S::f64s>,
 
-    path_buffers: PathData,
-    delta_path_buffers: PathData,
+    path_buffers: PathData<S>,
+    delta_path_buffers: PathData<S>,
 
-    tmp: Vec<f64x4>,
-    rhs: Vec<f64x4>,
+    tmp: Vec<S::f64s>,
+    rhs: Vec<S::f64s>,
 }
 
-impl PathFollowingDirectSimdData {
-    pub fn from_data(a: &CsrMatrix<f64>, num_inequality_constraints: usize) -> Self {
+impl<S> PathFollowingDirectSimdData<S>
+where
+    S: Simd,
+{
+    pub fn from_data(simd: S, a: &CsrMatrix<f64>, num_inequality_constraints: usize) -> Self {
         let num_rows = a.nrows();
         let num_cols = a.ncols();
 
-        let a_buffers = Matrix::from_sparse_matrix(a);
+        let a_buffers = Matrix::from_sparse_matrix(simd, a);
         let at = a.transpose();
-        let at_buffers = Matrix::from_sparse_matrix(&at);
+        let at_buffers = Matrix::from_sparse_matrix(simd, &at);
 
         let normal_indices = SparseNormalCholeskyIndices::from_matrix(a);
 
@@ -78,14 +86,16 @@ impl PathFollowingDirectSimdData {
         // println!("ltmap: {}", normal_indices.ltmap.len());
 
         // Require ldata for every SIMD lane
-        let l_data: Vec<f64x4> = (0..normal_indices.lindices.len()).map(|_| f64x4::splat(0.0)).collect();
+        let l_data: Vec<_> = (0..normal_indices.lindices.len())
+            .map(|_| S::f64s::splat(simd, 0.0))
+            .collect();
 
-        let path_buffers = PathData::new(num_rows, num_cols, num_inequality_constraints);
-        let delta_path_buffers = PathData::new(num_rows, num_cols, num_inequality_constraints);
+        let path_buffers = PathData::new(simd, num_rows, num_cols, num_inequality_constraints);
+        let delta_path_buffers = PathData::new(simd, num_rows, num_cols, num_inequality_constraints);
 
         // Work buffers
-        let tmp = (0..num_cols).map(|_| f64x4::splat(0.0)).collect();
-        let rhs = (0..num_rows).map(|_| f64x4::splat(0.0)).collect();
+        let tmp = (0..num_cols).map(|_| S::f64s::splat(simd, 0.0)).collect();
+        let rhs = (0..num_rows).map(|_| S::f64s::splat(simd, 0.0)).collect();
 
         Self {
             a: a_buffers,
@@ -105,27 +115,31 @@ impl PathFollowingDirectSimdData {
 
 #[derive(Copy, Clone, PartialEq, Debug)]
 pub struct Tolerances {
-    pub primal_feasibility: f64x4,
-    pub dual_feasibility: f64x4,
-    pub optimality: f64x4,
+    pub primal_feasibility: f64,
+    pub dual_feasibility: f64,
+    pub optimality: f64,
 }
 
 impl Default for Tolerances {
     fn default() -> Self {
         Self {
-            primal_feasibility: f64x4::splat(1e-8),
-            dual_feasibility: f64x4::splat(1e-8),
-            optimality: f64x4::splat(1e-8),
+            primal_feasibility: 1e-8,
+            dual_feasibility: 1e-8,
+            optimality: 1e-8,
         }
     }
 }
 
-pub struct PathFollowingDirectSimdSolver {
-    buffers: PathFollowingDirectSimdData,
+pub struct PathFollowingDirectSimdSolver<S: Simd> {
+    buffers: PathFollowingDirectSimdData<S>,
 }
 
-impl PathFollowingDirectSimdSolver {
+impl<S> PathFollowingDirectSimdSolver<S>
+where
+    S: Simd,
+{
     pub fn from_data(
+        simd: S,
         num_rows: usize,
         num_cols: usize,
         row_offsets: Vec<usize>,
@@ -136,26 +150,28 @@ impl PathFollowingDirectSimdSolver {
         let a = CsrMatrix::try_from_csr_data(num_rows, num_cols, row_offsets, col_indices, values)
             .expect("Failed to create matrix from given data");
 
-        let buffers = PathFollowingDirectSimdData::from_data(&a, num_inequality_constraints);
+        let buffers = PathFollowingDirectSimdData::from_data(simd, &a, num_inequality_constraints);
 
         Self { buffers }
     }
 
     pub fn solve(
         &mut self,
-        b: &[f64x4],
-        c: &[f64x4],
+        simd: S,
+        b: &[S::f64s],
+        c: &[S::f64s],
         tolerances: &Tolerances,
         max_iterations: NonZeroUsize,
-    ) -> &[f64x4] {
+    ) -> &[S::f64s] {
         normal_eqn_init(
+            simd,
             &mut self.buffers.path_buffers.x,
             &mut self.buffers.path_buffers.z,
             &mut self.buffers.path_buffers.y,
             &mut self.buffers.path_buffers.w,
         );
 
-        let delta = f64x4::splat(0.1);
+        let delta = S::f64s::splat(simd, 0.1);
         let mut iter = 0;
 
         let last_iteration = loop {
@@ -163,6 +179,7 @@ impl PathFollowingDirectSimdSolver {
                 break None;
             }
             let status = normal_eqn_step(
+                simd,
                 &self.buffers.a,
                 &self.buffers.at,
                 &self.buffers.a_norm_ptr,
@@ -186,7 +203,7 @@ impl PathFollowingDirectSimdSolver {
                 tolerances,
             );
 
-            if status.all() {
+            if status.all_true() {
                 break Some(iter);
             }
 
