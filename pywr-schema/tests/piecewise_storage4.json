@@ -132,6 +132,7 @@
           "name": "storage1-drought-index"
         },
         "type": "ControlCurveIndex",
+        "phase": "Before",
         "storage_metric": {
           "type": "Node",
           "name": "storage1",

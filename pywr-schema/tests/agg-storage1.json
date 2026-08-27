@@ -139,6 +139,7 @@
           "name": "demand"
         },
         "type": "ControlCurve",
+        "phase": "Before",
         "storage_metric": {
           "type": "VirtualNode",
           "name": "total-storage",
