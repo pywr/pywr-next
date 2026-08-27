@@ -26,6 +26,7 @@ clap = { version = "4.6", features = ["derive"] }
 
 pywr-core = { path = "../pywr-core" }
 pywr-schema = { path = "../pywr-schema" }
+pywr-project = { path = "../pywr-project" }
 pywr-v1-schema = { workspace = true }
 rand = { workspace = true }
 rand_chacha = { workspace = true }
@@ -34,3 +35,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[dev-dependencies]
+assert_cmd = "2.0"
+tempfile = { workspace = true }

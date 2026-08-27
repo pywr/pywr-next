@@ -12,6 +12,7 @@ members = [
     "pywr-python",
     "pywr-schema",
     "pywr-schema-macros",
+    "pywr-project",
 ]
 
 # IPM packages are not default because they require nightly (portable_simd).
@@ -21,6 +22,7 @@ default-members = [
     "pywr-schema",
     "pywr-cli",
     # "pywr-python",
+    "pywr-project",
 ]
 
 [workspace.package]
@@ -63,6 +65,7 @@ serde_json = "1.0"
 sha2 = "0.11"
 strum = "0.28"
 strum_macros = "0.28"
+tempfile = "3.23"
 thiserror = "2.0"
 tracing = { version = "0.1", features = ["log"] }
 wide = "1.4.0"

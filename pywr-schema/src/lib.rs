@@ -29,7 +29,7 @@ pub use model::{ModelSchema, ModelSchemaReadError, MultiNetworkModelSchema};
 pub use model::{ModelSchemaBuildError, MultiNetworkModelSchemaBuildError};
 #[cfg(feature = "core")]
 pub use network::{LoadArgs, NetworkSchemaBuildError};
-pub use network::{NetworkSchema, NetworkSchemaReadError, NetworkSchemaRef};
+pub use network::{NetworkMergeError, NetworkSchema, NetworkSchemaReadError, NetworkSchemaRef};
 pub use py_utils::{PythonSource, PythonSourceType, PythonSourceTypeIter};
 pub use v1::{ConversionData, TryFromV1, TryIntoV2};
 pub use visit::{VisitMetrics, VisitNodeReferences, VisitPaths};
