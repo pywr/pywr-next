@@ -5,7 +5,7 @@ use crate::metric::{Metric, NodeAttrReference};
 #[cfg(feature = "core")]
 use crate::network::LoadArgs;
 use crate::nodes::NodeAttribute;
-use crate::parameters::{ConversionData, ParameterMeta};
+use crate::parameters::{ConversionData, ParameterMeta, ParameterPhase};
 use crate::v1::{TryFromV1, TryIntoV2};
 #[cfg(feature = "core")]
 use pywr_core::parameters::ParameterName;
@@ -18,6 +18,7 @@ use schemars::JsonSchema;
 #[serde(deny_unknown_fields)]
 pub struct Polynomial1DParameter {
     pub meta: ParameterMeta,
+    pub phase: ParameterPhase,
     pub metric: Metric,
     pub coefficients: Vec<f64>,
     pub scale: Option<f64>,
@@ -33,12 +34,25 @@ impl Polynomial1DParameter {
         parent: Option<&str>,
     ) -> Result<(), SchemaError> {
         let metric = self.metric.load(network, args, None)?;
-
-        let mut builder = pywr_core::parameters::Polynomial1DParameterBuilder::new(
-            ParameterName::new(&self.meta.name, parent),
-            metric,
-            self.coefficients.clone(),
-        );
+        let name = ParameterName::new(&self.meta.name, parent);
+        
+        let mut builder = match self.phase {
+            ParameterPhase::Before => pywr_core::parameters::Polynomial1DParameterBuilder::before(
+                name,
+                metric,
+                self.coefficients.clone(),
+            ),
+            ParameterPhase::After => pywr_core::parameters::Polynomial1DParameterBuilder::after(
+                name,
+                metric,
+                self.coefficients.clone(),
+            ),
+            ParameterPhase::Both => pywr_core::parameters::Polynomial1DParameterBuilder::both(
+                name,
+                metric,
+                self.coefficients.clone(),
+            ),
+        };
 
         builder
             .scale(self.scale.unwrap_or(1.0))
@@ -74,6 +88,7 @@ impl TryFromV1<Polynomial1DParameterV1> for Polynomial1DParameter {
             coefficients: v1.coefficients,
             scale: v1.scale,
             offset: v1.offset,
+            phase: ParameterPhase::Before,
         })
     }
 }
