@@ -63,12 +63,10 @@ impl GeneralAfterParameter<f64> for Polynomial1DParameter {
 
 fn polynomial(x: f64, coefficients: Vec<f64>) -> f64 {
 
-    let y = coefficients
+    coefficients
         .iter()
         .enumerate()
-        .fold(0.0, |y, (i, c)| y + c * x.powi(i as i32));
-
-    y
+        .fold(0.0, |y, (i, c)| y + c * x.powi(i as i32))
 }
 
 
