@@ -1,22 +1,19 @@
 # Extending functionality with custom parameters
 
-Parameters are a core part of Pywr, allowing you to define how your model behaves.
-While Pywr comes with a wide range of built-in parameters, you may find that you need to create custom parameters to
-suit your specific modelling needs.
-This guide will walk you through the process of creating custom parameters in Pywr.
+Parameters are a core part of Pywr, allowing you to define how your model behaves. While Pywr comes with a wide range of
+built-in parameters, you may find that you need to create custom parameters to suit your specific modelling needs. This
+guide will walk you through the process of creating custom parameters in Pywr.
 
-Currently, Pywr supports custom parameters that are defined in Python.
-If your parameter is general enough, you may want to consider contributing it to the Pywr project.
-If you do, please see the [Developers Guide](./developers-guide/adding-a-parameter.md) for more information on how to do
-this.
+Currently, Pywr supports custom parameters that are defined in Python. If your parameter is general enough, you may want
+to consider contributing it to the Pywr project. If you do, please see
+the [Developers Guide](./developers-guide/adding-a-parameter.md) for more information on how to do this.
 
 ## Python functions
 
-The simplest way to create a custom parameter is to define a Python function.
-This function should accept at least one argument, which is a `ParameterInfo` object.
-This object contains information from the model, such as the current time step, scenario index,
-and any metric values that have been requested.
-Additional arguments can also be passed to the function.
+The simplest way to create a custom parameter is to define a Python function. This function should accept at least one
+argument, which is a `ParameterInfo` object. This object contains information from the model, such as the current time
+step, scenario index, and any metric values that have been requested. Additional arguments can also be passed to the
+function.
 
 Here is an example of a simple custom parameter that returns the current time step:
 
@@ -30,10 +27,9 @@ def current_time_step(info: ParameterInfo) -> float:
     return info.timestep.index
 ```
 
-To use this custom parameter in your model it must be defined as a `Parameter` in your model's JSON file.
-Below is an example of how to define the `current_time_step` parameter in your model's JSON file.
-The `source` field specifies the path to the Python file containing the function,
-and the `object` field specifies the name of the function to call.
+To use this custom parameter in your model it must be defined as a `Parameter` in your model's JSON file. Below is an
+example of how to define the `current_time_step` parameter in your model's JSON file. The `source` field specifies the
+path to the Python file containing the function, and the `object` field specifies the name of the function to call.
 
 ```json
 {
@@ -60,13 +56,12 @@ and the `object` field specifies the name of the function to call.
 
 ### Constant arguments
 
-In reality, your function will likely need to accept additional arguments.
-These arguments might be constants that change the behaviour of the function, but do *not* change over time
-or are a result of the model's simulation state.
-In this case they can be defined as `args` or `kwargs` in the parameter definition.
-Only simple types that are supported by JSON can be used as arguments, such as strings, numbers, and booleans.
-However, by parameterising these values, you can easily change them without modifying the Python code or reuse
-the same function with different values in different parts of the model.
+In reality, your function will likely need to accept additional arguments. These arguments might be constants that
+change the behaviour of the function, but do *not* change over time or are a result of the model's simulation state. In
+this case they can be defined as `args` or `kwargs` in the parameter definition. Only simple types that are supported by
+JSON can be used as arguments, such as strings, numbers, and booleans. However, by parameterising these values, you can
+easily change them without modifying the Python code or reuse the same function with different values in different parts
+of the model.
 
 ```python
 # custom_parameters.py
@@ -118,10 +113,9 @@ To pass these arguments to the function, you can define them in the model's JSON
 
 ### Metrics from the model
 
-More complex parameters will need information from the model, such as the current volume of a reservoir, or
-the value of another parameter, etc.
-These values need to be requested in the JSON definition of parameter, and then they can be accessed in the function
-using the `ParameterInfo` object.
+More complex parameters will need information from the model, such as the current volume of a reservoir, or the value of
+another parameter, etc. These values need to be requested in the JSON definition of parameter, and then they can be
+accessed in the function using the `ParameterInfo` object.
 
 ```python
 # custom_parameters.py
@@ -136,8 +130,8 @@ def factor_volume(info: ParameterInfo, factor: float) -> float:
 
 The JSON definition of the parameter needs to include a `metrics` and/or `indices` field that specifies which model
 metrics to request. Both fields are a dictionary where the keys are the keys used to retrieve the values from the
-`ParameterInfo` object, and the values specify the metric to retrieve. Metrics are accessed using `get_metric(key)`,
-and indices are accessed using `get_index(key)`.
+`ParameterInfo` object, and the values specify the metric to retrieve. Metrics are accessed using `get_metric(key)`, and
+indices are accessed using `get_index(key)`.
 
 ```json
 {
@@ -173,23 +167,22 @@ and indices are accessed using `get_index(key)`.
 
 ## Python classes & stateful parameters
 
-If your parameter needs to maintain state between calls, you can define it as a Python class.
-This class should implement an `__init__` method that setups up the parameter, including any
-initial state.
-The `__init__` method is passed the `args` and `kwargs` defined in the JSON file.
-Pywr will create an instance of the class for every scenario in a simulation.
-These instances will be reused for each time step in the scenario, allowing you to maintain state across time steps.
+If your parameter needs to maintain state between calls, you can define it as a Python class. This class should
+implement an `__init__` method that setups up the parameter, including any initial state. The `__init__` method is
+passed the `args` and `kwargs` defined in the JSON file. Pywr will create an instance of the class for every scenario in
+a simulation. These instances will be reused for each time step in the scenario, allowing you to maintain state across
+time steps.
 
 > **Note**: Unlike Pywr v1.x a separate instance of the class is created for each scenario.
 > This means you do not have to worry about state being shared between scenarios, and do *not* need to implement
 > state for each scenario yourself.
 
-The class should also implement `before` method, which is called for each time step in the scenario.
-This method should accept a `ParameterInfo` object as its only argument.
+The class should also implement `before` method, which is called for each time step in the scenario. This method should
+accept a `ParameterInfo` object as its only argument.
 
-Finally, the class may also implement an `after` method, which is called after the resource allocation
-has been completed for the time step.
-This method can be used to perform any final calculations or updates to the parameter state.
+Finally, the class may also implement an `after` method, which is called after the resource allocation has been
+completed for the time step. This method can be used to perform any final calculations or updates to the parameter
+state.
 
 Here is an example of a simple stateful parameter that counts the number of time steps:
 
@@ -240,9 +233,9 @@ To use this custom parameter in your model, you can define it in the JSON file a
 
 ## Using modules instead of files
 
-It might be more convenient to define your custom parameters in a Python module instead of a file. This
-allows you to integrate your custom parameters with other Python code, such as unit tests or other utility functions.
-To do this, you can use the `source` field to specify the module name instead of a file path.
+It might be more convenient to define your custom parameters in a Python module instead of a file. This allows you to
+integrate your custom parameters with other Python code, such as unit tests or other utility functions. To do this, you
+can use the `source` field to specify the module name instead of a file path.
 
 Here is an example of how to define a custom parameter in a module (in this case `my_model.parameters`):
 
@@ -271,13 +264,11 @@ Here is an example of how to define a custom parameter in a module (in this case
 
 ## Returning integers or multiple values
 
-In the examples above the custom parameter functions return a single floating point value.
-However, you can also return integers or multiple values.
-In the JSON definition of the parameter, you can specify the `return_type` field to indicate the type of value
-the function will return.
-To return an integer, you can set the `return_type` to `"Int"`.
-To return multiple values, you can set the `return_type` to `"Dict"` and the function should return a dictionary
-where the keys are the names of the values and the values are the values themselves.
+In the examples above the custom parameter functions return a single floating point value. However, you can also return
+integers or multiple values. In the JSON definition of the parameter, you can specify the `return_type` field to
+indicate the type of value the function will return. To return an integer, you can set the `return_type` to `"Int"`. To
+return multiple values, you can set the `return_type` to `"Dict"` and the function should return a dictionary where the
+keys are the names of the values and the values are the values themselves.
 
 An example of a custom parameter that returns multiple values is shown below:
 
@@ -344,9 +335,9 @@ calculations after the resource allocation has been completed. Typically, this i
 access the results of the resource allocation, such as the allocated flow or the new volume of a reservoir after the
 allocation. In this case, the parameter can implement an `after` method.
 
-The example below lists a custom parameter that implements both `before` and `after` methods. It is a simple crop
-water requirement parameter that calculates the water requirement for a crop based on the current month in `before`,
-and then computes a crop yield in `after` based on the allocated water and the water requirement.
+The example below lists a custom parameter that implements both `before` and `after` methods. It is a simple crop water
+requirement parameter that calculates the water requirement for a crop based on the current month in `before`, and then
+computes a crop yield in `after` based on the allocated water and the water requirement.
 
 [//]: # (@formatter:off)
 
@@ -354,9 +345,9 @@ and then computes a crop yield in `after` based on the allocated water and the w
 {{ #include ../py-listings/agri-parameter/agri_parameter.py}}
 ```
 
-When referring to the parameter in the model, the `return_value` field can be used to specify whether to use the value 
+When referring to the parameter in the model, the `source` field can be used to specify whether to use the value 
 returned by the `before` or `after` method. By default, the value returned by the `before` method is used, but if you 
-want to use the value from the `after` method you can set `return_value` to `"After"`. The example below shows how to 
+want to use the value from the `after` method you can set `source` to `"After"`. The example below shows how to 
 use the `CropParameter` above parameter in a metric set, and specify that the value from the `after` method should be used.
 
 [//]: # (@formatter:off)

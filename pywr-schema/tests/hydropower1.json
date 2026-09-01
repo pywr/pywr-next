@@ -94,40 +94,6 @@
       },
       {
         "meta": {
-          "name": "total_flow_target"
-        },
-        "type": "Aggregated",
-        "phase": "Before",
-        "agg_func": {
-          "type": "Sum"
-        },
-        "metrics": [
-          {
-            "type": "Parameter",
-            "name": "turbine1",
-            "return_value": "Before"
-          }
-        ]
-      },
-      {
-        "meta": {
-          "name": "total_power"
-        },
-        "type": "Aggregated",
-        "phase": "After",
-        "agg_func": {
-          "type": "Sum"
-        },
-        "metrics": [
-          {
-            "type": "Parameter",
-            "name": "turbine1",
-            "return_value": "After"
-          }
-        ]
-      },
-      {
-        "meta": {
           "name": "total_turbines"
         },
         "type": "Aggregated",
