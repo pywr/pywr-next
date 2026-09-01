@@ -15,7 +15,7 @@ license-files = [
 ]
 dependencies = [
     "pandas",
-    "polars>=1.43.2",
+    "polars>=1.44.1",
     "pyarrow",
     "click",
 ]
