@@ -29,7 +29,7 @@ hdf = ["h5py"]
 dev = [
     "pytest>=9.1.1",
     "ruff>=0.16.5",
-    "maturin>=1.14.1,<2.0",
+    "maturin>=1.15.0,<2.0",
 ]
 docs = [
     "json-schema-for-humans>=1.4.1",
@@ -37,7 +37,7 @@ docs = [
 ]
 
 [build-system]
-requires = ["maturin>=1.14.1,<2.0"]
+requires = ["maturin>=1.15.0,<2.0"]
 build-backend = "maturin"
 
 [tool.maturin]
