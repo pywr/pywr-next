@@ -6,10 +6,16 @@ authors = [
 ]
 readme = "README.md"
 requires-python = ">=3.10"
-license = "MIT OR Apache-2.0"
+license = "(MIT OR Apache-2.0) AND EPL-2.0"
+license-files = [
+    "LICENSE-APACHE",
+    "LICENSE-MIT",
+    "NOTICE",
+    "coin-or-sys/vendor/Cbc/LICENSE"
+]
 dependencies = [
     "pandas",
-    "polars>=1.43.2",
+    "polars>=1.44.1",
     "pyarrow",
     "click",
 ]
@@ -22,8 +28,8 @@ hdf = ["h5py"]
 [dependency-groups]
 dev = [
     "pytest>=9.1.1",
-    "ruff>=0.16.3",
-    "maturin>=1.14.1,<2.0",
+    "ruff>=0.16.5",
+    "maturin>=1.15.0,<2.0",
 ]
 docs = [
     "json-schema-for-humans>=1.4.1",
@@ -31,7 +37,7 @@ docs = [
 ]
 
 [build-system]
-requires = ["maturin>=1.14.1,<2.0"]
+requires = ["maturin>=1.15.0,<2.0"]
 build-backend = "maturin"
 
 [tool.maturin]

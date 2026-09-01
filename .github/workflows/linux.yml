@@ -36,7 +36,7 @@ jobs:
           mkdir bin
           curl -sSL $url | tar -xz --directory=bin
           echo "$(pwd)/bin" >> $GITHUB_PATH
-      - uses: taiki-e/install-action@v2.85.13
+      - uses: taiki-e/install-action@v2.87.0
         with:
           tool: cargo-hack@0.5
       - name: Check (pywr-core)

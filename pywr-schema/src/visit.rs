@@ -431,6 +431,7 @@ mod tests {
                     {
                         "meta": { "name": "supply1-local" },
                         "type": "Negative",
+                        "phase": "Before",
                         "parameter": { "type": "Parameter", "name": "node-local-parameter" }
                     }
                 ],
@@ -456,6 +457,7 @@ mod tests {
                     {
                         "meta": { "name": "licence-local" },
                         "type": "Negative",
+                        "phase": "Before",
                         "parameter": { "type": "Parameter", "name": "virtual-storage-local-parameter" }
                     }
                 ],
@@ -487,6 +489,7 @@ mod tests {
                     {
                         "meta": { "name": "agg-storage-local" },
                         "type": "Negative",
+                        "phase": "Before",
                         "parameter": { "type": "Parameter", "name": "aggregated-storage-local-parameter" }
                     }
                 ]
@@ -500,6 +503,7 @@ mod tests {
             {
                 "meta": { "name": "demand" },
                 "type": "Negative",
+                "phase": "Before",
                 "parameter": { "type": "Parameter", "name": "global-parameter" }
             }
         ],
