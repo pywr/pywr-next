@@ -29,7 +29,7 @@ ipm-simd = ["pywr-core/ipm-simd", "pywr-schema/ipm-simd"]
 # The Github workflow is configured to use the minimum version corresponding to the `abi3-pyXX` feature enabled here.
 # Please remember to update the workflow if changing the ABI version.
 jiff = { workspace = true }
-pyo3 = { workspace = true, features = ["extension-module", "macros", "jiff-02", "abi3-py312"] }
+pyo3 = { workspace = true, features = ["extension-module", "macros", "jiff-02", "abi3-py310"] }
 pyo3-log = { workspace = true }
 pyo3-polars = { workspace = true }
 polars = { workspace = true }

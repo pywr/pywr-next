@@ -242,6 +242,10 @@ impl TimeDomainBuilder {
     ///
     /// Valid frequency strings are those that can be parsed by `polars::time::Duration::parse`. See: [https://docs.rs/polars-time/latest/polars_time/struct.Duration.html#method.parse]
     fn generate_timesteps_from_span(&self, span: Span) -> Result<Vec<Timestep>, TimeDomainBuilderError> {
+        if span.is_negative() || span.is_zero() {
+            return Err(TimeDomainBuilderError::NonPositiveTimestepDuration);
+        }
+
         let mut timesteps: Vec<Timestep> = Vec::new();
         let mut current = self.start;
         while current <= self.end {
