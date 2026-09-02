@@ -69,7 +69,7 @@ from pywr import ParameterInfo
 
 
 def current_timestep(
-    info: ParameterInfo, a: float, b: float, some_condition: str = "foo"
+        info: ParameterInfo, a: float, b: float, some_condition: str = "foo"
 ) -> float:
     """Return the current time step."""
     match some_condition:
@@ -345,9 +345,9 @@ computes a crop yield in `after` based on the allocated water and the water requ
 {{ #include ../py-listings/agri-parameter/agri_parameter.py}}
 ```
 
-When referring to the parameter in the model, the `source` field can be used to specify whether to use the value 
+When referring to the parameter in the model, the `return_value` field can be used to specify whether to use the value 
 returned by the `before` or `after` method. By default, the value returned by the `before` method is used, but if you 
-want to use the value from the `after` method you can set `source` to `"After"`. The example below shows how to 
+want to use the value from the `after` method you can set `return_value` to `"After"`. The example below shows how to 
 use the `CropParameter` above parameter in a metric set, and specify that the value from the `after` method should be used.
 
 [//]: # (@formatter:off)
