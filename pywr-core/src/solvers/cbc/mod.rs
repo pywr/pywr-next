@@ -8,8 +8,6 @@ use crate::state::{ConstParameterValues, State};
 use crate::timestep::Timestep;
 use coin_or_sys::cbc::*;
 use libc::{c_double, c_int};
-#[cfg(feature = "pyo3")]
-pub use settings::build_cbc_settings_py;
 pub use settings::{CbcSolverSettings, CbcSolverSettingsBuilder};
 use std::ffi::{CString, c_char};
 use std::time::Instant;

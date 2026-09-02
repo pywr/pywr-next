@@ -19,15 +19,14 @@ highs = ["dep:highs-sys"]
 ipm-ocl = ["dep:ipm-ocl", "dep:ocl"]
 ipm-simd = ["dep:ipm-simd", "dep:wide"]
 microlp = ["dep:microlp"]
-pyo3 = ["dep:pyo3", "dep:pyo3-polars"]
-
+pyo3 = ["dep:pyo3", "dep:ahash"]
 # File formats
 hdf5 = ["dep:hdf5-metno"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-ahash = { workspace = true }
+ahash = { workspace = true, optional = true }
 coin-or-sys = { path = "../coin-or-sys", version = "0.1.0", optional = true }
 csv = { workspace = true }
 float-cmp = { workspace = true }
@@ -42,10 +41,7 @@ nalgebra = "0.35"
 ndarray = { workspace = true }
 num = { workspace = true }
 ocl = { version = "0.19", optional = true }
-# We are only need polars for date/time parsing.
-polars = { workspace = true, features = ["temporal"] }
 pyo3 = { workspace = true, features = ["jiff-02", "macros"], optional = true }
-pyo3-polars = { workspace = true, optional = true }
 rand = { workspace = true }
 rand_chacha = { workspace = true }
 rand_distr = { workspace = true }

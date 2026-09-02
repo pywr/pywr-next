@@ -6,22 +6,11 @@ use crate::network::{
 };
 use crate::parameters::ParameterCollectionIdMismatchError;
 use crate::recorders::RecorderInternalState;
-#[cfg(all(feature = "cbc", feature = "pyo3"))]
-use crate::solvers::{CbcSolver, build_cbc_settings_py};
-#[cfg(all(feature = "ipm-ocl", feature = "pyo3"))]
-use crate::solvers::{ClIpmF32Solver, ClIpmF64Solver, ClIpmSolverSettings};
-#[cfg(all(feature = "clp", feature = "pyo3"))]
-use crate::solvers::{ClpSolver, build_clp_settings_py};
-#[cfg(all(feature = "highs", feature = "pyo3"))]
-use crate::solvers::{HighsSolver, build_highs_settings_py};
 use crate::solvers::{MultiStateSolver, Solver, SolverFeatures, SolverSettings};
-#[cfg(all(feature = "ipm-simd", feature = "pyo3"))]
-use crate::solvers::{SimdIpmF64Solver, build_ipm_simd_settings_py};
 use crate::timestep::Timestep;
-#[cfg(feature = "pyo3")]
-use pyo3::{Bound, PyErr, PyResult, Python, exceptions::PyRuntimeError, pyclass, pymethods, types::PyDict};
 use rayon::ThreadPool;
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 use thiserror::Error;
 use tracing::{debug, info};
 
@@ -98,15 +87,7 @@ pub enum ModelRunError {
     FinaliseError(#[from] ModelFinaliseError),
 }
 
-#[cfg(feature = "pyo3")]
-impl From<ModelRunError> for PyErr {
-    fn from(err: ModelRunError) -> PyErr {
-        PyRuntimeError::new_err(err.to_string())
-    }
-}
-
 /// Internal struct for tracking model timings.
-#[cfg_attr(feature = "pyo3", pyclass(skip_from_py_object))]
 #[derive(Clone)]
 pub struct ModelTimings {
     run_duration: RunDuration,
@@ -135,69 +116,28 @@ impl ModelTimings {
 
         Ok(())
     }
-}
 
-#[cfg(feature = "pyo3")]
-#[pymethods]
-impl ModelTimings {
     /// Total duration of the model run in seconds.
-    #[getter]
     pub fn total_duration(&self) -> f64 {
         self.run_duration.total_duration().as_secs_f64()
     }
 
-    #[getter]
     pub fn speed(&self) -> f64 {
         self.run_duration.speed()
-    }
-
-    fn __repr__(&self) -> String {
-        format!(
-            "<ModelTimings completed in {:.2} seconds with speed {:.2} time-steps/second>",
-            self.total_duration(),
-            self.speed()
-        )
     }
 }
 
 /// The results of a model run.
 ///
 /// Only recorders which produced a result will be present.
-#[cfg_attr(feature = "pyo3", pyclass(skip_from_py_object))]
 #[derive(Clone)]
 pub struct ModelResult {
     pub domain: ModelDomain,
     pub timings: ModelTimings,
-    pub network_result: NetworkResult,
-}
-
-#[cfg(feature = "pyo3")]
-#[pymethods]
-impl ModelResult {
-    #[getter]
-    #[pyo3(name = "timings")]
-    fn timings_py(&self) -> ModelTimings {
-        self.timings.clone()
-    }
-    #[getter]
-    #[pyo3(name = "network_result")]
-    fn network_result_py(&self) -> NetworkResult {
-        self.network_result.clone()
-    }
-
-    fn __repr__(&self) -> String {
-        format!(
-            "<ModelResult with {} recorder results; {} scenarios completed in {:.2} seconds with speed {:.2} time-steps/second>",
-            self.network_result.len(),
-            self.domain.scenario.len(),
-            self.timings.total_duration(),
-            self.timings.speed()
-        )
-    }
+    pub network_result: Arc<NetworkResult>,
 }
 
 /// A standard Pywr model containing a single network.
-#[cfg_attr(feature = "pyo3", pyclass)]
 pub struct Model {
     domain: ModelDomain,
     network: Network,
@@ -441,7 +381,7 @@ impl Model {
             .map_err(|source| ModelFinaliseError::TimingMismatchError { source })?;
 
         Ok(ModelResult {
-            network_result,
+            network_result: Arc::new(network_result),
             timings,
             domain: self.domain.clone(),
         })
@@ -473,7 +413,7 @@ impl Model {
             .map_err(|source| ModelFinaliseError::TimingMismatchError { source })?;
 
         Ok(ModelResult {
-            network_result,
+            network_result: Arc::new(network_result),
             timings,
             domain: self.domain.clone(),
         })
@@ -587,43 +527,12 @@ impl Model {
 
         Ok(())
     }
-
-    /// Run a model using the specified solver unlocking the GIL
-    #[cfg(any(feature = "clp", feature = "highs"))]
-    #[cfg(feature = "pyo3")]
-    fn run_allowing_threads_py<S>(&self, py: Python<'_>, settings: &S::Settings) -> Result<ModelResult, PyErr>
-    where
-        S: Solver,
-        <S as Solver>::Settings: SolverSettings + Sync,
-    {
-        let result = py.detach(|| self.run::<S>(settings))?;
-        Ok(result)
-    }
-
-    /// Run a model using the specified multi solver unlocking the GIL
-    #[cfg(any(feature = "ipm-simd", feature = "ipm-ocl"))]
-    #[cfg(feature = "pyo3")]
-    fn run_multi_allowing_threads_py<S>(&self, py: Python<'_>, settings: &S::Settings) -> Result<ModelResult, PyErr>
-    where
-        S: MultiStateSolver,
-        <S as MultiStateSolver>::Settings: SolverSettings + Sync,
-    {
-        let result = py.detach(|| self.run_multi_scenario::<S>(settings))?;
-        Ok(result)
-    }
 }
 
 #[derive(Debug, Error)]
 pub enum ModelBuilderError {
     #[error("Error building network: {0}")]
     NetworkBuildError(#[from] NetworkBuildError),
-}
-
-#[cfg(feature = "pyo3")]
-impl From<ModelBuilderError> for PyErr {
-    fn from(err: ModelBuilderError) -> PyErr {
-        PyRuntimeError::new_err(err.to_string())
-    }
 }
 
 pub struct ModelBuilder {
@@ -647,59 +556,5 @@ impl ModelBuilder {
             domain: self.domain,
             network,
         })
-    }
-}
-
-/// Run a model using the specified multi solver unlocking the GIL
-#[cfg(feature = "pyo3")]
-#[pymethods]
-impl Model {
-    #[pyo3(name = "run", signature = (solver_name, solver_kwargs=None))]
-    fn run_py(
-        &self,
-        #[cfg_attr(
-            not(any(feature = "clp", feature = "highs", feature = "ipm-simd", feature = "ipm-ocl")),
-            allow(unused_variables)
-        )]
-        py: Python<'_>,
-        #[cfg_attr(
-            not(any(feature = "clp", feature = "highs", feature = "ipm-simd", feature = "ipm-ocl")),
-            allow(unused_variables)
-        )]
-        solver_name: &str,
-        #[cfg_attr(
-            not(any(feature = "clp", feature = "highs", feature = "ipm-simd", feature = "ipm-ocl")),
-            allow(unused_variables)
-        )]
-        solver_kwargs: Option<&Bound<'_, PyDict>>,
-    ) -> PyResult<ModelResult> {
-        match solver_name {
-            #[cfg(feature = "clp")]
-            "clp" => {
-                let settings = build_clp_settings_py(solver_kwargs)?;
-                self.run_allowing_threads_py::<ClpSolver>(py, &settings)
-            }
-            #[cfg(feature = "cbc")]
-            "cbc" => {
-                let settings = build_cbc_settings_py(solver_kwargs)?;
-                self.run_allowing_threads_py::<CbcSolver>(py, &settings)
-            }
-            #[cfg(feature = "highs")]
-            "highs" => {
-                let settings = build_highs_settings_py(solver_kwargs)?;
-                self.run_allowing_threads_py::<HighsSolver>(py, &settings)
-            }
-            #[cfg(feature = "ipm-simd")]
-            "ipm-simd" => {
-                let settings = build_ipm_simd_settings_py(solver_kwargs)?;
-                self.run_multi_allowing_threads_py::<SimdIpmF64Solver>(py, &settings)
-            }
-            #[cfg(feature = "ipm-ocl")]
-            "clipm-f32" => self.run_multi_allowing_threads_py::<ClIpmF32Solver>(py, &ClIpmSolverSettings::default()),
-
-            #[cfg(feature = "ipm-ocl")]
-            "clipm-f64" => self.run_multi_allowing_threads_py::<ClIpmF64Solver>(py, &ClIpmSolverSettings::default()),
-            _ => Err(PyRuntimeError::new_err(format!("Unknown solver: {solver_name}",))),
-        }
     }
 }

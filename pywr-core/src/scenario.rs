@@ -1,6 +1,4 @@
 #![warn(clippy::pedantic)]
-#[cfg(feature = "pyo3")]
-use pyo3::{pyclass, pymethods};
 use std::collections::{BTreeSet, HashMap};
 use thiserror::Error;
 
@@ -594,7 +592,6 @@ impl ScenarioIndexBuilder {
     }
 }
 
-#[cfg_attr(feature = "pyo3", pyclass(skip_from_py_object))]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ScenarioIndex {
     /// The indices of the scenarios run in the model.
@@ -614,25 +611,6 @@ impl Default for ScenarioIndex {
             schema: None,
             labels: vec!["0".to_string()],
         }
-    }
-}
-
-#[cfg(feature = "pyo3")]
-#[pymethods]
-impl ScenarioIndex {
-    /// The global index of the scenario for this simulation. This may be different
-    /// from the global index of the scenario in the schema.
-    #[getter]
-    #[must_use]
-    pub fn get_simulation_id(&self) -> usize {
-        self.core.index
-    }
-
-    /// The indices for each scenario group for this simulation.
-    #[getter]
-    #[must_use]
-    pub fn get_simulation_indices(&self) -> &[usize] {
-        &self.core.indices
     }
 }
 

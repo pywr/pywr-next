@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from .pywr import (
+from ._pywr import (
     ComponentConversionError,
     ConversionError,
     Metric,
@@ -17,6 +17,16 @@ from .pywr import (
     convert_metric_from_v1_json_string,
     convert_model_from_v1_json_string,
     export_schema,
+    PywrError,
+    SchemaBuildError,
+    MultiNetworkSchemaBuildError,
+    NetworkBuildError,
+    NetworkTransferError,
+    SetupError,
+    StepError,
+    FinaliseError,
+    RecorderDoesNotSupportAggregation,
+    AggregationError
 )
 
 __all__ = [
@@ -37,14 +47,24 @@ __all__ = [
     "convert_model_from_v1_json_string",
     "export_schema",
     "run_from_path",
+    "PywrError",
+    "SchemaBuildError",
+    "MultiNetworkSchemaBuildError",
+    "NetworkBuildError",
+    "NetworkTransferError",
+    "SetupError",
+    "StepError",
+    "FinaliseError",
+    "RecorderDoesNotSupportAggregation",
+    "AggregationError"
 ]
 
 
 def run_from_path(
-    filename: Path,
-    data_path: Path | None = None,
-    output_path: Path | None = None,
-    solver: str = "clp",
+        filename: Path,
+        data_path: Path | None = None,
+        output_path: Path | None = None,
+        solver: str = "clp",
 ):
     """Load and run a Pywr model from a file path.
 

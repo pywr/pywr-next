@@ -3,6 +3,7 @@ from os import PathLike
 
 import polars as pl
 
+
 class ParameterInfo:
     """Provides data for a custom Pywr parameter.
 
@@ -31,6 +32,7 @@ class ParameterInfo:
         Args:
             name: The name of the component to retrieve the index for.
         """
+
 
 class Timestep:
     """Represents a single time-step in a simulation.
@@ -94,6 +96,7 @@ class Timestep:
     def is_leap_year(self) -> bool:
         """Returns true if the year of the timestep is a leap year."""
 
+
 class ScenarioIndex:
     """Represents a scenario index in a Pywr model.
 
@@ -108,7 +111,15 @@ class ScenarioIndex:
     def simulation_indices(self) -> list[int]:
         """Returns indices for each scenario group for this simulation."""
 
+
 class ModelSchema:
+    def __init__(
+            self,
+            title: str,
+            start: datetime,
+            end: datetime,
+    ) -> None: ...
+
     @classmethod
     def from_path(cls, path: PathLike) -> ModelSchema:
         """Create a new schema object from a file path.
@@ -128,12 +139,20 @@ class ModelSchema:
     def to_json_string(self) -> str:
         """Serialize the schema to a JSON string."""
 
-    def build(self, data_path: PathLike | None, output_path: PathLike | None) -> Model:
+    def build(self, data_path: PathLike | None = None, output_path: PathLike | None = None) -> Model:
         """Build the schema in to a Pywr model."""
+
 
 class MultiNetworkModelSchema:
+    def __init__(
+            self,
+            title: str,
+            start: datetime,
+            end: datetime,
+    ) -> None: ...
+
     @classmethod
-    def from_path(cls, path: PathLike) -> ModelSchema:
+    def from_path(cls, path: PathLike) -> MultiNetworkModelSchema:
         """Create a new schema object from a file path.
 
         Args:
@@ -141,7 +160,7 @@ class MultiNetworkModelSchema:
         """
 
     @classmethod
-    def from_json_string(cls, json_string: str) -> ModelSchema:
+    def from_json_string(cls, json_string: str) -> MultiNetworkModelSchema:
         """Create a new schema object from a JSON string.
 
         Args:
@@ -151,26 +170,29 @@ class MultiNetworkModelSchema:
     def to_json_string(self) -> str:
         """Serialize the schema to a JSON string."""
 
-    def build(self, data_path: PathLike | None, output_path: PathLike | None) -> Model:
+    def build(self, data_path: PathLike | None = None, output_path: PathLike | None = None) -> MultiNetworkModel:
         """Build the schema in to a Pywr model."""
 
+
 class Model:
-    def run(self, solver_name: str, solver_kwargs: dict | None = None):
+    def run(self, solver_name: str, solver_kwargs: dict | None = None) -> ModelResult:
         """Run the model using the specified solver.
 
         Args:
             solver_name: The name of the solver to use.
             solver_kwargs: Optional keyword arguments to pass to the solver.
         """
+
 
 class MultiNetworkModel:
-    def run(self, solver_name: str, solver_kwargs: dict | None = None):
+    def run(self, solver_name: str, solver_kwargs: dict | None = None) -> MultiNetworkModelResult:
         """Run the model using the specified solver.
 
         Args:
             solver_name: The name of the solver to use.
             solver_kwargs: Optional keyword arguments to pass to the solver.
         """
+
 
 class ModelResult:
     @property
@@ -180,6 +202,7 @@ class ModelResult:
     @property
     def timings(self) -> ModelTimings:
         """Returns the model timings object."""
+
 
 class MultiNetworkModelResult:
     def network_results(self, name: str) -> NetworkResult:
@@ -192,6 +215,7 @@ class MultiNetworkModelResult:
     @property
     def timings(self) -> MultiNetworkModelTimings:
         """Returns the model timings object."""
+
 
 class NetworkResult:
     def aggregated_value(self, name: str) -> float:
@@ -211,6 +235,7 @@ class NetworkResult:
     def output_names(self) -> list[str]:
         """Get a list of all available output names."""
 
+
 class ModelTimings:
     @property
     def total_duration(self) -> float:
@@ -219,6 +244,7 @@ class ModelTimings:
     @property
     def speed(self) -> float:
         """Model speed in timesteps per second."""
+
 
 class MultiNetworkModelTimings:
     @property
@@ -229,12 +255,52 @@ class MultiNetworkModelTimings:
     def speed(self) -> float:
         """Model speed in timesteps per second."""
 
+
 class Metric: ...
+
+
 class ComponentConversionError: ...
+
+
 class ConversionError: ...
 
+
 def convert_model_from_v1_json_string(
-    data: str,
+        data: str,
 ) -> tuple[ModelSchema, list[ComponentConversionError]]: ...
+
+
 def convert_metric_from_v1_json_string(data: str) -> Metric: ...
-def export_schema(out_path: PathLike): ...
+
+
+def export_schema(out_path: PathLike) -> None: ...
+
+
+class PywrError(Exception): ...
+
+
+class SchemaBuildError(PywrError): ...
+
+
+class MultiNetworkSchemaBuildError(PywrError): ...
+
+
+class NetworkBuildError(PywrError): ...
+
+
+class NetworkTransferError(PywrError): ...
+
+
+class SetupError(PywrError): ...
+
+
+class StepError(PywrError): ...
+
+
+class FinaliseError(PywrError): ...
+
+
+class AggregationError(PywrError): ...
+
+
+class RecorderDoesNotSupportAggregation(PywrError): ...
