@@ -7,11 +7,11 @@ import polars as pl
 import pytest
 from polars.testing import assert_frame_equal
 from pywr import (
+    AggregationError,
     ModelResult,
     ModelSchema,
     ModelTimings,
     MultiNetworkModelSchema,
-    AggregationError,
 )
 
 
@@ -35,7 +35,6 @@ def test_simple_timeseries(model_dir: Path, tmpdir: Path):
     schema = ModelSchema.from_path(filename)
     model = schema.build(data_path=model_dir / "simple-timeseries", output_path=tmpdir)
     result = model.run("clp")
-    result2 = model.run("clp")
 
     assert isinstance(result, ModelResult)
     assert output_fn.exists()
