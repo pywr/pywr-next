@@ -1,8 +1,10 @@
 from pathlib import Path
 
-from .pywr import (
+from ._pywr import (
+    AggregationError,
     ComponentConversionError,
     ConversionError,
+    FinaliseError,
     Metric,
     Model,
     ModelResult,
@@ -11,8 +13,16 @@ from .pywr import (
     MultiNetworkModel,
     MultiNetworkModelSchema,
     MultiNetworkModelTimings,
+    MultiNetworkSchemaBuildError,
+    NetworkBuildError,
+    NetworkTransferError,
     ParameterInfo,
+    PywrError,
+    RecorderDoesNotSupportAggregation,
     ScenarioIndex,
+    SchemaBuildError,
+    SetupError,
+    StepError,
     Timestep,
     convert_metric_from_v1_json_string,
     convert_model_from_v1_json_string,
@@ -20,8 +30,10 @@ from .pywr import (
 )
 
 __all__ = [
+    "AggregationError",
     "ComponentConversionError",
     "ConversionError",
+    "FinaliseError",
     "Metric",
     "Model",
     "ModelResult",
@@ -30,8 +42,16 @@ __all__ = [
     "MultiNetworkModel",
     "MultiNetworkModelSchema",
     "MultiNetworkModelTimings",
+    "MultiNetworkSchemaBuildError",
+    "NetworkBuildError",
+    "NetworkTransferError",
     "ParameterInfo",
+    "PywrError",
+    "RecorderDoesNotSupportAggregation",
     "ScenarioIndex",
+    "SchemaBuildError",
+    "SetupError",
+    "StepError",
     "Timestep",
     "convert_metric_from_v1_json_string",
     "convert_model_from_v1_json_string",

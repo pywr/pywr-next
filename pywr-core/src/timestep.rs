@@ -1,7 +1,5 @@
 use jiff::civil::DateTime;
-use jiff::{SignedDuration, Span, ToSpan};
-#[cfg(feature = "pyo3")]
-use pyo3::{Bound, IntoPyObject, PyResult, Python, pyclass, pymethods, types::PyDateTime};
+use jiff::{SignedDuration, Span};
 use std::num::NonZeroU64;
 use std::ops::Add;
 use thiserror::Error;
@@ -102,92 +100,11 @@ pub type TimestepIndex = usize;
 /// A time-step in a simulation.
 ///
 /// This struct represents a single time-step in a simulation, including the date, index, and duration of the time-step.
-#[cfg_attr(feature = "pyo3", pyclass(skip_from_py_object))]
 #[derive(Debug, Copy, Clone)]
 pub struct Timestep {
     pub date: DateTime,
     pub index: TimestepIndex,
     pub duration: PywrDuration,
-}
-
-#[cfg(feature = "pyo3")]
-#[pymethods]
-impl Timestep {
-    /// Returns true if this is the first time-step.
-    #[getter]
-    pub fn get_is_first(&self) -> bool {
-        self.index == 0
-    }
-
-    /// Returns the duration of the time-step in number of days including any fractional part.
-    #[getter]
-    pub fn get_days(&self) -> f64 {
-        self.duration.fractional_days()
-    }
-
-    /// Returns the date of the time-step.
-    #[getter]
-    fn get_date<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDateTime>> {
-        self.date.into_pyobject(py)
-    }
-
-    /// Returns the day of the time-step.
-    #[getter]
-    fn get_day(&self) -> PyResult<i8> {
-        Ok(self.date.day())
-    }
-
-    /// Returns the month of the time-step.
-    #[getter]
-    fn get_month(&self) -> PyResult<i8> {
-        Ok(self.date.month())
-    }
-
-    /// Returns the year of the time-step.
-    #[getter]
-    fn get_year(&self) -> PyResult<i16> {
-        Ok(self.date.year())
-    }
-
-    /// Returns the current time-step index.
-    #[getter]
-    fn get_index(&self) -> PyResult<usize> {
-        Ok(self.index)
-    }
-
-    /// Returns the day of the year index of the timestep.
-    ///
-    /// The day of the year is one-based, meaning January 1st is day 1 and December 31st is day 365 (or 366 in leap years).
-    /// See [`day_of_year_index`](Timestep::day_of_year_index) for a zero-based index.
-    #[getter]
-    pub fn get_day_of_year(&self) -> PyResult<usize> {
-        Ok(self.day_of_year())
-    }
-
-    /// Returns the day of the year index of the timestep.
-    ///
-    /// The index is zero-based and accounts for leaps days. In non-leap years, 1 i to the index for
-    /// days after Feb 28th.
-    #[getter]
-    fn get_day_of_year_index(&self) -> PyResult<usize> {
-        Ok(self.day_of_year_index())
-    }
-
-    /// Returns the fraction day of the year of the timestep.
-    ///
-    /// The index is zero-based and accounts for leaps days. In non-leap years, 1 is added to the index for
-    /// days after Feb 28th. The fractional part is the fraction of the day that has passed since midnight
-    /// (calculated to the nearest second).
-    #[getter]
-    fn get_fractional_day_of_year(&self) -> PyResult<f64> {
-        Ok(self.fractional_day_of_year())
-    }
-
-    /// Returns true if the year of the timestep is a leap year.
-    #[getter]
-    fn get_is_leap_year(&self) -> PyResult<bool> {
-        Ok(self.is_leap_year())
-    }
 }
 
 impl Timestep {
@@ -271,6 +188,11 @@ pub enum TimeDomainBuilderError {
     NoTimesteps,
     #[error("Timestep duration must be a positive value.")]
     NonPositiveTimestepDuration,
+    #[error("Could not parse frequency '{source}'")]
+    FrequencyParseError {
+        #[source]
+        source: jiff::Error,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -294,7 +216,12 @@ impl TimeDomainBuilder {
             TimestepDuration::Days(days) => {
                 Ok(self.generate_timesteps_from_fixed_duration(PywrDuration::from_days(days.get() as i64)))
             }
-            TimestepDuration::Frequency(frequency) => self.generate_timesteps_from_frequency(frequency.as_str()),
+            TimestepDuration::Frequency(freq) => {
+                let span: Span = freq
+                    .parse()
+                    .map_err(|source| TimeDomainBuilderError::FrequencyParseError { source })?;
+                self.generate_timesteps_from_span(span)
+            }
         }
     }
 
@@ -314,27 +241,10 @@ impl TimeDomainBuilder {
     /// Creates a vector of `Timestep`s between the start and end dates for a given frequency `&str`.
     ///
     /// Valid frequency strings are those that can be parsed by `polars::time::Duration::parse`. See: [https://docs.rs/polars-time/latest/polars_time/struct.Duration.html#method.parse]
-    fn generate_timesteps_from_frequency(&self, frequency: &str) -> Result<Vec<Timestep>, TimeDomainBuilderError> {
-        let duration = polars::time::Duration::parse(frequency);
-
-        if duration.negative() || duration.is_zero() {
+    fn generate_timesteps_from_span(&self, span: Span) -> Result<Vec<Timestep>, TimeDomainBuilderError> {
+        if span.is_negative() || span.is_zero() {
             return Err(TimeDomainBuilderError::NonPositiveTimestepDuration);
         }
-
-        // Need to add an extra day to the end date so that the duration of the last timestep can be calculated.
-        let span = if duration.days_only() {
-            duration.days().days()
-        } else if duration.weeks_only() {
-            duration.weeks().weeks()
-        } else if duration.months_only() {
-            duration.months().months()
-        } else {
-            Span::new()
-                .months(duration.months())
-                .weeks(duration.weeks())
-                .days(duration.days())
-                .nanoseconds(duration.nanoseconds())
-        };
 
         let mut timesteps: Vec<Timestep> = Vec::new();
         let mut current = self.start;

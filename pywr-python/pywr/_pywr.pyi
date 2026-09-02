@@ -109,6 +109,12 @@ class ScenarioIndex:
         """Returns indices for each scenario group for this simulation."""
 
 class ModelSchema:
+    def __init__(
+        self,
+        title: str,
+        start: datetime,
+        end: datetime,
+    ) -> None: ...
     @classmethod
     def from_path(cls, path: PathLike) -> ModelSchema:
         """Create a new schema object from a file path.
@@ -128,12 +134,20 @@ class ModelSchema:
     def to_json_string(self) -> str:
         """Serialize the schema to a JSON string."""
 
-    def build(self, data_path: PathLike | None, output_path: PathLike | None) -> Model:
+    def build(
+        self, data_path: PathLike | None = None, output_path: PathLike | None = None
+    ) -> Model:
         """Build the schema in to a Pywr model."""
 
 class MultiNetworkModelSchema:
+    def __init__(
+        self,
+        title: str,
+        start: datetime,
+        end: datetime,
+    ) -> None: ...
     @classmethod
-    def from_path(cls, path: PathLike) -> ModelSchema:
+    def from_path(cls, path: PathLike) -> MultiNetworkModelSchema:
         """Create a new schema object from a file path.
 
         Args:
@@ -141,7 +155,7 @@ class MultiNetworkModelSchema:
         """
 
     @classmethod
-    def from_json_string(cls, json_string: str) -> ModelSchema:
+    def from_json_string(cls, json_string: str) -> MultiNetworkModelSchema:
         """Create a new schema object from a JSON string.
 
         Args:
@@ -151,11 +165,13 @@ class MultiNetworkModelSchema:
     def to_json_string(self) -> str:
         """Serialize the schema to a JSON string."""
 
-    def build(self, data_path: PathLike | None, output_path: PathLike | None) -> Model:
+    def build(
+        self, data_path: PathLike | None = None, output_path: PathLike | None = None
+    ) -> MultiNetworkModel:
         """Build the schema in to a Pywr model."""
 
 class Model:
-    def run(self, solver_name: str, solver_kwargs: dict | None = None):
+    def run(self, solver_name: str, solver_kwargs: dict | None = None) -> ModelResult:
         """Run the model using the specified solver.
 
         Args:
@@ -164,7 +180,9 @@ class Model:
         """
 
 class MultiNetworkModel:
-    def run(self, solver_name: str, solver_kwargs: dict | None = None):
+    def run(
+        self, solver_name: str, solver_kwargs: dict | None = None
+    ) -> MultiNetworkModelResult:
         """Run the model using the specified solver.
 
         Args:
@@ -237,4 +255,15 @@ def convert_model_from_v1_json_string(
     data: str,
 ) -> tuple[ModelSchema, list[ComponentConversionError]]: ...
 def convert_metric_from_v1_json_string(data: str) -> Metric: ...
-def export_schema(out_path: PathLike): ...
+def export_schema(out_path: PathLike) -> None: ...
+
+class PywrError(Exception): ...
+class SchemaBuildError(PywrError): ...
+class MultiNetworkSchemaBuildError(PywrError): ...
+class NetworkBuildError(PywrError): ...
+class NetworkTransferError(PywrError): ...
+class SetupError(PywrError): ...
+class StepError(PywrError): ...
+class FinaliseError(PywrError): ...
+class AggregationError(PywrError): ...
+class RecorderDoesNotSupportAggregation(PywrError): ...

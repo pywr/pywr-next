@@ -11,12 +11,6 @@ use crate::timeseries::LoadedTimeseriesCollection;
 use crate::visit::{VisitMetrics, VisitNodeReferences, VisitPaths};
 use crate::{ConversionError, NetworkSchema, NetworkSchemaRef};
 use jiff::civil::{DateTime, date};
-#[cfg(all(feature = "core", feature = "pyo3"))]
-use pyo3::Python;
-#[cfg(feature = "pyo3")]
-use pyo3::{Bound, PyErr, PyResult, exceptions::PyRuntimeError, pyclass, pymethods, types::PyType};
-#[cfg(all(feature = "core", feature = "pyo3"))]
-use pywr_core::models::Model;
 #[cfg(feature = "core")]
 use pywr_core::{
     models::{
@@ -189,17 +183,17 @@ pub struct ScenarioGroup {
 }
 
 #[cfg(feature = "core")]
-impl TryInto<pywr_core::scenario::ScenarioGroup> for ScenarioGroup {
+impl TryFrom<ScenarioGroup> for pywr_core::scenario::ScenarioGroup {
     type Error = pywr_core::scenario::ScenarioDomainBuilderError;
 
-    fn try_into(self) -> Result<pywr_core::scenario::ScenarioGroup, Self::Error> {
-        let mut builder = pywr_core::scenario::ScenarioGroupBuilder::new(&self.name, self.size);
+    fn try_from(value: ScenarioGroup) -> Result<Self, Self::Error> {
+        let mut builder = pywr_core::scenario::ScenarioGroupBuilder::new(&value.name, value.size);
 
-        if let Some(labels) = self.labels {
+        if let Some(labels) = value.labels {
             builder = builder.with_labels(&labels);
         }
 
-        if let Some(subset) = self.subset {
+        if let Some(subset) = value.subset {
             match subset {
                 ScenarioGroupSubset::Slice(slice) => {
                     builder = builder.with_subset_slice(slice.start, slice.end);
@@ -368,13 +362,6 @@ pub enum ModelSchemaReadError {
     Json(#[from] serde_json::Error),
 }
 
-#[cfg(feature = "pyo3")]
-impl From<ModelSchemaReadError> for PyErr {
-    fn from(err: ModelSchemaReadError) -> PyErr {
-        pyo3::exceptions::PyRuntimeError::new_err(err.to_string())
-    }
-}
-
 #[derive(Error, Debug)]
 #[cfg(feature = "core")]
 pub enum ModelSchemaBuildError {
@@ -389,29 +376,6 @@ pub enum ModelSchemaBuildError {
     },
     #[error("Error building model domain: {0}")]
     CoreModelDomainBuilderError(#[from] ModelDomainBuilderError),
-}
-
-#[cfg(all(feature = "core", feature = "pyo3"))]
-impl From<ModelSchemaBuildError> for PyErr {
-    fn from(err: ModelSchemaBuildError) -> PyErr {
-        let py_err = pyo3::exceptions::PyRuntimeError::new_err(err.to_string());
-
-        // Check if the error has a cause that can be converted to a PyErr
-        let py_cause: Result<PyErr, ()> = match err {
-            ModelSchemaBuildError::NetworkBuildError { source } => (*source).try_into(),
-            _ => Err(()),
-        };
-
-        if let Ok(py_cause) = py_cause {
-            // If the cause is a PyErr, set it as the cause of the PyErr
-            return Python::attach(|py| {
-                py_err.set_cause(py, Some(py_cause));
-                py_err
-            });
-        }
-
-        py_err
-    }
 }
 
 /// The top-level schema for a Pywr model.
@@ -437,7 +401,6 @@ impl From<ModelSchemaBuildError> for PyErr {
 ///
 #[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Clone, JsonSchema, Default)]
-#[cfg_attr(feature = "pyo3", pyclass(skip_from_py_object))]
 pub struct ModelSchema {
     pub metadata: Metadata,
     pub time: TimeDomain,
@@ -605,45 +568,6 @@ impl ModelSchema {
     }
 }
 
-#[cfg(feature = "pyo3")]
-#[pymethods]
-impl ModelSchema {
-    #[new]
-    fn new_py(title: &str, start: DateTime, end: DateTime) -> Self {
-        Self::new(title, &start, &end)
-    }
-
-    /// Create a new schema object from a file path.
-    #[classmethod]
-    #[pyo3(name = "from_path")]
-    fn from_path_py(_cls: &Bound<'_, PyType>, path: PathBuf) -> PyResult<Self> {
-        Ok(Self::from_path(path)?)
-    }
-
-    ///  Create a new schema object from a JSON string.
-    #[classmethod]
-    #[pyo3(name = "from_json_string")]
-    fn from_json_string_py(_cls: &Bound<'_, PyType>, data: &str) -> PyResult<Self> {
-        Ok(Self::from_str(data)?)
-    }
-
-    /// Serialize the schema to a JSON string.
-    #[pyo3(name = "to_json_string")]
-    fn to_json_string_py(&self) -> PyResult<String> {
-        let data = serde_json::to_string_pretty(&self).map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
-        Ok(data)
-    }
-
-    /// Build the schema in to a Pywr model.
-    #[cfg(feature = "core")]
-    #[pyo3(name="build", signature = (data_path=None, output_path=None))]
-    fn build_py(&mut self, data_path: Option<PathBuf>, output_path: Option<PathBuf>) -> PyResult<Model> {
-        let builder = self.create_model_builder(data_path.as_deref(), output_path.as_deref())?;
-        let model = builder.build()?;
-        Ok(model)
-    }
-}
-
 #[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Clone)]
 pub struct MultiNetworkTransfer {
@@ -690,29 +614,6 @@ pub enum MultiNetworkModelSchemaBuildError {
         #[source]
         source: Box<MultiNetworkModelBuilderError>,
     },
-}
-
-#[cfg(all(feature = "core", feature = "pyo3"))]
-impl From<MultiNetworkModelSchemaBuildError> for PyErr {
-    fn from(err: MultiNetworkModelSchemaBuildError) -> PyErr {
-        let py_err = PyRuntimeError::new_err(err.to_string());
-
-        // Check if the error has a cause that can be converted to a PyErr
-        let py_cause: Result<PyErr, ()> = match err {
-            MultiNetworkModelSchemaBuildError::NetworkBuildError { source, .. } => (*source).try_into(),
-            _ => Err(()),
-        };
-
-        if let Ok(py_cause) = py_cause {
-            // If the cause is a PyErr, set it as the cause of the PyErr
-            return Python::attach(|py| {
-                py_err.set_cause(py, Some(py_cause));
-                py_err
-            });
-        }
-
-        py_err
-    }
 }
 
 /// A Pywr model containing multiple link networks.
@@ -778,7 +679,6 @@ impl From<MultiNetworkModelSchemaBuildError> for PyErr {
 ///
 #[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Clone)]
-#[cfg_attr(feature = "pyo3", pyclass(skip_from_py_object))]
 pub struct MultiNetworkModelSchema {
     pub metadata: Metadata,
     pub time: TimeDomain,
@@ -974,49 +874,6 @@ impl MultiNetworkModelSchema {
         }
 
         Ok(model_builder)
-    }
-}
-
-#[cfg(feature = "pyo3")]
-#[pymethods]
-impl MultiNetworkModelSchema {
-    #[new]
-    fn new_py(title: &str, start: DateTime, end: DateTime) -> Self {
-        Self::new(title, &start, &end)
-    }
-
-    /// Create a new schema object from a file path.
-    #[classmethod]
-    #[pyo3(name = "from_path")]
-    fn from_path_py(_cls: &Bound<'_, PyType>, path: PathBuf) -> PyResult<Self> {
-        Ok(Self::from_path(path)?)
-    }
-
-    ///  Create a new schema object from a JSON string.
-    #[classmethod]
-    #[pyo3(name = "from_json_string")]
-    fn from_json_string_py(_cls: &Bound<'_, PyType>, data: &str) -> PyResult<Self> {
-        Ok(Self::from_str(data)?)
-    }
-
-    /// Serialize the schema to a JSON string.
-    #[pyo3(name = "to_json_string")]
-    fn to_json_string_py(&self) -> PyResult<String> {
-        let data = serde_json::to_string_pretty(&self).map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
-        Ok(data)
-    }
-
-    /// Build the schema in to a Pywr model.
-    #[cfg(feature = "core")]
-    #[pyo3(name="build", signature = (data_path=None, output_path=None))]
-    fn build_py(
-        &mut self,
-        data_path: Option<PathBuf>,
-        output_path: Option<PathBuf>,
-    ) -> PyResult<pywr_core::models::MultiNetworkModel> {
-        let builder = self.create_model_builder(data_path.as_deref(), output_path.as_deref())?;
-        let model = builder.build()?;
-        Ok(model)
     }
 }
 

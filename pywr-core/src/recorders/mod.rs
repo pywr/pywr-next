@@ -24,6 +24,7 @@ pub use csv::{CsvLongFmtOutput, CsvLongFmtOutputBuilder, CsvLongFmtRecord, CsvWi
 use float_cmp::{ApproxEq, F64Margin, approx_eq};
 #[cfg(feature = "hdf5")]
 pub use hdf::{HDF5Recorder, HDF5RecorderBuilder};
+use jiff::civil::DateTime;
 pub use memory::{Aggregation, AggregationError, AggregationOrder, MemoryRecorder, MemoryRecorderBuilder};
 pub use metric_set::{
     MetricSet, MetricSetBuilder, MetricSetBuilderError, MetricSetSaveError, MetricSetState, OutputMetric,
@@ -31,7 +32,6 @@ pub use metric_set::{
 };
 use ndarray::Array2;
 use ndarray::prelude::*;
-use polars::prelude::PolarsError;
 use std::any::Any;
 use std::fmt::Debug;
 use thiserror::Error;
@@ -105,31 +105,11 @@ pub enum RecorderAggregationError {
     },
 }
 
-#[cfg(feature = "pyo3")]
-impl From<RecorderAggregationError> for pyo3::PyErr {
-    fn from(err: RecorderAggregationError) -> Self {
-        pyo3::exceptions::PyRuntimeError::new_err(err.to_string())
-    }
-}
-
 /// Errors returned by recorder aggregation.
 #[derive(Error, Debug)]
 pub enum RecorderDataFrameError {
     #[error("Recorder can not be converted to a dataframe")]
     RecorderCannotBeConvertedToDataFrame,
-    #[error("Error creating dataframe for recorder `{name}`: {source}")]
-    PolarsError {
-        name: String,
-        #[source]
-        source: PolarsError,
-    },
-}
-
-#[cfg(feature = "pyo3")]
-impl From<RecorderDataFrameError> for pyo3::PyErr {
-    fn from(err: RecorderDataFrameError) -> Self {
-        pyo3::exceptions::PyRuntimeError::new_err(err.to_string())
-    }
 }
 
 pub trait RecorderInternalState: Any {}
@@ -161,6 +141,17 @@ fn downcast_internal_state<T: 'static>(internal_state: Option<Box<dyn RecorderIn
     }
 }
 
+pub struct LongFmtRecord {
+    pub time_start: DateTime,
+    pub time_end: DateTime,
+    pub simulation_id: usize,
+    pub label: String,
+    pub metric_set: String,
+    pub name: String,
+    pub attribute: String,
+    pub value: f64,
+}
+
 /// Result of finalising a recorder.
 ///
 /// This should be used to store any final results of the recorder, e.g. aggregated values or
@@ -171,8 +162,8 @@ pub trait RecorderFinalResult: Any + Send + Sync {
         Err(RecorderAggregationError::RecorderDoesNotSupportAggregation)
     }
 
-    fn to_dataframe(&self) -> Result<polars::prelude::DataFrame, RecorderDataFrameError> {
-        Err(RecorderDataFrameError::RecorderCannotBeConvertedToDataFrame)
+    fn iter_long_fmt_records(&self) -> Box<dyn Iterator<Item = LongFmtRecord> + '_> {
+        Box::new(std::iter::empty())
     }
 }
 

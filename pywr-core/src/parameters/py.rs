@@ -13,8 +13,117 @@ use crate::{resolve_metric_f64_hashmap, resolve_metric_u64_hashmap};
 use ahash::RandomState;
 use pyo3::exceptions::PyKeyError;
 use pyo3::prelude::*;
-use pyo3::types::{PyDict, PyTuple};
+use pyo3::types::{PyDateTime, PyDict, PyTuple};
 use std::collections::HashMap;
+use std::sync::Arc;
+
+/// A wrapped [`Timestep`](crate::parameters::Timestep) struct for Python.
+#[pyclass(name = "Timestep", frozen)]
+pub struct PyTimestep {
+    inner: Timestep,
+}
+
+#[pymethods]
+impl PyTimestep {
+    /// Returns true if this is the first time-step.
+    #[getter]
+    pub fn get_is_first(&self) -> bool {
+        self.inner.index == 0
+    }
+
+    /// Returns the duration of the time-step in number of days including any fractional part.
+    #[getter]
+    pub fn get_days(&self) -> f64 {
+        self.inner.duration.fractional_days()
+    }
+
+    /// Returns the date of the time-step.
+    #[getter]
+    fn get_date<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDateTime>> {
+        self.inner.date.into_pyobject(py)
+    }
+
+    /// Returns the day of the time-step.
+    #[getter]
+    fn get_day(&self) -> PyResult<i8> {
+        Ok(self.inner.date.day())
+    }
+
+    /// Returns the month of the time-step.
+    #[getter]
+    fn get_month(&self) -> PyResult<i8> {
+        Ok(self.inner.date.month())
+    }
+
+    /// Returns the year of the time-step.
+    #[getter]
+    fn get_year(&self) -> PyResult<i16> {
+        Ok(self.inner.date.year())
+    }
+
+    /// Returns the current time-step index.
+    #[getter]
+    fn get_index(&self) -> PyResult<usize> {
+        Ok(self.inner.index)
+    }
+
+    /// Returns the day of the year index of the timestep.
+    ///
+    /// The day of the year is one-based, meaning January 1st is day 1 and December 31st is day 365 (or 366 in leap years).
+    /// See [`day_of_year_index`](Timestep::day_of_year_index) for a zero-based index.
+    #[getter]
+    pub fn get_day_of_year(&self) -> PyResult<usize> {
+        Ok(self.inner.day_of_year())
+    }
+
+    /// Returns the day of the year index of the timestep.
+    ///
+    /// The index is zero-based and accounts for leaps days. In non-leap years, 1 i to the index for
+    /// days after Feb 28th.
+    #[getter]
+    fn get_day_of_year_index(&self) -> PyResult<usize> {
+        Ok(self.inner.day_of_year_index())
+    }
+
+    /// Returns the fraction day of the year of the timestep.
+    ///
+    /// The index is zero-based and accounts for leaps days. In non-leap years, 1 is added to the index for
+    /// days after Feb 28th. The fractional part is the fraction of the day that has passed since midnight
+    /// (calculated to the nearest second).
+    #[getter]
+    fn get_fractional_day_of_year(&self) -> PyResult<f64> {
+        Ok(self.inner.fractional_day_of_year())
+    }
+
+    /// Returns true if the year of the timestep is a leap year.
+    #[getter]
+    fn get_is_leap_year(&self) -> PyResult<bool> {
+        Ok(self.inner.is_leap_year())
+    }
+}
+
+#[pyclass(name = "ScenarioIndex", frozen)]
+pub struct PyScenarioIndex {
+    inner: Arc<ScenarioIndex>,
+}
+
+#[pymethods]
+impl PyScenarioIndex {
+    /// The global index of the scenario for this simulation. This may be different
+    /// from the global index of the scenario in the schema.
+    #[getter]
+    #[must_use]
+    pub fn get_simulation_id(&self) -> usize {
+        self.inner.simulation_id()
+    }
+
+    /// The indices for each scenario group for this simulation.
+    #[getter]
+    #[must_use]
+    pub fn get_simulation_indices(&self) -> &[usize] {
+        self.inner.simulation_indices()
+    }
+}
 
 /// Provides data for a custom Pywr parameter.
 ///
@@ -23,12 +132,10 @@ use std::collections::HashMap;
 #[pyclass]
 pub struct ParameterInfo {
     /// The timestep for which the parameter is being calculated.
-    #[pyo3(get)]
     timestep: Timestep,
 
     /// The scenario index for which the parameter is being calculated.
-    #[pyo3(get)]
-    scenario_index: ScenarioIndex,
+    scenario_index: Arc<ScenarioIndex>,
 
     /// The metric values available for the parameter calculation.
     metric_values: HashMap<String, f64, RandomState>,
@@ -39,6 +146,20 @@ pub struct ParameterInfo {
 
 #[pymethods]
 impl ParameterInfo {
+    #[getter]
+    #[pyo3(name = "timestep")]
+    fn get_timestep(&self) -> PyResult<PyTimestep> {
+        Ok(PyTimestep { inner: self.timestep })
+    }
+
+    #[getter]
+    #[pyo3(name = "scenario_index")]
+    fn get_scenario_index(&self) -> PyResult<PyScenarioIndex> {
+        Ok(PyScenarioIndex {
+            inner: self.scenario_index.clone(),
+        })
+    }
+
     pub fn get_metric(&self, key: &str) -> PyResult<f64> {
         self.metric_values
             .get(key)
@@ -171,7 +292,7 @@ fn ensure_parameter_info(
                 py,
                 ParameterInfo {
                     timestep: *timestep,
-                    scenario_index: scenario_index.clone(),
+                    scenario_index: Arc::new(scenario_index.clone()),
                     metric_values: HashMap::default(),
                     index_values: HashMap::default(),
                 },
@@ -235,7 +356,7 @@ impl PyClassParameter {
                 {
                     let mut info_mut = info_bind.borrow_mut();
                     info_mut.timestep = *ctx.timestep;
-                    info_mut.scenario_index = ctx.scenario_index.clone();
+                    info_mut.scenario_index = Arc::new(ctx.scenario_index.clone());
                     self.common
                         .update_metrics(ctx.network, ctx.state, &mut info_mut.metric_values)?;
 
@@ -602,7 +723,7 @@ impl PyFuncParameter {
             {
                 let mut info_mut = info_bind.borrow_mut();
                 info_mut.timestep = *ctx.timestep;
-                info_mut.scenario_index = ctx.scenario_index.clone();
+                info_mut.scenario_index = Arc::new(ctx.scenario_index.clone());
                 self.common
                     .update_metrics(ctx.network, ctx.state, &mut info_mut.metric_values)?;
 

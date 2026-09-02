@@ -19,8 +19,6 @@ use highs_sys::{
     kHighsStatusWarning, kHighsVarTypeContinuous, kHighsVarTypeInteger,
 };
 use libc::c_void;
-#[cfg(feature = "pyo3")]
-pub use settings::build_highs_settings_py;
 pub use settings::{HighsSolverSettings, HighsSolverSettingsBuilder};
 use std::ffi::CString;
 use std::ptr::null;

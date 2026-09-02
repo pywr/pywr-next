@@ -6,7 +6,13 @@ import pandas
 import polars as pl
 import pytest
 from polars.testing import assert_frame_equal
-from pywr import ModelResult, ModelSchema, ModelTimings, MultiNetworkModelSchema
+from pywr import (
+    AggregationError,
+    ModelResult,
+    ModelSchema,
+    ModelTimings,
+    MultiNetworkModelSchema,
+)
 
 
 @pytest.fixture()
@@ -46,7 +52,7 @@ def test_simple_timeseries(model_dir: Path, tmpdir: Path):
             simulated = np.squeeze(fh[f"{node}/{attr}"])
             np.testing.assert_allclose(simulated, df)
 
-    with pytest.raises(RuntimeError):
+    with pytest.raises(AggregationError):
         result.network_result.aggregated_value("nodes")
 
     df = result.network_result.to_dataframe("nodes")

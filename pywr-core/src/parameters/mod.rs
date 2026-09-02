@@ -84,7 +84,10 @@ pub use profiles::{
     WeeklyProfileParameterBuilder, WeeklyProfileValues,
 };
 #[cfg(feature = "pyo3")]
-pub use py::{ParameterInfo, PyClassParameter, PyClassParameterBuilder, PyFuncParameter, PyFuncParameterBuilder};
+pub use py::{
+    ParameterInfo, PyClassParameter, PyClassParameterBuilder, PyFuncParameter, PyFuncParameterBuilder, PyScenarioIndex,
+    PyTimestep,
+};
 pub use rolling::{RollingParameter, RollingParameterBuilder};
 use std::fmt;
 use std::fmt::{Debug, Display, Formatter};

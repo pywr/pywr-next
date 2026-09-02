@@ -1,6 +1,10 @@
 use crate::timeseries::TimeseriesError;
 use chrono::{NaiveDate, NaiveDateTime, NaiveTime};
-use polars::{prelude::*, series::ops::NullBehavior};
+use polars::prelude::{
+    DataFrame, DataType, Duration, DynamicGroupOptions, FillNullStrategy, IntoLazy, PolarsUpsample,
+    SortMultipleOptions, StartBy, TimeUnit, all, col, lit,
+};
+use polars::series::ops::NullBehavior;
 use pywr_core::timestep::TimeDomain;
 use std::cmp::Ordering;
 
@@ -130,7 +134,8 @@ mod tests {
     use crate::timeseries::align_and_resample::align_and_resample;
     use chrono::{NaiveDate, NaiveDateTime};
     use jiff::civil::DateTime;
-    use polars::prelude::*;
+    use polars::df;
+    use polars::prelude::{ClosedWindow, Column, DataType, Duration, TimeUnit, date_range};
     use pywr_core::models::ModelDomainBuilder;
     use pywr_core::{
         scenario::ScenarioDomainBuilder,

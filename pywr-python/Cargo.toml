@@ -16,7 +16,8 @@ name = "pywr"
 crate-type = ["cdylib"]
 
 [features]
-default = ["cbc", "highs"]
+default = ["clp", "cbc", "highs"]
+clp = ["pywr-core/clp", "pywr-schema/clp"]
 cbc = ["pywr-core/cbc", "pywr-schema/cbc"]
 highs = ["pywr-core/highs", "pywr-schema/highs"]
 ipm-ocl = ["pywr-core/ipm-ocl", "pywr-schema/ipm-ocl"]
@@ -27,9 +28,11 @@ ipm-simd = ["pywr-core/ipm-simd", "pywr-schema/ipm-simd"]
 [dependencies]
 # The Github workflow is configured to use the minimum version corresponding to the `abi3-pyXX` feature enabled here.
 # Please remember to update the workflow if changing the ABI version.
-pyo3 = { workspace = true, features = ["extension-module", "macros", "chrono", "abi3-py310"] }
+jiff = { workspace = true }
+pyo3 = { workspace = true, features = ["extension-module", "macros", "jiff-02", "abi3-py310"] }
 pyo3-log = { workspace = true }
 pyo3-polars = { workspace = true }
+polars = { workspace = true }
 pywr-core = { path = "../pywr-core" }
 pywr-schema = { path = "../pywr-schema" }
 pywr-v1-schema = { workspace = true }

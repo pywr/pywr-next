@@ -28,10 +28,6 @@ use crate::virtual_storage::{
     VirtualStorageError, VirtualStorageNode, VirtualStorageNodeBuilder, VirtualStorageNodeBuilderError,
 };
 use crate::{parameters, recorders};
-#[cfg(feature = "pyo3")]
-use pyo3::{PyResult, exceptions::PyKeyError, pyclass, pymethods};
-#[cfg(feature = "pyo3")]
-use pyo3_polars::PyDataFrame;
 use rayon::prelude::*;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
@@ -489,10 +485,9 @@ pub enum NetworkRecorderAggregationError {
 /// The results of a model run.
 ///
 /// Only recorders which produced a result will be present.
-#[cfg_attr(feature = "pyo3", pyclass(skip_from_py_object))]
 #[derive(Clone)]
 pub struct NetworkResult {
-    results: Arc<HashMap<String, Box<dyn RecorderFinalResult>>>,
+    pub results: Arc<HashMap<String, Box<dyn RecorderFinalResult>>>,
 }
 
 impl NetworkResult {
@@ -512,33 +507,6 @@ impl NetworkResult {
     /// Get the aggregated value of a recorder by name, if it exists and can be aggregated.
     pub fn get_aggregated_value(&self, name: &str) -> Option<f64> {
         self.results.get(name).and_then(|r| r.aggregated_value().ok())
-    }
-}
-
-#[cfg(feature = "pyo3")]
-#[pymethods]
-impl NetworkResult {
-    /// Get the aggregated value of a recorder by name, if it exists and can be aggregated.
-    #[pyo3(name = "aggregated_value")]
-    pub fn get_aggregated_value_py(&self, name: &str) -> PyResult<f64> {
-        self.results
-            .get(name)
-            .ok_or_else(|| PyKeyError::new_err(format!("Output `{}` not found in results", name)))
-            .and_then(|r| r.aggregated_value().map_err(|e| e.into()))
-    }
-
-    /// An iterator over the names of all available outputs.
-    pub fn output_names(&self) -> Vec<String> {
-        self.results.keys().map(|k| k.to_string()).collect()
-    }
-
-    /// Return an output as a dataframe.
-    pub fn to_dataframe(&self, name: &str) -> PyResult<PyDataFrame> {
-        self.results
-            .get(name)
-            .ok_or_else(|| PyKeyError::new_err(format!("Output `{}` not found in results", name)))
-            .and_then(|r| r.to_dataframe().map_err(|e| e.into()))
-            .map(PyDataFrame)
     }
 }
 
