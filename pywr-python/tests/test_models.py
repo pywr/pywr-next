@@ -6,7 +6,13 @@ import pandas
 import polars as pl
 import pytest
 from polars.testing import assert_frame_equal
-from pywr import ModelResult, ModelSchema, ModelTimings, MultiNetworkModelSchema, AggregationError
+from pywr import (
+    ModelResult,
+    ModelSchema,
+    ModelTimings,
+    MultiNetworkModelSchema,
+    AggregationError,
+)
 
 
 @pytest.fixture()
