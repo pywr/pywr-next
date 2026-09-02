@@ -421,10 +421,11 @@ impl<T> From<ConstParameterIndex<T>> for ParameterIndex<T> {
 
 /// Specifies whether to use the 'before' or 'after' parameter values.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum ParameterReturnValue {
+pub enum UnresolvedParameterReturnValue {
     Before,
     After,
     AfterOrElseInitial,
+    Both,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

@@ -3,6 +3,7 @@ use crate::aggregated_storage_node::{
     AggregatedStorageNode, AggregatedStorageNodeBuilder, AggregatedStorageNodeBuilderError,
 };
 use crate::edge::Edge;
+use crate::metric::CalculationPhase;
 use crate::models::{ModelDomain, MultiNetworkTransferIndex};
 use crate::node::{Node, NodeBuilder, NodeBuilderError, NodeError, UnresolvedNode};
 use crate::parameters::{
@@ -745,7 +746,7 @@ impl Network {
                     // TODO clear the current parameter values state (i.e. set them all to zero).
 
                     let start_p_calc = Instant::now();
-                    self.compute_components(
+                    self.before(
                         timestep,
                         scenario_index,
                         current_state,
@@ -809,7 +810,7 @@ impl Network {
                     // TODO clear the current parameter values state (i.e. set them all to zero).
 
                     let start_p_calc = Instant::now();
-                    self.compute_components(timestep, scenario_index, current_state, p_internal_state, None)
+                    self.before(timestep, scenario_index, current_state, p_internal_state, None)
                         .unwrap();
 
                     // State now contains updated parameter values BUT original network state
@@ -869,7 +870,7 @@ impl Network {
                 // TODO clear the current parameter values state (i.e. set them all to zero).
 
                 let start_p_calc = Instant::now();
-                self.compute_components(timestep, scenario_index, current_state, p_internal_states, None)
+                self.before(timestep, scenario_index, current_state, p_internal_states, None)
                     .unwrap();
 
                 // State now contains updated parameter values BUT original network state
@@ -960,7 +961,7 @@ impl Network {
     /// set initial volume). For parameters this involves computing the current value for the
     /// the timestep. The `state` object is progressively updated with these values during this
     /// method.
-    fn compute_components(
+    fn before(
         &self,
         timestep: &Timestep,
         scenario_index: &ScenarioIndex,
@@ -968,6 +969,7 @@ impl Network {
         internal_states: &mut ParameterStates,
         timings: Option<&mut ComponentTimings>,
     ) -> Result<(), NetworkStepError> {
+        state.set_calculation_phase(CalculationPhase::Before);
         // TODO reset parameter state to zero
 
         // First we update the simple parameters
@@ -1017,7 +1019,7 @@ impl Network {
         metric_set_states: &mut [MetricSetState],
         timings: Option<&mut ComponentTimings>,
     ) -> Result<(), NetworkStepError> {
-        // TODO reset parameter state to zero
+        state.set_calculation_phase(CalculationPhase::After);
 
         // No "after" on nodes and virtual nodes
 
@@ -2579,7 +2581,7 @@ mod tests {
             metric_set_internal_states,
         } = &mut network_state;
         network
-            .compute_components(
+            .before(
                 &timesteps[0],
                 scenario,
                 &mut states[0],
@@ -2658,7 +2660,7 @@ mod tests {
             for scenario in scenarios {
                 let scenario_id = scenario.simulation_id();
                 network
-                    .compute_components(
+                    .before(
                         timestep,
                         scenario,
                         &mut states[scenario_id],
