@@ -69,7 +69,7 @@ from pywr import ParameterInfo
 
 
 def current_timestep(
-        info: ParameterInfo, a: float, b: float, some_condition: str = "foo"
+    info: ParameterInfo, a: float, b: float, some_condition: str = "foo"
 ) -> float:
     """Return the current time step."""
     match some_condition:
