@@ -108,6 +108,7 @@ model_tests! {
     test_reservoir_failure_levels1: ("reservoir-failure-levels1.json", vec![("reservoir-failure-levels1-expected.csv", ResultsShape::Long)], vec![], vec![]),
     test_daily_profile1: ("daily-profile1.json", vec![("daily-profile1-expected.csv", ResultsShape::Long)], vec![], vec![]),
     test_turbine1: ("turbine1.json", vec![("turbine1-expected.csv", ResultsShape::Long)], vec![], vec![]),
+    test_hydropower1: ("hydropower1.json", vec![("hydropower1-expected.csv", ResultsShape::Long)], vec![], vec![]),
 }
 
 /// Test Pandas backend for reading timeseries data.
