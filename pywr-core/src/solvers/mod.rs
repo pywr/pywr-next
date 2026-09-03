@@ -111,6 +111,13 @@ pub enum SolverSetupError {
     NoEdgesDefined,
     #[error("Node index not found: {0}")]
     NodeIndexNotFound(NodeIndex),
+    #[error("Node bounds [{lower_bound}, {upper_bound}] are infeasible for node `{name}` and sub-name `{}`", .sub_name.as_deref().unwrap_or("None"))]
+    NodeBoundsInfeasible {
+        name: String,
+        sub_name: Option<String>,
+        lower_bound: f64,
+        upper_bound: f64,
+    },
     #[cfg(feature = "highs")]
     #[error("Highs error: {0}")]
     HighsError(#[from] highs::HighsStatusError),
@@ -154,6 +161,20 @@ pub enum SolverSolveError {
     NetworkStateError(#[from] crate::state::NetworkStateError),
     #[error("State error: {0}")]
     StateError(#[from] crate::state::StateError),
+    #[error("Node bounds [{lower_bound}, {upper_bound}] are infeasible for node `{name}` and sub-name `{}`", .sub_name.as_deref().unwrap_or("None"))]
+    NodeBoundsInfeasible {
+        name: String,
+        sub_name: Option<String>,
+        lower_bound: f64,
+        upper_bound: f64,
+    },
+    #[error("Virtual storage bounds [{lower_bound}, {upper_bound}] are infeasible for node `{name}` and sub-name `{}`", .sub_name.as_deref().unwrap_or("None"))]
+    VirtualStorageBoundsInfeasible {
+        name: String,
+        sub_name: Option<String>,
+        lower_bound: f64,
+        upper_bound: f64,
+    },
     #[cfg(feature = "clp")]
     #[error("Clp error: {0}")]
     ClpSolveError(#[from] ClpSolveStatusError),
