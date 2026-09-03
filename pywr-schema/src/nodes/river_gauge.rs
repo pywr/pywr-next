@@ -117,7 +117,7 @@ impl RiverGaugeNode {
         args: &LoadArgs,
     ) -> Result<(), SchemaError> {
         let mut mrf_node = pywr_core::node::NodeBuilder::link(self.mrf_sub_name());
-        let bypass_node = pywr_core::node::NodeBuilder::link(self.bypass_sub_name());
+        let mut bypass_node = pywr_core::node::NodeBuilder::link(self.bypass_sub_name());
 
         // MRF applies as a maximum on the MRF node.
         if let Some(cost) = &self.mrf_cost {
@@ -132,7 +132,7 @@ impl RiverGaugeNode {
 
         if let Some(cost) = &self.bypass_cost {
             let value = cost.load(network, args, Some(&self.meta.name))?;
-            mrf_node.min_flow(value);
+            bypass_node.cost(value);
         }
 
         network.node(mrf_node);
