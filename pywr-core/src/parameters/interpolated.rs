@@ -3,7 +3,7 @@ use crate::network::ResolutionMaps;
 use crate::parameters::errors::GeneralCalculationError;
 use crate::parameters::interpolate::linear_interpolation;
 use crate::parameters::{
-    BuiltParameter, GeneralBeforeParameter, GeneralParameter, GeneralParameterContext, GeneralParameterEntry,
+    BuiltParameter, GeneralBeforeParameter, GeneralAfterParameter, GeneralParameter, GeneralParameterContext, GeneralParameterEntry,
     MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder, ParameterMeta, ParameterName,
     ParameterState,
 };
@@ -58,16 +58,45 @@ impl GeneralBeforeParameter<f64> for InterpolatedParameter {
     }
 }
 
+
+impl GeneralAfterParameter<f64> for InterpolatedParameter {
+    fn after(
+        &self,
+        ctx: GeneralParameterContext<'_>,
+        _internal_state: &mut Option<Box<dyn ParameterState>>,
+    ) -> Result<f64, GeneralCalculationError> {
+        // Current value
+        let x = self.x.get_value(ctx.network, ctx.state)?;
+
+        let points = self
+            .points
+            .iter()
+            .map(|(x, f)| {
+                let xp = x.get_value(ctx.network, ctx.state)?;
+                let fp = f.get_value(ctx.network, ctx.state)?;
+
+                Ok::<(f64, f64), GeneralCalculationError>((xp, fp))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let f = linear_interpolation(x, &points, self.error_on_bounds)?;
+
+        Ok(f)
+    }
+}
+
 #[derive(Debug)]
 pub struct InterpolatedParameterBuilder {
     meta: ParameterMeta,
     x: UnresolvedMetricF64,
     points: Vec<(UnresolvedMetricF64, UnresolvedMetricF64)>,
     error_on_bounds: bool,
+    phase: MetricConsumerPhase,
 }
 
 impl InterpolatedParameterBuilder {
-    pub fn new(
+    /// Create a new [`InterpolatedParameter`] that is evaluated in the "before" phase.
+    pub fn before(
         name: ParameterName,
         x: UnresolvedMetricF64,
         points: Vec<(UnresolvedMetricF64, UnresolvedMetricF64)>,
@@ -77,6 +106,37 @@ impl InterpolatedParameterBuilder {
             x,
             points,
             error_on_bounds: true,
+            phase: MetricConsumerPhase::Before,
+        }
+    }
+
+    /// Create a new [`InterpolatedParameter`] that is evaluated in the "after" phase.
+    pub fn after(
+        name: ParameterName,
+        x: UnresolvedMetricF64,
+        points: Vec<(UnresolvedMetricF64, UnresolvedMetricF64)>,
+    ) -> Self {
+        Self {
+            meta: ParameterMeta::new(name),
+            x,
+            points,
+            error_on_bounds: true,
+            phase: MetricConsumerPhase::After,
+        }
+    }
+
+    /// Create a new [`InterpolatedParameter`] that is evaluated in "before" and "after" phases.
+    pub fn both(
+        name: ParameterName,
+        x: UnresolvedMetricF64,
+        points: Vec<(UnresolvedMetricF64, UnresolvedMetricF64)>,
+    ) -> Self {
+        Self {
+            meta: ParameterMeta::new(name),
+            x,
+            points,
+            error_on_bounds: true,
+            phase: MetricConsumerPhase::Both,
         }
     }
 
@@ -95,14 +155,13 @@ impl ParameterBuilder<f64> for InterpolatedParameterBuilder {
         self: Box<Self>,
         resolution_maps: &ResolutionMaps,
     ) -> Result<MaybeBuiltParameter<f64>, ParameterBuildError> {
-        // Phase is hardcoded to "before" for this parameter, as it only implements the `GeneralBeforeParameter` trait.
-        let phase = MetricConsumerPhase::Before;
-        let x = resolve_metric_f64!(self, self.x, resolution_maps, phase, "x");
+
+        let x = resolve_metric_f64!(self, self.x, resolution_maps, self.phase, "x");
 
         let mut points = Vec::with_capacity(self.points.len());
         for (i, (uxp, ufp)) in self.points.iter().enumerate() {
-            let xp = resolve_metric_f64!(self, uxp, resolution_maps, phase, &format!("points[{i}].x"));
-            let fp = resolve_metric_f64!(self, ufp, resolution_maps, phase, &format!("points[{i}].f"));
+            let xp = resolve_metric_f64!(self, uxp, resolution_maps, self.phase, &format!("points[{i}].x"));
+            let fp = resolve_metric_f64!(self, ufp, resolution_maps, self.phase, &format!("points[{i}].f"));
             points.push((xp, fp));
         }
 
@@ -113,6 +172,18 @@ impl ParameterBuilder<f64> for InterpolatedParameterBuilder {
             error_on_bounds: self.error_on_bounds,
         };
 
-        Ok(BuiltParameter::General(GeneralParameterEntry::before(p)).into())
+        let built = match self.phase {
+            MetricConsumerPhase::Before => {
+                BuiltParameter::General(GeneralParameterEntry::before(p))
+            },
+            MetricConsumerPhase::After => {
+                BuiltParameter::General(GeneralParameterEntry::after(p))
+            },
+            MetricConsumerPhase::Both => {
+                BuiltParameter::General(GeneralParameterEntry::both(p))
+            }
+        };
+
+        Ok(built.into())
     }
 }

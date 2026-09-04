@@ -1,5 +1,6 @@
 {
   "type": "Offset",
+  "phase": "Before",
   "meta": {
     "name": "my-variable-offset"
   },
