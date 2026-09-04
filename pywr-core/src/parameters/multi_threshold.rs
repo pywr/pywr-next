@@ -2,7 +2,7 @@ use crate::metric::{MetricConsumerPhase, MetricF64, UnresolvedMetricF64};
 use crate::network::ResolutionMaps;
 use crate::parameters::errors::{GeneralCalculationError, ParameterSetupError};
 use crate::parameters::{
-    BuiltParameter, GeneralBeforeParameter, GeneralParameter, GeneralParameterContext, GeneralParameterEntry,
+    BuiltParameter, GeneralBeforeParameter, GeneralAfterParameter, GeneralParameter, GeneralParameterContext, GeneralParameterEntry,
     MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder, ParameterMeta, ParameterName,
     ParameterState, Predicate, downcast_internal_state_mut,
 };
@@ -80,6 +80,42 @@ impl GeneralBeforeParameter<u64> for MultiThresholdParameter {
     }
 }
 
+impl GeneralAfterParameter<u64> for MultiThresholdParameter {
+    fn after(
+        &self,
+        ctx: GeneralParameterContext<'_>,
+        internal_state: &mut Option<Box<dyn ParameterState>>,
+    ) -> Result<u64, GeneralCalculationError> {
+        // Downcast the internal state to the correct type
+        let previous_max = downcast_internal_state_mut::<u64>(internal_state);
+
+        let value = self.metric.get_value(ctx.network, ctx.state)?;
+
+        // Determine the first threshold that is met
+        let mut position: u64 = 0;
+        for threshold in &self.thresholds {
+            let t = threshold.get_value(ctx.network, ctx.state)?;
+            let active = self.predicate.apply(value, t);
+
+            if active {
+                break;
+            }
+            position += 1;
+        }
+
+        if self.ratchet {
+            // If ratchet is enabled, we only update if the new position is greater than the previous max
+            if position > *previous_max {
+                *previous_max = position;
+            } else {
+                return Ok(*previous_max);
+            }
+        }
+
+        Ok(position)
+    }
+}
+
 #[derive(Debug)]
 pub struct MultiThresholdParameterBuilder {
     meta: ParameterMeta,
@@ -87,16 +123,44 @@ pub struct MultiThresholdParameterBuilder {
     thresholds: Vec<UnresolvedMetricF64>,
     predicate: Predicate,
     ratchet: bool,
+    phase: MetricConsumerPhase,
 }
 
 impl MultiThresholdParameterBuilder {
-    pub fn new(name: ParameterName, metric: UnresolvedMetricF64, predicate: Predicate) -> Self {
+    
+    // Create a new builder for [`MultiThresholdParameter`] that is evaluated in the "before" phase.
+    pub fn before(name: ParameterName, metric: UnresolvedMetricF64, predicate: Predicate) -> Self {
         Self {
             meta: ParameterMeta::new(name),
             metric,
             thresholds: Vec::new(),
             predicate,
             ratchet: false,
+            phase: MetricConsumerPhase::Before,
+        }
+    }
+
+    // Create a new builder for [`MultiThresholdParameter`] that is evaluated in the "after" phase.
+    pub fn after(name: ParameterName, metric: UnresolvedMetricF64, predicate: Predicate) -> Self {
+        Self {
+            meta: ParameterMeta::new(name),
+            metric,
+            thresholds: Vec::new(),
+            predicate,
+            ratchet: false,
+            phase: MetricConsumerPhase::After,
+        }
+    }
+
+    // Create a new builder for [`MultiThresholdParameter`] that is evaluated in both "before" and "after" phases.
+    pub fn both(name: ParameterName, metric: UnresolvedMetricF64, predicate: Predicate) -> Self {
+        Self {
+            meta: ParameterMeta::new(name),
+            metric,
+            thresholds: Vec::new(),
+            predicate,
+            ratchet: false,
+            phase: MetricConsumerPhase::Both,
         }
     }
 
@@ -122,10 +186,9 @@ impl ParameterBuilder<u64> for MultiThresholdParameterBuilder {
         self: Box<Self>,
         resolution_maps: &ResolutionMaps,
     ) -> Result<MaybeBuiltParameter<u64>, ParameterBuildError> {
-        // Phase is hardcoded to "before" for this parameter, as it only implements the `GeneralBeforeParameter` trait.
-        let phase = MetricConsumerPhase::Before;
-        let metric = resolve_metric_f64!(self, self.metric, resolution_maps, phase, "metric");
-        let thresholds = resolve_metric_f64_vec!(self, &self.thresholds, resolution_maps, phase, "thresholds");
+
+        let metric = resolve_metric_f64!(self, self.metric, resolution_maps, self.phase, "metric");
+        let thresholds = resolve_metric_f64_vec!(self, &self.thresholds, resolution_maps, self.phase, "thresholds");
 
         let p = MultiThresholdParameter {
             meta: self.meta,
@@ -134,9 +197,20 @@ impl ParameterBuilder<u64> for MultiThresholdParameterBuilder {
             predicate: self.predicate,
             ratchet: self.ratchet,
         };
-
-        let bp = BuiltParameter::General(GeneralParameterEntry::before(p));
-        Ok(bp.into())
+        
+        let built = match self.phase {
+            MetricConsumerPhase::Before => {
+                BuiltParameter::General(GeneralParameterEntry::before(p))
+            },
+            MetricConsumerPhase::After => {
+                BuiltParameter::General(GeneralParameterEntry::after(p))
+            },
+            MetricConsumerPhase::Both => {
+                BuiltParameter::General(GeneralParameterEntry::both(p))
+            },
+        };
+        
+        Ok(built.into())
     }
 }
 
@@ -163,7 +237,7 @@ mod tests {
 
         model_builder.network_builder().parameters().f64(Box::new(volume));
 
-        let mut parameter = MultiThresholdParameterBuilder::new(
+        let mut parameter = MultiThresholdParameterBuilder::before(
             "test-parameter".into(),
             UnresolvedMetricF64::new_parameter_before("test-x"),
             Predicate::GreaterThan,
@@ -195,7 +269,7 @@ mod tests {
 
         model_builder.network_builder().parameters().f64(Box::new(volume));
 
-        let mut parameter = MultiThresholdParameterBuilder::new(
+        let mut parameter = MultiThresholdParameterBuilder::before(
             "test-parameter".into(),
             UnresolvedMetricF64::new_parameter_before("test-x"),
             Predicate::GreaterThan,

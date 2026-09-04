@@ -3,7 +3,7 @@ use crate::metric::{MetricConsumerPhase, MetricF64, UnresolvedMetricF64};
 use crate::network::ResolutionMaps;
 use crate::parameters::errors::{GeneralCalculationError, ParameterSetupError};
 use crate::parameters::{
-    BuiltParameter, GeneralBeforeParameter, GeneralParameter, GeneralParameterContext, GeneralParameterEntry,
+    BuiltParameter, GeneralBeforeParameter, GeneralAfterParameter, GeneralParameter, GeneralParameterContext, GeneralParameterEntry,
     MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder, ParameterMeta, ParameterName,
     ParameterState, downcast_internal_state_mut,
 };
@@ -99,6 +99,34 @@ impl GeneralBeforeParameter<u64> for ThresholdParameter {
     }
 }
 
+impl GeneralAfterParameter<u64> for ThresholdParameter {
+    fn after(
+        &self,
+        ctx: GeneralParameterContext<'_>,
+        internal_state: &mut Option<Box<dyn ParameterState>>,
+    ) -> Result<u64, GeneralCalculationError> {
+        // Downcast the internal state to the correct type
+        let previously_activated = downcast_internal_state_mut::<bool>(internal_state);
+
+        // Return early if ratchet has been hit
+        if self.ratchet & *previously_activated {
+            return Ok(1);
+        }
+
+        let threshold = self.threshold.get_value(ctx.network, ctx.state)?;
+        let value = self.metric.get_value(ctx.network, ctx.state)?;
+        let active = self.predicate.apply(value, threshold);
+
+        if active {
+            // Update the internal state to remember we've been triggered!
+            *previously_activated = true;
+            Ok(1)
+        } else {
+            Ok(0)
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct ThresholdParameterBuilder {
     meta: ParameterMeta,
@@ -106,10 +134,13 @@ pub struct ThresholdParameterBuilder {
     threshold: UnresolvedMetricF64,
     predicate: Predicate,
     ratchet: bool,
+    phase: MetricConsumerPhase,
 }
 
 impl ThresholdParameterBuilder {
-    pub fn new(
+
+    /// Create new builder for [`ThresholdParameter`] this is evaluated in "before" phase.
+    pub fn before(
         name: ParameterName,
         metric: UnresolvedMetricF64,
         threshold: UnresolvedMetricF64,
@@ -121,6 +152,41 @@ impl ThresholdParameterBuilder {
             threshold,
             predicate,
             ratchet: false,
+            phase: MetricConsumerPhase::Before,
+        }
+    }
+
+    /// Create new builder for [`ThresholdParameter`] this is evaluated in "after" phase.
+    pub fn after(
+        name: ParameterName,
+        metric: UnresolvedMetricF64,
+        threshold: UnresolvedMetricF64,
+        predicate: Predicate,
+    ) -> Self {
+        Self {
+            meta: ParameterMeta::new(name),
+            metric,
+            threshold,
+            predicate,
+            ratchet: false,
+            phase: MetricConsumerPhase::After,
+        }
+    }
+
+    /// Create new builder for [`ThresholdParameter`] this is evaluated in both "before" and "after" phases.
+    pub fn both(
+        name: ParameterName,
+        metric: UnresolvedMetricF64,
+        threshold: UnresolvedMetricF64,
+        predicate: Predicate,
+    ) -> Self {
+        Self {
+            meta: ParameterMeta::new(name),
+            metric,
+            threshold,
+            predicate,
+            ratchet: false,
+            phase: MetricConsumerPhase::Both,
         }
     }
 
@@ -140,10 +206,9 @@ impl ParameterBuilder<u64> for ThresholdParameterBuilder {
         self: Box<Self>,
         resolution_maps: &ResolutionMaps,
     ) -> Result<MaybeBuiltParameter<u64>, ParameterBuildError> {
-        // Phase is hardcoded to "before" for this parameter, as it only implements the `GeneralBeforeParameter` trait.
-        let phase = MetricConsumerPhase::Before;
-        let metric = resolve_metric_f64!(self, self.metric, resolution_maps, phase, "metric");
-        let threshold = resolve_metric_f64!(self, self.threshold, resolution_maps, phase, "threshold");
+
+        let metric = resolve_metric_f64!(self, self.metric, resolution_maps, self.phase, "metric");
+        let threshold = resolve_metric_f64!(self, self.threshold, resolution_maps, self.phase, "threshold");
 
         let p = ThresholdParameter {
             meta: self.meta,
@@ -153,6 +218,18 @@ impl ParameterBuilder<u64> for ThresholdParameterBuilder {
             ratchet: self.ratchet,
         };
 
-        Ok(BuiltParameter::General(GeneralParameterEntry::before(p)).into())
+        let built = match self.phase {
+            MetricConsumerPhase::Before => {
+                BuiltParameter::General(GeneralParameterEntry::before(p))
+            },
+            MetricConsumerPhase::After => {
+                BuiltParameter::General(GeneralParameterEntry::after(p))
+            },
+            MetricConsumerPhase::Both => {
+                BuiltParameter::General(GeneralParameterEntry::both(p))
+            },
+        };
+        
+        Ok(built.into())
     }
 }
