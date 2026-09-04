@@ -2,7 +2,7 @@ use crate::metric::{MetricConsumerPhase, MetricF64, UnresolvedMetricF64};
 use crate::network::ResolutionMaps;
 use crate::parameters::errors::GeneralCalculationError;
 use crate::parameters::{
-    BuiltParameter, GeneralBeforeParameter, GeneralParameter, GeneralParameterContext, GeneralParameterEntry,
+    BuiltParameter, GeneralBeforeParameter, GeneralAfterParameter, GeneralParameter, GeneralParameterContext, GeneralParameterEntry,
     MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder, ParameterMeta, ParameterName,
     ParameterState,
 };
@@ -38,22 +38,53 @@ impl GeneralBeforeParameter<u64> for ControlCurveIndexParameter {
     ) -> Result<u64, GeneralCalculationError> {
         // Current value
         let x = self.metric.get_value(ctx.network, ctx.state)?;
+        let values = self
+            .control_curves
+            .iter()
+            .map(|cc| cc.get_value(ctx.network, ctx.state))
+            .collect::<Result<Vec<f64>, _>>()?;
 
-        for (idx, control_curve) in self.control_curves.iter().enumerate() {
-            let cc_value = control_curve.get_value(ctx.network, ctx.state)?;
-            if x >= cc_value {
-                return Ok(idx as u64);
-            }
-        }
-        Ok(self.control_curves.len() as u64)
+        Ok(control_curve_index(x, &values))
     }
 }
+
+
+impl GeneralAfterParameter<u64> for ControlCurveIndexParameter {
+    fn after(
+        &self,
+        ctx: GeneralParameterContext<'_>,
+        _internal_state: &mut Option<Box<dyn ParameterState>>,
+    ) -> Result<u64, GeneralCalculationError> {
+        // Current value
+        let x = self.metric.get_value(ctx.network, ctx.state)?;
+        let values = self
+            .control_curves
+            .iter()
+            .map(|cc| cc.get_value(ctx.network, ctx.state))
+            .collect::<Result<Vec<f64>, _>>()?;
+
+        Ok(control_curve_index(x, &values))
+    }
+}
+
+
+pub fn control_curve_index(x: f64, control_curves: &[f64]) -> u64 {
+    for (idx, cc_value) in control_curves.iter().enumerate() {
+        if x >= *cc_value {
+            return idx as u64;
+        }
+    }
+    control_curves.len() as u64
+}
+
+
 
 #[derive(Debug)]
 pub struct ControlCurveIndexParameterBuilder {
     meta: ParameterMeta,
     metric: UnresolvedMetricF64,
     control_curves: Vec<UnresolvedMetricF64>,
+    phase: MetricConsumerPhase,
 }
 
 impl ControlCurveIndexParameterBuilder {
@@ -63,6 +94,27 @@ impl ControlCurveIndexParameterBuilder {
             meta: ParameterMeta::new(name),
             metric,
             control_curves: Vec::new(),
+            phase: MetricConsumerPhase::Before,
+        }
+    }
+
+    /// Create a new builder for [`ControlCurveIndexParameter`] that is evaluated in the "after" phase.
+    pub fn after(name: ParameterName, metric: UnresolvedMetricF64) -> Self {
+        Self {
+            meta: ParameterMeta::new(name),
+            metric,
+            control_curves: Vec::new(),
+            phase: MetricConsumerPhase::After,
+        }
+    }
+
+    /// Create a new builder for [`ControlCurveIndexParameter`] that is evaluated in both "before" and "after" phases.
+    pub fn both(name: ParameterName, metric: UnresolvedMetricF64) -> Self {
+        Self {
+            meta: ParameterMeta::new(name),
+            metric,
+            control_curves: Vec::new(),
+            phase: MetricConsumerPhase::Both,
         }
     }
 
@@ -81,11 +133,10 @@ impl ParameterBuilder<u64> for ControlCurveIndexParameterBuilder {
         self: Box<Self>,
         resolution_maps: &ResolutionMaps,
     ) -> Result<MaybeBuiltParameter<u64>, ParameterBuildError> {
-        // Phase is hardcoded to "before" for this parameter, as it only implements the `GeneralBeforeParameter` trait.
-        let phase = MetricConsumerPhase::Before;
-        let metric = resolve_metric_f64!(self, self.metric, resolution_maps, phase, "metric");
+
+        let metric = resolve_metric_f64!(self, self.metric, resolution_maps, self.phase, "metric");
         let control_curves =
-            resolve_metric_f64_vec!(self, &self.control_curves, resolution_maps, phase, "control_curves");
+            resolve_metric_f64_vec!(self, &self.control_curves, resolution_maps, self.phase, "control_curves");
 
         let p = ControlCurveIndexParameter {
             meta: self.meta,
@@ -93,6 +144,38 @@ impl ParameterBuilder<u64> for ControlCurveIndexParameterBuilder {
             control_curves,
         };
 
-        Ok(BuiltParameter::General(GeneralParameterEntry::before(p)).into())
+        let built = match self.phase {
+            MetricConsumerPhase::Before => {
+                BuiltParameter::General(GeneralParameterEntry::before(p))
+            },
+            MetricConsumerPhase::After => {
+                BuiltParameter::General(GeneralParameterEntry::after(p))
+            },
+            MetricConsumerPhase::Both => {
+                BuiltParameter::General(GeneralParameterEntry::both(p))
+            }
+        };
+
+        Ok(built.into())
     }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::control_curve_index;
+
+    #[test]
+    fn computes_index_correctly() {
+        let control_curves = vec![0.8, 0.5, 0.2];
+
+        assert_eq!(control_curve_index(0.1, &control_curves), 3);
+        assert_eq!(control_curve_index(0.2, &control_curves), 2);
+        assert_eq!(control_curve_index(0.3, &control_curves), 2);
+        assert_eq!(control_curve_index(0.5, &control_curves), 1);
+        assert_eq!(control_curve_index(0.6, &control_curves), 1);
+        assert_eq!(control_curve_index(0.8, &control_curves), 0);
+        assert_eq!(control_curve_index(0.9, &control_curves), 0);
+    }
+
 }
