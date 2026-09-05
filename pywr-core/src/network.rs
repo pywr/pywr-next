@@ -537,6 +537,13 @@ impl Network {
         &self.edges
     }
 
+    pub fn parameters(&self) -> &ParameterCollection {
+        &self.parameters
+    }
+    pub fn metric_sets(&self) -> &[MetricSet] {
+        &self.metric_sets
+    }
+
     pub fn recorders(&self) -> &[Box<dyn recorders::Recorder>] {
         &self.recorders
     }

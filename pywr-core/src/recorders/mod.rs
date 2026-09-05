@@ -6,6 +6,7 @@ mod hdf;
 mod memory;
 mod metric_set;
 mod py;
+mod snapshot;
 
 use crate::metric::{
     MetricConsumerPhase, MetricF64, MetricF64Error, MetricF64ResolutionError, MetricU64, MetricU64Error,
@@ -32,6 +33,10 @@ pub use metric_set::{
 };
 use ndarray::Array2;
 use ndarray::prelude::*;
+pub use snapshot::{
+    Snapshot, SnapshotBuffer, SnapshotData, SnapshotMeta, SnapshotMetricSetItem, SnapshotMetricSetMeta,
+    SnapshotRecorder, SnapshotRecorderBuilder,
+};
 use std::any::Any;
 use std::fmt::Debug;
 use thiserror::Error;
@@ -44,7 +49,7 @@ pub struct RecorderMeta {
 }
 
 impl RecorderMeta {
-    fn new(name: &str) -> Self {
+    pub fn new(name: &str) -> Self {
         Self {
             name: name.to_string(),
             comment: "".to_string(),

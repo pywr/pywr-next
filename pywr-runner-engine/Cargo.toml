@@ -1,0 +1,22 @@
+[package]
+name = "pywr-runner-engine"
+readme.workspace = true
+description.workspace = true
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+jiff = { workspace = true }
+pywr-core = { path = "../pywr-core", features = ["clp"] }
+pywr-schema = { path = "../pywr-schema", features = ["clp"] }
+pywr-runner-protocol = { path = "../pywr-runner-protocol" }
+serde_json = { workspace = true }
+strum = { workspace = true }
+strum_macros = { workspace = true }
+thiserror = { workspace = true }

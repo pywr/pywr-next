@@ -129,6 +129,12 @@ enum Commands {
         /// Path to save the JSON schema.
         out: PathBuf,
     },
+    /// Run the Pywr model runner service over a local IPC socket.
+    RunServer {
+        /// Portable local-socket namespace name.
+        #[arg(long, default_value = "pywr-runner")]
+        socket_name: String,
+    },
 }
 
 fn main() -> Result<()> {
@@ -171,6 +177,10 @@ fn main() -> Result<()> {
             solver,
         } => run_random(*num_systems, *density, *num_scenarios, solver),
         Commands::ExportSchema { out } => export_schema(out)?,
+        Commands::RunServer { socket_name } => {
+            info!("Starting Pywr runner service on socket: {}", socket_name);
+            run_server(socket_name)?;
+        }
     }
 
     Ok(())
@@ -436,6 +446,17 @@ fn export_schema(out_path: &Path) -> Result<()> {
         serde_json::to_string_pretty(&schema).with_context(|| "Failed serialise Pywr schema".to_string())?,
     )
     .with_context(|| format!("Failed to write file: {out_path:?}",))?;
+
+    Ok(())
+}
+
+fn run_server(socket_name: &str) -> Result<()> {
+    use pywr_runner_service::{RunnerServiceConfigBuilder, run_local_socket_server};
+
+    let config = RunnerServiceConfigBuilder::new().build();
+
+    info!(socket_name, "Pywr runner service is listening");
+    run_local_socket_server(socket_name, &config).with_context(|| "Failed to run Pywr runner service".to_string())?;
 
     Ok(())
 }

@@ -831,6 +831,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "doctest-file"
+version = "1.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c2db04e74f0a9a93103b50e90b96024c9b2bdca8bce6a632ec71b88736d3d359"
+
+[[package]]
 name = "dyn-clone"
 version = "1.0.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1566,6 +1572,19 @@ dependencies = [
  "hashbrown 0.17.1",
  "serde",
  "serde_core",
+]
+
+[[package]]
+name = "interprocess"
+version = "2.4.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6cb02ffbf25e8ef0f4a95bff054eef75f6d1bf16919474cf2caa63b21997478a"
+dependencies = [
+ "doctest-file",
+ "libc",
+ "recvmsg",
+ "widestring",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3133,6 +3152,7 @@ dependencies = [
  "anyhow",
  "clap",
  "pywr-core",
+ "pywr-runner-service",
  "pywr-schema",
  "pywr-v1-schema",
  "rand",
@@ -3185,11 +3205,57 @@ dependencies = [
  "pyo3-log",
  "pyo3-polars",
  "pywr-core",
+ "pywr-runner-service",
  "pywr-schema",
  "pywr-v1-schema",
  "schemars",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "pywr-runner-engine"
+version = "2.0.0-beta6"
+dependencies = [
+ "jiff",
+ "pywr-core",
+ "pywr-runner-protocol",
+ "pywr-schema",
+ "serde_json",
+ "strum",
+ "strum_macros",
+ "thiserror 2.0.20",
+]
+
+[[package]]
+name = "pywr-runner-protocol"
+version = "2.0.0-beta6"
+dependencies = [
+ "jiff",
+ "serde",
+ "serde_json",
+ "strum",
+ "strum_macros",
+ "uuid",
+]
+
+[[package]]
+name = "pywr-runner-service"
+version = "2.0.0-beta6"
+dependencies = [
+ "pywr-runner-engine",
+ "pywr-runner-protocol",
+ "pywr-runner-transport",
+ "serde_json",
+ "thiserror 2.0.20",
+]
+
+[[package]]
+name = "pywr-runner-transport"
+version = "2.0.0-beta6"
+dependencies = [
+ "interprocess",
+ "thiserror 2.0.20",
 ]
 
 [[package]]
@@ -3455,6 +3521,12 @@ dependencies = [
  "quote",
  "syn 2.0.119",
 ]
+
+[[package]]
+name = "recvmsg"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d3edd4d5d42c92f0a659926464d4cce56b562761267ecf0f469d85b7de384175"
 
 [[package]]
 name = "redox_syscall"
@@ -4682,6 +4754,12 @@ dependencies = [
  "bytemuck",
  "safe_arch",
 ]
+
+[[package]]
+name = "widestring"
+version = "1.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "72069c3113ab32ab29e5584db3c6ec55d416895e60715417b5b883a357c3e471"
 
 [[package]]
 name = "winapi"

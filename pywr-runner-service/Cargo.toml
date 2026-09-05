@@ -1,0 +1,19 @@
+[package]
+name = "pywr-runner-service"
+readme.workspace = true
+description.workspace = true
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+pywr-runner-protocol = { path = "../pywr-runner-protocol" }
+pywr-runner-engine = { path = "../pywr-runner-engine" }
+pywr-runner-transport = { path = "../pywr-runner-transport" }
+serde_json = { workspace = true }
+thiserror = { workspace = true }

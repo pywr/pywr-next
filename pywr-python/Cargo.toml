@@ -34,6 +34,7 @@ pyo3-log = { workspace = true }
 pyo3-polars = { workspace = true }
 polars = { workspace = true }
 pywr-core = { path = "../pywr-core" }
+pywr-runner-service = { path = "../pywr-runner-service" }
 pywr-schema = { path = "../pywr-schema" }
 pywr-v1-schema = { workspace = true }
 schemars = { workspace = true }
