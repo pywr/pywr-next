@@ -38,6 +38,7 @@ use schemars::schema_for;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 /// Convert a Pywr v1.x JSON string to a Pywr v2.x schema.
 #[pyfunction]
@@ -510,6 +511,55 @@ impl PyMultiNetworkModelSchema {
     }
 }
 
+#[pyfunction]
+fn run_server(py: Python<'_>, socket_name: &str) -> PyResult<()> {
+    use pywr_runner_service::{RunnerServiceConfigBuilder, run_local_socket_server};
+
+    // Create a cancellation flag that can be shared between threads
+    let cancel = Arc::new(AtomicBool::new(false));
+
+    let mut config_builder = RunnerServiceConfigBuilder::new();
+    config_builder.cancel_flag(cancel.clone());
+
+    let socket_name = socket_name.to_string();
+
+    let start_server = move || {
+        let config = config_builder.build();
+        run_local_socket_server(&socket_name, &config).map_err(|e| PyRuntimeError::new_err(e.to_string()))
+    };
+
+    let server_thread = std::thread::spawn(start_server);
+
+    let mut result = Ok(());
+
+    loop {
+        if server_thread.is_finished() {
+            match server_thread.join() {
+                Ok(Ok(())) => break,
+                Ok(Err(e)) => {
+                    result = Err(e);
+                    break;
+                }
+                Err(_) => {
+                    result = Err(PyRuntimeError::new_err("Server thread panicked"));
+                    break;
+                }
+            }
+        }
+
+        std::thread::sleep(std::time::Duration::from_millis(100));
+
+        // Handle Python signals (like KeyboardInterrupt) to allow graceful shutdown
+        if let Err(error) = py.check_signals() {
+            println!("Received signal, shutting down server: {:?}", error);
+            cancel.store(true, std::sync::atomic::Ordering::SeqCst);
+            result = Err(error);
+        }
+    }
+
+    result
+}
+
 /// A Python module implemented in Rust.
 #[pymodule]
 #[pyo3(name = "_pywr")]
@@ -532,6 +582,9 @@ fn pywr(py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyTimestep>()?;
     m.add_class::<PyScenarioIndex>()?;
     m.add_class::<ParameterInfo>()?;
+
+    // Runner service
+    m.add_function(wrap_pyfunction!(run_server, m)?)?;
 
     // Error classes
     m.add_class::<ComponentConversionError>()?;

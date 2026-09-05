@@ -9,7 +9,8 @@ members = [
     "pywr-book/listings/*",
     "pywr-cli",
     "pywr-core",
-    "pywr-python",
+    "pywr-python", "pywr-runner-engine",
+    "pywr-runner-protocol", "pywr-runner-service", "pywr-runner-transport",
     "pywr-schema",
     "pywr-schema-macros",
 ]
@@ -50,6 +51,7 @@ hdf5-metno = { version = "0.14", features = ["static", "zlib"] }
 highs-sys = "1.14"
 heck = "0.5"
 hex = "0.4.3"
+interprocess = "2.4"
 jiff = { version = "0.2", features = ["serde"] }
 libc = "0.2"
 log = "0.4"
@@ -79,6 +81,7 @@ strum_macros = "0.28"
 syn = "3.0"
 tempfile = "3.27"
 thiserror = "2.0"
+uuid = { version = "1", features = ["v4"] }
 wide = "1.4.0"
 
 [workspace.metadata.docs.rs]
