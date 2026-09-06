@@ -103,6 +103,7 @@ impl ScenarioGroup {
 }
 
 /// A builder for defining a subset of scenarios to run for a scenario group.
+#[derive(Clone, Debug)]
 enum ScenarioGroupSubsetBuilder {
     Slice { start: usize, end: usize },
     Indices(Vec<usize>),
@@ -114,6 +115,7 @@ enum ScenarioGroupSubsetBuilder {
 /// This allows for defining the subset of scenarios to run for a group in different ways
 /// (e.g. as a slice, as specific indices, or as labels). It also allows for defining labels for the
 /// group, which can be used in the subset definition.
+#[derive(Clone, Debug)]
 pub struct ScenarioGroupBuilder {
     name: String,
     size: usize,
@@ -136,23 +138,20 @@ impl ScenarioGroupBuilder {
     }
 
     /// Set the subset of scenarios to run as a slice
-    #[must_use]
-    pub fn with_subset_slice(mut self, start: usize, end: usize) -> Self {
+    pub fn with_subset_slice(&mut self, start: usize, end: usize) -> &mut Self {
         self.subset = Some(ScenarioGroupSubsetBuilder::Slice { start, end });
         self
     }
 
     /// Set the subset of scenarios to run as a list of indices
-    #[must_use]
-    pub fn with_subset_indices(mut self, indices: Vec<usize>) -> Self {
+    pub fn with_subset_indices(&mut self, indices: Vec<usize>) -> &mut Self {
         self.subset = Some(ScenarioGroupSubsetBuilder::Indices(indices));
         self
     }
 
     /// Set the subset of scenarios to run as a list of labels. The complete list of labels must
     /// be defined using the [`with_labels`] method.
-    #[must_use]
-    pub fn with_subset_labels<T: AsRef<str>>(mut self, labels: &[T]) -> Self {
+    pub fn with_subset_labels<T: AsRef<str>>(&mut self, labels: &[T]) -> &mut Self {
         self.subset = Some(ScenarioGroupSubsetBuilder::Labels(
             labels.iter().map(|l| l.as_ref().to_string()).collect(),
         ));
@@ -160,8 +159,7 @@ impl ScenarioGroupBuilder {
     }
 
     /// Set the labels for the group
-    #[must_use]
-    pub fn with_labels<T: AsRef<str>>(mut self, labels: &[T]) -> Self {
+    pub fn with_labels<T: AsRef<str>>(&mut self, labels: &[T]) -> &mut Self {
         self.labels = Some(labels.iter().map(|l| l.as_ref().to_string()).collect());
         self
     }
@@ -261,7 +259,7 @@ impl From<usize> for ScenarioLabelOrIndex {
 /// A builder for creating a [`ScenarioDomain`].
 #[derive(Clone, Debug, Default)]
 pub struct ScenarioDomainBuilder {
-    groups: Vec<ScenarioGroup>,
+    groups: Vec<ScenarioGroupBuilder>,
     combinations: Option<Vec<Vec<ScenarioLabelOrIndex>>>,
 }
 
@@ -280,24 +278,17 @@ impl ScenarioDomainBuilder {
     /// # Errors
     ///
     /// - [`ScenarioDomainBuilderError::DuplicateGroupName`] if a group with the same name already exists in the builder
-    pub fn with_group(mut self, group: ScenarioGroup) -> Result<Self, ScenarioDomainBuilderError> {
-        for g in &self.groups {
-            if g.name == group.name {
-                return Err(ScenarioDomainBuilderError::DuplicateGroupName(group.name.clone()));
-            }
-        }
-
+    pub fn with_group(&mut self, group: ScenarioGroupBuilder) -> &mut Self {
         self.groups.push(group);
 
-        Ok(self)
+        self
     }
 
     /// Set specific combinations of scenarios to run.
     ///
     /// Each inner vector represents a combination of scenarios to run, with one entry for each group.
     /// The entries can be either the label or the index of the scenario in the group.
-    #[must_use]
-    pub fn with_combinations<T: Into<ScenarioLabelOrIndex>>(mut self, combinations: Vec<Vec<T>>) -> Self {
+    pub fn with_combinations<T: Into<ScenarioLabelOrIndex>>(&mut self, combinations: Vec<Vec<T>>) -> &mut Self {
         self.combinations = Some(
             combinations
                 .into_iter()
@@ -305,64 +296,6 @@ impl ScenarioDomainBuilder {
                 .collect(),
         );
         self
-    }
-
-    /// Build a map of simulation indices to schema indices for each group
-    fn build_scenario_map_from_subsets(&self) -> Vec<Option<Vec<usize>>> {
-        let mut scenario_map: Vec<Option<Vec<usize>>> = vec![None; self.groups.len()];
-
-        for (group_index, group) in self.groups.iter().enumerate() {
-            if let Some(subset) = &group.subset {
-                match subset {
-                    ScenarioGroupSubset::Slice { start, end } => {
-                        let mut indices: Vec<usize> = Vec::with_capacity(end - start);
-                        for i in *start..*end {
-                            indices.push(i);
-                        }
-                        scenario_map[group_index] = Some(indices);
-                    }
-                    ScenarioGroupSubset::Indices(indices) => {
-                        scenario_map[group_index] = Some(indices.clone());
-                    }
-                }
-            }
-        }
-
-        scenario_map
-    }
-
-    /// Build a map of simulation indices to schema indices for each group from a list of combinations
-    fn build_scenario_map_from_combinations(&self, combinations: &[Vec<usize>]) -> Vec<Option<Vec<usize>>> {
-        let mut scenario_map: Vec<BTreeSet<usize>> = vec![BTreeSet::new(); self.groups.len()];
-
-        for combination in combinations {
-            for (group_index, _group) in self.groups.iter().enumerate() {
-                scenario_map[group_index].insert(combination[group_index]);
-            }
-        }
-
-        let scenario_map: Vec<Option<Vec<usize>>> = scenario_map
-            .iter()
-            .map(|set| {
-                if set.is_empty() {
-                    None
-                } else {
-                    Some(set.iter().copied().collect())
-                }
-            })
-            .collect();
-
-        scenario_map
-    }
-
-    fn schema_id(&self, combination: &[usize]) -> usize {
-        let mut id = 0;
-        let mut multiplier = 1;
-        for (group_index, group) in self.groups.iter().enumerate() {
-            id += combination[group_index] * multiplier;
-            multiplier *= group.size;
-        }
-        id
     }
 
     /// Build the [`ScenarioDomain`] from the defined groups and combinations.
@@ -389,10 +322,28 @@ impl ScenarioDomainBuilder {
                 vec![None],
             )
         } else {
-            let num: usize = self.groups.iter().map(|grp| grp.size).product();
+            // First check the group names are unique
+            let mut group_names = Vec::new();
+            for group_builder in &self.groups {
+                if group_names.contains(&group_builder.name) {
+                    return Err(ScenarioDomainBuilderError::DuplicateGroupName(
+                        group_builder.name.clone(),
+                    ));
+                }
+                group_names.push(group_builder.name.clone());
+            }
+
+            // First build the groups and validate them
+            let groups: Vec<ScenarioGroup> = self
+                .groups
+                .into_iter()
+                .map(ScenarioGroupBuilder::build)
+                .collect::<Result<Vec<ScenarioGroup>, ScenarioDomainBuilderError>>()?;
+
+            let num: usize = groups.iter().map(|grp| grp.size).product();
             let mut scenario_indices: Vec<ScenarioIndex> = Vec::with_capacity(num);
 
-            if self.groups.iter().any(|grp| grp.subset.is_some()) && self.combinations.is_some() {
+            if groups.iter().any(|grp| grp.subset.is_some()) && self.combinations.is_some() {
                 return Err(ScenarioDomainBuilderError::CombinationsAndSlices);
             }
 
@@ -404,7 +355,7 @@ impl ScenarioDomainBuilder {
                     .map(|combination| {
                         combination
                             .iter()
-                            .zip(&self.groups)
+                            .zip(&groups)
                             .map(|(c, group)| match c {
                                 ScenarioLabelOrIndex::Label(label) => group.label_position(label),
                                 ScenarioLabelOrIndex::Index(index) => Ok(*index),
@@ -413,7 +364,7 @@ impl ScenarioDomainBuilder {
                     })
                     .collect::<Result<Vec<Vec<usize>>, ScenarioDomainBuilderError>>()?;
 
-                let scenario_map_from_combinations = self.build_scenario_map_from_combinations(&combinations);
+                let scenario_map_from_combinations = build_scenario_map_from_combinations(&groups, &combinations);
 
                 for combination in combinations {
                     let simulation_indices = scenario_map_from_combinations
@@ -425,8 +376,7 @@ impl ScenarioDomainBuilder {
                         })
                         .collect();
 
-                    let labels: Vec<_> = self
-                        .groups
+                    let labels: Vec<_> = groups
                         .iter()
                         .zip(combination.iter())
                         .map(|(group, idx)| match group.labels.as_ref() {
@@ -439,14 +389,14 @@ impl ScenarioDomainBuilder {
                         ScenarioIndexBuilder::new(scenario_indices.len(), simulation_indices, labels);
 
                     scenario_index_builder =
-                        scenario_index_builder.with_schema(self.schema_id(&combination), combination.clone());
+                        scenario_index_builder.with_schema(schema_id(&groups, &combination), combination.clone());
 
                     scenario_indices.push(scenario_index_builder.build());
                 }
                 scenario_map_from_combinations
             } else {
                 // Case with either all scenarios or a subset of scenarios via slices
-                let scenario_map_from_slices = self.build_scenario_map_from_subsets();
+                let scenario_map_from_slices = build_scenario_map_from_subsets(&groups);
 
                 let is_sliced = scenario_map_from_slices.iter().any(Option::is_some);
 
@@ -457,10 +407,10 @@ impl ScenarioDomainBuilder {
                 for scenario_id in 0..num {
                     let mut remaining = scenario_id;
                     // These are the indices as defined in the schema (i.e. all combinations)
-                    let mut schema_indices: Vec<usize> = Vec::with_capacity(self.groups.len());
-                    let mut schema_labels: Vec<String> = Vec::with_capacity(self.groups.len());
+                    let mut schema_indices: Vec<usize> = Vec::with_capacity(groups.len());
+                    let mut schema_labels: Vec<String> = Vec::with_capacity(groups.len());
 
-                    for grp in self.groups.iter().rev() {
+                    for grp in groups.iter().rev() {
                         let idx = remaining % grp.size;
                         remaining /= grp.size;
                         schema_indices.push(idx);
@@ -478,9 +428,9 @@ impl ScenarioDomainBuilder {
                     let mut include_scenario = true;
 
                     // These are the indices as defined for the simulation; adjusted for slices
-                    let mut simulation_indices: Vec<usize> = Vec::with_capacity(self.groups.len());
+                    let mut simulation_indices: Vec<usize> = Vec::with_capacity(groups.len());
 
-                    for (group_index, group) in self.groups.iter().enumerate() {
+                    for (group_index, group) in groups.iter().enumerate() {
                         if let Some(subset) = &group.subset {
                             match subset {
                                 ScenarioGroupSubset::Slice { start, end } => {
@@ -521,7 +471,7 @@ impl ScenarioDomainBuilder {
                 scenario_map_from_slices
             };
 
-            (scenario_indices, self.groups, scenario_map)
+            (scenario_indices, groups, scenario_map)
         };
 
         Ok(ScenarioDomain {
@@ -530,6 +480,67 @@ impl ScenarioDomainBuilder {
             scenario_map,
         })
     }
+}
+
+fn schema_id(groups: &[ScenarioGroup], combination: &[usize]) -> usize {
+    let mut id = 0;
+    let mut multiplier = 1;
+    for (group_index, group) in groups.iter().enumerate() {
+        id += combination[group_index] * multiplier;
+        multiplier *= group.size;
+    }
+    id
+}
+
+/// Build a map of simulation indices to schema indices for each group
+fn build_scenario_map_from_subsets(groups: &[ScenarioGroup]) -> Vec<Option<Vec<usize>>> {
+    let mut scenario_map: Vec<Option<Vec<usize>>> = vec![None; groups.len()];
+
+    for (group_index, group) in groups.iter().enumerate() {
+        if let Some(subset) = &group.subset {
+            match subset {
+                ScenarioGroupSubset::Slice { start, end } => {
+                    let mut indices: Vec<usize> = Vec::with_capacity(end - start);
+                    for i in *start..*end {
+                        indices.push(i);
+                    }
+                    scenario_map[group_index] = Some(indices);
+                }
+                ScenarioGroupSubset::Indices(indices) => {
+                    scenario_map[group_index] = Some(indices.clone());
+                }
+            }
+        }
+    }
+
+    scenario_map
+}
+
+/// Build a map of simulation indices to schema indices for each group from a list of combinations
+fn build_scenario_map_from_combinations(
+    groups: &[ScenarioGroup],
+    combinations: &[Vec<usize>],
+) -> Vec<Option<Vec<usize>>> {
+    let mut scenario_map: Vec<BTreeSet<usize>> = vec![BTreeSet::new(); groups.len()];
+
+    for combination in combinations {
+        for (group_index, _group) in groups.iter().enumerate() {
+            scenario_map[group_index].insert(combination[group_index]);
+        }
+    }
+
+    let scenario_map: Vec<Option<Vec<usize>>> = scenario_map
+        .iter()
+        .map(|set| {
+            if set.is_empty() {
+                None
+            } else {
+                Some(set.iter().copied().collect())
+            }
+        })
+        .collect();
+
+    scenario_map
 }
 
 /// A scenario index and its indices for each group.
@@ -733,11 +744,10 @@ mod tests {
 
     #[test]
     fn test_group_builder() {
-        let group = ScenarioGroupBuilder::new("A", 3)
-            .with_subset_slice(0, 2)
-            .with_labels(&["1", "2", "3"])
-            .build()
-            .unwrap();
+        let mut group_builder = ScenarioGroupBuilder::new("A", 3);
+        group_builder.with_subset_slice(0, 2).with_labels(&["1", "2", "3"]);
+
+        let group = group_builder.build().unwrap();
 
         assert_eq!(group.name(), "A");
         assert_eq!(group.size(), 3);
@@ -745,9 +755,9 @@ mod tests {
 
     #[test]
     fn test_group_builder_wrong_num_labels() {
-        let group = ScenarioGroupBuilder::new("A", 3)
-            .with_labels(&["1", "2", "3", "4"])
-            .build();
+        let mut group_builder = ScenarioGroupBuilder::new("A", 3);
+        group_builder.with_labels(&["1", "2", "3", "4"]);
+        let group = group_builder.build();
 
         assert!(group.is_err());
         assert!(matches!(
@@ -762,9 +772,9 @@ mod tests {
 
     #[test]
     fn test_group_builder_subset_labels_no_labels() {
-        let group = ScenarioGroupBuilder::new("A", 3)
-            .with_subset_labels(&["1", "2", "3"])
-            .build();
+        let mut group_builder = ScenarioGroupBuilder::new("A", 3);
+        group_builder.with_subset_labels(&["1", "2", "3"]);
+        let group = group_builder.build();
 
         assert!(group.is_err());
         assert!(matches!(
@@ -775,7 +785,10 @@ mod tests {
 
     #[test]
     fn test_group_builder_invalid_slice() {
-        let group = ScenarioGroupBuilder::new("A", 3).with_subset_slice(0, 4).build();
+        let mut group_builder = ScenarioGroupBuilder::new("A", 3);
+        group_builder.with_subset_slice(0, 4);
+
+        let group = group_builder.build();
 
         assert!(group.is_err());
         assert!(matches!(
@@ -792,13 +805,13 @@ mod tests {
     #[test]
     /// Test duplicate scenario group names
     fn test_duplicate_scenario_group_names() {
-        let group_a = ScenarioGroupBuilder::new("A", 1).build().unwrap();
-        let group_b = ScenarioGroupBuilder::new("A", 1).build().unwrap();
+        let group_a = ScenarioGroupBuilder::new("A", 1);
+        let group_b = ScenarioGroupBuilder::new("A", 1);
 
-        let result = ScenarioDomainBuilder::default()
-            .with_group(group_a)
-            .unwrap()
-            .with_group(group_b);
+        let mut builder = ScenarioDomainBuilder::default();
+        builder.with_group(group_a).with_group(group_b);
+
+        let result = builder.build();
 
         assert!(result.is_err());
         assert!(matches!(
@@ -810,22 +823,16 @@ mod tests {
     #[test]
     /// Test slices and combinations is invalid
     fn test_slices_and_combinations() {
-        let group_a = ScenarioGroupBuilder::new("A", 1)
-            .with_subset_slice(0, 1)
-            .build()
-            .unwrap();
-        let group_b = ScenarioGroupBuilder::new("B", 1).build().unwrap();
-        let group_c = ScenarioGroupBuilder::new("C", 1).build().unwrap();
+        let mut group_a_builder = ScenarioGroupBuilder::new("A", 1);
+        group_a_builder.with_subset_slice(0, 1);
 
-        let result = ScenarioDomainBuilder::default()
-            .with_group(group_a)
-            .unwrap()
-            .with_group(group_b)
-            .unwrap()
-            .with_group(group_c)
-            .unwrap()
-            .with_combinations(vec![vec![0, 0, 0]])
-            .build();
+        let mut builder = ScenarioDomainBuilder::default();
+        builder
+            .with_group(group_a_builder)
+            .with_group(ScenarioGroupBuilder::new("B", 1))
+            .with_group(ScenarioGroupBuilder::new("C", 1))
+            .with_combinations(vec![vec![0, 0, 0]]);
+        let result = builder.build();
 
         assert!(result.is_err());
         assert!(matches!(
@@ -837,17 +844,11 @@ mod tests {
     #[test]
     /// Test [`ScenarioDomain`] iteration
     fn test_scenario_iteration() {
-        let group_a = ScenarioGroupBuilder::new("A", 10).build().unwrap();
-        let group_b = ScenarioGroupBuilder::new("B", 2).build().unwrap();
-        let group_c = ScenarioGroupBuilder::new("C", 5).build().unwrap();
-
-        let builder = ScenarioDomainBuilder::default()
-            .with_group(group_a)
-            .unwrap()
-            .with_group(group_b)
-            .unwrap()
-            .with_group(group_c)
-            .unwrap();
+        let mut builder = ScenarioDomainBuilder::default();
+        builder
+            .with_group(ScenarioGroupBuilder::new("A", 10))
+            .with_group(ScenarioGroupBuilder::new("B", 2))
+            .with_group(ScenarioGroupBuilder::new("C", 5));
 
         let domain: ScenarioDomain = builder.build().unwrap();
         let mut iter = domain.indices().iter();
@@ -906,11 +907,11 @@ mod tests {
     #[test]
     /// Test [`ScenarioDomain`] iteration with slices
     fn test_scenario_iteration_with_slices() {
-        let group = ScenarioGroupBuilder::new("A", 10)
-            .with_subset_slice(2, 8)
-            .build()
-            .unwrap();
-        let builder = ScenarioDomainBuilder::default().with_group(group).unwrap();
+        let mut group_builder = ScenarioGroupBuilder::new("A", 10);
+        group_builder.with_subset_slice(2, 8);
+
+        let mut builder = ScenarioDomainBuilder::default();
+        builder.with_group(group_builder);
 
         let domain: ScenarioDomain = builder.build().unwrap();
         let mut iter = domain.indices().iter();
@@ -936,20 +937,13 @@ mod tests {
     #[test]
     /// Test [`ScenarioDomain`] iteration with combinations
     fn test_scenario_iteration_with_combinations() {
-        let group_a = ScenarioGroupBuilder::new("A", 10).build().unwrap();
-        let group_b = ScenarioGroupBuilder::new("B", 2).build().unwrap();
-        let group_c = ScenarioGroupBuilder::new("C", 5).build().unwrap();
-
-        let domain = ScenarioDomainBuilder::default()
-            .with_group(group_a)
-            .unwrap()
-            .with_group(group_b)
-            .unwrap()
-            .with_group(group_c)
-            .unwrap()
-            .with_combinations(vec![vec![0, 0, 0], vec![0, 1, 0], vec![0, 1, 1], vec![2, 1, 3]])
-            .build()
-            .unwrap();
+        let mut builder = ScenarioDomainBuilder::default();
+        builder
+            .with_group(ScenarioGroupBuilder::new("A", 10))
+            .with_group(ScenarioGroupBuilder::new("B", 2))
+            .with_group(ScenarioGroupBuilder::new("C", 5))
+            .with_combinations(vec![vec![0, 0, 0], vec![0, 1, 0], vec![0, 1, 1], vec![2, 1, 3]]);
+        let domain = builder.build().unwrap();
 
         let mut iter = domain.indices().iter();
 

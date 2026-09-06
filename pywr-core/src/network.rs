@@ -2632,10 +2632,10 @@ mod tests {
 
     #[test]
     fn parameter_internal_state_is_isolated_per_scenario() {
-        let scenario_group = ScenarioGroupBuilder::new("scenario", 2).build().unwrap();
-        let scenarios = ScenarioDomainBuilder::default().with_group(scenario_group).unwrap();
+        let mut scenarios_builder = ScenarioDomainBuilder::default();
+        scenarios_builder.with_group(ScenarioGroupBuilder::new("scenario", 2));
         let mut domain_builder = default_domain_builder();
-        domain_builder.scenario(scenarios);
+        domain_builder.scenario(scenarios_builder);
         let domain = domain_builder.build().unwrap();
 
         let mut builder = NetworkBuilder::default();
