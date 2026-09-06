@@ -1,9 +1,6 @@
-mod tracing;
-
-use crate::tracing::setup_tracing;
-use ::tracing::info;
 use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand, ValueEnum};
+use log::info;
 #[cfg(feature = "cbc")]
 use pywr_core::solvers::{CbcSolver, CbcSolverSettings, CbcSolverSettingsBuilder};
 #[cfg(feature = "ipm-ocl")]
@@ -63,7 +60,7 @@ impl Display for Solver {
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
 struct Cli {
-    /// Turn debugging information on
+    /// Enabled debug level logging for Pywr.
     #[arg(long, default_value_t = false)]
     debug: bool,
     #[command(subcommand)]
@@ -131,9 +128,29 @@ enum Commands {
     },
 }
 
+fn init_logger(debug: bool) {
+    let mut builder = env_logger::Builder::new();
+
+    builder.format_timestamp_micros().format_level(true);
+
+    let level = if debug {
+        log::LevelFilter::Debug
+    } else {
+        log::LevelFilter::Info
+    };
+
+    builder
+        .filter_module("pywr_v1_schema", level)
+        .filter_module("pywr_core", level)
+        .filter_module("pywr_schema", level)
+        .filter_module("pywr_cli", level);
+
+    builder.init();
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
-    setup_tracing(cli.debug)?;
+    init_logger(cli.debug);
 
     match &cli.command {
         Commands::Convert {

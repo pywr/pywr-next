@@ -10,6 +10,7 @@ use crate::{
     nodes::{NodeAttribute, NodeComponent, NodeSlot},
 };
 use crate::{mermaid, node_attribute_subset_enum, node_component_subset_enum};
+use log::warn;
 #[cfg(feature = "core")]
 use pywr_core::{
     metric::UnresolvedMetricF64,
@@ -24,7 +25,6 @@ use pywr_v1_schema::nodes::{
 };
 use schemars::JsonSchema;
 use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumString, IntoStaticStr};
-use tracing::warn;
 
 // This macro generates a subset enum for the `InputNode` attributes.
 // It allows for easy conversion between the enum and the `NodeAttribute` type.

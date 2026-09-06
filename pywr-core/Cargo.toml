@@ -36,6 +36,7 @@ ipm-ocl = { path = "../ipm-ocl", optional = true }
 ipm-simd = { path = "../ipm-simd", optional = true }
 jiff = { workspace = true }
 libc = "0.2"
+log = { workspace = true }
 microlp = { workspace = true, optional = true }
 nalgebra = "0.35"
 ndarray = { workspace = true }
@@ -48,7 +49,6 @@ rand_distr = { workspace = true }
 rayon = "1.12"
 serde = { version = "1.0", features = ["derive"] }
 thiserror = { workspace = true }
-tracing = { workspace = true }
 wide = { workspace = true, optional = true }
 
 [dev-dependencies]

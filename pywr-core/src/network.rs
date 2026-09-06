@@ -28,6 +28,7 @@ use crate::virtual_storage::{
     VirtualStorageError, VirtualStorageNode, VirtualStorageNodeBuilder, VirtualStorageNodeBuilderError,
 };
 use crate::{parameters, recorders};
+use log::info;
 use rayon::prelude::*;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
@@ -38,7 +39,6 @@ use std::sync::Arc;
 use std::time::Duration;
 use std::time::Instant;
 use thiserror::Error;
-use tracing::info;
 
 #[derive(Copy, Clone)]
 pub enum RunDuration {

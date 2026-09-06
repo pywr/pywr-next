@@ -23,14 +23,13 @@ microlp = ["pywr-core/microlp"]
 [dependencies]
 anyhow = "1.0"
 clap = { version = "4.6", features = ["derive"] }
-
+env_logger = { workspace = true }
+jiff = { workspace = true }
+log = { workspace = true }
 pywr-core = { path = "../pywr-core" }
 pywr-schema = { path = "../pywr-schema" }
 pywr-v1-schema = { workspace = true }
 rand = { workspace = true }
 rand_chacha = { workspace = true }
 schemars = { workspace = true }
-serde = { workspace = true }
 serde_json = { workspace = true }
-tracing = { workspace = true }
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }

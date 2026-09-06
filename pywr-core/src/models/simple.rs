@@ -8,11 +8,11 @@ use crate::parameters::ParameterCollectionIdMismatchError;
 use crate::recorders::RecorderInternalState;
 use crate::solvers::{MultiStateSolver, Solver, SolverFeatures, SolverSettings};
 use crate::timestep::Timestep;
+use log::{debug, info};
 use rayon::ThreadPool;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use thiserror::Error;
-use tracing::{debug, info};
 
 pub struct ModelState<S> {
     current_time_step_idx: usize,
