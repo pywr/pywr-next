@@ -294,7 +294,7 @@ impl Recorder for MemoryRecorder {
         &self,
         _timestep: &Timestep,
         _scenario_indices: &[ScenarioIndex],
-        _model: &Network,
+        _network: &Network,
         _state: &[State],
         metric_set_states: &[Vec<MetricSetState>],
         internal_state: &mut Option<Box<dyn RecorderInternalState>>,

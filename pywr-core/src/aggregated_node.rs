@@ -474,20 +474,20 @@ impl AggregatedNode {
     #[must_use]
     pub fn get_norm_factor_pairs(
         &self,
-        model: &Network,
+        network: &Network,
         state: &State,
     ) -> Option<Result<Vec<NodeFactorPair<'_>>, FactorError>> {
         if let Some(factors) = self.get_factors() {
             let pairs = match factors {
                 Factors::Proportion { factors } => {
-                    get_norm_proportional_factor_pairs(factors, &self.nodes, model, state)
+                    get_norm_proportional_factor_pairs(factors, &self.nodes, network, state)
                         .map_err(FactorError::Proportional)
                 }
                 Factors::Ratio { factors } => {
-                    get_norm_ratio_factor_pairs(factors, &self.nodes, model, state).map_err(FactorError::Ratio)
+                    get_norm_ratio_factor_pairs(factors, &self.nodes, network, state).map_err(FactorError::Ratio)
                 }
                 Factors::Coefficients { factors, rhs } => {
-                    get_coefficient_factor_pairs(factors, &self.nodes, rhs.as_ref(), model, state)
+                    get_coefficient_factor_pairs(factors, &self.nodes, rhs.as_ref(), network, state)
                         .map_err(FactorError::Coefficient)
                 }
             };
@@ -503,8 +503,8 @@ impl AggregatedNode {
     ///
     /// If the constraint is a metric any error when attempting to retrieve
     /// that metric will be returned. See [`MetricF64::get_value`] for more information.
-    pub fn get_min_flow(&self, model: &Network, state: &State) -> Result<f64, MetricF64Error> {
-        self.flow_constraints.get_min_flow(model, state)
+    pub fn get_min_flow(&self, network: &Network, state: &State) -> Result<f64, MetricF64Error> {
+        self.flow_constraints.get_min_flow(network, state)
     }
 
     /// Get the max flow constraint value.
@@ -513,8 +513,8 @@ impl AggregatedNode {
     ///
     /// If the constraint is a metric any error when attempting to retrieve
     /// that metric will be returned. See [`MetricF64::get_value`] for more information.
-    pub fn get_max_flow(&self, model: &Network, state: &State) -> Result<f64, MetricF64Error> {
-        self.flow_constraints.get_max_flow(model, state)
+    pub fn get_max_flow(&self, network: &Network, state: &State) -> Result<f64, MetricF64Error> {
+        self.flow_constraints.get_max_flow(network, state)
     }
 
     /// Get the min and max flow bounds as a tuple.
@@ -523,8 +523,8 @@ impl AggregatedNode {
     ///
     /// If either constraint is a metric any error when attempting to retrieve
     /// that metric will be returned. See [`MetricF64::get_value`] for more information.
-    pub fn get_flow_bounds(&self, model: &Network, state: &State) -> Result<(f64, f64), AggregatedNodeError> {
-        match (self.get_min_flow(model, state), self.get_max_flow(model, state)) {
+    pub fn get_flow_bounds(&self, network: &Network, state: &State) -> Result<(f64, f64), AggregatedNodeError> {
+        match (self.get_min_flow(network, state), self.get_max_flow(network, state)) {
             (Ok(min_flow), Ok(max_flow)) => Ok((min_flow, max_flow)),
             _ => Err(AggregatedNodeError::FlowConstraintsUndefined),
         }
@@ -728,7 +728,7 @@ pub enum ProportionalFactorError {
 fn get_norm_proportional_factor_pairs<'a>(
     factors: &[MetricF64],
     nodes: &'a [Vec<NodeIndex>],
-    model: &Network,
+    network: &Network,
     state: &State,
 ) -> Result<Vec<NodeFactorPair<'a>>, ProportionalFactorError> {
     if factors.len() != nodes.len() - 1 {
@@ -742,7 +742,7 @@ fn get_norm_proportional_factor_pairs<'a>(
     let values: Vec<f64> = factors
         .iter()
         .map(|f| {
-            let v = f.get_value(model, state)?;
+            let v = f.get_value(network, state)?;
             if v < 0.0 {
                 Err(ProportionalFactorError::NegativeOrZeroFactor { value: v })
             } else {
@@ -888,7 +888,7 @@ pub enum RatioFactorError {
 fn get_norm_ratio_factor_pairs<'a>(
     factors: &[MetricF64],
     nodes: &'a [Vec<NodeIndex>],
-    model: &Network,
+    network: &Network,
     state: &State,
 ) -> Result<Vec<NodeFactorPair<'a>>, RatioFactorError> {
     // TODO handle error cases more gracefully
@@ -900,7 +900,7 @@ fn get_norm_ratio_factor_pairs<'a>(
     }
 
     let n0 = nodes[0].as_slice();
-    let f0 = factors[0].get_value(model, state)?;
+    let f0 = factors[0].get_value(network, state)?;
     if f0 < 0.0 {
         return Err(RatioFactorError::NegativeOrZeroFactor { value: f0 });
     }
@@ -910,7 +910,7 @@ fn get_norm_ratio_factor_pairs<'a>(
         .zip(factors)
         .skip(1)
         .map(|(n1, f1)| {
-            let v1 = f1.get_value(model, state)?;
+            let v1 = f1.get_value(network, state)?;
 
             Ok(NodeFactorPair::new(
                 NodeFactor::new(n0, 1.0),
@@ -1009,7 +1009,7 @@ fn get_coefficient_factor_pairs<'a>(
     factors: &[MetricF64],
     nodes: &'a [Vec<NodeIndex>],
     rhs: Option<&MetricF64>,
-    model: &Network,
+    network: &Network,
     state: &State,
 ) -> Result<Vec<NodeFactorPair<'a>>, CoefficientFactorError> {
     // TODO handle error cases more gracefully
@@ -1024,10 +1024,10 @@ fn get_coefficient_factor_pairs<'a>(
         return Err(CoefficientFactorError::MoreThanTwoFactors);
     }
 
-    let f0 = factors[0].get_value(model, state)?;
-    let f1 = factors[1].get_value(model, state)?;
+    let f0 = factors[0].get_value(network, state)?;
+    let f1 = factors[1].get_value(network, state)?;
     let rhs = match rhs {
-        Some(rhs) => rhs.get_value(model, state)?,
+        Some(rhs) => rhs.get_value(network, state)?,
         None => 0.0,
     };
 
