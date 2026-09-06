@@ -42,7 +42,6 @@ jiff = { workspace = true }
 log = { workspace = true }
 md-5 = { workspace = true }
 ndarray = { workspace = true, optional = true }
-num = { workspace = true }
 # "timezones" feature is only needed v0.52 (see https://github.com/pola-rs/polars/issues/25148)
 polars = { workspace = true, features = ["lazy", "rows", "ndarray", "diff", "dtype-datetime", "dtype-date", "dynamic_group_by", "timezones", "temporal"], optional = true }
 pyo3 = { workspace = true, optional = true }
@@ -59,4 +58,4 @@ strum_macros = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]
-tempfile = "3.27"
+tempfile = { workspace = true }
