@@ -22,8 +22,8 @@ pub struct OutputMetric {
 }
 
 impl OutputMetric {
-    pub fn get_value(&self, model: &Network, state: &State) -> Result<f64, MetricF64Error> {
-        self.metric.get_value(model, state)
+    pub fn get_value(&self, network: &Network, state: &State) -> Result<f64, MetricF64Error> {
+        self.metric.get_value(network, state)
     }
 
     pub fn name(&self) -> &str {
@@ -128,7 +128,7 @@ impl MetricSet {
         &self,
         timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
-        model: &Network,
+        network: &Network,
         state: &State,
         internal_state: &mut MetricSetState,
     ) -> Result<(), MetricSetSaveError> {
@@ -137,7 +137,7 @@ impl MetricSet {
             .metrics
             .iter()
             .map(|metric| {
-                let value = metric.get_value(model, state)?;
+                let value = metric.get_value(network, state)?;
                 Ok::<PeriodValue<f64>, MetricF64Error>(PeriodValue::new(timestep.date, timestep.duration, value))
             })
             .collect::<Result<Vec<_>, _>>()?;

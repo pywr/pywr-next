@@ -175,7 +175,7 @@ pub trait Recorder: Send + Sync + Debug {
     fn setup(
         &self,
         _domain: &ModelDomain,
-        _model: &Network,
+        _network: &Network,
     ) -> Result<Option<Box<dyn RecorderInternalState>>, RecorderSetupError> {
         Ok(None)
     }
@@ -185,7 +185,7 @@ pub trait Recorder: Send + Sync + Debug {
         &self,
         _timestep: &Timestep,
         _scenario_indices: &[ScenarioIndex],
-        _model: &Network,
+        _network: &Network,
         _state: &[State],
         _metric_set_states: &[Vec<MetricSetState>],
         _internal_state: &mut Option<Box<dyn RecorderInternalState>>,
@@ -244,7 +244,7 @@ impl Recorder for Array2Recorder {
     fn setup(
         &self,
         domain: &ModelDomain,
-        _model: &Network,
+        _network: &Network,
     ) -> Result<Option<Box<dyn RecorderInternalState>>, RecorderSetupError> {
         let array: Array2<f64> = Array::zeros((domain.time().len(), domain.scenarios().len()));
 
@@ -256,7 +256,7 @@ impl Recorder for Array2Recorder {
         &self,
         timestep: &Timestep,
         scenario_indices: &[ScenarioIndex],
-        model: &Network,
+        network: &Network,
         state: &[State],
         _metric_set_states: &[Vec<MetricSetState>],
         internal_state: &mut Option<Box<dyn RecorderInternalState>>,
@@ -266,7 +266,7 @@ impl Recorder for Array2Recorder {
 
         // This panics if out-of-bounds
         for scenario_index in scenario_indices {
-            let value = self.metric.get_value(model, &state[scenario_index.simulation_id()])?;
+            let value = self.metric.get_value(network, &state[scenario_index.simulation_id()])?;
             array[[timestep.index, scenario_index.simulation_id()]] = value
         }
 
@@ -329,7 +329,7 @@ impl Recorder for AssertionF64Recorder {
         &self,
         timestep: &Timestep,
         scenario_indices: &[ScenarioIndex],
-        model: &Network,
+        network: &Network,
         state: &[State],
         _metric_set_states: &[Vec<MetricSetState>],
         _internal_state: &mut Option<Box<dyn RecorderInternalState>>,
@@ -345,7 +345,7 @@ impl Recorder for AssertionF64Recorder {
                 None => panic!("Simulation produced results out of range."),
             };
 
-            let actual_value = self.metric.get_value(model, &state[scenario_index.simulation_id()])?;
+            let actual_value = self.metric.get_value(network, &state[scenario_index.simulation_id()])?;
 
             if !actual_value.approx_eq(
                 expected_value,
@@ -447,7 +447,7 @@ impl Recorder for AssertionU64Recorder {
         &self,
         timestep: &Timestep,
         scenario_indices: &[ScenarioIndex],
-        model: &Network,
+        network: &Network,
         state: &[State],
         _metric_set_states: &[Vec<MetricSetState>],
         _internal_state: &mut Option<Box<dyn RecorderInternalState>>,
@@ -463,7 +463,7 @@ impl Recorder for AssertionU64Recorder {
                 None => panic!("Simulation produced results out of range."),
             };
 
-            let actual_value = self.metric.get_value(model, &state[scenario_index.simulation_id()])?;
+            let actual_value = self.metric.get_value(network, &state[scenario_index.simulation_id()])?;
 
             if actual_value != expected_value {
                 panic!(
@@ -558,7 +558,7 @@ where
         &self,
         timestep: &Timestep,
         scenario_indices: &[ScenarioIndex],
-        model: &Network,
+        network: &Network,
         state: &[State],
         _metric_set_states: &[Vec<MetricSetState>],
         _internal_state: &mut Option<Box<dyn RecorderInternalState>>,
@@ -567,7 +567,7 @@ where
 
         for scenario_index in scenario_indices {
             let expected_value = (self.expected_func)(timestep, scenario_index);
-            let actual_value = self.metric.get_value(model, &state[scenario_index.simulation_id()])?;
+            let actual_value = self.metric.get_value(network, &state[scenario_index.simulation_id()])?;
 
             if !approx_eq!(
                 f64,

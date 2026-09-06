@@ -41,9 +41,9 @@ pub struct HydropowerTargetParameter {
 }
 
 impl HydropowerTargetParameter {
-    fn head(&self, model: &Network, state: &State) -> Result<f64, GeneralCalculationError> {
+    fn head(&self, network: &Network, state: &State) -> Result<f64, GeneralCalculationError> {
         let head = if let Some(water_elevation) = &self.water_elevation {
-            water_elevation.get_value(model, state)? - self.turbine_elevation
+            water_elevation.get_value(network, state)? - self.turbine_elevation
         } else {
             self.turbine_elevation
         };
