@@ -3186,7 +3186,6 @@ dependencies = [
  "pywr-schema",
  "pywr-v1-schema",
  "schemars",
- "serde",
  "serde_json",
 ]
 
@@ -3205,7 +3204,6 @@ dependencies = [
  "log",
  "md-5",
  "ndarray",
- "num",
  "polars",
  "pyo3",
  "pyo3-polars",
