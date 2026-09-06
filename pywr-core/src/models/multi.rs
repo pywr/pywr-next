@@ -11,6 +11,7 @@ use crate::scenario::ScenarioIndex;
 use crate::solvers::{MultiStateSolver, Solver, SolverSettings};
 use crate::state::StateError;
 use crate::timestep::Timestep;
+use log::info;
 use rayon::ThreadPool;
 use std::cmp::Ordering;
 use std::collections::HashMap;
@@ -20,7 +21,6 @@ use std::num::NonZeroUsize;
 use std::ops::Deref;
 use std::sync::Arc;
 use thiserror::Error;
-use tracing::info;
 
 /// An index to another model
 ///

@@ -21,6 +21,8 @@ mod vec;
 use crate::ConversionError;
 use crate::digest::{Checksum, ChecksumError};
 use crate::parameters::TableIndex;
+#[cfg(feature = "core")]
+use log::{debug, info};
 #[cfg(feature = "pyo3")]
 use pyo3::pyclass;
 use pywr_schema_macros::{PywrVisitAll, skip_serializing_none};
@@ -33,8 +35,6 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumString, IntoStaticStr};
 use thiserror::Error;
-#[cfg(feature = "core")]
-use tracing::{debug, info};
 #[cfg(feature = "core")]
 use vec::LoadedVecTable;
 
@@ -290,7 +290,7 @@ impl LoadedTableCollection {
         if let Some(table_defs) = table_defs {
             for table_def in table_defs {
                 let name = table_def.name().to_string();
-                info!("Loading table: {}", &name);
+                info!("Loading table: {}", name);
                 let table = table_def
                     .load(data_path)
                     .map_err(|source| TableCollectionLoadError::TableError {

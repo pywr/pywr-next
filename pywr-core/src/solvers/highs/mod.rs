@@ -66,19 +66,19 @@ fn to_highs_result(ret: i32, function: &str) -> Result<(), HighsStatusError> {
         r if r == kHighsStatusOk => Ok(()),
         r if r == kHighsStatusWarning => {
             // Log a warning, but continue
-            tracing::warn!("Highs warning in {function}: {ret}");
+            log::warn!("Highs warning in {function}: {ret}");
             Ok(())
         }
         r if r == kHighsStatusError => {
             // Log an error and return an error
-            tracing::error!("Highs error in {function}: {ret}");
+            log::error!("Highs error in {function}: {ret}");
             Err(HighsStatusError {
                 function: function.to_string(),
             })
         }
         _ => {
             // Log an unknown status and return an error
-            tracing::error!("Highs unknown status in {function}: {ret}");
+            log::error!("Highs unknown status in {function}: {ret}");
             panic!("Highs unknown status in {function}: {ret}");
         }
     }
@@ -145,7 +145,7 @@ fn to_highs_model_result(status: i32) -> Result<(), HighsModelError> {
         s if s == kHighsModelStatusInterrupt => Err(HighsModelError::Interrupt),
         _ => {
             // Log an unknown status and return an error
-            tracing::error!("Highs unknown model status: {status}");
+            log::error!("Highs unknown model status: {status}");
             panic!("Highs unknown model status in: {status}");
         }
     }

@@ -10,9 +10,9 @@ use crate::recorders::{
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
 use crate::timestep::Timestep;
+use log::warn;
 use std::ops::Deref;
 use thiserror::Error;
-use tracing::warn;
 
 #[derive(Error, Debug)]
 pub enum AggregationError {

@@ -41,10 +41,12 @@ chrono = { version = "0.4", features = ["serde"] }
 csv = "1.4"
 digest = "0.11"
 digest-io = "0.1"
+env_logger = "0.11"
 float-cmp = "0.10"
 hdf5-metno = { version = "0.14", features = ["static", "zlib"] }
 hex = "0.4.3"
 jiff = { version = "0.2", features = ["serde"] }
+log = "0.4"
 md-5 = "0.11"
 microlp = "0.6.0"
 ndarray = "0.17"
@@ -64,7 +66,6 @@ sha2 = "0.11"
 strum = "0.28"
 strum_macros = "0.28"
 thiserror = "2.0"
-tracing = { version = "0.1", features = ["log"] }
 wide = "1.4.0"
 
 [workspace.metadata.docs.rs]
