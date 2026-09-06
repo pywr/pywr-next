@@ -14,3 +14,8 @@ categories.workspace = true
 [dependencies]
 interprocess = { workspace = true }
 thiserror = { workspace = true }
+
+[target.'cfg(windows)'.dependencies]
+# Used to interrupt a blocking named-pipe read when a reader is dropped; the same version
+# `interprocess` already depends on.
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_IO"] }
