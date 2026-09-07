@@ -1,5 +1,6 @@
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
+use crate::visit::{Reference, ReferenceMut, VisitReferences};
 #[cfg(all(feature = "core", feature = "hdf5"))]
 use pywr_core::recorders::HDF5RecorderBuilder;
 use pywr_schema_macros::PywrVisitPaths;
@@ -14,6 +15,17 @@ pub struct Hdf5Output {
     pub filename: PathBuf,
     /// The metric set to save
     pub metric_set: String,
+}
+
+/// Written out rather than derived: a derive would walk `metric_set` as a plain `String`.
+impl VisitReferences for Hdf5Output {
+    fn visit_references<F: FnMut(Reference<'_>)>(&self, visitor: &mut F) {
+        visitor(Reference::MetricSet(&self.metric_set));
+    }
+
+    fn visit_references_mut<F: FnMut(ReferenceMut<'_>)>(&mut self, visitor: &mut F) {
+        visitor(ReferenceMut::MetricSet(&mut self.metric_set));
+    }
 }
 
 #[cfg(all(feature = "core", feature = "hdf5"))]

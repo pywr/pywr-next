@@ -8,7 +8,7 @@ use crate::metric::Metric;
 use crate::network::{LoadArgs, NetworkSchemaBuildError, NetworkSchemaReadError};
 #[cfg(feature = "core")]
 use crate::timeseries::LoadedTimeseriesCollection;
-use crate::visit::{VisitMetrics, VisitNodeReferences, VisitPaths};
+use crate::visit::{Owner, Reference, ReferenceMut, VisitMetrics, VisitPaths, VisitReferences};
 use crate::{ConversionError, NetworkSchema, NetworkSchemaRef};
 use jiff::civil::{DateTime, date};
 #[cfg(feature = "core")]
@@ -435,17 +435,25 @@ impl VisitMetrics for ModelSchema {
     }
 }
 
-impl VisitNodeReferences for ModelSchema {
-    fn visit_node_references<F: FnMut(&str)>(&self, visitor: &mut F) {
-        self.network.visit_node_references(visitor);
+impl VisitReferences for ModelSchema {
+    fn visit_references<F: FnMut(Reference<'_>)>(&self, visitor: &mut F) {
+        self.network.visit_references(visitor);
     }
 
-    fn visit_node_references_mut<F: FnMut(&mut String)>(&mut self, visitor: &mut F) {
-        self.network.visit_node_references_mut(visitor);
+    fn visit_references_mut<F: FnMut(ReferenceMut<'_>)>(&mut self, visitor: &mut F) {
+        self.network.visit_references_mut(visitor);
     }
 }
 
 impl ModelSchema {
+    pub fn visit_owned_references<F: FnMut(Owner<'_>, Reference<'_>)>(&self, visitor: &mut F) {
+        self.network.visit_owned_references(visitor);
+    }
+
+    pub fn visit_owned_references_mut<F: FnMut(Owner<'_>, ReferenceMut<'_>)>(&mut self, visitor: &mut F) {
+        self.network.visit_owned_references_mut(visitor);
+    }
+
     pub fn new(title: &str, start: &DateTime, end: &DateTime) -> Self {
         Self {
             metadata: Metadata {
