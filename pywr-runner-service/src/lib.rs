@@ -123,7 +123,7 @@ pub enum ServiceError {
     Infallible(#[from] Infallible),
 }
 
-const RUNNING_POLL_INTERVAL: Duration = Duration::from_millis(10);
+const RUNNING_POLL_INTERVAL: Duration = Duration::from_micros(10);
 
 pub struct RunnerService<B, R> {
     backend: B,
@@ -196,13 +196,8 @@ where
 
         loop {
             // Check for cancellation before polling the engine or receiving frames.
-            println!(
-                "Ticking runner service loop; engine status: {:?}",
-                engine.as_ref().map(|e| e.status())
-            );
-
             if INTERRUPT_HANDLER.get().is_some_and(|f| f()) {
-                println!("Runner service received interrupt signal; shutting down");
+                info!("Runner service received interrupt signal; shutting down");
                 return Ok(ServiceExit::ClientShutdown);
             }
 
@@ -462,7 +457,7 @@ pub fn run_local_socket_server(socket_name: &str, config: RunnerServiceConfig) -
         };
 
         let service = RunnerService::new(PywrBackend::default(), DefaultProtocolRegistry, config.clone());
-        println!("Serving new connection from local socket: {}", listener.name());
+
         match service.serve(connection) {
             Ok(exit) => match exit {
                 ServiceExit::ClientShutdown => {
