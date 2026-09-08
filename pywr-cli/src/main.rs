@@ -1,4 +1,4 @@
-use anyhow::{Context, Result, bail};
+use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand, ValueEnum};
 use log::info;
 #[cfg(feature = "cbc")]
@@ -55,6 +55,14 @@ impl Display for Solver {
             Solver::Microlp => write!(f, "microlp"),
         }
     }
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum)]
+enum RunServerMode {
+    /// Listen for connections on a namespaced local socket.
+    LocalSocket,
+    /// Serve one framed connection using process stdin and stdout.
+    Stdio,
 }
 
 #[derive(Parser)]
@@ -126,9 +134,14 @@ enum Commands {
         /// Path to save the JSON schema.
         out: PathBuf,
     },
-    /// Run the Pywr model runner service over a local IPC socket.
+    /// Run the Pywr model runner service over a local socket or standard I/O.
     RunServer {
+        /// IPC transport to use.
+        #[arg(long, value_enum, default_value_t = RunServerMode::LocalSocket)]
+        mode: RunServerMode,
         /// Portable local-socket namespace name.
+        ///
+        /// This option applies only when `--mode local-socket` is selected.
         #[arg(long, default_value = "pywr-runner")]
         socket_name: String,
     },
@@ -146,9 +159,11 @@ fn init_logger(debug: bool) {
     };
 
     builder
+        .target(env_logger::Target::Stderr)
         .filter_module("pywr_v1_schema", level)
         .filter_module("pywr_core", level)
         .filter_module("pywr_schema", level)
+        .filter_module("pywr_runner_service", level)
         .filter_module("pywr_cli", level);
 
     builder.init();
@@ -194,9 +209,8 @@ fn main() -> Result<()> {
             solver,
         } => run_random(*num_systems, *density, *num_scenarios, solver),
         Commands::ExportSchema { out } => export_schema(out)?,
-        Commands::RunServer { socket_name } => {
-            info!("Starting Pywr runner service on socket: {}", socket_name);
-            run_server(socket_name)?;
+        Commands::RunServer { mode, socket_name } => {
+            run_server(*mode, socket_name)?;
         }
     }
 
@@ -467,13 +481,46 @@ fn export_schema(out_path: &Path) -> Result<()> {
     Ok(())
 }
 
-fn run_server(socket_name: &str) -> Result<()> {
-    use pywr_runner_service::{RunnerServiceConfigBuilder, run_local_socket_server};
+fn run_server(mode: RunServerMode, socket_name: &str) -> Result<()> {
+    use pywr_runner_service::{run_local_socket_server, run_stdio_server, RunnerServiceConfigBuilder};
 
     let config = RunnerServiceConfigBuilder::new().build();
 
-    info!("Pywr runner service is listening on socket: {}", socket_name);
-    run_local_socket_server(socket_name, &config).with_context(|| "Failed to run Pywr runner service".to_string())?;
+    match mode {
+        RunServerMode::LocalSocket => {
+            info!("Starting Pywr runner service on socket: {socket_name}");
+            run_local_socket_server(socket_name, &config)
+                .with_context(|| "Failed to run Pywr runner service".to_string())?;
+        }
+        RunServerMode::Stdio => {
+            info!("Starting Pywr runner service over standard input/output");
+            run_stdio_server(&config).with_context(|| "Failed to run Pywr runner service".to_string())?;
+        }
+    }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn run_server_mode_defaults_to_local_socket() {
+        let cli = Cli::try_parse_from(["pywr", "run-server"]).unwrap();
+        let Commands::RunServer { mode, socket_name } = cli.command else {
+            panic!("expected run-server command");
+        };
+        assert_eq!(mode, RunServerMode::LocalSocket);
+        assert_eq!(socket_name, "pywr-runner");
+    }
+
+    #[test]
+    fn run_server_accepts_stdio_mode() {
+        let cli = Cli::try_parse_from(["pywr", "run-server", "--mode", "stdio"]).unwrap();
+        let Commands::RunServer { mode, .. } = cli.command else {
+            panic!("expected run-server command");
+        };
+        assert_eq!(mode, RunServerMode::Stdio);
+    }
 }

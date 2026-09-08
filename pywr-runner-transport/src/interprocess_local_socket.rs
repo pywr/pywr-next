@@ -30,21 +30,17 @@ use super::{
     PeerIdentity, ReceiveOutcome, TransportConnection, TransportError, TransportListener, TransportReader,
     TransportWriter,
 };
+use crate::framing::{FrameDecoder, MAX_FRAME_SIZE};
 use interprocess::local_socket::prelude::*;
 use interprocess::local_socket::{
     GenericNamespaced, ListenerOptions, RecvHalf as LocalSocketRecvHalf, SendHalf as LocalSocketSendHalf,
 };
 use std::io::{ErrorKind, Read, Write};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::{Receiver, RecvTimeoutError, SyncSender, sync_channel};
+use std::sync::mpsc::{sync_channel, Receiver, RecvTimeoutError, SyncSender};
+use std::sync::Arc;
 use std::thread::JoinHandle;
 use std::time::Duration;
-
-/// Protect the process against corrupt or malicious frame lengths.
-///
-/// Increase this later if model documents larger than 64 MiB are expected.
-const MAX_FRAME_SIZE: usize = 64 * 1024 * 1024;
 
 /// Number of decoded frames the reader thread may queue ahead of the consumer
 /// before it stops reading from the stream.
@@ -126,66 +122,6 @@ impl TransportConnection for InterprocessLocalSocketConnection {
             InterprocessLocalSocketReader::spawn(recv)?,
             InterprocessLocalSocketWriter { inner: Some(send) },
         ))
-    }
-}
-
-/// Incremental decoder for length-prefixed frames.
-#[derive(Debug, Default)]
-struct FrameDecoder {
-    /// Bytes received for the current frame, including its four-byte header.
-    buffered: Vec<u8>,
-
-    /// Decoded length once the complete header has arrived.
-    expected_payload_len: Option<usize>,
-}
-
-impl FrameDecoder {
-    fn push(&mut self, bytes: &[u8]) {
-        self.buffered.extend_from_slice(bytes);
-    }
-
-    fn buffered_len(&self) -> usize {
-        self.buffered.len()
-    }
-
-    fn take_complete_frame(&mut self) -> Result<Option<Vec<u8>>, TransportError> {
-        if self.expected_payload_len.is_none() && self.buffered.len() >= 4 {
-            let header: [u8; 4] = self.buffered[..4].try_into().expect("slice has exactly four bytes");
-
-            let payload_len = u32::from_be_bytes(header) as usize;
-
-            if payload_len > MAX_FRAME_SIZE {
-                return Err(TransportError::InvalidFrame(format!(
-                    "declared frame size {payload_len} exceeds maximum \
-                     {MAX_FRAME_SIZE}"
-                )));
-            }
-
-            self.expected_payload_len = Some(payload_len);
-        }
-
-        let Some(payload_len) = self.expected_payload_len else {
-            return Ok(None);
-        };
-
-        let complete_len = 4usize
-            .checked_add(payload_len)
-            .ok_or_else(|| TransportError::InvalidFrame("frame length overflowed usize".to_owned()))?;
-
-        if self.buffered.len() < complete_len {
-            return Ok(None);
-        }
-
-        // Remove the length prefix.
-        self.buffered.drain(..4);
-
-        // Keep any bytes already read for the following frame.
-        let remaining = self.buffered.split_off(payload_len);
-        let payload = std::mem::replace(&mut self.buffered, remaining);
-
-        self.expected_payload_len = None;
-
-        Ok(Some(payload))
     }
 }
 

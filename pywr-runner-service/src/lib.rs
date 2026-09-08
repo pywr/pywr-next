@@ -7,14 +7,14 @@ use crate::output::ServiceOutput;
 use crate::session::Session;
 use log::{error, info};
 use pywr_runner_engine::{PywrBackend, RunnerBackend};
-use pywr_runner_protocol::{ClientHello, Envelope, HandshakeRejection, ProtocolVersion, v1};
+use pywr_runner_protocol::{v1, ClientHello, Envelope, HandshakeRejection, ProtocolVersion};
 use pywr_runner_transport::{
-    InterprocessLocalSocketListener, ReceiveOutcome, TransportConnection, TransportError, TransportReader,
-    TransportWriter,
+    InterprocessLocalSocketListener, ReceiveOutcome, StdioConnection, TransportConnection, TransportError,
+    TransportReader, TransportWriter,
 };
 use std::convert::Infallible;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 use thiserror::Error;
 
@@ -447,4 +447,15 @@ pub fn run_local_socket_server(socket_name: &str, config: &RunnerServiceConfig) 
             }
         }
     }
+}
+
+/// Runs one runner-service session using the process standard input and output.
+///
+/// Stdout is reserved for framed protocol output. All diagnostics are emitted through
+/// the logging facade and must therefore be configured to use stderr by the caller.
+pub fn run_stdio_server(config: &RunnerServiceConfig) -> Result<ServiceExit, ServiceError> {
+    let service = RunnerService::new(PywrBackend::default(), DefaultProtocolRegistry, config);
+    let exit = service.serve(StdioConnection::stdio())?;
+    info!("runner stdio session exited: {exit:?}");
+    Ok(exit)
 }

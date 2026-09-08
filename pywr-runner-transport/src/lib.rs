@@ -1,6 +1,9 @@
+mod framing;
 mod interprocess_local_socket;
+mod stdio;
 
 pub use interprocess_local_socket::{InterprocessLocalSocketConnection, InterprocessLocalSocketListener};
+pub use stdio::{StdioConnection, StdioReader, StdioWriter};
 
 use std::time::Duration;
 use thiserror::Error;
