@@ -39,3 +39,4 @@ pywr-schema = { path = "../pywr-schema" }
 pywr-v1-schema = { workspace = true }
 schemars = { workspace = true }
 serde_json = { workspace = true }
+log = "0.4.34"

@@ -6,6 +6,7 @@ use crate::exceptions::{
     PyMultiNetworkModelRunError, PyMultiNetworkModelSchemaBuildError, PyRecorderAggregationError,
 };
 use jiff::civil::DateTime;
+use log::info;
 use polars::df;
 use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::{PyKeyError, PyRuntimeError};
@@ -30,6 +31,7 @@ use pywr_core::solvers::SimdIpmF64Solver;
 #[cfg(feature = "ipm-ocl")]
 use pywr_core::solvers::{ClIpmF32Solver, ClIpmF64Solver, ClIpmSolverSettings};
 use pywr_core::solvers::{Solver, SolverSettings};
+use pywr_runner_service::install_interrupt_handler;
 use pywr_schema::metric::Metric;
 use pywr_schema::{
     ComponentConversionError, ConversionData, ConversionError, ModelSchema, MultiNetworkModelSchema, TryIntoV2,
@@ -38,7 +40,6 @@ use schemars::schema_for;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
-use std::sync::atomic::AtomicBool;
 
 /// Convert a Pywr v1.x JSON string to a Pywr v2.x schema.
 #[pyfunction]
@@ -515,49 +516,26 @@ impl PyMultiNetworkModelSchema {
 fn run_server(py: Python<'_>, socket_name: &str) -> PyResult<()> {
     use pywr_runner_service::{RunnerServiceConfigBuilder, run_local_socket_server};
 
-    // Create a cancellation flag that can be shared between threads
-    let cancel = Arc::new(AtomicBool::new(false));
-
-    let mut config_builder = RunnerServiceConfigBuilder::new();
-    config_builder.cancel_flag(cancel.clone());
-
-    let socket_name = socket_name.to_string();
-
-    let start_server = move || {
-        let config = config_builder.build();
-        run_local_socket_server(&socket_name, &config).map_err(|e| PyRuntimeError::new_err(e.to_string()))
-    };
-
-    let server_thread = std::thread::spawn(start_server);
-
-    let mut result = Ok(());
-
-    loop {
-        if server_thread.is_finished() {
-            match server_thread.join() {
-                Ok(Ok(())) => break,
-                Ok(Err(e)) => {
-                    result = Err(e);
-                    break;
-                }
-                Err(_) => {
-                    result = Err(PyRuntimeError::new_err("Server thread panicked"));
-                    break;
-                }
+    fn py_check_signals() -> bool {
+        Python::attach(|py| {
+            // Check for Python signals (like KeyboardInterrupt)
+            if let Err(error) = py.check_signals() {
+                info!("Received signal, shutting down server: {}", error);
+                true
+            } else {
+                false
             }
-        }
-
-        std::thread::sleep(std::time::Duration::from_millis(100));
-
-        // Handle Python signals (like KeyboardInterrupt) to allow graceful shutdown
-        if let Err(error) = py.check_signals() {
-            println!("Received signal, shutting down server: {:?}", error);
-            cancel.store(true, std::sync::atomic::Ordering::SeqCst);
-            result = Err(error);
-        }
+        })
     }
 
-    result
+    install_interrupt_handler(py_check_signals);
+
+    let config_builder = RunnerServiceConfigBuilder::new();
+
+    let socket_name = socket_name.to_string();
+    let config = config_builder.build();
+
+    py.detach(|| run_local_socket_server(&socket_name, config).map_err(|e| PyRuntimeError::new_err(e.to_string())))
 }
 
 /// A Python module implemented in Rust.

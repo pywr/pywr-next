@@ -3198,6 +3198,7 @@ name = "pywr-python"
 version = "2.0.0-beta6"
 dependencies = [
  "jiff",
+ "log",
  "polars",
  "pyo3",
  "pyo3-log",

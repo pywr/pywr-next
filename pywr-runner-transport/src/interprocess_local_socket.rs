@@ -33,12 +33,13 @@ use super::{
 use crate::framing::{FrameDecoder, MAX_FRAME_SIZE};
 use interprocess::local_socket::prelude::*;
 use interprocess::local_socket::{
-    GenericNamespaced, ListenerOptions, RecvHalf as LocalSocketRecvHalf, SendHalf as LocalSocketSendHalf,
+    GenericNamespaced, ListenerNonblockingMode, ListenerOptions, RecvHalf as LocalSocketRecvHalf,
+    SendHalf as LocalSocketSendHalf,
 };
 use std::io::{ErrorKind, Read, Write};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::{sync_channel, Receiver, RecvTimeoutError, SyncSender};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{Receiver, RecvTimeoutError, SyncSender, sync_channel};
 use std::thread::JoinHandle;
 use std::time::Duration;
 
@@ -65,7 +66,10 @@ impl InterprocessLocalSocketListener {
         let name = name.into();
         let socket_name = name.clone().to_ns_name::<GenericNamespaced>()?;
 
-        let inner = ListenerOptions::new().name(socket_name).create_sync()?;
+        let inner = ListenerOptions::new()
+            .name(socket_name)
+            .nonblocking(ListenerNonblockingMode::Accept)
+            .create_sync()?;
 
         Ok(Self { inner, name })
     }

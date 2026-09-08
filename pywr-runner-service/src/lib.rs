@@ -7,16 +7,24 @@ use crate::output::ServiceOutput;
 use crate::session::Session;
 use log::{error, info};
 use pywr_runner_engine::{PywrBackend, RunnerBackend};
-use pywr_runner_protocol::{v1, ClientHello, Envelope, HandshakeRejection, ProtocolVersion};
+use pywr_runner_protocol::{ClientHello, Envelope, HandshakeRejection, ProtocolVersion, v1};
 use pywr_runner_transport::{
     InterprocessLocalSocketListener, ReceiveOutcome, StdioConnection, TransportConnection, TransportError,
     TransportReader, TransportWriter,
 };
 use std::convert::Infallible;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::OnceLock;
 use std::time::Duration;
 use thiserror::Error;
+
+static INTERRUPT_HANDLER: OnceLock<Box<dyn Fn() -> bool + 'static + Send + Sync>> = OnceLock::new();
+
+pub fn install_interrupt_handler<F>(handler: F)
+where
+    F: Fn() -> bool + Send + Sync + 'static,
+{
+    INTERRUPT_HANDLER.set(Box::new(handler)).ok();
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum CodecError {
@@ -128,11 +136,11 @@ where
     B: RunnerBackend,
     R: ProtocolRegistry,
 {
-    pub fn new(backend: B, protocols: R, config: &RunnerServiceConfig) -> Self {
+    pub fn new(backend: B, protocols: R, config: RunnerServiceConfig) -> Self {
         Self {
             backend,
             protocols,
-            config: config.clone(),
+            config,
         }
     }
 
@@ -146,11 +154,14 @@ where
         let (mut reader, mut writer) = connection.split()?;
 
         // Bootstrap handshake.
+        info!("Waiting for client handshake...");
         let frame = match reader.receive_frame(Some(self.config.handshake_timeout))? {
             ReceiveOutcome::Frame(frame) => frame,
             ReceiveOutcome::TimedOut => return Err(ServiceError::HandshakeTimeout),
             ReceiveOutcome::Closed => return Ok(ServiceExit::ClientDisconnected),
         };
+
+        info!("Handshake complete!");
 
         let bootstrap: BootstrapClientMessage = serde_json::from_slice(&frame)?;
         let BootstrapClientMessage::Hello(hello) = bootstrap;
@@ -185,12 +196,13 @@ where
 
         loop {
             // Check for cancellation before polling the engine or receiving frames.
-            if self
-                .config
-                .cancel_flag
-                .as_ref()
-                .is_some_and(|c| c.load(Ordering::Relaxed))
-            {
+            println!(
+                "Ticking runner service loop; engine status: {:?}",
+                engine.as_ref().map(|e| e.status())
+            );
+
+            if INTERRUPT_HANDLER.get().is_some_and(|f| f()) {
+                println!("Runner service received interrupt signal; shutting down");
                 return Ok(ServiceExit::ClientShutdown);
             }
 
@@ -356,13 +368,11 @@ where
 pub struct RunnerServiceConfig {
     handshake_timeout: Duration,
     idle_timeout: Option<Duration>,
-    cancel_flag: Option<Arc<AtomicBool>>,
 }
 
 pub struct RunnerServiceConfigBuilder {
     handshake_timeout: Duration,
     idle_timeout: Option<Duration>,
-    cancel_flag: Option<Arc<AtomicBool>>,
 }
 
 impl Default for RunnerServiceConfigBuilder {
@@ -376,7 +386,6 @@ impl RunnerServiceConfigBuilder {
         Self {
             handshake_timeout: Duration::from_secs(10),
             idle_timeout: None,
-            cancel_flag: None,
         }
     }
 
@@ -390,16 +399,10 @@ impl RunnerServiceConfigBuilder {
         self
     }
 
-    pub fn cancel_flag(&mut self, cancel: Arc<AtomicBool>) -> &mut Self {
-        self.cancel_flag = Some(cancel);
-        self
-    }
-
     pub fn build(self) -> RunnerServiceConfig {
         RunnerServiceConfig {
             handshake_timeout: self.handshake_timeout,
             idle_timeout: self.idle_timeout,
-            cancel_flag: self.cancel_flag,
         }
     }
 }
@@ -417,7 +420,7 @@ pub enum LocalSocketServerError {
     Accept(#[from] std::io::Error),
 }
 
-pub fn run_local_socket_server(socket_name: &str, config: &RunnerServiceConfig) -> Result<(), LocalSocketServerError> {
+pub fn run_local_socket_server(socket_name: &str, config: RunnerServiceConfig) -> Result<(), LocalSocketServerError> {
     let listener = InterprocessLocalSocketListener::bind_namespaced(socket_name).map_err(|source| {
         LocalSocketServerError::Bind {
             socket_name: socket_name.to_string(),
@@ -428,32 +431,71 @@ pub fn run_local_socket_server(socket_name: &str, config: &RunnerServiceConfig) 
     info!("Pywr runner service is listening: {}", listener.name());
 
     loop {
+        if INTERRUPT_HANDLER.get().is_some_and(|f| f()) {
+            info!("Runner service received interrupt signal; shutting down");
+            break;
+        }
+
         let connection = match listener.accept() {
             Ok(connection) => connection,
             Err(error) => {
-                error!("failed to accept local-socket connection: {error:?}",);
-                continue;
+                match &error {
+                    TransportError::Io(io_error) => {
+                        match io_error.kind() {
+                            std::io::ErrorKind::WouldBlock => {
+                                // No connection is available yet; continue polling.
+                                std::thread::sleep(Duration::from_millis(10));
+                                continue;
+                            }
+                            _ => {
+                                error!("failed to accept local-socket connection: {error:?}",);
+                                continue;
+                            }
+                        }
+                    }
+                    _ => {
+                        error!("failed to accept local-socket connection: {error:?}",);
+                        continue;
+                    }
+                }
             }
         };
 
-        let service = RunnerService::new(PywrBackend::default(), DefaultProtocolRegistry, config);
-
+        let service = RunnerService::new(PywrBackend::default(), DefaultProtocolRegistry, config.clone());
+        println!("Serving new connection from local socket: {}", listener.name());
         match service.serve(connection) {
-            Ok(exit) => {
-                info!("runner session exited: {exit:?}");
-            }
+            Ok(exit) => match exit {
+                ServiceExit::ClientShutdown => {
+                    info!("runner session exited: client shutdown");
+                    break;
+                }
+                ServiceExit::ClientDisconnected => {
+                    info!("runner session exited: client disconnected");
+                }
+                ServiceExit::RunCompleted => {
+                    info!("runner session exited: run completed");
+                }
+                ServiceExit::RunCancelled => {
+                    info!("runner session exited: run cancelled");
+                }
+                ServiceExit::HandshakeRejected => {
+                    info!("runner session exited: handshake rejected");
+                }
+            },
             Err(error) => {
                 error!("runner session failed: {error:?}");
             }
         }
     }
+
+    Ok(())
 }
 
 /// Runs one runner-service session using the process standard input and output.
 ///
 /// Stdout is reserved for framed protocol output. All diagnostics are emitted through
 /// the logging facade and must therefore be configured to use stderr by the caller.
-pub fn run_stdio_server(config: &RunnerServiceConfig) -> Result<ServiceExit, ServiceError> {
+pub fn run_stdio_server(config: RunnerServiceConfig) -> Result<ServiceExit, ServiceError> {
     let service = RunnerService::new(PywrBackend::default(), DefaultProtocolRegistry, config);
     let exit = service.serve(StdioConnection::stdio())?;
     info!("runner stdio session exited: {exit:?}");

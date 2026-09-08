@@ -56,6 +56,9 @@ def run(path: str, solver: str, data_path: str | None, output_path: str | None):
 def runner_service(socket_name: str):
     from ._pywr import run_server
 
+    logger = logging.getLogger("pywr")
+    logger.info(f"Starting runner service on socket: {socket_name}")
+
     run_server(socket_name)
 
 

@@ -1,4 +1,4 @@
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand, ValueEnum};
 use log::info;
 #[cfg(feature = "cbc")]
@@ -13,6 +13,7 @@ use pywr_core::solvers::{MicroLpSolver, MicroLpSolverSettings, MicroLpSolverSett
 #[cfg(feature = "ipm-simd")]
 use pywr_core::solvers::{SimdIpmF64Solver, SimdIpmSolverSettings, SimdIpmSolverSettingsBuilder};
 use pywr_core::test_utils::make_random_model_builder;
+use pywr_runner_service::RunnerServiceConfig;
 use pywr_schema::{ComponentConversionError, ModelSchema, MultiNetworkModelSchema, NetworkSchema};
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
@@ -482,19 +483,19 @@ fn export_schema(out_path: &Path) -> Result<()> {
 }
 
 fn run_server(mode: RunServerMode, socket_name: &str) -> Result<()> {
-    use pywr_runner_service::{run_local_socket_server, run_stdio_server, RunnerServiceConfigBuilder};
+    use pywr_runner_service::{RunnerServiceConfigBuilder, run_local_socket_server, run_stdio_server};
 
-    let config = RunnerServiceConfigBuilder::new().build();
+    let config: RunnerServiceConfig = RunnerServiceConfigBuilder::new().build();
 
     match mode {
         RunServerMode::LocalSocket => {
             info!("Starting Pywr runner service on socket: {socket_name}");
-            run_local_socket_server(socket_name, &config)
+            run_local_socket_server(socket_name, config)
                 .with_context(|| "Failed to run Pywr runner service".to_string())?;
         }
         RunServerMode::Stdio => {
             info!("Starting Pywr runner service over standard input/output");
-            run_stdio_server(&config).with_context(|| "Failed to run Pywr runner service".to_string())?;
+            run_stdio_server(config).with_context(|| "Failed to run Pywr runner service".to_string())?;
         }
     }
 
