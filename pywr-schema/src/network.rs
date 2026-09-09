@@ -713,18 +713,23 @@ impl NetworkSchema {
                 })?;
         }
 
-        // Add all the parameters from the nodes
-        for node in &self.nodes {
-            if let Some(local_parameters) = node.local_parameters() {
-                for parameter in local_parameters {
-                    parameter
-                        .add_to_network(network_builder, &args, Some(node.name()))
-                        .map_err(|source| NetworkSchemaBuildError::AddLocalParameterError {
-                            parent: node.name().to_string(),
-                            name: parameter.name().to_string(),
-                            source: Box::new(source),
-                        })?;
-                }
+        // Add all the local parameters from the nodes and the virtual nodes.
+        let node_parameters = self.nodes.iter().map(|node| (node.name(), node.local_parameters()));
+        let virtual_node_parameters = self
+            .virtual_nodes
+            .iter()
+            .flatten()
+            .map(|node| (node.name(), node.local_parameters()));
+
+        for (parent, local_parameters) in node_parameters.chain(virtual_node_parameters) {
+            for parameter in local_parameters.into_iter().flatten() {
+                parameter
+                    .add_to_network(network_builder, &args, Some(parent))
+                    .map_err(|source| NetworkSchemaBuildError::AddLocalParameterError {
+                        parent: parent.to_string(),
+                        name: parameter.name().to_string(),
+                        source: Box::new(source),
+                    })?;
             }
         }
         // Add any global parameters
