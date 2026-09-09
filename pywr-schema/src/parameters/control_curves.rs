@@ -401,24 +401,27 @@ impl ControlCurvePiecewiseInterpolatedParameter {
         let metric = self.storage_metric.load(network, args, parent)?;
         let name = ParameterName::new(&self.meta.name, parent);
 
+        let maximum = self.maximum.unwrap_or(1.0);
+        let minimum = self.minimum.unwrap_or(0.0);
+
         let mut builder = match self.phase {
             ParameterPhase::Before => {
                 pywr_core::parameters::PiecewiseInterpolatedParameterBuilder::before(name,
                                                                                      metric,
-                                                                                     self.maximum.unwrap_or(1.0),
-                                                                                     self.minimum.unwrap_or(0.0), )
+                                                                                     maximum,
+                                                                                     minimum, )
             },
             ParameterPhase::After => {
                 pywr_core::parameters::PiecewiseInterpolatedParameterBuilder::after(name,
                                                                                     metric,
-                                                                                    self.maximum.unwrap_or(1.0),
-                                                                                    self.minimum.unwrap_or(0.0), )
+                                                                                    maximum,
+                                                                                    minimum, )
             },
             ParameterPhase::Both => {
                 pywr_core::parameters::PiecewiseInterpolatedParameterBuilder::both(name,
-                                                                                    metric,
-                                                                                    self.maximum.unwrap_or(1.0),
-                                                                                    self.minimum.unwrap_or(0.0), )
+                                                                                   metric,
+                                                                                   maximum,
+                                                                                   minimum, )
             },
         };
 

@@ -75,22 +75,14 @@ fn piecewise_interpolated(x: f64, control_curves: &[f64], values: &[[f64; 2]], m
     let mut cc_previous_value = maximum;
     for (idx, &control_curve) in control_curves.iter().enumerate() {
         if x >= control_curve {
-            let v = values
-                .get(idx)
-                .ok_or_else(|| GeneralCalculationError::OutOfBoundsError {
-                    axis: 0,
-                    index: idx,
-                    length: values.len(),
-                })?;
+            let v = values[idx];
             return Ok(interpolate(x, control_curve, cc_previous_value, v[1], v[0]));
         }
         cc_previous_value = control_curve;
     }
-    let v = values.last().ok_or_else(|| GeneralCalculationError::OutOfBoundsError {
-        axis: 0,
-        index: 0,
-        length: values.len(),
-    })?;
+
+    let n = values.len();
+    let v = values[n-1];
     Ok(interpolate(x, minimum, cc_previous_value, v[1], v[0]))
 }
 
@@ -172,6 +164,13 @@ impl ParameterBuilder<f64> for PiecewiseInterpolatedParameterBuilder {
         let metric = resolve_metric_f64!(self, self.metric, resolution_maps, self.phase, "metric");
         let control_curves =
             resolve_metric_f64_vec!(self, &self.control_curves, resolution_maps, self.phase, "control_curves");
+
+        if self.values.len() != control_curves.len() + 1 {
+            return Err(ParameterBuildError::ControlCurveValuesLengthMismatch {
+                values: self.values.len(),
+                control_curves: control_curves.len(),
+            });
+        }
 
         let p = PiecewiseInterpolatedParameter {
             meta: self.meta,

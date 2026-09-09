@@ -178,6 +178,13 @@ impl ParameterBuilder<f64> for ControlCurveInterpolatedParameterBuilder {
             resolve_metric_f64_vec!(self, &self.control_curves, resolution_maps, self.phase, "control_curves");
         let values = resolve_metric_f64_vec!(self, &self.values, resolution_maps, self.phase, "values");
 
+        if values.len() != control_curves.len() + 2 {
+            return Err(ParameterBuildError::ControlCurveValuesInterpLengthMismatch {
+                values: values.len(),
+                control_curves: control_curves.len(),
+            });
+        }
+        
         let p = ControlCurveInterpolatedParameter {
             meta: self.meta,
             metric,

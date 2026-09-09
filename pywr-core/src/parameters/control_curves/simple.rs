@@ -156,11 +156,18 @@ impl ParameterBuilder<f64> for ControlCurveParameterBuilder {
         resolution_maps: &ResolutionMaps,
     ) -> Result<MaybeBuiltParameter<f64>, ParameterBuildError> {
         let metric = resolve_metric_f64!(self, self.metric, resolution_maps, self.phase, "metric");
-
+        
         let control_curves =
             resolve_metric_f64_vec!(self, &self.control_curves, resolution_maps, self.phase, "control_curves");
 
         let values = resolve_metric_f64_vec!(self, &self.values, resolution_maps, self.phase, "values");
+
+        if values.len() != control_curves.len() + 1 {
+            return Err(ParameterBuildError::ControlCurveValuesLengthMismatch {
+                values: values.len(),
+                control_curves: control_curves.len(),
+            });
+        }
 
         let p = ControlCurveParameter {
             meta: self.meta,
