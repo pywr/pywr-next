@@ -10,7 +10,7 @@ use crate::network::LoadArgs;
 use crate::parameters::{Parameter, ParameterPhase, PythonReturnType};
 #[cfg(feature = "core")]
 use pywr_core::recorders::UnresolvedOutputMetric;
-use pywr_schema_macros::skip_serializing_none;
+use pywr_schema_macros::{PywrVisitReferences, skip_serializing_none};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::num::NonZeroI64;
@@ -18,7 +18,17 @@ use std::num::NonZeroI64;
 use std::path::Path;
 use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumString, IntoStaticStr};
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone, JsonSchema, Display, EnumDiscriminants)]
+#[derive(
+    serde::Deserialize,
+    serde::Serialize,
+    Debug,
+    Copy,
+    Clone,
+    JsonSchema,
+    PywrVisitReferences,
+    Display,
+    EnumDiscriminants,
+)]
 #[serde(tag = "type", deny_unknown_fields)]
 #[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
 #[strum_discriminants(name(MetricAggFrequencyType))]
@@ -48,7 +58,7 @@ impl From<MetricAggFrequency> for pywr_core::recorders::AggregationFrequency {
 ///
 /// If the metric set has a child aggregator then the aggregation will be performed over the
 /// aggregated values of the child aggregator.
-#[derive(Deserialize, Serialize, Clone, JsonSchema)]
+#[derive(Deserialize, Serialize, Clone, JsonSchema, PywrVisitReferences)]
 #[serde(deny_unknown_fields)]
 pub struct MetricAggregator {
     /// Optional aggregation frequency.
@@ -76,7 +86,7 @@ impl MetricAggregator {
 ///
 /// The filters allow the default metrics for all nodes, virtual nodes, parameters and/or edges in
 /// a model to be added to a metric set.
-#[derive(Deserialize, Serialize, Clone, JsonSchema, Default)]
+#[derive(Deserialize, Serialize, Clone, JsonSchema, Default, PywrVisitReferences)]
 #[serde(deny_unknown_fields)]
 pub struct MetricSetFilters {
     #[serde(default)]
@@ -166,7 +176,7 @@ impl MetricSetFilters {
 /// Metrics added by the filters will be appended to any metrics specified for the metric attribute,
 /// if they are not a duplication.
 #[skip_serializing_none]
-#[derive(Deserialize, Serialize, Clone, JsonSchema)]
+#[derive(Deserialize, Serialize, Clone, JsonSchema, PywrVisitReferences)]
 #[serde(deny_unknown_fields)]
 pub struct MetricSet {
     pub name: String,

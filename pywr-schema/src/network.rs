@@ -294,7 +294,7 @@ impl VisitReferences for NetworkSchema {
         }
 
         for metric_set in self.metric_sets.as_deref().into_iter().flatten() {
-            metric_set.metrics.visit_references(visitor);
+            metric_set.visit_references(visitor);
         }
 
         for output in self.outputs.as_deref().into_iter().flatten() {
@@ -320,7 +320,7 @@ impl VisitReferences for NetworkSchema {
         }
 
         for metric_set in self.metric_sets.as_deref_mut().into_iter().flatten() {
-            metric_set.metrics.visit_references_mut(visitor);
+            metric_set.visit_references_mut(visitor);
         }
 
         for output in self.outputs.as_deref_mut().into_iter().flatten() {
@@ -330,7 +330,7 @@ impl VisitReferences for NetworkSchema {
 }
 
 impl NetworkSchema {
-    /// Visit every reference together with the element holding it.
+    /// Visit every reference together with the top-level component holding it.
     pub fn visit_owned_references<F: FnMut(Owner<'_>, Reference<'_>)>(&self, visitor: &mut F) {
         for node in &self.nodes {
             let owner = Owner::Node(node.name());
@@ -354,9 +354,7 @@ impl NetworkSchema {
 
         for metric_set in self.metric_sets.as_deref().into_iter().flatten() {
             let owner = Owner::MetricSet(&metric_set.name);
-            metric_set
-                .metrics
-                .visit_references(&mut |reference| visitor(owner, reference));
+            metric_set.visit_references(&mut |reference| visitor(owner, reference));
         }
 
         for output in self.outputs.as_deref().into_iter().flatten() {
@@ -389,9 +387,7 @@ impl NetworkSchema {
 
         for metric_set in self.metric_sets.as_deref_mut().into_iter().flatten() {
             let owner_name = metric_set.name.clone();
-            metric_set
-                .metrics
-                .visit_references_mut(&mut |reference| visitor(Owner::MetricSet(&owner_name), reference));
+            metric_set.visit_references_mut(&mut |reference| visitor(Owner::MetricSet(&owner_name), reference));
         }
 
         for output in self.outputs.as_deref_mut().into_iter().flatten() {

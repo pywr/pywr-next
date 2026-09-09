@@ -1,7 +1,7 @@
 use crate::edge::Edge;
 use crate::metric::{IndexMetric, Metric};
 use std::collections::HashMap;
-use std::num::NonZeroUsize;
+use std::num::{NonZeroI64, NonZeroUsize};
 use std::path::{Path, PathBuf};
 
 /// A trait for recursively visiting [`Metric`] in a schema.
@@ -274,8 +274,9 @@ pub enum ReferenceMut<'a> {
     MetricSet(&'a mut String),
 }
 
-/// The schema element holding a [`Reference`]. A reference inside a node's local parameter is
-/// owned by the node, which is the scope a [`Reference::LocalParameter`] resolves in.
+/// The top-level component holding a [`Reference`], however deeply nested the reference is. A
+/// reference inside a node's local parameter is owned by the node, which is the scope a
+/// [`Reference::LocalParameter`] resolves in.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Owner<'a> {
     Node(&'a str),
@@ -425,6 +426,19 @@ where
     }
 }
 
+impl<T> VisitReferences for Box<T>
+where
+    T: VisitReferences,
+{
+    fn visit_references<F: FnMut(Reference<'_>)>(&self, visitor: &mut F) {
+        self.as_ref().visit_references(visitor);
+    }
+
+    fn visit_references_mut<F: FnMut(ReferenceMut<'_>)>(&mut self, visitor: &mut F) {
+        self.as_mut().visit_references_mut(visitor);
+    }
+}
+
 impl VisitReferences for u8 {}
 impl VisitReferences for i8 {}
 impl VisitReferences for u16 {}
@@ -454,6 +468,7 @@ impl VisitReferences for u64 {}
 impl VisitReferences for String {}
 impl VisitReferences for PathBuf {}
 impl VisitReferences for NonZeroUsize {}
+impl VisitReferences for NonZeroI64 {}
 
 impl VisitReferences for serde_json::Value {}
 
