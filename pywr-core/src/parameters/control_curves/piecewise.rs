@@ -218,6 +218,18 @@ mod test {
         assert_eq!(piecewise_interpolated(0.25, &control_curves, &values, maximum, minimum).unwrap(), -55.0);
     }
 
+    #[test]
+    fn test_piecewise_interpolated_empty() {
+        let control_curves = vec![];
+        let values = vec![[10.0, 0.0]];
+        let maximum = 1.0;
+        let minimum = 0.0;
+
+        assert_eq!(piecewise_interpolated(0.9, &control_curves, &values, maximum, minimum).unwrap(), 9.0);
+        assert_eq!(piecewise_interpolated(0.65, &control_curves, &values, maximum, minimum).unwrap(), 6.5);
+        assert_eq!(piecewise_interpolated(0.25, &control_curves, &values, maximum, minimum).unwrap(), 2.5);
+    }
+
     /// Basic functional test of the piecewise interpolation.
     #[test]
     fn test_basic() {
@@ -266,6 +278,54 @@ mod test {
         ]
         .to_vec()
         .into();
+        let expected_values: Array2<f64> = expected_values.insert_axis(Axis(1));
+
+        run_and_assert_parameter(model_builder, Box::new(parameter), expected_values, None, Some(1e-12));
+    }
+
+    /// Basic functional test of the piecewise interpolation with no control curves.
+    #[test]
+    fn test_basic_empty_control_curves() {
+        let mut model_builder = simple_model(1, None);
+
+        // Create an artificial volume series to use for the interpolation test
+        let volume = Array1ParameterBuilder::new("test-x".into(), Array1::linspace(1.0, 0.0, 21));
+        model_builder.network_builder().parameters().f64(Box::new(volume));
+
+        let mut parameter = PiecewiseInterpolatedParameterBuilder::before(
+            "test-parameter".into(),
+            UnresolvedMetricF64::new_parameter_before("test-x"), // Interpolate with the parameter based values
+            1.0,
+            0.0,
+        );
+
+        parameter
+            .value([10.0, 0.0]);
+
+        let expected_values: Array1<f64> = [
+            10.0,                    // full
+            9.5,                     // 95%
+            9.0,                     // 90%
+            8.5,                     // 85%
+            8.0,                     // 80%
+            7.5,                     // 75%
+            7.0,                     // 70%
+            6.5,                     // 65%
+            6.0,                     // 60%
+            5.5,                     // 55%
+            5.0,                     // 50%
+            4.5,                     // 45%
+            4.0,                     // 40%
+            3.5,                     // 35%
+            3.0,                     // 30%
+            2.5,                     // 25%
+            2.0,                     // 20%
+            1.0,                     // 10%
+            0.5,                     // 05%
+            0.0,                     // 00%
+        ]
+            .to_vec()
+            .into();
         let expected_values: Array2<f64> = expected_values.insert_axis(Axis(1));
 
         run_and_assert_parameter(model_builder, Box::new(parameter), expected_values, None, Some(1e-12));

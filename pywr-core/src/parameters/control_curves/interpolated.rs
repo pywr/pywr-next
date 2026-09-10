@@ -184,7 +184,7 @@ impl ParameterBuilder<f64> for ControlCurveInterpolatedParameterBuilder {
                 control_curves: control_curves.len(),
             });
         }
-        
+
         let p = ControlCurveInterpolatedParameter {
             meta: self.meta,
             metric,
@@ -224,6 +224,18 @@ mod tests {
         assert_eq!(control_curve_interpolated(0.5, &control_curves, &values), 30.0);
         assert_eq!(control_curve_interpolated(0.35, &control_curves, &values), 35.0);
         assert_eq!(control_curve_interpolated(0.1, &control_curves, &values), 45.0);
+
+    }
+
+    #[test]
+    fn test_control_curve_empty_interpolated() {
+        let control_curves = vec![];
+        let values = vec![10.0, 20.0];
+
+        assert_eq!(control_curve_interpolated(0.9, &control_curves, &values), 11.0);
+        assert_eq!(control_curve_interpolated(0.8, &control_curves, &values), 12.0);
+        assert_eq!(control_curve_interpolated(0.5, &control_curves, &values), 15.0);
+        assert_eq!(control_curve_interpolated(0.1, &control_curves, &values), 19.0);
 
     }
 }

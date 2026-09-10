@@ -156,7 +156,7 @@ impl ParameterBuilder<f64> for ControlCurveParameterBuilder {
         resolution_maps: &ResolutionMaps,
     ) -> Result<MaybeBuiltParameter<f64>, ParameterBuildError> {
         let metric = resolve_metric_f64!(self, self.metric, resolution_maps, self.phase, "metric");
-        
+
         let control_curves =
             resolve_metric_f64_vec!(self, &self.control_curves, resolution_maps, self.phase, "control_curves");
 
@@ -209,5 +209,14 @@ mod tests {
         assert_eq!(calculate_control_curve(0.3, &control_curves, &values).unwrap(), 30.0);
         assert_eq!(calculate_control_curve(0.2, &control_curves, &values).unwrap(), 30.0);
         assert_eq!(calculate_control_curve(0.1, &control_curves, &values).unwrap(), 50.0);
+    }
+
+    #[test]
+    fn test_calculate_control_curves_empty() {
+        let control_curves = vec![];
+        let values = vec![10.0, ];
+
+        assert_eq!(calculate_control_curve(0.9, &control_curves, &values).unwrap(), 10.0);
+        assert_eq!(calculate_control_curve(0.2, &control_curves, &values).unwrap(), 10.0);
     }
 }
