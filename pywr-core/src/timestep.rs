@@ -238,9 +238,7 @@ impl TimeDomainBuilder {
         timesteps
     }
 
-    /// Creates a vector of `Timestep`s between the start and end dates for a given frequency `&str`.
-    ///
-    /// Valid frequency strings are those that can be parsed by `polars::time::Duration::parse`. See: [https://docs.rs/polars-time/latest/polars_time/struct.Duration.html#method.parse]
+    /// Creates a vector of `Timestep`s between the start and end dates for a given [`Span`].
     fn generate_timesteps_from_span(&self, span: Span) -> Result<Vec<Timestep>, TimeDomainBuilderError> {
         if span.is_negative() || span.is_zero() {
             return Err(TimeDomainBuilderError::NonPositiveTimestepDuration);

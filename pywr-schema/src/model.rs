@@ -10,6 +10,7 @@ use crate::network::{LoadArgs, NetworkSchemaBuildError, NetworkSchemaReadError};
 use crate::timeseries::LoadedTimeseriesCollection;
 use crate::visit::{VisitMetrics, VisitNodeReferences, VisitPaths};
 use crate::{ConversionError, NetworkSchema, NetworkSchemaRef};
+use jiff::Span;
 use jiff::civil::{DateTime, date};
 #[cfg(feature = "core")]
 use pywr_core::{
@@ -64,7 +65,7 @@ impl From<pywr_v1_schema::model::Metadata> for Metadata {
 /// The timestep can be defined in three ways:
 /// - A fixed number of non-zero hours.
 /// - A fixed number of non-zero days.
-/// - A frequency string that can be parsed by polars (e.g. '7d').
+/// - A frequency string that can be parsed as a [`jiff::Span`] (e.g. '7d' or 'P7D').
 #[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema, Display, EnumDiscriminants)]
 #[serde(tag = "type", deny_unknown_fields)]
 #[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
@@ -74,7 +75,7 @@ pub enum Timestep {
     Hours { hours: NonZeroU64 },
     /// A fixed number of days.
     Days { days: NonZeroU64 },
-    /// A frequency string that can be parsed by polars.
+    /// A frequency string that can be parsed as a [`jiff::Span`].
     Frequency { freq: String },
 }
 
@@ -111,6 +112,39 @@ impl Default for TimeDomain {
             end: date(2000, 12, 31).at(0, 0, 0, 0),
             timestep: Timestep::default(),
         }
+    }
+}
+
+impl TimeDomain {
+    /// Validate the time domain.
+    ///
+    /// This checks that the simulation period does not end before it starts, and that a
+    /// [`Timestep::Frequency`] string is a duration that `pywr-core` can use. These are the
+    /// problems that would otherwise only appear when the model is built.
+    pub fn validate(&self) -> Result<(), ValidationError> {
+        // The same instant is a period, if a short one, so `>` rather than `>=`.
+        if self.start > self.end {
+            return Err(ValidationError::EndBeforeStart {
+                start: self.start,
+                end: self.end,
+            });
+        }
+
+        if let Timestep::Frequency { freq } = &self.timestep {
+            // The same parse that `pywr_core::timestep::TimeDomainBuilder` makes.
+            let span = freq
+                .parse::<Span>()
+                .map_err(|error| ValidationError::UnparsableFrequency {
+                    freq: freq.clone(),
+                    error: error.to_string(),
+                })?;
+
+            if span.is_zero() || span.is_negative() {
+                return Err(ValidationError::NonPositiveFrequency { freq: freq.clone() });
+            }
+        }
+
+        Ok(())
     }
 }
 
@@ -471,8 +505,9 @@ impl ModelSchema {
         Ok(serde_json::from_str(data.as_str())?)
     }
 
-    /// Validate the model's schema. See [`NetworkSchema::validate`].
+    /// Validate the model's schema. See [`TimeDomain::validate`] and [`NetworkSchema::validate`].
     pub fn validate(&self) -> Result<(), ValidationError> {
+        self.time.validate()?;
         self.network.validate()
     }
 
@@ -719,8 +754,11 @@ impl MultiNetworkModelSchema {
         Ok(serde_json::from_str(data.as_str())?)
     }
 
-    /// Validate the schema of each network in the model. See [`NetworkSchema::validate`].
+    /// Validate the model's time domain and the schema of each network in the model. See
+    /// [`TimeDomain::validate`] and [`NetworkSchema::validate`].
     pub fn validate(&self) -> Result<(), ValidationError> {
+        self.time.validate()?;
+
         for entry in &self.networks {
             if let NetworkSchemaRef::Inline(network) = &entry.network {
                 network.validate()?;
@@ -880,7 +918,8 @@ impl MultiNetworkModelSchema {
 #[cfg(test)]
 mod tests {
     use super::{ModelSchema, ScenarioDomain};
-    use crate::model::TimeDomain;
+    use crate::error::ValidationError;
+    use crate::model::{TimeDomain, Timestep};
     use crate::visit::VisitPaths;
     use jiff::civil::date;
     use std::fs;
@@ -964,6 +1003,63 @@ mod tests {
         if schema.create_model_builder(model_fn.parent(), None).is_ok() {
             let str = serde_json::to_string_pretty(&schema).unwrap();
             panic!("Expected an error due to missing file: {str}");
+        }
+    }
+
+    /// Return the default time domain with the timestep replaced.
+    fn time_domain_with(timestep: Timestep) -> TimeDomain {
+        TimeDomain {
+            timestep,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn test_validate_period() {
+        let valid: ModelSchema = serde_json::from_str(&model_str()).unwrap();
+        valid.validate().expect("The unmodified model should be valid");
+
+        // A period that ends before it starts is rejected, naming both ends.
+        let mut schema = valid.clone();
+        std::mem::swap(&mut schema.time.start, &mut schema.time.end);
+        assert_eq!(
+            schema.validate(),
+            Err(ValidationError::EndBeforeStart {
+                start: schema.time.start,
+                end: schema.time.end,
+            })
+        );
+
+        // A single instant is a period, if a short one.
+        let mut schema = valid.clone();
+        schema.time.end = schema.time.start;
+        assert_eq!(schema.validate(), Ok(()));
+    }
+
+    #[test]
+    fn test_validate_frequency() {
+        // The forms `jiff` reads: "friendly" and ISO 8601.
+        for freq in ["7d", "1mo", "3h", "P7D"] {
+            let time = time_domain_with(Timestep::Frequency { freq: freq.to_string() });
+            assert_eq!(time.validate(), Ok(()), "`{freq}` should be a valid frequency");
+        }
+
+        // A string that is not a duration at all.
+        for freq in ["every other tuesday", "7", "", "1q"] {
+            let time = time_domain_with(Timestep::Frequency { freq: freq.to_string() });
+            assert!(
+                matches!(time.validate(), Err(ValidationError::UnparsableFrequency { .. })),
+                "`{freq}` should not parse as a frequency"
+            );
+        }
+
+        // A duration that parses, but would never advance the clock.
+        for freq in ["0d", "-7d"] {
+            let time = time_domain_with(Timestep::Frequency { freq: freq.to_string() });
+            assert_eq!(
+                time.validate(),
+                Err(ValidationError::NonPositiveFrequency { freq: freq.to_string() })
+            );
         }
     }
 

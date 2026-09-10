@@ -961,6 +961,7 @@ mod tests {
     fn expect_duplicates(network: &NetworkSchema) -> Vec<DuplicateNodeName> {
         match network.validate() {
             Err(ValidationError::DuplicateNodeNames(duplicates)) => duplicates,
+            Err(e) => panic!("Expected duplicate node names, but found: {e}"),
             Ok(()) => panic!("Expected validation to fail, but it succeeded"),
         }
     }
