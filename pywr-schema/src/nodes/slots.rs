@@ -5,7 +5,7 @@ use strum_macros::{Display, EnumIter};
 /// All possible slots that could be attached to a node.
 ///
 ///
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Display, JsonSchema, PartialEq, EnumIter)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Display, JsonSchema, PartialEq, Eq, EnumIter)]
 #[serde(tag = "type")]
 pub enum NodeSlot {
     Storage,
