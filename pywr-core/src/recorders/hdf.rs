@@ -283,7 +283,7 @@ fn write_pywr_metadata(file: &hdf5_metno::File) -> Result<(), Hdf5Error> {
     let attr = root
         .new_attr::<hdf5_metno::types::VarLenUnicode>()
         .shape(())
-        .create("pywr-version")
+        .create("PYWR_VERSION_STR")
         .map_err(|source| Hdf5Error::HDF5Error {
             path: file.filename().into(),
             source,
@@ -291,6 +291,27 @@ fn write_pywr_metadata(file: &hdf5_metno::File) -> Result<(), Hdf5Error> {
 
     attr.as_writer()
         .write_scalar(&version)
+        .map_err(|source| Hdf5Error::HDF5Error {
+            path: file.filename().into(),
+            source,
+        })?;
+
+    const VERSION_MAJOR: &str = env!("CARGO_PKG_VERSION_MAJOR");
+    let major_version: i64 = VERSION_MAJOR
+        .parse()
+        .expect("CARGO_PKG_VERSION_MAJOR cannot be parsed as an integer");
+
+    let attr = root
+        .new_attr::<i64>()
+        .shape(())
+        .create("PYWR_VERSION")
+        .map_err(|source| Hdf5Error::HDF5Error {
+            path: file.filename().into(),
+            source,
+        })?;
+
+    attr.as_writer()
+        .write_scalar(&major_version)
         .map_err(|source| Hdf5Error::HDF5Error {
             path: file.filename().into(),
             source,
