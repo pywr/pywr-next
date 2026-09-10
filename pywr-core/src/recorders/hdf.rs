@@ -296,10 +296,10 @@ fn write_pywr_metadata(file: &hdf5_metno::File) -> Result<(), Hdf5Error> {
             source,
         })?;
 
-    const VERSION_MAJOR: &str = env!("CARGO_PKG_VERSION_MAJOR");
-    let major_version: i64 = VERSION_MAJOR
-        .parse()
-        .expect("CARGO_PKG_VERSION_MAJOR cannot be parsed as an integer");
+    const VERSION_MAJOR: i64 = match i64::from_str_radix(env!("CARGO_PKG_VERSION_MAJOR"), 10) {
+        Ok(v) => v,
+        Err(_) => panic!("CARGO_PKG_VERSION_MAJOR cannot be parsed as an integer"),
+    };
 
     let attr = root
         .new_attr::<i64>()
@@ -311,7 +311,7 @@ fn write_pywr_metadata(file: &hdf5_metno::File) -> Result<(), Hdf5Error> {
         })?;
 
     attr.as_writer()
-        .write_scalar(&major_version)
+        .write_scalar(&VERSION_MAJOR)
         .map_err(|source| Hdf5Error::HDF5Error {
             path: file.filename().into(),
             source,
