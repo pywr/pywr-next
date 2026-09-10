@@ -5,7 +5,7 @@ use crate::error::SchemaError;
 use crate::metric::{Metric, NodeAttrReference};
 #[cfg(feature = "core")]
 use crate::network::LoadArgs;
-use crate::parameters::{ConversionData, ParameterMeta};
+use crate::parameters::{ConversionData, ParameterMeta, ParameterPhase};
 use crate::v1::{TryFromV1, TryIntoV2, try_convert_parameter_attr};
 #[cfg(feature = "core")]
 use pywr_core::parameters::ParameterName;
@@ -25,6 +25,7 @@ use schemars::JsonSchema;
 #[serde(deny_unknown_fields)]
 pub struct InterpolatedParameter {
     pub meta: ParameterMeta,
+    pub phase: ParameterPhase,
     pub x: Metric,
     pub xp: Vec<Metric>,
     pub fp: Vec<Metric>,
@@ -63,11 +64,25 @@ impl InterpolatedParameter {
 
         let points = xp.into_iter().zip(fp).collect::<Vec<_>>();
 
-        let mut builder = pywr_core::parameters::InterpolatedParameterBuilder::new(
-            ParameterName::new(&self.meta.name, parent),
-            x,
-            points,
-        );
+        let name = ParameterName::new(&self.meta.name, parent);
+
+        let mut builder = match self.phase {
+            ParameterPhase::Before => pywr_core::parameters::InterpolatedParameterBuilder::before(
+                name,
+                x,
+                points,
+            ),
+            ParameterPhase::After => pywr_core::parameters::InterpolatedParameterBuilder::after(
+                name,
+                x,
+                points,
+            ),
+            ParameterPhase::Both => pywr_core::parameters::InterpolatedParameterBuilder::both(
+                name,
+                x,
+                points,
+            ),
+        };
 
         builder.error_on_bounds(self.error_on_bounds.unwrap_or(true));
 
@@ -139,6 +154,7 @@ impl TryFromV1<InterpolatedFlowParameterV1> for InterpolatedParameter {
             xp,
             fp,
             error_on_bounds,
+            phase: ParameterPhase::Before,
         })
     }
 }
@@ -205,6 +221,7 @@ impl TryFromV1<InterpolatedVolumeParameterV1> for InterpolatedParameter {
             xp,
             fp,
             error_on_bounds,
+            phase: ParameterPhase::Before,
         })
     }
 }

@@ -3,7 +3,7 @@ use crate::error::SchemaError;
 use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::network::LoadArgs;
-use crate::parameters::{ConstantValue, ParameterMeta, VariableSettings};
+use crate::parameters::{ConstantValue, ParameterMeta, ParameterPhase, VariableSettings};
 #[cfg(feature = "core")]
 use pywr_core::parameters::ParameterName;
 use pywr_schema_macros::{PywrVisitAll, skip_serializing_none};
@@ -29,6 +29,7 @@ use schemars::JsonSchema;
 pub struct OffsetParameter {
     /// Meta-data.
     pub meta: ParameterMeta,
+    pub phase: ParameterPhase,
     /// The offset value applied to the metric.
     ///
     /// In the simple case this will be the value used by the network. However, if an activation
@@ -50,12 +51,25 @@ impl OffsetParameter {
         parent: Option<&str>,
     ) -> Result<(), SchemaError> {
         let metric = self.metric.load(network, args, None)?;
-
-        let p = pywr_core::parameters::OffsetParameterBuilder::new(
-            ParameterName::new(&self.meta.name, parent),
-            metric,
-            self.offset.load(args.tables)?,
-        );
+        let name = ParameterName::new(&self.meta.name, parent);
+        
+        let p = match self.phase {
+            ParameterPhase::Before => pywr_core::parameters::OffsetParameterBuilder::before(
+                name,
+                metric,
+                self.offset.load(args.tables)?,
+            ),
+            ParameterPhase::After => pywr_core::parameters::OffsetParameterBuilder::after(
+                name,
+                metric,
+                self.offset.load(args.tables)?,
+            ),
+            ParameterPhase::Both => pywr_core::parameters::OffsetParameterBuilder::both(
+                name,
+                metric,
+                self.offset.load(args.tables)?,
+            ),
+        };
 
         network.parameters().f64(Box::new(p));
 

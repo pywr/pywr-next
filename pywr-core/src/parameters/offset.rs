@@ -2,7 +2,7 @@ use crate::metric::{MetricConsumerPhase, MetricF64, UnresolvedMetricF64};
 use crate::network::ResolutionMaps;
 use crate::parameters::errors::GeneralCalculationError;
 use crate::parameters::{
-    ActivationFunction, BuiltParameter, GeneralBeforeParameter, GeneralParameter, GeneralParameterContext,
+    ActivationFunction, BuiltParameter, GeneralBeforeParameter, GeneralAfterParameter, GeneralParameter, GeneralParameterContext,
     GeneralParameterEntry, MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder, ParameterMeta,
     ParameterName, ParameterState, VariableConfig, VariableParameter, VariableParameterError,
     downcast_internal_state_mut, downcast_internal_state_ref, downcast_variable_config_ref,
@@ -64,6 +64,21 @@ impl GeneralBeforeParameter<f64> for OffsetParameter {
         Ok(x + offset)
     }
 }
+
+
+impl GeneralAfterParameter<f64> for OffsetParameter {
+    fn after(
+        &self,
+        ctx: GeneralParameterContext<'_>,
+        internal_state: &mut Option<Box<dyn ParameterState>>,
+    ) -> Result<f64, GeneralCalculationError> {
+        let offset = self.offset(internal_state);
+        // Current value
+        let x = self.metric.get_value(ctx.network, ctx.state)?;
+        Ok(x + offset)
+    }
+}
+
 impl VariableParameter<f64> for OffsetParameter {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
@@ -110,19 +125,44 @@ impl VariableParameter<f64> for OffsetParameter {
     }
 }
 
+
+/// Builder for creating a [`OffsetParameter`].
 #[derive(Debug)]
 pub struct OffsetParameterBuilder {
     meta: ParameterMeta,
     metric: UnresolvedMetricF64,
     offset: f64,
+    phase: MetricConsumerPhase,
 }
 
 impl OffsetParameterBuilder {
-    pub fn new(name: ParameterName, metric: UnresolvedMetricF64, offset: f64) -> Self {
+    /// Create a new builder for [`OffsetParameter`] that is evaluated in the "before" phase.
+    pub fn before(name: ParameterName, metric: UnresolvedMetricF64, offset: f64) -> Self {
         Self {
             meta: ParameterMeta::new(name),
             metric,
             offset,
+            phase: MetricConsumerPhase::Before,
+        }
+    }
+
+    /// Create a new builder for [`OffsetParameter`] that is evaluated in the "after" phase.
+    pub fn after(name: ParameterName, metric: UnresolvedMetricF64, offset: f64) -> Self {
+        Self {
+            meta: ParameterMeta::new(name),
+            metric,
+            offset,
+            phase: MetricConsumerPhase::After,
+        }
+    }
+
+    /// Create a new builder for [`OffsetParameter`] that is evaluated in "before" and "after" phases.
+    pub fn both(name: ParameterName, metric: UnresolvedMetricF64, offset: f64) -> Self {
+        Self {
+            meta: ParameterMeta::new(name),
+            metric,
+            offset,
+            phase: MetricConsumerPhase::Both,
         }
     }
 }
@@ -136,9 +176,8 @@ impl ParameterBuilder<f64> for OffsetParameterBuilder {
         self: Box<Self>,
         resolution_maps: &ResolutionMaps,
     ) -> Result<MaybeBuiltParameter<f64>, ParameterBuildError> {
-        // Phase is hardcoded to "before" for this parameter, as it only implements the `GeneralBeforeParameter` trait.
-        let phase = MetricConsumerPhase::Before;
-        let metric = resolve_metric_f64!(self, self.metric, resolution_maps, phase, "metric");
+
+        let metric = resolve_metric_f64!(self, self.metric, resolution_maps, self.phase, "metric");
 
         let p = OffsetParameter {
             meta: self.meta,
@@ -146,6 +185,18 @@ impl ParameterBuilder<f64> for OffsetParameterBuilder {
             offset: self.offset,
         };
 
-        Ok(BuiltParameter::General(GeneralParameterEntry::before(p)).into())
+        let built = match self.phase {
+            MetricConsumerPhase::Before => {
+                BuiltParameter::General(GeneralParameterEntry::before(p))
+            },
+            MetricConsumerPhase::After => {
+                BuiltParameter::General(GeneralParameterEntry::after(p))
+            },
+            MetricConsumerPhase::Both => {
+                BuiltParameter::General(GeneralParameterEntry::both(p))
+            }
+        };
+
+        Ok(built.into())
     }
 }
