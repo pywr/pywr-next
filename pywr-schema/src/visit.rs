@@ -1,6 +1,7 @@
+use crate::edge::Edge;
 use crate::metric::{IndexMetric, Metric};
 use std::collections::HashMap;
-use std::num::NonZeroUsize;
+use std::num::{NonZeroI64, NonZeroUsize};
 use std::path::{Path, PathBuf};
 
 /// A trait for recursively visiting [`Metric`] in a schema.
@@ -237,187 +238,249 @@ impl VisitPaths for NonZeroUsize {}
 
 impl VisitPaths for serde_json::Value {}
 
-/// A trait for recursively visiting node references in a schema.
-///
-/// This trait is used to visit every place a node's name is *referred to*. This is useful,
-/// for example, for finding every component that depends on a node.
-///
-/// This vistor assumes that names are unique in the schema, and that every reference is
-/// unambiguous. This is guaranteed by [`NetworkSchema::validate`](crate::NetworkSchema::validate),
-/// which should be called before visiting references.
-///
-/// This trait does **not** visit the name a node gives *itself* in its
-/// [`crate::nodes::NodeMeta`], because that is a definition rather than a reference.
-pub trait VisitNodeReferences {
-    fn visit_node_references<F: FnMut(&str)>(&self, _visitor: &mut F) {}
-
-    fn visit_node_references_mut<F: FnMut(&mut String)>(&mut self, _visitor: &mut F) {}
+/// A reference to a schema component by name.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Reference<'a> {
+    /// Resolved in the network's `nodes`.
+    Node(&'a str),
+    /// Resolved in the network's `virtual_nodes`.
+    VirtualNode(&'a str),
+    /// Resolved in the network's `edges`, on all four fields: two edges can share endpoints and
+    /// differ only in slot. The endpoints are also visited as [`Reference::Node`].
+    Edge(&'a Edge),
+    /// Resolved in the network's `parameters`.
+    Parameter(&'a str),
+    /// Resolved in the owning node's or virtual node's own `parameters`, so the name is
+    /// meaningless without the [`Owner`].
+    LocalParameter(&'a str),
+    /// Resolved in the network's `tables`.
+    Table(&'a str),
+    /// Resolved in the network's `timeseries`.
+    Timeseries(&'a str),
+    /// Resolved in the network's `metric_sets`. Only an output names one.
+    MetricSet(&'a str),
+    /// Resolved in the model's `scenarios.groups`, not in the network.
+    ScenarioGroup(&'a str),
 }
 
-impl VisitNodeReferences for Metric {
-    fn visit_node_references<F: FnMut(&str)>(&self, visitor: &mut F) {
+/// The mutable form of [`Reference`], with variants corresponding one-for-one.
+#[derive(Debug, PartialEq)]
+pub enum ReferenceMut<'a> {
+    Node(&'a mut String),
+    VirtualNode(&'a mut String),
+    Edge(&'a mut Edge),
+    Parameter(&'a mut String),
+    LocalParameter(&'a mut String),
+    Table(&'a mut String),
+    Timeseries(&'a mut String),
+    MetricSet(&'a mut String),
+    ScenarioGroup(&'a mut String),
+}
+
+/// The top-level component holding a [`Reference`], however deeply nested the reference is. A
+/// reference inside a node's local parameter is owned by the node, which is the scope a
+/// [`Reference::LocalParameter`] resolves in.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Owner<'a> {
+    Node(&'a str),
+    VirtualNode(&'a str),
+    Edge(&'a Edge),
+    Parameter(&'a str),
+    MetricSet(&'a str),
+    Output(&'a str),
+}
+
+/// A trait for recursively visiting every reference a schema component makes by name.
+///
+/// It reaches what [`VisitMetrics`] cannot, since an [`IndexMetric`] is not a [`Metric`] and its
+/// `VisitMetrics` impl is empty.
+///
+/// It does not yield the name a component gives itself, which is a definition rather than a
+/// reference, nor an inter-network transfer, which resolves against a multi-network model.
+///
+/// For the element holding each reference, use
+/// [`NetworkSchema::visit_owned_references`](crate::NetworkSchema::visit_owned_references).
+pub trait VisitReferences {
+    fn visit_references<F: FnMut(Reference<'_>)>(&self, _visitor: &mut F) {}
+
+    fn visit_references_mut<F: FnMut(ReferenceMut<'_>)>(&mut self, _visitor: &mut F) {}
+}
+
+impl VisitReferences for Metric {
+    fn visit_references<F: FnMut(Reference<'_>)>(&self, visitor: &mut F) {
         match self {
-            Metric::Node(node_ref) => node_ref.visit_node_references(visitor),
-            Metric::VirtualNode(node_ref) => node_ref.visit_node_references(visitor),
-            Metric::Edge(edge_ref) => edge_ref.visit_node_references(visitor),
-            Metric::Literal { .. }
-            | Metric::Table(_)
-            | Metric::Timeseries(_)
-            | Metric::Parameter(_)
-            | Metric::LocalParameter(_)
-            | Metric::InterNetworkTransfer { .. } => {}
+            Metric::Node(node_ref) => node_ref.visit_references(visitor),
+            Metric::VirtualNode(node_ref) => node_ref.visit_references(visitor),
+            Metric::Edge(edge_ref) => edge_ref.visit_references(visitor),
+            Metric::Table(table_ref) => table_ref.visit_references(visitor),
+            Metric::Timeseries(ts_ref) => ts_ref.visit_references(visitor),
+            Metric::Parameter(p_ref) => visitor(Reference::Parameter(&p_ref.name)),
+            Metric::LocalParameter(p_ref) => visitor(Reference::LocalParameter(&p_ref.name)),
+            // An inter-network transfer resolves against the multi-network model, not this one.
+            Metric::Literal { .. } | Metric::InterNetworkTransfer { .. } => {}
         }
     }
 
-    fn visit_node_references_mut<F: FnMut(&mut String)>(&mut self, visitor: &mut F) {
+    fn visit_references_mut<F: FnMut(ReferenceMut<'_>)>(&mut self, visitor: &mut F) {
         match self {
-            Metric::Node(node_ref) => node_ref.visit_node_references_mut(visitor),
-            Metric::VirtualNode(node_ref) => node_ref.visit_node_references_mut(visitor),
-            Metric::Edge(edge_ref) => edge_ref.visit_node_references_mut(visitor),
-            Metric::Literal { .. }
-            | Metric::Table(_)
-            | Metric::Timeseries(_)
-            | Metric::Parameter(_)
-            | Metric::LocalParameter(_)
-            | Metric::InterNetworkTransfer { .. } => {}
+            Metric::Node(node_ref) => node_ref.visit_references_mut(visitor),
+            Metric::VirtualNode(node_ref) => node_ref.visit_references_mut(visitor),
+            Metric::Edge(edge_ref) => edge_ref.visit_references_mut(visitor),
+            Metric::Table(table_ref) => table_ref.visit_references_mut(visitor),
+            Metric::Timeseries(ts_ref) => ts_ref.visit_references_mut(visitor),
+            Metric::Parameter(p_ref) => visitor(ReferenceMut::Parameter(&mut p_ref.name)),
+            Metric::LocalParameter(p_ref) => visitor(ReferenceMut::LocalParameter(&mut p_ref.name)),
+            Metric::Literal { .. } | Metric::InterNetworkTransfer { .. } => {}
         }
     }
 }
 
-impl VisitNodeReferences for IndexMetric {
-    fn visit_node_references<F: FnMut(&str)>(&self, visitor: &mut F) {
+impl VisitReferences for IndexMetric {
+    fn visit_references<F: FnMut(Reference<'_>)>(&self, visitor: &mut F) {
         match self {
-            IndexMetric::Node(node_ref) => node_ref.visit_node_references(visitor),
-            IndexMetric::Constant { .. }
-            | IndexMetric::Table(_)
-            | IndexMetric::Timeseries(_)
-            | IndexMetric::Parameter(_)
-            | IndexMetric::LocalParameter(_)
-            | IndexMetric::InterNetworkTransfer { .. } => {}
+            IndexMetric::Node(node_ref) => node_ref.visit_references(visitor),
+            IndexMetric::Table(table_ref) => table_ref.visit_references(visitor),
+            IndexMetric::Timeseries(ts_ref) => ts_ref.visit_references(visitor),
+            IndexMetric::Parameter(p_ref) => visitor(Reference::Parameter(&p_ref.name)),
+            IndexMetric::LocalParameter(p_ref) => visitor(Reference::LocalParameter(&p_ref.name)),
+            IndexMetric::Constant { .. } | IndexMetric::InterNetworkTransfer { .. } => {}
         }
     }
 
-    fn visit_node_references_mut<F: FnMut(&mut String)>(&mut self, visitor: &mut F) {
+    fn visit_references_mut<F: FnMut(ReferenceMut<'_>)>(&mut self, visitor: &mut F) {
         match self {
-            IndexMetric::Node(node_ref) => node_ref.visit_node_references_mut(visitor),
-            IndexMetric::Constant { .. }
-            | IndexMetric::Table(_)
-            | IndexMetric::Timeseries(_)
-            | IndexMetric::Parameter(_)
-            | IndexMetric::LocalParameter(_)
-            | IndexMetric::InterNetworkTransfer { .. } => {}
+            IndexMetric::Node(node_ref) => node_ref.visit_references_mut(visitor),
+            IndexMetric::Table(table_ref) => table_ref.visit_references_mut(visitor),
+            IndexMetric::Timeseries(ts_ref) => ts_ref.visit_references_mut(visitor),
+            IndexMetric::Parameter(p_ref) => visitor(ReferenceMut::Parameter(&mut p_ref.name)),
+            IndexMetric::LocalParameter(p_ref) => visitor(ReferenceMut::LocalParameter(&mut p_ref.name)),
+            IndexMetric::Constant { .. } | IndexMetric::InterNetworkTransfer { .. } => {}
         }
     }
 }
 
-impl<T> VisitNodeReferences for Option<T>
+impl<T> VisitReferences for Option<T>
 where
-    T: VisitNodeReferences,
+    T: VisitReferences,
 {
-    fn visit_node_references<F: FnMut(&str)>(&self, visitor: &mut F) {
+    fn visit_references<F: FnMut(Reference<'_>)>(&self, visitor: &mut F) {
         if let Some(inner) = self {
-            inner.visit_node_references(visitor);
+            inner.visit_references(visitor);
         }
     }
 
-    fn visit_node_references_mut<F: FnMut(&mut String)>(&mut self, visitor: &mut F) {
+    fn visit_references_mut<F: FnMut(ReferenceMut<'_>)>(&mut self, visitor: &mut F) {
         if let Some(inner) = self {
-            inner.visit_node_references_mut(visitor);
+            inner.visit_references_mut(visitor);
         }
     }
 }
 
-impl<T> VisitNodeReferences for Vec<T>
+impl<T> VisitReferences for Vec<T>
 where
-    T: VisitNodeReferences,
+    T: VisitReferences,
 {
-    fn visit_node_references<F: FnMut(&str)>(&self, visitor: &mut F) {
+    fn visit_references<F: FnMut(Reference<'_>)>(&self, visitor: &mut F) {
         for item in self {
-            item.visit_node_references(visitor);
+            item.visit_references(visitor);
         }
     }
 
-    fn visit_node_references_mut<F: FnMut(&mut String)>(&mut self, visitor: &mut F) {
+    fn visit_references_mut<F: FnMut(ReferenceMut<'_>)>(&mut self, visitor: &mut F) {
         for item in self {
-            item.visit_node_references_mut(visitor);
+            item.visit_references_mut(visitor);
         }
     }
 }
 
-/// Visit all the node references in a [`HashMap`]'s values.
+/// Visit all the references in a [`HashMap`]'s values.
 ///
 /// Note this does *not* visit the keys of the map.
-impl<K, V> VisitNodeReferences for HashMap<K, V>
+impl<K, V> VisitReferences for HashMap<K, V>
 where
-    V: VisitNodeReferences,
+    V: VisitReferences,
 {
-    fn visit_node_references<F: FnMut(&str)>(&self, visitor: &mut F) {
+    fn visit_references<F: FnMut(Reference<'_>)>(&self, visitor: &mut F) {
         for value in self.values() {
-            value.visit_node_references(visitor);
+            value.visit_references(visitor);
         }
     }
 
-    fn visit_node_references_mut<F: FnMut(&mut String)>(&mut self, visitor: &mut F) {
+    fn visit_references_mut<F: FnMut(ReferenceMut<'_>)>(&mut self, visitor: &mut F) {
         for value in self.values_mut() {
-            value.visit_node_references_mut(visitor);
+            value.visit_references_mut(visitor);
         }
     }
 }
 
-impl<A, B> VisitNodeReferences for (A, B)
+impl<A, B> VisitReferences for (A, B)
 where
-    A: VisitNodeReferences,
-    B: VisitNodeReferences,
+    A: VisitReferences,
+    B: VisitReferences,
 {
-    fn visit_node_references<F: FnMut(&str)>(&self, visitor: &mut F) {
-        self.0.visit_node_references(visitor);
-        self.1.visit_node_references(visitor);
+    fn visit_references<F: FnMut(Reference<'_>)>(&self, visitor: &mut F) {
+        self.0.visit_references(visitor);
+        self.1.visit_references(visitor);
     }
 
-    fn visit_node_references_mut<F: FnMut(&mut String)>(&mut self, visitor: &mut F) {
-        self.0.visit_node_references_mut(visitor);
-        self.1.visit_node_references_mut(visitor);
+    fn visit_references_mut<F: FnMut(ReferenceMut<'_>)>(&mut self, visitor: &mut F) {
+        self.0.visit_references_mut(visitor);
+        self.1.visit_references_mut(visitor);
+    }
+}
+
+impl<T> VisitReferences for Box<T>
+where
+    T: VisitReferences,
+{
+    fn visit_references<F: FnMut(Reference<'_>)>(&self, visitor: &mut F) {
+        self.as_ref().visit_references(visitor);
+    }
+
+    fn visit_references_mut<F: FnMut(ReferenceMut<'_>)>(&mut self, visitor: &mut F) {
+        self.as_mut().visit_references_mut(visitor);
     }
 }
 
-impl VisitNodeReferences for u8 {}
-impl VisitNodeReferences for i8 {}
-impl VisitNodeReferences for u16 {}
-impl VisitNodeReferences for i16 {}
-impl VisitNodeReferences for u32 {}
-impl VisitNodeReferences for i32 {}
+impl VisitReferences for u8 {}
+impl VisitReferences for i8 {}
+impl VisitReferences for u16 {}
+impl VisitReferences for i16 {}
+impl VisitReferences for u32 {}
+impl VisitReferences for i32 {}
 
-impl VisitNodeReferences for f32 {}
-impl VisitNodeReferences for f64 {}
-impl<const N: usize> VisitNodeReferences for [f64; N] {}
-impl<const N: usize> VisitNodeReferences for [Metric; N] {
-    fn visit_node_references<F: FnMut(&str)>(&self, visitor: &mut F) {
+impl VisitReferences for f32 {}
+impl VisitReferences for f64 {}
+impl<const N: usize> VisitReferences for [f64; N] {}
+impl<const N: usize> VisitReferences for [Metric; N] {
+    fn visit_references<F: FnMut(Reference<'_>)>(&self, visitor: &mut F) {
         for item in self {
-            item.visit_node_references(visitor);
+            item.visit_references(visitor);
         }
     }
 
-    fn visit_node_references_mut<F: FnMut(&mut String)>(&mut self, visitor: &mut F) {
+    fn visit_references_mut<F: FnMut(ReferenceMut<'_>)>(&mut self, visitor: &mut F) {
         for item in self {
-            item.visit_node_references_mut(visitor);
+            item.visit_references_mut(visitor);
         }
     }
 }
-impl VisitNodeReferences for bool {}
-impl VisitNodeReferences for u64 {}
-/// A plain string is not a node reference; only the reference types are.
-impl VisitNodeReferences for String {}
-impl VisitNodeReferences for PathBuf {}
-impl VisitNodeReferences for NonZeroUsize {}
+impl VisitReferences for bool {}
+impl VisitReferences for u64 {}
+/// A plain string is not a reference; only the reference types are.
+impl VisitReferences for String {}
+impl VisitReferences for PathBuf {}
+impl VisitReferences for NonZeroUsize {}
+impl VisitReferences for NonZeroI64 {}
 
-impl VisitNodeReferences for serde_json::Value {}
+impl VisitReferences for serde_json::Value {}
 
 #[cfg(test)]
 mod tests {
     use crate::metric::Metric;
     use crate::network::NetworkSchema;
     use crate::nodes::VirtualNode;
-    use crate::visit::{VisitMetrics, VisitNodeReferences};
+    use crate::visit::{Owner, Reference, ReferenceMut, VisitMetrics, VisitReferences};
     use std::str::FromStr;
 
     /// A network containing a metric in every location a metric can appear.
@@ -602,19 +665,10 @@ mod tests {
         }
     }
 
-    /// Collect every visited reference name, sorted, so that the assertions do not depend on the
-    /// order in which the schema happens to be walked.
-    fn collect_node_references(network: &NetworkSchema) -> Vec<String> {
-        let mut refs = Vec::new();
-        network.visit_node_references(&mut |name| refs.push(name.to_string()));
-        refs.sort();
-        refs
-    }
-
-    /// A network containing a node reference in every location a node name can appear.
+    /// A node reference in every location a node name can appear, each named for its location.
     ///
-    /// Each reference names the location it appears in, so that a location the visitor fails to
-    /// reach can be identified from the assertion failure.
+    /// This covers the places [`NETWORK_WITH_REFERENCES`] does not: a virtual storage's and an
+    /// aggregated storage's node lists, and a node metric on a storage node.
     const NETWORK_WITH_NODE_REFERENCES: &str = r#"
     {
         "nodes": [
@@ -673,76 +727,426 @@ mod tests {
     /// Every location a node name can appear should be reachable from the visitor.
     ///
     /// Note the node lists of the virtual nodes hold [`crate::metric::NodeComponentReference`],
-    /// so they refer to *nodes* even though they are reached through a virtual node.
+    /// so they yield [`Reference::Node`] even though they are reached through a virtual node.
     #[test]
-    fn test_visit_node_references() {
+    fn test_visit_references_reaches_every_node_location() {
         let network = NetworkSchema::from_str(NETWORK_WITH_NODE_REFERENCES).unwrap();
 
         assert_eq!(
-            collect_node_references(&network),
-            vec![
-                "aggregated-nodes",
-                "aggregated-storage-nodes",
-                "edge-from",
-                "edge-to",
-                "index-metric",
-                "metric-edge-from",
-                "metric-edge-to",
-                "metric-set-metric",
-                "node-metric",
-                "virtual-node-metric",
-                "virtual-storage-nodes",
+            collect_references(&network),
+            [
+                "Edge:metric-edge-from->metric-edge-to",
+                "Node:aggregated-nodes",
+                "Node:aggregated-storage-nodes",
+                "Node:edge-from",
+                "Node:edge-to",
+                "Node:index-metric",
+                "Node:metric-edge-from",
+                "Node:metric-edge-to",
+                "Node:metric-set-metric",
+                "Node:node-metric",
+                "Node:virtual-storage-nodes",
+                "VirtualNode:virtual-node-metric",
             ]
         );
     }
 
-    /// The names a node gives itself are definitions rather than references, so they should not
-    /// be visited.
-    #[test]
-    fn test_visit_node_references_skips_component_names() {
-        let network = NetworkSchema::from_str(NETWORK_WITH_NODE_REFERENCES).unwrap();
+    /// A reference of every kind, each named for its location so a missed one is identifiable.
+    /// Several sit behind an [`IndexMetric`], which no other visitor reaches.
+    const NETWORK_WITH_REFERENCES: &str = r#"
+    {
+        "nodes": [
+            {
+                "meta": { "name": "supply" },
+                "type": "Input",
+                "parameters": [
+                    {
+                        "meta": { "name": "supply-local" },
+                        "type": "Negative",
+                        "phase": "Before",
+                        "parameter": {
+                            "type": "Timeseries",
+                            "name": "local-parameter-timeseries",
+                            "columns": { "type": "Column", "name": "timeseries-column" }
+                        }
+                    }
+                ],
+                "max_flow": { "type": "Parameter", "name": "node-parameter" },
+                "min_flow": { "type": "LocalParameter", "name": "node-local-parameter" },
+                "cost": { "type": "Table", "table": "node-table" }
+            },
+            {
+                "meta": { "name": "demand" },
+                "type": "Output"
+            }
+        ],
+        "virtual_nodes": [
+            {
+                "meta": { "name": "licence" },
+                "type": "Aggregated",
+                "parameters": [
+                    {
+                        "meta": { "name": "licence-local" },
+                        "type": "Negative",
+                        "phase": "Before",
+                        "parameter": { "type": "Parameter", "name": "virtual-node-local-parameter" }
+                    }
+                ],
+                "nodes": [{ "name": "aggregated-node-component" }],
+                "max_flow": { "type": "VirtualNode", "name": "virtual-node-metric" }
+            }
+        ],
+        "edges": [
+            { "from_node": "edge-from", "to_node": "edge-to" }
+        ],
+        "parameters": [
+            {
+                "meta": { "name": "index-holder" },
+                "type": "IndexedArray",
+                "metrics": [
+                    { "type": "Edge", "edge": { "from_node": "metric-edge-from", "to_node": "metric-edge-to" } }
+                ],
+                "index_parameter": { "type": "Parameter", "name": "index-metric-parameter" }
+            },
+            {
+                "meta": { "name": "index-agg" },
+                "type": "AggregatedIndex",
+                "phase": "Before",
+                "agg_func": { "type": "Sum" },
+                "metrics": [
+                    { "type": "LocalParameter", "name": "index-metric-local-parameter" },
+                    { "type": "Table", "table": "index-metric-table" },
+                    {
+                        "type": "Timeseries",
+                        "name": "index-metric-timeseries",
+                        "columns": { "type": "Scenario", "name": "timeseries-columns-scenario-group" }
+                    },
+                    { "type": "Node", "name": "index-metric-node" }
+                ]
+            },
+            {
+                "meta": { "name": "constant-from-table" },
+                "type": "Constant",
+                "value": { "type": "Table", "table": "constant-value-table" }
+            },
+            {
+                "meta": { "name": "constant-scenario" },
+                "type": "ConstantScenario",
+                "values": { "type": "Table", "table": "constant-scenario-values-table" },
+                "scenario_group": "constant-scenario-group"
+            },
+            {
+                "meta": { "name": "tables-array" },
+                "type": "TablesArray",
+                "node": "dataset",
+                "where": "/group",
+                "url": "data.h5",
+                "scenario": "tables-array-scenario-group"
+            }
+        ],
+        "metric_sets": [
+            {
+                "name": "ms1",
+                "metrics": [{ "type": "Parameter", "name": "metric-set-parameter" }]
+            }
+        ],
+        "outputs": [
+            { "name": "csv-out", "type": "CSV", "format": "Long", "filename": "out.csv",
+              "metric_set": ["csv-output-metric-set-1", "csv-output-metric-set-2"] },
+            { "name": "hdf-out", "type": "HDF5", "filename": "out.h5", "metric_set": "hdf5-output-metric-set" },
+            { "name": "memory-out", "type": "Memory", "metric_set": "memory-output-metric-set" }
+        ]
+    }
+    "#;
 
-        let names = collect_node_references(&network);
+    /// Every reference in [`NETWORK_WITH_REFERENCES`], sorted. Definitions are absent: the metric
+    /// set `ms1` is defined but never named, and the `edges` entry contributes only its endpoints.
+    /// So is `timeseries-column`, which resolves in the timeseries' own data.
+    const EXPECTED_REFERENCES: [&str; 27] = [
+        "Edge:metric-edge-from->metric-edge-to",
+        "LocalParameter:index-metric-local-parameter",
+        "LocalParameter:node-local-parameter",
+        "MetricSet:csv-output-metric-set-1",
+        "MetricSet:csv-output-metric-set-2",
+        "MetricSet:hdf5-output-metric-set",
+        "MetricSet:memory-output-metric-set",
+        "Node:aggregated-node-component",
+        "Node:edge-from",
+        "Node:edge-to",
+        "Node:index-metric-node",
+        "Node:metric-edge-from",
+        "Node:metric-edge-to",
+        "Parameter:index-metric-parameter",
+        "Parameter:metric-set-parameter",
+        "Parameter:node-parameter",
+        "Parameter:virtual-node-local-parameter",
+        "ScenarioGroup:constant-scenario-group",
+        "ScenarioGroup:tables-array-scenario-group",
+        "ScenarioGroup:timeseries-columns-scenario-group",
+        "Table:constant-scenario-values-table",
+        "Table:constant-value-table",
+        "Table:index-metric-table",
+        "Table:node-table",
+        "Timeseries:index-metric-timeseries",
+        "Timeseries:local-parameter-timeseries",
+        "VirtualNode:virtual-node-metric",
+    ];
 
-        for defined_name in ["target", "downstream", "licence", "agg", "agg-storage", "p1", "ms1"] {
-            assert!(!names.contains(&defined_name.to_string()), "{defined_name} was visited");
+    /// Render a reference as "Kind:name", so a failure names the kind as well as the location.
+    fn describe(reference: Reference<'_>) -> String {
+        match reference {
+            Reference::Node(name) => format!("Node:{name}"),
+            Reference::VirtualNode(name) => format!("VirtualNode:{name}"),
+            Reference::Edge(edge) => format!("Edge:{edge}"),
+            Reference::Parameter(name) => format!("Parameter:{name}"),
+            Reference::LocalParameter(name) => format!("LocalParameter:{name}"),
+            Reference::Table(name) => format!("Table:{name}"),
+            Reference::Timeseries(name) => format!("Timeseries:{name}"),
+            Reference::MetricSet(name) => format!("MetricSet:{name}"),
+            Reference::ScenarioGroup(name) => format!("ScenarioGroup:{name}"),
         }
     }
 
-    /// The mutable visitor should rewrite every reference to a renamed node.
-    ///
-    /// Node names are a single name-space, so the visitor rewrites by name alone.
-    #[test]
-    fn test_visit_node_references_mut() {
-        let mut network = NetworkSchema::from_str(NETWORK_WITH_NODE_REFERENCES).unwrap();
+    /// As [`describe`], for the mutable form.
+    fn describe_mut(reference: &ReferenceMut<'_>) -> String {
+        match reference {
+            ReferenceMut::Node(name) => format!("Node:{name}"),
+            ReferenceMut::VirtualNode(name) => format!("VirtualNode:{name}"),
+            ReferenceMut::Edge(edge) => format!("Edge:{edge}"),
+            ReferenceMut::Parameter(name) => format!("Parameter:{name}"),
+            ReferenceMut::LocalParameter(name) => format!("LocalParameter:{name}"),
+            ReferenceMut::Table(name) => format!("Table:{name}"),
+            ReferenceMut::Timeseries(name) => format!("Timeseries:{name}"),
+            ReferenceMut::MetricSet(name) => format!("MetricSet:{name}"),
+            ReferenceMut::ScenarioGroup(name) => format!("ScenarioGroup:{name}"),
+        }
+    }
 
-        network.visit_node_references_mut(&mut |name| {
-            if name == "edge-from" {
+    fn describe_owner(owner: Owner<'_>) -> String {
+        match owner {
+            Owner::Node(name) => format!("node \"{name}\""),
+            Owner::VirtualNode(name) => format!("virtual node \"{name}\""),
+            Owner::Edge(edge) => format!("edge \"{edge}\""),
+            Owner::Parameter(name) => format!("parameter \"{name}\""),
+            Owner::MetricSet(name) => format!("metric set \"{name}\""),
+            Owner::Output(name) => format!("output \"{name}\""),
+        }
+    }
+
+    /// Collect every visited reference, sorted, so assertions do not depend on the walk order.
+    fn collect_references(network: &NetworkSchema) -> Vec<String> {
+        let mut refs = Vec::new();
+        network.visit_references(&mut |reference| refs.push(describe(reference)));
+        refs.sort();
+        refs
+    }
+
+    /// As [`collect_references`], but through the owner-aware walk, tagging each hit.
+    fn collect_owned_references(network: &NetworkSchema) -> Vec<String> {
+        let mut refs = Vec::new();
+        network.visit_owned_references(&mut |owner, reference| {
+            refs.push(format!("{}: {}", describe_owner(owner), describe(reference)))
+        });
+        refs.sort();
+        refs
+    }
+
+    /// Every location a reference can appear should be reachable from the visitor.
+    #[test]
+    fn test_visit_references_reaches_every_reference() {
+        let network = NetworkSchema::from_str(NETWORK_WITH_REFERENCES).unwrap();
+
+        assert_eq!(collect_references(&network), EXPECTED_REFERENCES);
+    }
+
+    /// The mutable visitor should reach every reference with the same kind as the immutable one,
+    /// and hand out borrows into the schema, so a name it rewrites is replaced in the network.
+    #[test]
+    fn test_visit_references_mut_reaches_and_rewrites_every_reference() {
+        let mut network = NetworkSchema::from_str(NETWORK_WITH_REFERENCES).unwrap();
+
+        let mut seen = Vec::new();
+        network.visit_references_mut(&mut |reference| {
+            seen.push(describe_mut(&reference));
+            match reference {
+                ReferenceMut::Node(name)
+                | ReferenceMut::VirtualNode(name)
+                | ReferenceMut::Parameter(name)
+                | ReferenceMut::LocalParameter(name)
+                | ReferenceMut::Table(name)
+                | ReferenceMut::Timeseries(name)
+                | ReferenceMut::MetricSet(name)
+                | ReferenceMut::ScenarioGroup(name) => *name = "rewritten".to_string(),
+                // An edge's endpoints are rewritten through their own `Node` arm.
+                ReferenceMut::Edge(_) => {}
+            }
+        });
+        seen.sort();
+        assert_eq!(seen, EXPECTED_REFERENCES);
+
+        for reference in collect_references(&network) {
+            let (kind, name) = reference.split_once(':').unwrap();
+            let expected = if kind == "Edge" {
+                "rewritten->rewritten"
+            } else {
+                "rewritten"
+            };
+            assert_eq!(name, expected, "{kind} was not rewritten");
+        }
+    }
+
+    /// Every reference should be reported with the element that holds it, and a reference
+    /// inside a local parameter with the enclosing node, which is the scope that resolves it.
+    #[test]
+    fn test_visit_owned_references_names_the_owner() {
+        let network = NetworkSchema::from_str(NETWORK_WITH_REFERENCES).unwrap();
+
+        assert_eq!(
+            collect_owned_references(&network),
+            [
+                "edge \"edge-from->edge-to\": Node:edge-from",
+                "edge \"edge-from->edge-to\": Node:edge-to",
+                "metric set \"ms1\": Parameter:metric-set-parameter",
+                "node \"supply\": LocalParameter:node-local-parameter",
+                "node \"supply\": Parameter:node-parameter",
+                "node \"supply\": Table:node-table",
+                "node \"supply\": Timeseries:local-parameter-timeseries",
+                // A CSV output may name several metric sets, and yields one reference each.
+                "output \"csv-out\": MetricSet:csv-output-metric-set-1",
+                "output \"csv-out\": MetricSet:csv-output-metric-set-2",
+                "output \"hdf-out\": MetricSet:hdf5-output-metric-set",
+                "output \"memory-out\": MetricSet:memory-output-metric-set",
+                "parameter \"constant-from-table\": Table:constant-value-table",
+                "parameter \"constant-scenario\": ScenarioGroup:constant-scenario-group",
+                "parameter \"constant-scenario\": Table:constant-scenario-values-table",
+                "parameter \"index-agg\": LocalParameter:index-metric-local-parameter",
+                "parameter \"index-agg\": Node:index-metric-node",
+                "parameter \"index-agg\": ScenarioGroup:timeseries-columns-scenario-group",
+                "parameter \"index-agg\": Table:index-metric-table",
+                "parameter \"index-agg\": Timeseries:index-metric-timeseries",
+                "parameter \"index-holder\": Edge:metric-edge-from->metric-edge-to",
+                "parameter \"index-holder\": Node:metric-edge-from",
+                "parameter \"index-holder\": Node:metric-edge-to",
+                "parameter \"index-holder\": Parameter:index-metric-parameter",
+                "parameter \"tables-array\": ScenarioGroup:tables-array-scenario-group",
+                "virtual node \"licence\": Node:aggregated-node-component",
+                // Held by the virtual node's own local parameter.
+                "virtual node \"licence\": Parameter:virtual-node-local-parameter",
+                "virtual node \"licence\": VirtualNode:virtual-node-metric",
+            ]
+        );
+    }
+
+    /// Two metrics naming edges that share endpoints and differ only in slot.
+    const NETWORK_WITH_SLOTTED_EDGES: &str = r#"
+    {
+        "nodes": [],
+        "edges": [],
+        "parameters": [
+            {
+                "meta": { "name": "p1" },
+                "type": "Aggregated",
+                "phase": "Before",
+                "agg_func": { "type": "Sum" },
+                "metrics": [
+                    {
+                        "type": "Edge",
+                        "edge": {
+                            "from_node": "reservoir",
+                            "to_node": "reach",
+                            "from_slot": { "type": "Spill" }
+                        }
+                    },
+                    {
+                        "type": "Edge",
+                        "edge": { "from_node": "reservoir", "to_node": "reach" }
+                    }
+                ]
+            }
+        ]
+    }
+    "#;
+
+    /// An edge reference carries all four fields, so two edges sharing endpoints and differing
+    /// only in slot are told apart.
+    #[test]
+    fn test_edge_references_are_distinguished_by_slot() {
+        let network = NetworkSchema::from_str(NETWORK_WITH_SLOTTED_EDGES).unwrap();
+
+        let edges: Vec<String> = collect_references(&network)
+            .into_iter()
+            .filter(|r| r.starts_with("Edge:"))
+            .collect();
+
+        assert_eq!(edges, ["Edge:reservoir->reach", "Edge:reservoir[Spill]->reach"]);
+    }
+
+    /// A network where a global parameter, and a local parameter of two different nodes, all
+    /// share one name.
+    const NETWORK_WITH_SHARED_PARAMETER_NAME: &str = r#"
+    {
+        "nodes": [
+            {
+                "meta": { "name": "n1" },
+                "type": "Input",
+                "max_flow": { "type": "Parameter", "name": "shared" },
+                "min_flow": { "type": "LocalParameter", "name": "shared" }
+            },
+            {
+                "meta": { "name": "n2" },
+                "type": "Input",
+                "max_flow": { "type": "LocalParameter", "name": "shared" }
+            }
+        ],
+        "edges": []
+    }
+    "#;
+
+    /// Renaming a global parameter must not touch a local one of the same name. The kind on the
+    /// reference is what keeps them apart; a bare name could not.
+    #[test]
+    fn test_renaming_a_global_parameter_leaves_local_parameters_alone() {
+        let mut network = NetworkSchema::from_str(NETWORK_WITH_SHARED_PARAMETER_NAME).unwrap();
+
+        network.visit_references_mut(&mut |reference| {
+            if let ReferenceMut::Parameter(name) = reference
+                && name == "shared"
+            {
                 *name = "renamed".to_string();
             }
         });
 
-        assert_eq!(network.edges[0].from_node, "renamed");
-
-        let names = collect_node_references(&network);
-        assert!(names.contains(&"renamed".to_string()));
-        assert!(!names.contains(&"edge-from".to_string()));
+        assert_eq!(
+            collect_owned_references(&network),
+            [
+                "node \"n1\": LocalParameter:shared",
+                "node \"n1\": Parameter:renamed",
+                "node \"n2\": LocalParameter:shared",
+            ]
+        );
     }
 
-    /// A reference to a virtual node is visited in the same way as a reference to a node, so a
-    /// rename reaches both.
+    /// A local parameter resolves in its owner's list, so renaming one node's must not touch
+    /// another node's of the same name. Only the owner makes that possible.
     #[test]
-    fn test_visit_node_references_mut_rewrites_virtual_node_references() {
-        let mut network = NetworkSchema::from_str(NETWORK_WITH_NODE_REFERENCES).unwrap();
+    fn test_renaming_a_local_parameter_is_scoped_to_its_owner() {
+        let mut network = NetworkSchema::from_str(NETWORK_WITH_SHARED_PARAMETER_NAME).unwrap();
 
-        network.visit_node_references_mut(&mut |name| {
-            if name == "virtual-node-metric" {
-                *name = "renamed-vn".to_string();
+        network.visit_owned_references_mut(&mut |owner, reference| {
+            if let (Owner::Node("n1"), ReferenceMut::LocalParameter(name)) = (owner, reference)
+                && name == "shared"
+            {
+                *name = "renamed".to_string();
             }
         });
 
-        let names = collect_node_references(&network);
-        assert!(names.contains(&"renamed-vn".to_string()));
-        assert!(!names.contains(&"virtual-node-metric".to_string()));
+        assert_eq!(
+            collect_owned_references(&network),
+            [
+                "node \"n1\": LocalParameter:renamed",
+                "node \"n1\": Parameter:shared",
+                "node \"n2\": LocalParameter:shared",
+            ]
+        );
     }
 }

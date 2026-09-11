@@ -4,7 +4,7 @@ use crate::SchemaError;
 #[cfg(feature = "core")]
 use crate::network::LoadArgs;
 use crate::nodes::NodeSlot;
-use crate::visit::VisitNodeReferences;
+use crate::visit::{Reference, ReferenceMut, VisitReferences};
 #[cfg(feature = "core")]
 use pywr_core::{metric::UnresolvedMetricF64, network::UnresolvedEdge, node::UnresolvedNode};
 use pywr_schema_macros::skip_serializing_none;
@@ -42,15 +42,17 @@ impl TryFrom<pywr_v1_schema::edge::Edge> for Edge {
     }
 }
 
-impl VisitNodeReferences for Edge {
-    fn visit_node_references<F: FnMut(&str)>(&self, visitor: &mut F) {
-        visitor(&self.from_node);
-        visitor(&self.to_node);
+/// An edge refers to its two nodes, not to itself: an `edges` entry is a definition, and only
+/// [`EdgeReference`](crate::metric::EdgeReference) yields a [`Reference::Edge`].
+impl VisitReferences for Edge {
+    fn visit_references<F: FnMut(Reference<'_>)>(&self, visitor: &mut F) {
+        visitor(Reference::Node(&self.from_node));
+        visitor(Reference::Node(&self.to_node));
     }
 
-    fn visit_node_references_mut<F: FnMut(&mut String)>(&mut self, visitor: &mut F) {
-        visitor(&mut self.from_node);
-        visitor(&mut self.to_node);
+    fn visit_references_mut<F: FnMut(ReferenceMut<'_>)>(&mut self, visitor: &mut F) {
+        visitor(ReferenceMut::Node(&mut self.from_node));
+        visitor(ReferenceMut::Node(&mut self.to_node));
     }
 }
 

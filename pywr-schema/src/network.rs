@@ -17,7 +17,7 @@ use crate::timeseries::Timeseries;
 #[cfg(feature = "core")]
 use crate::timeseries::{LoadTimeseriesError, LoadedTimeseriesCollection};
 use crate::v1::{ConversionData, TryIntoV2};
-use crate::visit::{VisitMetrics, VisitNodeReferences, VisitPaths};
+use crate::visit::{Owner, Reference, ReferenceMut, VisitMetrics, VisitPaths, VisitReferences};
 #[cfg(all(feature = "core", feature = "pyo3"))]
 use pyo3::PyErr;
 #[cfg(feature = "pyo3")]
@@ -275,53 +275,127 @@ impl VisitMetrics for NetworkSchema {
     }
 }
 
-impl VisitNodeReferences for NetworkSchema {
-    fn visit_node_references<F: FnMut(&str)>(&self, visitor: &mut F) {
+impl VisitReferences for NetworkSchema {
+    fn visit_references<F: FnMut(Reference<'_>)>(&self, visitor: &mut F) {
         for node in &self.nodes {
-            node.visit_node_references(visitor);
+            node.visit_references(visitor);
         }
 
         for edge in &self.edges {
-            edge.visit_node_references(visitor);
+            edge.visit_references(visitor);
         }
 
         for virtual_node in self.virtual_nodes.as_deref().into_iter().flatten() {
-            virtual_node.visit_node_references(visitor);
+            virtual_node.visit_references(visitor);
         }
 
         for parameter in self.parameters.as_deref().into_iter().flatten() {
-            parameter.visit_node_references(visitor);
+            parameter.visit_references(visitor);
         }
 
         for metric_set in self.metric_sets.as_deref().into_iter().flatten() {
-            metric_set.metrics.visit_node_references(visitor);
+            metric_set.visit_references(visitor);
+        }
+
+        for output in self.outputs.as_deref().into_iter().flatten() {
+            output.visit_references(visitor);
         }
     }
 
-    fn visit_node_references_mut<F: FnMut(&mut String)>(&mut self, visitor: &mut F) {
+    fn visit_references_mut<F: FnMut(ReferenceMut<'_>)>(&mut self, visitor: &mut F) {
         for node in self.nodes.iter_mut() {
-            node.visit_node_references_mut(visitor);
+            node.visit_references_mut(visitor);
         }
 
         for edge in self.edges.iter_mut() {
-            edge.visit_node_references_mut(visitor);
+            edge.visit_references_mut(visitor);
         }
 
         for virtual_node in self.virtual_nodes.as_deref_mut().into_iter().flatten() {
-            virtual_node.visit_node_references_mut(visitor);
+            virtual_node.visit_references_mut(visitor);
         }
 
         for parameter in self.parameters.as_deref_mut().into_iter().flatten() {
-            parameter.visit_node_references_mut(visitor);
+            parameter.visit_references_mut(visitor);
         }
 
         for metric_set in self.metric_sets.as_deref_mut().into_iter().flatten() {
-            metric_set.metrics.visit_node_references_mut(visitor);
+            metric_set.visit_references_mut(visitor);
+        }
+
+        for output in self.outputs.as_deref_mut().into_iter().flatten() {
+            output.visit_references_mut(visitor);
         }
     }
 }
 
 impl NetworkSchema {
+    /// Visit every reference together with the top-level component holding it.
+    pub fn visit_owned_references<F: FnMut(Owner<'_>, Reference<'_>)>(&self, visitor: &mut F) {
+        for node in &self.nodes {
+            let owner = Owner::Node(node.name());
+            node.visit_references(&mut |reference| visitor(owner, reference));
+        }
+
+        for edge in &self.edges {
+            let owner = Owner::Edge(edge);
+            edge.visit_references(&mut |reference| visitor(owner, reference));
+        }
+
+        for virtual_node in self.virtual_nodes.as_deref().into_iter().flatten() {
+            let owner = Owner::VirtualNode(virtual_node.name());
+            virtual_node.visit_references(&mut |reference| visitor(owner, reference));
+        }
+
+        for parameter in self.parameters.as_deref().into_iter().flatten() {
+            let owner = Owner::Parameter(parameter.name());
+            parameter.visit_references(&mut |reference| visitor(owner, reference));
+        }
+
+        for metric_set in self.metric_sets.as_deref().into_iter().flatten() {
+            let owner = Owner::MetricSet(&metric_set.name);
+            metric_set.visit_references(&mut |reference| visitor(owner, reference));
+        }
+
+        for output in self.outputs.as_deref().into_iter().flatten() {
+            let owner = Owner::Output(output.name());
+            output.visit_references(&mut |reference| visitor(owner, reference));
+        }
+    }
+
+    /// As [`NetworkSchema::visit_owned_references`], but able to rewrite each reference.
+    pub fn visit_owned_references_mut<F: FnMut(Owner<'_>, ReferenceMut<'_>)>(&mut self, visitor: &mut F) {
+        for node in self.nodes.iter_mut() {
+            let owner_name = node.name().to_string();
+            node.visit_references_mut(&mut |reference| visitor(Owner::Node(&owner_name), reference));
+        }
+
+        for edge in self.edges.iter_mut() {
+            let owner_edge = edge.clone();
+            edge.visit_references_mut(&mut |reference| visitor(Owner::Edge(&owner_edge), reference));
+        }
+
+        for virtual_node in self.virtual_nodes.as_deref_mut().into_iter().flatten() {
+            let owner_name = virtual_node.name().to_string();
+            virtual_node.visit_references_mut(&mut |reference| visitor(Owner::VirtualNode(&owner_name), reference));
+        }
+
+        for parameter in self.parameters.as_deref_mut().into_iter().flatten() {
+            let owner_name = parameter.name().to_string();
+            parameter.visit_references_mut(&mut |reference| visitor(Owner::Parameter(&owner_name), reference));
+        }
+
+        for metric_set in self.metric_sets.as_deref_mut().into_iter().flatten() {
+            let owner_name = metric_set.name.clone();
+            metric_set.visit_references_mut(&mut |reference| visitor(Owner::MetricSet(&owner_name), reference));
+        }
+
+        for output in self.outputs.as_deref_mut().into_iter().flatten() {
+            let owner_name = output.name().to_string();
+            output.visit_references_mut(&mut |reference| visitor(Owner::Output(&owner_name), reference));
+        }
+    }
+
     pub fn from_path<P: AsRef<Path>>(path: P) -> Result<Self, NetworkSchemaReadError> {
         let data = std::fs::read_to_string(&path).map_err(|error| NetworkSchemaReadError::IO {
             path: path.as_ref().to_path_buf(),
