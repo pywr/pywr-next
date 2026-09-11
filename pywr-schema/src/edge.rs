@@ -12,7 +12,7 @@ use schemars::JsonSchema;
 use std::fmt::{Display, Formatter};
 
 #[skip_serializing_none]
-#[derive(serde::Deserialize, serde::Serialize, Clone, JsonSchema, Debug, PartialEq, Eq)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, JsonSchema, Debug, PartialEq, Eq, Hash)]
 pub struct Edge {
     pub from_node: String,
     pub to_node: String,
