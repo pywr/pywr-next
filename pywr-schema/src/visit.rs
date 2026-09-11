@@ -259,6 +259,8 @@ pub enum Reference<'a> {
     Timeseries(&'a str),
     /// Resolved in the network's `metric_sets`. Only an output names one.
     MetricSet(&'a str),
+    /// Resolved in the model's `scenarios.groups`, not in the network.
+    ScenarioGroup(&'a str),
 }
 
 /// The mutable form of [`Reference`], with variants corresponding one-for-one.
@@ -272,6 +274,7 @@ pub enum ReferenceMut<'a> {
     Table(&'a mut String),
     Timeseries(&'a mut String),
     MetricSet(&'a mut String),
+    ScenarioGroup(&'a mut String),
 }
 
 /// The top-level component holding a [`Reference`], however deeply nested the reference is. A
@@ -761,7 +764,11 @@ mod tests {
                         "meta": { "name": "supply-local" },
                         "type": "Negative",
                         "phase": "Before",
-                        "parameter": { "type": "Timeseries", "name": "local-parameter-timeseries" }
+                        "parameter": {
+                            "type": "Timeseries",
+                            "name": "local-parameter-timeseries",
+                            "columns": { "type": "Column", "name": "timeseries-column" }
+                        }
                     }
                 ],
                 "max_flow": { "type": "Parameter", "name": "node-parameter" },
@@ -809,7 +816,11 @@ mod tests {
                 "metrics": [
                     { "type": "LocalParameter", "name": "index-metric-local-parameter" },
                     { "type": "Table", "table": "index-metric-table" },
-                    { "type": "Timeseries", "name": "index-metric-timeseries" },
+                    {
+                        "type": "Timeseries",
+                        "name": "index-metric-timeseries",
+                        "columns": { "type": "Scenario", "name": "timeseries-columns-scenario-group" }
+                    },
                     { "type": "Node", "name": "index-metric-node" }
                 ]
             },
@@ -817,6 +828,20 @@ mod tests {
                 "meta": { "name": "constant-from-table" },
                 "type": "Constant",
                 "value": { "type": "Table", "table": "constant-value-table" }
+            },
+            {
+                "meta": { "name": "constant-scenario" },
+                "type": "ConstantScenario",
+                "values": { "type": "Table", "table": "constant-scenario-values-table" },
+                "scenario_group": "constant-scenario-group"
+            },
+            {
+                "meta": { "name": "tables-array" },
+                "type": "TablesArray",
+                "node": "dataset",
+                "where": "/group",
+                "url": "data.h5",
+                "scenario": "tables-array-scenario-group"
             }
         ],
         "metric_sets": [
@@ -836,7 +861,8 @@ mod tests {
 
     /// Every reference in [`NETWORK_WITH_REFERENCES`], sorted. Definitions are absent: the metric
     /// set `ms1` is defined but never named, and the `edges` entry contributes only its endpoints.
-    const EXPECTED_REFERENCES: [&str; 23] = [
+    /// So is `timeseries-column`, which resolves in the timeseries' own data.
+    const EXPECTED_REFERENCES: [&str; 27] = [
         "Edge:metric-edge-from->metric-edge-to",
         "LocalParameter:index-metric-local-parameter",
         "LocalParameter:node-local-parameter",
@@ -854,6 +880,10 @@ mod tests {
         "Parameter:metric-set-parameter",
         "Parameter:node-parameter",
         "Parameter:virtual-node-local-parameter",
+        "ScenarioGroup:constant-scenario-group",
+        "ScenarioGroup:tables-array-scenario-group",
+        "ScenarioGroup:timeseries-columns-scenario-group",
+        "Table:constant-scenario-values-table",
         "Table:constant-value-table",
         "Table:index-metric-table",
         "Table:node-table",
@@ -873,6 +903,7 @@ mod tests {
             Reference::Table(name) => format!("Table:{name}"),
             Reference::Timeseries(name) => format!("Timeseries:{name}"),
             Reference::MetricSet(name) => format!("MetricSet:{name}"),
+            Reference::ScenarioGroup(name) => format!("ScenarioGroup:{name}"),
         }
     }
 
@@ -887,6 +918,7 @@ mod tests {
             ReferenceMut::Table(name) => format!("Table:{name}"),
             ReferenceMut::Timeseries(name) => format!("Timeseries:{name}"),
             ReferenceMut::MetricSet(name) => format!("MetricSet:{name}"),
+            ReferenceMut::ScenarioGroup(name) => format!("ScenarioGroup:{name}"),
         }
     }
 
@@ -943,7 +975,8 @@ mod tests {
                 | ReferenceMut::LocalParameter(name)
                 | ReferenceMut::Table(name)
                 | ReferenceMut::Timeseries(name)
-                | ReferenceMut::MetricSet(name) => *name = "rewritten".to_string(),
+                | ReferenceMut::MetricSet(name)
+                | ReferenceMut::ScenarioGroup(name) => *name = "rewritten".to_string(),
                 // An edge's endpoints are rewritten through their own `Node` arm.
                 ReferenceMut::Edge(_) => {}
             }
@@ -984,14 +1017,18 @@ mod tests {
                 "output \"hdf-out\": MetricSet:hdf5-output-metric-set",
                 "output \"memory-out\": MetricSet:memory-output-metric-set",
                 "parameter \"constant-from-table\": Table:constant-value-table",
+                "parameter \"constant-scenario\": ScenarioGroup:constant-scenario-group",
+                "parameter \"constant-scenario\": Table:constant-scenario-values-table",
                 "parameter \"index-agg\": LocalParameter:index-metric-local-parameter",
                 "parameter \"index-agg\": Node:index-metric-node",
+                "parameter \"index-agg\": ScenarioGroup:timeseries-columns-scenario-group",
                 "parameter \"index-agg\": Table:index-metric-table",
                 "parameter \"index-agg\": Timeseries:index-metric-timeseries",
                 "parameter \"index-holder\": Edge:metric-edge-from->metric-edge-to",
                 "parameter \"index-holder\": Node:metric-edge-from",
                 "parameter \"index-holder\": Node:metric-edge-to",
                 "parameter \"index-holder\": Parameter:index-metric-parameter",
+                "parameter \"tables-array\": ScenarioGroup:tables-array-scenario-group",
                 "virtual node \"licence\": Node:aggregated-node-component",
                 // Held by the virtual node's own local parameter.
                 "virtual node \"licence\": Parameter:virtual-node-local-parameter",

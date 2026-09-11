@@ -6,9 +6,10 @@ use crate::metric::Metric;
 use crate::network::LoadArgs;
 use crate::parameters::{ConstantFloatVec, ConstantValue, ConversionData, ParameterMeta, ParameterPhase};
 use crate::v1::{TryFromV1, TryIntoV2, try_convert_parameter_attr, try_convert_values};
+use crate::visit::{Reference, ReferenceMut, VisitReferences};
 #[cfg(feature = "core")]
 use pywr_core::parameters::ParameterName;
-use pywr_schema_macros::{PywrVisitAll, skip_serializing_none};
+use pywr_schema_macros::{PywrVisitAll, PywrVisitMetrics, PywrVisitPaths, skip_serializing_none};
 use pywr_v1_schema::parameters::{
     ConstantParameter as ConstantParameterV1, ConstantScenarioParameter as ConstantScenarioParameterV1,
     DivisionParameter as DivisionParameterV1, MaxParameter as MaxParameterV1, MinParameter as MinParameterV1,
@@ -219,7 +220,7 @@ impl TryFromV1<ConstantParameterV1> for ConstantParameter {
 ///
 /// A parameter that provides a constant value for each scenario in a scenario group.
 #[skip_serializing_none]
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitMetrics, PywrVisitPaths)]
 #[serde(deny_unknown_fields)]
 pub struct ConstantScenarioParameter {
     pub meta: ParameterMeta,
@@ -229,6 +230,18 @@ pub struct ConstantScenarioParameter {
     pub values: ConstantFloatVec,
     /// The name of the scenario group
     pub scenario_group: String,
+}
+
+impl VisitReferences for ConstantScenarioParameter {
+    fn visit_references<F: FnMut(Reference<'_>)>(&self, visitor: &mut F) {
+        self.values.visit_references(visitor);
+        visitor(Reference::ScenarioGroup(&self.scenario_group));
+    }
+
+    fn visit_references_mut<F: FnMut(ReferenceMut<'_>)>(&mut self, visitor: &mut F) {
+        self.values.visit_references_mut(visitor);
+        visitor(ReferenceMut::ScenarioGroup(&mut self.scenario_group));
+    }
 }
 
 #[cfg(feature = "core")]
