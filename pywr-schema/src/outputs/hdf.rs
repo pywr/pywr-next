@@ -51,12 +51,12 @@ impl Hdf5Output {
 mod tests {
     use crate::ModelSchema;
     use crate::visit::VisitPaths;
-    #[cfg(feature = "core")]
+    #[cfg(all(feature = "core", feature = "hdf5"))]
     use pywr_core::solvers::{ClpSolver, ClpSolverSettings};
     use std::fs::read_to_string;
     use std::path::PathBuf;
     use std::str::FromStr;
-    #[cfg(feature = "core")]
+    #[cfg(all(feature = "core", feature = "hdf5"))]
     use tempfile::TempDir;
 
     fn model_str() -> String {
@@ -83,7 +83,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "core")]
+    #[cfg(all(feature = "core", feature = "hdf5"))]
     fn test_run() {
         let data = model_str();
         let schema = ModelSchema::from_str(&data).unwrap();
@@ -98,5 +98,17 @@ mod tests {
         // After model run there should be an output file.
         let expected_path = temp_dir.path().join("outputs.h5");
         assert!(expected_path.exists());
+
+        // The file is tagged with the version of Pywr that wrote it. `PYWR_VERSION` is the
+        // integer major version (readers use it to distinguish v2 output from v1) and
+        // `PYWR_VERSION_STR` is the full version string.
+        let file = hdf5_metno::File::open(&expected_path).unwrap();
+
+        let expected_major: i64 = env!("CARGO_PKG_VERSION_MAJOR").parse().unwrap();
+        let major: i64 = file.attr("PYWR_VERSION").unwrap().read_scalar().unwrap();
+        assert_eq!(major, expected_major);
+
+        let version: hdf5_metno::types::VarLenUnicode = file.attr("PYWR_VERSION_STR").unwrap().read_scalar().unwrap();
+        assert_eq!(version.as_str(), env!("CARGO_PKG_VERSION"));
     }
 }
