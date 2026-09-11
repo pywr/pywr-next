@@ -325,6 +325,61 @@ impl Node {
         }
     }
 
+    /// Returns true if this node can be the `to_node` of an edge.
+    ///
+    /// [`Node::Input`] and [`Node::Catchment`] are built as a `pywr-core` input node, which
+    /// rejects any incoming edge with `NodeBuilderError::UnexpectedIncomingEdges`. Every other
+    /// node type can receive flow — including [`Node::Delay`] and a routing [`Node::River`],
+    /// which are built from a core input *and* output node but wire their inflow to the output.
+    pub fn accepts_inflow(&self) -> bool {
+        match self {
+            Node::Input(_) | Node::Catchment(_) => false,
+            Node::Link(_)
+            | Node::Output(_)
+            | Node::Storage(_)
+            | Node::RiverGauge(_)
+            | Node::LossLink(_)
+            | Node::Delay(_)
+            | Node::PiecewiseLink(_)
+            | Node::PiecewiseStorage(_)
+            | Node::River(_)
+            | Node::RiverSplitWithGauge(_)
+            | Node::WaterTreatmentWorks(_)
+            | Node::Turbine(_)
+            | Node::Reservoir(_)
+            | Node::Placeholder(_)
+            | Node::Abstraction(_) => true,
+        }
+    }
+
+    /// Returns true if this node can be the `from_node` of an edge.
+    ///
+    /// [`Node::Output`] is built as a `pywr-core` output node, which rejects any outgoing edge
+    /// with `NodeBuilderError::UnexpectedOutgoingEdges`. Every other node type either is, or
+    /// expands to, a node that can provide flow — including [`Node::Delay`] and a routing
+    /// [`Node::River`], which take their outflow from a core input node.
+    pub fn provides_outflow(&self) -> bool {
+        match self {
+            Node::Output(_) => false,
+            Node::Input(_)
+            | Node::Link(_)
+            | Node::Storage(_)
+            | Node::Catchment(_)
+            | Node::RiverGauge(_)
+            | Node::LossLink(_)
+            | Node::Delay(_)
+            | Node::PiecewiseLink(_)
+            | Node::PiecewiseStorage(_)
+            | Node::River(_)
+            | Node::RiverSplitWithGauge(_)
+            | Node::WaterTreatmentWorks(_)
+            | Node::Turbine(_)
+            | Node::Reservoir(_)
+            | Node::Placeholder(_)
+            | Node::Abstraction(_) => true,
+        }
+    }
+
     /// Get any input (or "to") slots that this node has.
     pub fn iter_input_slots(&self) -> Option<Box<dyn Iterator<Item = NodeSlot> + '_>> {
         match self {
