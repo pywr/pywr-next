@@ -7,7 +7,7 @@ use crate::data_tables::DataTable;
 use crate::data_tables::{LoadedTableCollection, TableCollectionLoadError};
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
-use crate::error::{ComponentConversionError, DuplicateNodeName, ValidationError};
+use crate::error::{ComponentConversionError, DuplicateNodeName, EdgeProblem, EdgeValidationError, ValidationError};
 use crate::metric::Metric;
 use crate::metric_sets::MetricSet;
 #[cfg(feature = "core")]
@@ -623,11 +623,67 @@ impl NetworkSchema {
         self.get_output_by_name(name).is_some()
     }
 
+    /// Validate an edge against the network
+    ///
+    /// The following conditions are checked, with the first problem found being
+    /// returned:
+    ///
+    /// - Both ends name an entry of `nodes`; a virtual node is not an edge end.
+    /// - The two ends are different nodes.
+    /// - Each slot is one that the node at that end has.
+    /// - The `from_node` can provide flow, and the `to_node` can receive it.
+    ///
+    /// All but the second are checks `pywr-core` makes only while building. The second is
+    /// stricter than the build, which sees the flattened network: there `Reservoir[Spill] ->
+    /// Reservoir` joins two separate nodes, while here it is a closed loop within one node.
+    pub fn validate_edge(&self, edge: &Edge) -> Result<(), EdgeProblem> {
+        let from_node = self
+            .get_node_by_name(&edge.from_node)
+            .ok_or_else(|| EdgeProblem::UnknownNode(edge.from_node.clone()))?;
+
+        let to_node = self
+            .get_node_by_name(&edge.to_node)
+            .ok_or_else(|| EdgeProblem::UnknownNode(edge.to_node.clone()))?;
+
+        if edge.from_node == edge.to_node {
+            return Err(EdgeProblem::SelfEdge);
+        }
+
+        if let Some(slot) = &edge.from_slot {
+            from_node
+                .validate_output_slot(Some(slot))
+                .map_err(|_| EdgeProblem::UnknownFromSlot {
+                    node_type: from_node.node_type(),
+                    slot: slot.clone(),
+                })?;
+        }
+
+        if let Some(slot) = &edge.to_slot {
+            to_node
+                .validate_input_slot(Some(slot))
+                .map_err(|_| EdgeProblem::UnknownToSlot {
+                    node_type: to_node.node_type(),
+                    slot: slot.clone(),
+                })?;
+        }
+
+        if !from_node.provides_outflow() {
+            return Err(EdgeProblem::NoOutflow(from_node.node_type()));
+        }
+
+        if !to_node.accepts_inflow() {
+            return Err(EdgeProblem::NoInflow(to_node.node_type()));
+        }
+
+        Ok(())
+    }
+
     /// Validate the network schema.
     ///
-    /// This checks that the schema is unambiguous, not that it can be built; use
-    /// [`NetworkSchema::add_to_network`] for the latter. See [`ValidationError`] for the
-    /// problems that are detected.
+    /// This checks that the schema is unambiguous and that its edges could be made, not that the
+    /// whole model can be built; use [`NetworkSchema::add_to_network`] for the latter. See
+    /// [`ValidationError`] for the problems that are detected, and
+    /// [`NetworkSchema::validate_edge`] for the edge rules in particular.
     pub fn validate(&self) -> Result<(), ValidationError> {
         // Count the occurrences of each name in each of the two lists.
         let mut counts: HashMap<&str, (usize, usize)> = HashMap::with_capacity(self.nodes.len());
@@ -650,13 +706,31 @@ impl NetworkSchema {
             })
             .collect();
 
-        if duplicates.is_empty() {
-            Ok(())
-        } else {
+        if !duplicates.is_empty() {
             // Sort for a deterministic error message.
             duplicates.sort_by(|a, b| a.name.cmp(&b.name));
-            Err(ValidationError::DuplicateNodeNames(duplicates))
+            return Err(ValidationError::DuplicateNodeNames(duplicates));
         }
+
+        // The names are now known to be unique, so an edge's ends can be resolved unambiguously.
+        let mut invalid_edges: Vec<EdgeValidationError> = self
+            .edges
+            .iter()
+            .filter_map(|edge| {
+                self.validate_edge(edge).err().map(|problem| EdgeValidationError {
+                    edge: edge.clone(),
+                    problem,
+                })
+            })
+            .collect();
+
+        if !invalid_edges.is_empty() {
+            // Sort for a deterministic error message.
+            invalid_edges.sort_by_cached_key(|e| e.edge.to_string());
+            return Err(ValidationError::Edges(invalid_edges));
+        }
+
+        Ok(())
     }
 
     #[cfg(feature = "core")]
@@ -959,15 +1033,25 @@ pub enum NetworkSchemaRef {
 #[cfg(test)]
 mod tests {
     use super::{NetworkMergeError, NetworkSchema};
-    use crate::error::{DuplicateNodeName, ValidationError};
+    use crate::error::{DuplicateNodeName, EdgeProblem, ValidationError};
+    use crate::nodes::{NodeSlot, NodeType};
     use std::str::FromStr;
 
-    /// Return the duplicates reported by [`NetworkSchema::validate`], or panic if it succeeded.
+    /// Return the duplicates reported by [`NetworkSchema::validate`], or panic if it reported
+    /// anything else.
     fn expect_duplicates(network: &NetworkSchema) -> Vec<DuplicateNodeName> {
         match network.validate() {
             Err(ValidationError::DuplicateNodeNames(duplicates)) => duplicates,
-            Err(e) => panic!("Expected duplicate node names, but found: {e}"),
-            Ok(()) => panic!("Expected validation to fail, but it succeeded"),
+            other => panic!("Expected duplicate node names, but got: {other:?}"),
+        }
+    }
+
+    /// Return the invalid edges reported by [`NetworkSchema::validate`] as `(edge, problem)`
+    /// pairs, or panic if it reported anything else.
+    fn expect_invalid_edges(network: &NetworkSchema) -> Vec<(String, EdgeProblem)> {
+        match network.validate() {
+            Err(ValidationError::Edges(edges)) => edges.into_iter().map(|e| (e.edge.to_string(), e.problem)).collect(),
+            other => panic!("Expected invalid edges, but got: {other:?}"),
         }
     }
 
@@ -975,43 +1059,6 @@ mod tests {
         NetworkSchema::from_str(data).expect("Failed to parse test network JSON")
     }
 
-    /// A network where a node and a virtual node are both called `licence`.
-    const NETWORK_WITH_SHARED_NODE_AND_VIRTUAL_NODE_NAME: &str = r#"
-    {
-        "nodes": [
-            { "meta": { "name": "licence" }, "type": "Input" },
-            { "meta": { "name": "demand1" }, "type": "Output" }
-        ],
-        "virtual_nodes": [
-            {
-                "meta": { "name": "licence" },
-                "type": "Aggregated",
-                "nodes": [{ "name": "demand1" }]
-            }
-        ],
-        "edges": [
-            { "from_node": "licence", "to_node": "demand1" }
-        ]
-    }
-    "#;
-
-    /// Nodes and virtual nodes are a single name-space, so a name shared between the two lists
-    /// is a duplicate.
-    #[test]
-    fn test_validate_rejects_name_shared_with_virtual_node() {
-        let network = parse_network(NETWORK_WITH_SHARED_NODE_AND_VIRTUAL_NODE_NAME);
-
-        assert_eq!(
-            expect_duplicates(&network),
-            vec![DuplicateNodeName {
-                name: "licence".to_string(),
-                nodes: 1,
-                virtual_nodes: 1,
-            }]
-        );
-    }
-
-    /// A network with two separately duplicated names, plus a unique one.
     const NETWORK_WITH_SEVERAL_DUPLICATES: &str = r#"
     {
         "nodes": [
@@ -1031,7 +1078,8 @@ mod tests {
     }
     "#;
 
-    /// Every duplicate is reported, not just the first one found.
+    /// Every duplicate is reported, not just the first one found. Nodes and virtual nodes are a
+    /// single name-space, so a name shared between the two lists is a duplicate too.
     #[test]
     fn test_validate_reports_all_duplicates() {
         let network = parse_network(NETWORK_WITH_SEVERAL_DUPLICATES);
@@ -1050,6 +1098,199 @@ mod tests {
                     virtual_nodes: 0,
                 },
             ]
+        );
+    }
+
+    /// A network with an edge for every [`EdgeProblem`], listed in an order that is not the
+    /// reported one, and into both node types that cannot receive flow.
+    const NETWORK_WITH_INVALID_EDGES: &str = r#"
+    {
+        "nodes": [
+            { "meta": { "name": "supply" }, "type": "Input" },
+            { "meta": { "name": "catchment" }, "type": "Catchment" },
+            { "meta": { "name": "link" }, "type": "Link" },
+            { "meta": { "name": "demand" }, "type": "Output" }
+        ],
+        "edges": [
+            { "from_node": "link", "to_node": "supply" },
+            { "from_node": "link", "to_node": "missing" },
+            { "from_node": "demand", "to_node": "link" },
+            { "from_node": "link", "from_slot": { "type": "Spill" }, "to_node": "demand" },
+            { "from_node": "link", "to_node": "link" },
+            { "from_node": "link", "to_node": "demand", "to_slot": { "type": "Storage" } },
+            { "from_node": "link", "to_node": "catchment" }
+        ]
+    }
+    "#;
+
+    /// Every invalid edge is reported together, sorted for a deterministic message.
+    #[test]
+    fn test_validate_reports_all_invalid_edges() {
+        let network = parse_network(NETWORK_WITH_INVALID_EDGES);
+
+        assert_eq!(
+            expect_invalid_edges(&network),
+            vec![
+                ("demand->link".to_string(), EdgeProblem::NoOutflow(NodeType::Output)),
+                (
+                    "link->catchment".to_string(),
+                    EdgeProblem::NoInflow(NodeType::Catchment)
+                ),
+                (
+                    "link->demand[Storage]".to_string(),
+                    EdgeProblem::UnknownToSlot {
+                        node_type: NodeType::Output,
+                        slot: NodeSlot::Storage,
+                    }
+                ),
+                ("link->link".to_string(), EdgeProblem::SelfEdge),
+                (
+                    "link->missing".to_string(),
+                    EdgeProblem::UnknownNode("missing".to_string())
+                ),
+                ("link->supply".to_string(), EdgeProblem::NoInflow(NodeType::Input)),
+                (
+                    "link[Spill]->demand".to_string(),
+                    EdgeProblem::UnknownFromSlot {
+                        node_type: NodeType::Link,
+                        slot: NodeSlot::Spill,
+                    }
+                ),
+            ]
+        );
+    }
+
+    /// Edges connect only entries of `nodes`, so a virtual node's name is unknown to an edge
+    /// even though the network defines it.
+    #[test]
+    fn test_validate_rejects_virtual_node_as_edge_end() {
+        let network = parse_network(
+            r#"
+            {
+                "nodes": [
+                    { "meta": { "name": "supply" }, "type": "Input" },
+                    { "meta": { "name": "demand" }, "type": "Output" }
+                ],
+                "virtual_nodes": [
+                    {
+                        "meta": { "name": "licence" },
+                        "type": "Aggregated",
+                        "nodes": [{ "name": "demand" }]
+                    }
+                ],
+                "edges": [
+                    { "from_node": "supply", "to_node": "demand" },
+                    { "from_node": "licence", "to_node": "demand" }
+                ]
+            }
+            "#,
+        );
+
+        assert_eq!(
+            expect_invalid_edges(&network),
+            vec![(
+                "licence->demand".to_string(),
+                EdgeProblem::UnknownNode("licence".to_string())
+            )]
+        );
+    }
+
+    /// A node cannot connect to itself even through a slot, although the flattened network that
+    /// `pywr-core` builds would accept the edge.
+    #[test]
+    fn test_validate_rejects_self_edge_through_a_slot() {
+        let network = parse_network(
+            r#"
+            {
+                "nodes": [
+                    {
+                        "meta": { "name": "reservoir" },
+                        "type": "Reservoir",
+                        "max_volume": { "type": "Literal", "value": 100.0 },
+                        "initial_volume": { "type": "Proportional", "proportion": 1.0 },
+                        "spill": "LinkNode"
+                    }
+                ],
+                "edges": [
+                    { "from_node": "reservoir", "from_slot": { "type": "Spill" }, "to_node": "reservoir" }
+                ]
+            }
+            "#,
+        );
+
+        assert_eq!(
+            expect_invalid_edges(&network),
+            vec![("reservoir[Spill]->reservoir".to_string(), EdgeProblem::SelfEdge)]
+        );
+    }
+
+    /// A slot is checked against the node's own configuration, not just its type: a `Reservoir`
+    /// only has a `Spill` output slot when its spill is a link node.
+    #[test]
+    fn test_validate_checks_slot_against_node_configuration() {
+        let network = parse_network(
+            r#"
+            {
+                "nodes": [
+                    {
+                        "meta": { "name": "with-spill" },
+                        "type": "Reservoir",
+                        "max_volume": { "type": "Literal", "value": 100.0 },
+                        "initial_volume": { "type": "Proportional", "proportion": 1.0 },
+                        "spill": "LinkNode"
+                    },
+                    {
+                        "meta": { "name": "without-spill" },
+                        "type": "Reservoir",
+                        "max_volume": { "type": "Literal", "value": 100.0 },
+                        "initial_volume": { "type": "Proportional", "proportion": 1.0 }
+                    },
+                    { "meta": { "name": "river" }, "type": "River" }
+                ],
+                "edges": [
+                    { "from_node": "with-spill", "from_slot": { "type": "Spill" }, "to_node": "river" },
+                    { "from_node": "without-spill", "from_slot": { "type": "Spill" }, "to_node": "river" }
+                ]
+            }
+            "#,
+        );
+
+        assert_eq!(
+            expect_invalid_edges(&network),
+            vec![(
+                "without-spill[Spill]->river".to_string(),
+                EdgeProblem::UnknownFromSlot {
+                    node_type: NodeType::Reservoir,
+                    slot: NodeSlot::Spill,
+                }
+            )]
+        );
+    }
+
+    /// A duplicate name makes an edge's ends ambiguous, so the names are reported first.
+    #[test]
+    fn test_validate_reports_duplicate_names_before_edges() {
+        let network = parse_network(
+            r#"
+            {
+                "nodes": [
+                    { "meta": { "name": "link" }, "type": "Link" },
+                    { "meta": { "name": "link" }, "type": "Link" }
+                ],
+                "edges": [
+                    { "from_node": "link", "to_node": "missing" }
+                ]
+            }
+            "#,
+        );
+
+        assert_eq!(
+            expect_duplicates(&network),
+            vec![DuplicateNodeName {
+                name: "link".to_string(),
+                nodes: 2,
+                virtual_nodes: 0,
+            }]
         );
     }
 

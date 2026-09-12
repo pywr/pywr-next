@@ -1,7 +1,8 @@
 #[cfg(feature = "core")]
 use crate::data_tables::{TableCollectionError, TableDataRef};
 use crate::digest::ChecksumError;
-use crate::nodes::{NodeAttribute, NodeComponent, NodeSlot};
+use crate::edge::Edge;
+use crate::nodes::{NodeAttribute, NodeComponent, NodeSlot, NodeType};
 use crate::timeseries::TimeseriesError;
 use jiff::civil::DateTime;
 #[cfg(feature = "core")]
@@ -32,6 +33,33 @@ impl std::fmt::Display for DuplicateNodeName {
     }
 }
 
+/// The reason an [`Edge`] is invalid.
+#[derive(Error, Debug, Clone, PartialEq, Eq)]
+pub enum EdgeProblem {
+    #[error("there is no node named `{0}`")]
+    UnknownNode(String),
+    #[error("a node cannot be connected to itself")]
+    SelfEdge,
+    #[error("the `{node_type}` node has no output slot `{slot}`")]
+    UnknownFromSlot { node_type: NodeType, slot: NodeSlot },
+    #[error("the `{node_type}` node has no input slot `{slot}`")]
+    UnknownToSlot { node_type: NodeType, slot: NodeSlot },
+    #[error("the `{0}` node cannot receive flow")]
+    NoInflow(NodeType),
+    #[error("the `{0}` node cannot provide flow")]
+    NoOutflow(NodeType),
+}
+
+/// An edge that [`crate::NetworkSchema::validate`] rejected, and why.
+#[derive(Error, Debug, Clone, PartialEq, Eq)]
+#[error("`{edge}` ({problem})")]
+pub struct EdgeValidationError {
+    /// The invalid edge.
+    pub edge: Edge,
+    /// The first problem [`crate::NetworkSchema::validate_edge`] found with it.
+    pub problem: EdgeProblem,
+}
+
 /// A problem found by [`crate::ModelSchema::validate`] or [`crate::NetworkSchema::validate`].
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
 pub enum ValidationError {
@@ -50,6 +78,12 @@ pub enum ValidationError {
     /// A timestep frequency string that parses, but is zero or negative.
     #[error("The timestep frequency `{freq}` is not a positive duration.")]
     NonPositiveFrequency { freq: String },
+    /// One or more edges could not connect the nodes they name.
+    #[error(
+        "Invalid edge(s) found: {}",
+        .0.iter().map(|e| e.to_string()).collect::<Vec<_>>().join("; ")
+    )]
+    Edges(Vec<EdgeValidationError>),
 }
 
 #[derive(Error, Debug)]
