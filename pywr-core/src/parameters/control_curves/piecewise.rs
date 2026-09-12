@@ -3,7 +3,7 @@ use crate::network::ResolutionMaps;
 use crate::parameters::errors::GeneralCalculationError;
 use crate::parameters::interpolate::interpolate;
 use crate::parameters::{
-    BuiltParameter, GeneralBeforeParameter, GeneralParameter, GeneralParameterContext, GeneralParameterEntry,
+    BuiltParameter, GeneralBeforeParameter, GeneralAfterParameter, GeneralParameter, GeneralParameterContext, GeneralParameterEntry,
     MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder, ParameterMeta, ParameterName,
     ParameterState,
 };
@@ -41,33 +41,49 @@ impl GeneralBeforeParameter<f64> for PiecewiseInterpolatedParameter {
     ) -> Result<f64, GeneralCalculationError> {
         // Current value
         let x = self.metric.get_value(ctx.network, ctx.state)?;
+        let control_curves = self
+            .control_curves
+            .iter()
+            .map(|cc| cc.get_value(ctx.network, ctx.state))
+            .collect::<Result<Vec<_>, _>>()?;
 
-        let mut cc_previous_value = self.maximum;
-        for (idx, control_curve) in self.control_curves.iter().enumerate() {
-            let cc_value = control_curve.get_value(ctx.network, ctx.state)?;
-            if x >= cc_value {
-                let v = self
-                    .values
-                    .get(idx)
-                    .ok_or_else(|| GeneralCalculationError::OutOfBoundsError {
-                        axis: 0,
-                        index: idx,
-                        length: self.values.len(),
-                    })?;
-                return Ok(interpolate(x, cc_value, cc_previous_value, v[1], v[0]));
-            }
-            cc_previous_value = cc_value;
-        }
-        let v = self
-            .values
-            .last()
-            .ok_or_else(|| GeneralCalculationError::OutOfBoundsError {
-                axis: 0,
-                index: 0,
-                length: self.values.len(),
-            })?;
-        Ok(interpolate(x, self.minimum, cc_previous_value, v[1], v[0]))
+        piecewise_interpolated(x, &control_curves, &self.values, self.maximum, self.minimum)
     }
+}
+
+
+impl GeneralAfterParameter<f64> for PiecewiseInterpolatedParameter {
+    fn after(
+        &self,
+        ctx: GeneralParameterContext<'_>,
+        _internal_state: &mut Option<Box<dyn ParameterState>>,
+    ) -> Result<f64, GeneralCalculationError> {
+        // Current value
+        let x = self.metric.get_value(ctx.network, ctx.state)?;
+        let control_curves = self
+            .control_curves
+            .iter()
+            .map(|cc| cc.get_value(ctx.network, ctx.state))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        piecewise_interpolated(x, &control_curves, &self.values, self.maximum, self.minimum)
+    }
+}
+
+
+fn piecewise_interpolated(x: f64, control_curves: &[f64], values: &[[f64; 2]], maximum: f64, minimum: f64) -> Result<f64, GeneralCalculationError> {
+    let mut cc_previous_value = maximum;
+    for (idx, &control_curve) in control_curves.iter().enumerate() {
+        if x >= control_curve {
+            let v = values[idx];
+            return Ok(interpolate(x, control_curve, cc_previous_value, v[1], v[0]));
+        }
+        cc_previous_value = control_curve;
+    }
+
+    let n = values.len();
+    let v = values[n-1];
+    Ok(interpolate(x, minimum, cc_previous_value, v[1], v[0]))
 }
 
 #[derive(Debug)]
@@ -78,6 +94,7 @@ pub struct PiecewiseInterpolatedParameterBuilder {
     values: Vec<[f64; 2]>,
     maximum: f64,
     minimum: f64,
+    phase: MetricConsumerPhase,
 }
 
 impl PiecewiseInterpolatedParameterBuilder {
@@ -90,6 +107,33 @@ impl PiecewiseInterpolatedParameterBuilder {
             values: Vec::new(),
             maximum,
             minimum,
+            phase: MetricConsumerPhase::Before,
+        }
+    }
+
+    /// Create a new builder for [`PiecewiseInterpolatedParameter`] that is evaluated in the "after" phase.
+    pub fn after(name: ParameterName, metric: UnresolvedMetricF64, maximum: f64, minimum: f64) -> Self {
+        Self {
+            meta: ParameterMeta::new(name),
+            metric,
+            control_curves: Vec::new(),
+            values: Vec::new(),
+            maximum,
+            minimum,
+            phase: MetricConsumerPhase::After,
+        }
+    }
+
+    /// Create a new builder for [`PiecewiseInterpolatedParameter`] that is evaluated in both "before" and "after" phases.
+    pub fn both(name: ParameterName, metric: UnresolvedMetricF64, maximum: f64, minimum: f64) -> Self {
+        Self {
+            meta: ParameterMeta::new(name),
+            metric,
+            control_curves: Vec::new(),
+            values: Vec::new(),
+            maximum,
+            minimum,
+            phase: MetricConsumerPhase::Both,
         }
     }
 
@@ -116,11 +160,17 @@ impl ParameterBuilder<f64> for PiecewiseInterpolatedParameterBuilder {
         self: Box<Self>,
         resolution_maps: &ResolutionMaps,
     ) -> Result<MaybeBuiltParameter<f64>, ParameterBuildError> {
-        // Phase is hardcoded to "before" for this parameter, as it only implements the `GeneralBeforeParameter` trait.
-        let phase = MetricConsumerPhase::Before;
-        let metric = resolve_metric_f64!(self, self.metric, resolution_maps, phase, "metric");
+
+        let metric = resolve_metric_f64!(self, self.metric, resolution_maps, self.phase, "metric");
         let control_curves =
-            resolve_metric_f64_vec!(self, &self.control_curves, resolution_maps, phase, "control_curves");
+            resolve_metric_f64_vec!(self, &self.control_curves, resolution_maps, self.phase, "control_curves");
+
+        if self.values.len() != control_curves.len() + 1 {
+            return Err(ParameterBuildError::ControlCurveValuesLengthMismatch {
+                values: self.values.len(),
+                control_curves: control_curves.len(),
+            });
+        }
 
         let p = PiecewiseInterpolatedParameter {
             meta: self.meta,
@@ -131,18 +181,54 @@ impl ParameterBuilder<f64> for PiecewiseInterpolatedParameterBuilder {
             minimum: self.minimum,
         };
 
-        let bp = BuiltParameter::General(GeneralParameterEntry::before(p));
-        Ok(bp.into())
+        let built = match self.phase {
+            MetricConsumerPhase::Before => {
+                BuiltParameter::General(GeneralParameterEntry::before(p))
+            },
+            MetricConsumerPhase::After => {
+                BuiltParameter::General(GeneralParameterEntry::after(p))
+            },
+            MetricConsumerPhase::Both => {
+                BuiltParameter::General(GeneralParameterEntry::both(p))
+            }
+        };
+
+        Ok(built.into())
     }
 }
 
 #[cfg(test)]
 mod test {
+    use super::piecewise_interpolated;
     use crate::metric::UnresolvedMetricF64;
     use crate::parameters::PiecewiseInterpolatedParameterBuilder;
     use crate::parameters::array::Array1ParameterBuilder;
     use crate::test_utils::{run_and_assert_parameter, simple_model};
     use ndarray::{Array1, Array2, Axis};
+
+    #[test]
+    fn test_piecewise_interpolated() {
+        let control_curves = vec![0.8, 0.5];
+        let values = vec![[10.0, 1.0], [0.0, -10.0], [-10.0, -100.0]];
+        let maximum = 1.0;
+        let minimum = 0.0;
+
+        assert_eq!(piecewise_interpolated(0.9, &control_curves, &values, maximum, minimum).unwrap(), 5.5);
+        assert_eq!(piecewise_interpolated(0.65, &control_curves, &values, maximum, minimum).unwrap(), -5.0);
+        assert_eq!(piecewise_interpolated(0.25, &control_curves, &values, maximum, minimum).unwrap(), -55.0);
+    }
+
+    #[test]
+    fn test_piecewise_interpolated_empty() {
+        let control_curves = vec![];
+        let values = vec![[10.0, 0.0]];
+        let maximum = 1.0;
+        let minimum = 0.0;
+
+        assert_eq!(piecewise_interpolated(0.9, &control_curves, &values, maximum, minimum).unwrap(), 9.0);
+        assert_eq!(piecewise_interpolated(0.65, &control_curves, &values, maximum, minimum).unwrap(), 6.5);
+        assert_eq!(piecewise_interpolated(0.25, &control_curves, &values, maximum, minimum).unwrap(), 2.5);
+    }
 
     /// Basic functional test of the piecewise interpolation.
     #[test]
@@ -192,6 +278,54 @@ mod test {
         ]
         .to_vec()
         .into();
+        let expected_values: Array2<f64> = expected_values.insert_axis(Axis(1));
+
+        run_and_assert_parameter(model_builder, Box::new(parameter), expected_values, None, Some(1e-12));
+    }
+
+    /// Basic functional test of the piecewise interpolation with no control curves.
+    #[test]
+    fn test_basic_empty_control_curves() {
+        let mut model_builder = simple_model(1, None);
+
+        // Create an artificial volume series to use for the interpolation test
+        let volume = Array1ParameterBuilder::new("test-x".into(), Array1::linspace(1.0, 0.0, 21));
+        model_builder.network_builder().parameters().f64(Box::new(volume));
+
+        let mut parameter = PiecewiseInterpolatedParameterBuilder::before(
+            "test-parameter".into(),
+            UnresolvedMetricF64::new_parameter_before("test-x"), // Interpolate with the parameter based values
+            1.0,
+            0.0,
+        );
+
+        parameter
+            .value([10.0, 0.0]);
+
+        let expected_values: Array1<f64> = [
+            10.0,                    // full
+            9.5,                     // 95%
+            9.0,                     // 90%
+            8.5,                     // 85%
+            8.0,                     // 80%
+            7.5,                     // 75%
+            7.0,                     // 70%
+            6.5,                     // 65%
+            6.0,                     // 60%
+            5.5,                     // 55%
+            5.0,                     // 50%
+            4.5,                     // 45%
+            4.0,                     // 40%
+            3.5,                     // 35%
+            3.0,                     // 30%
+            2.5,                     // 25%
+            2.0,                     // 20%
+            1.0,                     // 10%
+            0.5,                     // 05%
+            0.0,                     // 00%
+        ]
+            .to_vec()
+            .into();
         let expected_values: Array2<f64> = expected_values.insert_axis(Axis(1));
 
         run_and_assert_parameter(model_builder, Box::new(parameter), expected_values, None, Some(1e-12));

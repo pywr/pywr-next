@@ -2,7 +2,7 @@ use crate::metric::{MetricConsumerPhase, MetricF64, UnresolvedMetricF64};
 use crate::network::ResolutionMaps;
 use crate::parameters::errors::GeneralCalculationError;
 use crate::parameters::{
-    BuiltParameter, GeneralBeforeParameter, GeneralParameter, GeneralParameterContext, GeneralParameterEntry,
+    BuiltParameter, GeneralBeforeParameter, GeneralAfterParameter, GeneralParameter, GeneralParameterContext, GeneralParameterEntry,
     MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder, ParameterMeta, ParameterName,
     ParameterState,
 };
@@ -52,14 +52,33 @@ impl GeneralBeforeParameter<MultiValue> for ApportionParameter {
         // Get the control curve value and force it
         let control_curve = self.control_curve.get_value(ctx.network, ctx.state)?.clamp(0.0, 1.0);
 
-        let upper = (1.0 - control_curve) * x;
-        let lower = control_curve * x;
-
-        let values = HashMap::from([("upper".to_string(), upper), ("lower".to_string(), lower)]);
-
-        let value = MultiValue::new(values, HashMap::new());
-        Ok(value)
+        Ok(apportion(x, control_curve))
     }
+}
+
+impl GeneralAfterParameter<MultiValue> for ApportionParameter {
+    fn after(
+        &self,
+        ctx: GeneralParameterContext<'_>,
+        _internal_state: &mut Option<Box<dyn ParameterState>>,
+    ) -> Result<MultiValue, GeneralCalculationError> {
+        // Current value
+        let x = self.metric.get_value(ctx.network, ctx.state)?;
+
+        // Get the control curve value and force it
+        let control_curve = self.control_curve.get_value(ctx.network, ctx.state)?.clamp(0.0, 1.0);
+
+        Ok(apportion(x, control_curve))
+    }
+}
+
+
+fn apportion(x: f64, control_curve: f64) -> MultiValue {
+    let upper = (1.0 - control_curve) * x;
+    let lower = control_curve * x;
+
+    let values = HashMap::from([("upper".to_string(), upper), ("lower".to_string(), lower)]);
+    MultiValue::new(values, HashMap::new())
 }
 
 #[derive(Debug)]
@@ -67,6 +86,7 @@ pub struct ApportionParameterBuilder {
     meta: ParameterMeta,
     metric: UnresolvedMetricF64,
     control_curve: UnresolvedMetricF64,
+    phase: MetricConsumerPhase,
 }
 
 impl ApportionParameterBuilder {
@@ -76,6 +96,27 @@ impl ApportionParameterBuilder {
             meta: ParameterMeta::new(name),
             metric,
             control_curve,
+            phase: MetricConsumerPhase::Before,
+        }
+    }
+
+    /// Create a new builder for [`ApportionParameter`] that is evaluated in the "after" phase.
+    pub fn after(name: ParameterName, metric: UnresolvedMetricF64, control_curve: UnresolvedMetricF64) -> Self {
+        Self {
+            meta: ParameterMeta::new(name),
+            metric,
+            control_curve,
+            phase: MetricConsumerPhase::After,
+        }
+    }
+
+    /// Create a new builder for [`ApportionParameter`] that is evaluated in both "before" and "after" phases.
+    pub fn both(name: ParameterName, metric: UnresolvedMetricF64, control_curve: UnresolvedMetricF64) -> Self {
+        Self {
+            meta: ParameterMeta::new(name),
+            metric,
+            control_curve,
+            phase: MetricConsumerPhase::Both,
         }
     }
 }
@@ -89,10 +130,8 @@ impl ParameterBuilder<MultiValue> for ApportionParameterBuilder {
         self: Box<Self>,
         resolution_maps: &ResolutionMaps,
     ) -> Result<MaybeBuiltParameter<MultiValue>, ParameterBuildError> {
-        // Phase is hardcoded to "before" for this parameter, as it only implements the `GeneralBeforeParameter` trait.
-        let phase = MetricConsumerPhase::Before;
-        let metric = resolve_metric_f64!(self, self.metric, resolution_maps, phase, "metric");
-        let control_curve = resolve_metric_f64!(self, self.control_curve, resolution_maps, phase, "control_curve");
+        let metric = resolve_metric_f64!(self, self.metric, resolution_maps, self.phase, "metric");
+        let control_curve = resolve_metric_f64!(self, self.control_curve, resolution_maps, self.phase, "control_curve");
 
         let p = ApportionParameter {
             meta: self.meta,
@@ -100,7 +139,33 @@ impl ParameterBuilder<MultiValue> for ApportionParameterBuilder {
             control_curve,
         };
 
-        let bp = BuiltParameter::General(GeneralParameterEntry::before(p));
-        Ok(bp.into())
+        let built = match self.phase {
+            MetricConsumerPhase::Before => {
+                BuiltParameter::General(GeneralParameterEntry::before(p))
+            },
+            MetricConsumerPhase::After => {
+                BuiltParameter::General(GeneralParameterEntry::after(p))
+            },
+            MetricConsumerPhase::Both => {
+                BuiltParameter::General(GeneralParameterEntry::both(p))
+            }
+        };
+
+        Ok(built.into())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::apportion;
+
+    #[test]
+    fn test_apportion() {
+        let x = 100.0;
+        let control_curve = 0.3;
+        let result = apportion(x, control_curve);
+
+        assert_eq!(*result.get_value("upper").unwrap(), (1.0 - control_curve) * x);
+        assert_eq!(*result.get_value("lower").unwrap(), control_curve * x);
     }
 }
