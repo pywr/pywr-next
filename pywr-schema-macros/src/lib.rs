@@ -1,12 +1,10 @@
 use heck::ToSnakeCase;
 use proc_macro::TokenStream;
 use quote::{ToTokens, quote};
-use syn::punctuated::Punctuated;
-use syn::token::Comma;
-use syn::{Fields, ItemStruct, Type, parse_macro_input};
+use syn::{Fields, ItemStruct, Type, parse_macro_input, parse_quote};
 
-/// A derive macro for Pywr components that implement the `VisitMetrics`,
-/// `VisitPaths` and `VisitNodeReferences` traits.
+/// A derive macro for Pywr components that implement the `VisitMetrics`, `VisitPaths` and
+/// `VisitReferences` traits.
 #[proc_macro_derive(PywrVisitAll)]
 pub fn pywr_visit_all_macro(input: TokenStream) -> TokenStream {
     // Parse the input tokens into a syntax tree
@@ -14,7 +12,7 @@ pub fn pywr_visit_all_macro(input: TokenStream) -> TokenStream {
 
     let mut ts = impl_visit_metrics(&input);
     ts.extend(impl_visit_paths(&input));
-    ts.extend(impl_visit_node_references(&input));
+    ts.extend(impl_visit_references(&input));
 
     ts
 }
@@ -35,550 +33,152 @@ pub fn pywr_visit_paths_macro(input: TokenStream) -> TokenStream {
     impl_visit_paths(&input)
 }
 
-/// Generates a [`TokenStream`] containing the implementation of `VisitMetrics`.
+/// A derive macro for Pywr components that implement the `VisitReferences` trait.
+#[proc_macro_derive(PywrVisitReferences)]
+pub fn pywr_visit_references_macro(input: TokenStream) -> TokenStream {
+    // Parse the input tokens into a syntax tree
+    let input = syn::parse_macro_input!(input as syn::DeriveInput);
+    impl_visit_references(&input)
+}
+
+/// What distinguishes one visitor trait from another.
+///
+/// The three visitors differ only in the trait they implement, the values they hand the
+/// callback, and what the generated module has to import. The walk over a struct's fields or an
+/// enum's variants is the same for all of them, so it is written once in [`impl_visitor`].
+struct VisitorSpec {
+    /// The trait to implement, in `crate::visit`.
+    trait_name: &'static str,
+    /// The immutable method. The mutable one is this with a `_mut` suffix, and the generated
+    /// module is named after the type and this.
+    method: &'static str,
+    /// The callback's argument type in each of the two methods.
+    arg: syn::Type,
+    arg_mut: syn::Type,
+    /// What the generated module needs in scope beyond the trait itself.
+    imports: syn::ItemUse,
+}
+
 fn impl_visit_metrics(ast: &syn::DeriveInput) -> TokenStream {
-    // Name of the node type
-    let name = &ast.ident;
-
-    let expanded = match &ast.data {
-        syn::Data::Struct(data) => {
-            // Insert statements for non-mutable version
-            let inserts = data
-                .fields
-                .iter()
-                .map(|field| {
-                    let name = field.ident.as_ref().expect("Field must have an identifier");
-                    quote! {
-                        self.#name.visit_metrics(visitor);
-                    }
-                })
-                .collect::<Vec<_>>();
-
-            // Insert statements for mutable version
-            let inserts_mut = data
-                .fields
-                .iter()
-                .map(|field| {
-                    let name = field.ident.as_ref().expect("Field must have an identifier");
-                    quote! {
-                        self.#name.visit_metrics_mut(visitor);
-                    }
-                })
-                .collect::<Vec<_>>();
-
-            // Create the two parameter methods using the insert statements
-            let mod_name = format!("{name}_visit_metrics").to_snake_case();
-            let mod_name = syn::Ident::new(&mod_name, name.span());
-            quote! {
-                mod #mod_name {
-                    use super::*;
-                    use crate::visit::VisitMetrics;
-                    use crate::metric::Metric;
-
-                    impl VisitMetrics for #name {
-                       fn visit_metrics<F: FnMut(&Metric)>(&self, visitor: &mut F) {
-
-                            #(
-                                #inserts
-                            )*
-
-                        }
-
-                        fn visit_metrics_mut<F: FnMut(&mut Metric)>(&mut self, visitor: &mut F) {
-
-                            #(
-                                #inserts_mut
-                            )*
-
-                        }
-                    }
-                }
-            }
-        }
-        syn::Data::Enum(data) => {
-            let inserts = data
-                .variants
-                .iter()
-                .map(|variant| {
-                    let ident = &variant.ident;
-                    match &variant.fields {
-                        syn::Fields::Unnamed(_) => {
-                            quote! {
-                                Self::#ident(v) => v.visit_metrics(visitor),
-                            }
-                        }
-                        syn::Fields::Named(fields) => {
-                            let args: Punctuated<syn::Ident, Comma> =
-                                fields.named.iter().map(|field| field.ident.clone().unwrap()).collect();
-
-                            let inserts = &fields
-                                .named
-                                .iter()
-                                .map(|field| {
-                                    let name = field.ident.as_ref().expect("Field must have an identifier");
-                                    quote! {
-                                        #name.visit_metrics(visitor);
-                                    }
-                                })
-                                .collect::<Vec<_>>();
-
-                            quote! {
-                                Self::#ident{ #args } => {
-                                    #(
-                                        #inserts
-                                    )*
-                                }
-                            }
-                        }
-                        Fields::Unit => {
-                            quote! {
-                                Self::#ident => {}
-                            }
-                        }
-                    }
-                })
-                .collect::<Vec<_>>();
-
-            let inserts_mut = data
-                .variants
-                .iter()
-                .map(|variant| {
-                    let ident = &variant.ident;
-                    match &variant.fields {
-                        syn::Fields::Unnamed(_) => {
-                            quote! {
-                                Self::#ident(v) => v.visit_metrics_mut(visitor),
-                            }
-                        }
-                        syn::Fields::Named(fields) => {
-                            let args: Punctuated<syn::Ident, Comma> =
-                                fields.named.iter().map(|field| field.ident.clone().unwrap()).collect();
-
-                            let inserts = &fields
-                                .named
-                                .iter()
-                                .map(|field| {
-                                    let name = field.ident.as_ref().expect("Field must have an identifier");
-                                    quote! {
-                                        #name.visit_metrics_mut(visitor);
-                                    }
-                                })
-                                .collect::<Vec<_>>();
-
-                            quote! {
-                                Self::#ident{ #args } => {
-                                    #(
-                                        #inserts
-                                    )*
-                                }
-                            }
-                        }
-                        Fields::Unit => {
-                            quote! {
-                                Self::#ident => {}
-                            }
-                        }
-                    }
-                })
-                .collect::<Vec<_>>();
-
-            // Create the two parameter methods using the insert statements
-            let mod_name = format!("{name}_visit_metrics").to_snake_case();
-            let mod_name = syn::Ident::new(&mod_name, name.span());
-            quote! {
-                mod #mod_name {
-                    use super::*;
-                    use crate::visit::VisitMetrics;
-                    use crate::metric::Metric;
-
-                    impl VisitMetrics for #name {
-                       fn visit_metrics<F: FnMut(&Metric)>(&self, visitor: &mut F) {
-                            match self {
-                                #(
-                                    #inserts
-                                )*
-                            }
-                        }
-
-                        fn visit_metrics_mut<F: FnMut(&mut Metric)>(&mut self, visitor: &mut F) {
-                            match self {
-                                #(
-                                    #inserts_mut
-                                )*
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        syn::Data::Union(_) => panic!("Union types are not supported."),
-    };
-    // Hand the output tokens back to the compiler.
-    TokenStream::from(expanded)
+    impl_visitor(
+        ast,
+        &VisitorSpec {
+            trait_name: "VisitMetrics",
+            method: "visit_metrics",
+            arg: parse_quote!(&Metric),
+            arg_mut: parse_quote!(&mut Metric),
+            imports: parse_quote!(
+                use crate::metric::Metric;
+            ),
+        },
+    )
 }
 
-/// Generates a [`TokenStream`] containing the implementation of `VisitPaths`.
 fn impl_visit_paths(ast: &syn::DeriveInput) -> TokenStream {
-    // Name of the node type
-    let name = &ast.ident;
-
-    let expanded = match &ast.data {
-        syn::Data::Struct(data) => {
-            // Only apply this to structs
-
-            // Insert statements for non-mutable version
-            let inserts = data
-                .fields
-                .iter()
-                .map(|field| {
-                    let name = field.ident.as_ref().expect("Field must have an identifier");
-                    quote! {
-                        self.#name.visit_paths(visitor);
-                    }
-                })
-                .collect::<Vec<_>>();
-
-            // Insert statements for mutable version
-            let inserts_mut = data
-                .fields
-                .iter()
-                .map(|field| {
-                    let name = field.ident.as_ref().expect("Field must have an identifier");
-                    quote! {
-                        self.#name.visit_paths_mut(visitor);
-                    }
-                })
-                .collect::<Vec<_>>();
-
-            let mod_name = format!("{name}_visit_paths").to_snake_case();
-            let mod_name = syn::Ident::new(&mod_name, name.span());
-            // Create the two parameter methods using the insert statements
-            quote! {
-                mod #mod_name {
-                    use super::*;
-                    use crate::visit::VisitPaths;
-                    use std::path::{Path, PathBuf};
-
-                    impl VisitPaths for #name {
-                       fn visit_paths<F: FnMut(&Path)>(&self, visitor: &mut F) {
-
-                            #(
-                                #inserts
-                            )*
-
-                        }
-
-                        fn visit_paths_mut<F: FnMut(&mut PathBuf)>(&mut self, visitor: &mut F) {
-
-                            #(
-                                #inserts_mut
-                            )*
-
-                        }
-                    }
-                }
-            }
-        }
-        syn::Data::Enum(data) => {
-            let inserts = data
-                .variants
-                .iter()
-                .map(|variant| {
-                    let ident = &variant.ident;
-                    match &variant.fields {
-                        syn::Fields::Unnamed(_) => {
-                            quote! {
-                                Self::#ident(v) => v.visit_paths(visitor),
-                            }
-                        }
-                        syn::Fields::Named(fields) => {
-                            let args: Punctuated<syn::Ident, Comma> =
-                                fields.named.iter().map(|field| field.ident.clone().unwrap()).collect();
-
-                            let inserts = &fields
-                                .named
-                                .iter()
-                                .map(|field| {
-                                    let name = field.ident.as_ref().expect("Field must have an identifier");
-                                    quote! {
-                                        #name.visit_paths(visitor);
-                                    }
-                                })
-                                .collect::<Vec<_>>();
-
-                            quote! {
-                                Self::#ident{ #args } => {
-                                    #(
-                                        #inserts
-                                    )*
-                                }
-                            }
-                        }
-                        Fields::Unit => {
-                            quote! {
-                                Self::#ident => {}
-                            }
-                        }
-                    }
-                })
-                .collect::<Vec<_>>();
-
-            let inserts_mut = data
-                .variants
-                .iter()
-                .map(|variant| {
-                    let ident = &variant.ident;
-                    match &variant.fields {
-                        syn::Fields::Unnamed(_) => {
-                            quote! {
-                                Self::#ident(v) => v.visit_paths_mut(visitor),
-                            }
-                        }
-                        syn::Fields::Named(fields) => {
-                            let args: Punctuated<syn::Ident, Comma> =
-                                fields.named.iter().map(|field| field.ident.clone().unwrap()).collect();
-
-                            let inserts = &fields
-                                .named
-                                .iter()
-                                .map(|field| {
-                                    let name = field.ident.as_ref().expect("Field must have an identifier");
-                                    quote! {
-                                        #name.visit_paths_mut(visitor);
-                                    }
-                                })
-                                .collect::<Vec<_>>();
-
-                            quote! {
-                                Self::#ident{ #args } => {
-                                    #(
-                                        #inserts
-                                    )*
-                                }
-                            }
-                        }
-                        Fields::Unit => {
-                            quote! {
-                                Self::#ident => {}
-                            }
-                        }
-                    }
-                })
-                .collect::<Vec<_>>();
-
-            // Create the two parameter methods using the insert statements
-            let mod_name = format!("{name}_visit_paths").to_snake_case();
-            let mod_name = syn::Ident::new(&mod_name, name.span());
-            quote! {
-                mod #mod_name {
-                    use super::*;
-                    use crate::visit::VisitPaths;
-                    use std::path::{Path, PathBuf};
-
-                    impl VisitPaths for #name {
-                       fn visit_paths<F: FnMut(&Path)>(&self, visitor: &mut F) {
-                            match self {
-                                #(
-                                    #inserts
-                                )*
-                            }
-                        }
-
-                        fn visit_paths_mut<F: FnMut(&mut PathBuf)>(&mut self, visitor: &mut F) {
-                            match self {
-                                #(
-                                    #inserts_mut
-                                )*
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        syn::Data::Union(_) => panic!("Union types are not supported."),
-    };
-    // Hand the output tokens back to the compiler.
-    TokenStream::from(expanded)
+    impl_visitor(
+        ast,
+        &VisitorSpec {
+            trait_name: "VisitPaths",
+            method: "visit_paths",
+            arg: parse_quote!(&Path),
+            arg_mut: parse_quote!(&mut PathBuf),
+            imports: parse_quote!(
+                use std::path::{Path, PathBuf};
+            ),
+        },
+    )
 }
 
-/// Generates a [`TokenStream`] containing the implementation of `VisitNodeReferences`.
-fn impl_visit_node_references(ast: &syn::DeriveInput) -> TokenStream {
-    // Name of the node type
-    let name = &ast.ident;
+fn impl_visit_references(ast: &syn::DeriveInput) -> TokenStream {
+    impl_visitor(
+        ast,
+        &VisitorSpec {
+            trait_name: "VisitReferences",
+            method: "visit_references",
+            arg: parse_quote!(Reference<'_>),
+            arg_mut: parse_quote!(ReferenceMut<'_>),
+            imports: parse_quote!(
+                use crate::visit::{Reference, ReferenceMut};
+            ),
+        },
+    )
+}
 
-    let expanded = match &ast.data {
+/// The identifiers of a set of named fields.
+fn field_names(fields: &Fields) -> impl Iterator<Item = &syn::Ident> {
+    fields
+        .iter()
+        .map(|field| field.ident.as_ref().expect("Field must have an identifier"))
+}
+
+/// The body of one visitor method: a call per field for a struct, and a match over the variants
+/// for an enum, recursing into the fields of each.
+fn visitor_body(data: &syn::Data, method: &syn::Ident) -> impl ToTokens {
+    match data {
         syn::Data::Struct(data) => {
-            // Insert statements for non-mutable version
-            let inserts = data
-                .fields
-                .iter()
-                .map(|field| {
-                    let name = field.ident.as_ref().expect("Field must have an identifier");
-                    quote! {
-                        self.#name.visit_node_references(visitor);
-                    }
-                })
-                .collect::<Vec<_>>();
-
-            // Insert statements for mutable version
-            let inserts_mut = data
-                .fields
-                .iter()
-                .map(|field| {
-                    let name = field.ident.as_ref().expect("Field must have an identifier");
-                    quote! {
-                        self.#name.visit_node_references_mut(visitor);
-                    }
-                })
-                .collect::<Vec<_>>();
-
-            let mod_name = format!("{name}_visit_node_references").to_snake_case();
-            let mod_name = syn::Ident::new(&mod_name, name.span());
-            // Create the two parameter methods using the insert statements
-            quote! {
-                mod #mod_name {
-                    use super::*;
-                    use crate::visit::VisitNodeReferences;
-
-                    impl VisitNodeReferences for #name {
-                       fn visit_node_references<F: FnMut(&str)>(&self, visitor: &mut F) {
-
-                            #(
-                                #inserts
-                            )*
-
-                        }
-
-                        fn visit_node_references_mut<F: FnMut(&mut String)>(&mut self, visitor: &mut F) {
-
-                            #(
-                                #inserts_mut
-                            )*
-
-                        }
-                    }
-                }
-            }
+            let names = field_names(&data.fields);
+            quote! { #( self.#names.#method(visitor); )* }
         }
         syn::Data::Enum(data) => {
-            let inserts = data
-                .variants
-                .iter()
-                .map(|variant| {
-                    let ident = &variant.ident;
-                    match &variant.fields {
-                        syn::Fields::Unnamed(_) => {
-                            quote! {
-                                Self::#ident(v) => v.visit_node_references(visitor),
-                            }
-                        }
-                        syn::Fields::Named(fields) => {
-                            let args: Punctuated<syn::Ident, Comma> =
-                                fields.named.iter().map(|field| field.ident.clone().unwrap()).collect();
+            let arms = data.variants.iter().map(|variant| {
+                let ident = &variant.ident;
 
-                            let inserts = &fields
-                                .named
-                                .iter()
-                                .map(|field| {
-                                    let name = field.ident.as_ref().expect("Field must have an identifier");
-                                    quote! {
-                                        #name.visit_node_references(visitor);
-                                    }
-                                })
-                                .collect::<Vec<_>>();
-
-                            quote! {
-                                Self::#ident{ #args } => {
-                                    #(
-                                        #inserts
-                                    )*
-                                }
-                            }
-                        }
-                        Fields::Unit => {
-                            quote! {
-                                Self::#ident => {}
-                            }
-                        }
+                match &variant.fields {
+                    Fields::Unnamed(_) => quote! { Self::#ident(v) => v.#method(visitor), },
+                    Fields::Named(_) => {
+                        let names: Vec<_> = field_names(&variant.fields).collect();
+                        quote! { Self::#ident { #( #names ),* } => { #( #names.#method(visitor); )* } }
                     }
-                })
-                .collect::<Vec<_>>();
+                    Fields::Unit => quote! { Self::#ident => {} },
+                }
+            });
 
-            let inserts_mut = data
-                .variants
-                .iter()
-                .map(|variant| {
-                    let ident = &variant.ident;
-                    match &variant.fields {
-                        syn::Fields::Unnamed(_) => {
-                            quote! {
-                                Self::#ident(v) => v.visit_node_references_mut(visitor),
-                            }
-                        }
-                        syn::Fields::Named(fields) => {
-                            let args: Punctuated<syn::Ident, Comma> =
-                                fields.named.iter().map(|field| field.ident.clone().unwrap()).collect();
+            quote! { match self { #( #arms )* } }
+        }
+        syn::Data::Union(_) => panic!("Union types are not supported."),
+    }
+}
 
-                            let inserts = &fields
-                                .named
-                                .iter()
-                                .map(|field| {
-                                    let name = field.ident.as_ref().expect("Field must have an identifier");
-                                    quote! {
-                                        #name.visit_node_references_mut(visitor);
-                                    }
-                                })
-                                .collect::<Vec<_>>();
+/// Generate the implementation of one visitor trait for `ast`.
+///
+/// The impl goes in a private module so that the trait and the types its methods mention can be
+/// imported without disturbing the surrounding scope.
+fn impl_visitor(ast: &syn::DeriveInput, spec: &VisitorSpec) -> TokenStream {
+    let VisitorSpec {
+        trait_name,
+        method,
+        arg,
+        arg_mut,
+        imports,
+    } = spec;
+    let name = &ast.ident;
+    let span = name.span();
 
-                            quote! {
-                                Self::#ident{ #args } => {
-                                    #(
-                                        #inserts
-                                    )*
-                                }
-                            }
-                        }
-                        Fields::Unit => {
-                            quote! {
-                                Self::#ident => {}
-                            }
-                        }
-                    }
-                })
-                .collect::<Vec<_>>();
+    let mod_name = syn::Ident::new(&format!("{name}_{method}").to_snake_case(), span);
+    let method_mut = syn::Ident::new(&format!("{method}_mut"), span);
+    let method = syn::Ident::new(method, span);
+    let trait_name = syn::Ident::new(trait_name, span);
 
-            // Create the two parameter methods using the insert statements
-            let mod_name = format!("{name}_visit_node_references").to_snake_case();
-            let mod_name = syn::Ident::new(&mod_name, name.span());
-            quote! {
-                mod #mod_name {
-                    use super::*;
-                    use crate::visit::VisitNodeReferences;
+    let body = visitor_body(&ast.data, &method);
+    let body_mut = visitor_body(&ast.data, &method_mut);
 
-                    impl VisitNodeReferences for #name {
-                       fn visit_node_references<F: FnMut(&str)>(&self, visitor: &mut F) {
-                            match self {
-                                #(
-                                    #inserts
-                                )*
-                            }
-                        }
+    TokenStream::from(quote! {
+        mod #mod_name {
+            use super::*;
+            use crate::visit::#trait_name;
+            #imports
 
-                        fn visit_node_references_mut<F: FnMut(&mut String)>(&mut self, visitor: &mut F) {
-                            match self {
-                                #(
-                                    #inserts_mut
-                                )*
-                            }
-                        }
-                    }
+            impl #trait_name for #name {
+                fn #method<F: FnMut(#arg)>(&self, visitor: &mut F) {
+                    #body
+                }
+
+                fn #method_mut<F: FnMut(#arg_mut)>(&mut self, visitor: &mut F) {
+                    #body_mut
                 }
             }
         }
-        syn::Data::Union(_) => panic!("Union types are not supported."),
-    };
-    // Hand the output tokens back to the compiler.
-    TokenStream::from(expanded)
+    })
 }
 
 /// An attribute macro to add `#[serde(skip_serializing_if = "Option::is_none")]` to all Option<T> fields in a struct

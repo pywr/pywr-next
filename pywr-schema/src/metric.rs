@@ -18,7 +18,7 @@ use crate::parameters::ParameterType;
 use crate::timeseries::TimeseriesColumns;
 use crate::timeseries::TimeseriesReference;
 use crate::v1::{ConversionData, TryFromV1, TryIntoV2};
-use crate::visit::VisitNodeReferences;
+use crate::visit::{Reference, ReferenceMut, VisitReferences};
 #[cfg(feature = "pyo3")]
 use pyo3::{PyResult, exceptions::PyRuntimeError, pyclass, pymethods};
 #[cfg(feature = "core")]
@@ -369,13 +369,13 @@ impl From<String> for NodeAttrReference {
     }
 }
 
-impl VisitNodeReferences for NodeAttrReference {
-    fn visit_node_references<F: FnMut(&str)>(&self, visitor: &mut F) {
-        visitor(&self.name);
+impl VisitReferences for NodeAttrReference {
+    fn visit_references<F: FnMut(Reference<'_>)>(&self, visitor: &mut F) {
+        visitor(Reference::Node(&self.name));
     }
 
-    fn visit_node_references_mut<F: FnMut(&mut String)>(&mut self, visitor: &mut F) {
-        visitor(&mut self.name);
+    fn visit_references_mut<F: FnMut(ReferenceMut<'_>)>(&mut self, visitor: &mut F) {
+        visitor(ReferenceMut::Node(&mut self.name));
     }
 }
 
@@ -469,13 +469,14 @@ impl From<String> for VirtualNodeAttrReference {
     }
 }
 
-impl VisitNodeReferences for VirtualNodeAttrReference {
-    fn visit_node_references<F: FnMut(&str)>(&self, visitor: &mut F) {
-        visitor(&self.name);
+/// A virtual node shares a name-space with a node but resolves in a separate list.
+impl VisitReferences for VirtualNodeAttrReference {
+    fn visit_references<F: FnMut(Reference<'_>)>(&self, visitor: &mut F) {
+        visitor(Reference::VirtualNode(&self.name));
     }
 
-    fn visit_node_references_mut<F: FnMut(&mut String)>(&mut self, visitor: &mut F) {
-        visitor(&mut self.name);
+    fn visit_references_mut<F: FnMut(ReferenceMut<'_>)>(&mut self, visitor: &mut F) {
+        visitor(ReferenceMut::VirtualNode(&mut self.name));
     }
 }
 
@@ -500,13 +501,14 @@ impl From<String> for NodeComponentReference {
     }
 }
 
-impl VisitNodeReferences for NodeComponentReference {
-    fn visit_node_references<F: FnMut(&str)>(&self, visitor: &mut F) {
-        visitor(&self.name);
+/// Held by the virtual nodes' node lists, so it names a *node* despite being reached through one.
+impl VisitReferences for NodeComponentReference {
+    fn visit_references<F: FnMut(Reference<'_>)>(&self, visitor: &mut F) {
+        visitor(Reference::Node(&self.name));
     }
 
-    fn visit_node_references_mut<F: FnMut(&mut String)>(&mut self, visitor: &mut F) {
-        visitor(&mut self.name);
+    fn visit_references_mut<F: FnMut(ReferenceMut<'_>)>(&mut self, visitor: &mut F) {
+        visitor(ReferenceMut::Node(&mut self.name));
     }
 }
 
@@ -654,13 +656,17 @@ pub struct EdgeReference {
     pub edge: Edge,
 }
 
-impl VisitNodeReferences for EdgeReference {
-    fn visit_node_references<F: FnMut(&str)>(&self, visitor: &mut F) {
-        self.edge.visit_node_references(visitor);
+/// Naming an edge also names its two endpoints, so both are visited: deleting an edge matches
+/// [`Reference::Edge`] alone, while renaming a node reaches the endpoints as [`Reference::Node`].
+impl VisitReferences for EdgeReference {
+    fn visit_references<F: FnMut(Reference<'_>)>(&self, visitor: &mut F) {
+        visitor(Reference::Edge(&self.edge));
+        self.edge.visit_references(visitor);
     }
 
-    fn visit_node_references_mut<F: FnMut(&mut String)>(&mut self, visitor: &mut F) {
-        self.edge.visit_node_references_mut(visitor);
+    fn visit_references_mut<F: FnMut(ReferenceMut<'_>)>(&mut self, visitor: &mut F) {
+        visitor(ReferenceMut::Edge(&mut self.edge));
+        self.edge.visit_references_mut(visitor);
     }
 }
 
