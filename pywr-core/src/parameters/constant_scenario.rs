@@ -97,12 +97,9 @@ mod tests {
     #[test]
     /// Test `ConstantScenarioParameter` returns the correct values.
     fn test_constant_scenario_parameter() {
-        let scenario_group = ScenarioGroupBuilder::new("group1", 3).build().unwrap();
-        let scenario_domain = scenario::ScenarioDomainBuilder::default()
-            .with_group(scenario_group)
-            .unwrap()
-            .build()
-            .unwrap();
+        let mut scenario_domain_builder = scenario::ScenarioDomainBuilder::default();
+        scenario_domain_builder.with_group(ScenarioGroupBuilder::new("group1", 3));
+        let scenario_domain = scenario_domain_builder.build().unwrap();
 
         let p = ConstantScenarioParameter {
             meta: ParameterMeta::new("my-parameter".into()),
@@ -123,15 +120,13 @@ mod tests {
 
     #[test]
     fn test_constant_scenario_parameter_with_subset_indices() {
-        let scenario_group = ScenarioGroupBuilder::new("group1", 5)
-            .with_subset_indices(vec![0, 2, 4])
-            .build()
-            .unwrap();
-        let scenario_domain = scenario::ScenarioDomainBuilder::default()
-            .with_group(scenario_group)
-            .unwrap()
-            .build()
-            .unwrap();
+        let mut scenario_group = ScenarioGroupBuilder::new("group1", 5);
+        scenario_group.with_subset_indices(vec![0, 2, 4]);
+
+        let mut scenario_domain_builder = scenario::ScenarioDomainBuilder::default();
+        scenario_domain_builder.with_group(scenario_group);
+
+        let scenario_domain = scenario_domain_builder.build().unwrap();
 
         let p = ConstantScenarioParameter {
             meta: ParameterMeta::new("my-parameter".into()),
@@ -152,15 +147,12 @@ mod tests {
 
     #[test]
     fn test_constant_scenario_parameter_with_subset_slice() {
-        let scenario_group = ScenarioGroupBuilder::new("group1", 5)
-            .with_subset_slice(1, 3)
-            .build()
-            .unwrap();
-        let scenario_domain = scenario::ScenarioDomainBuilder::default()
-            .with_group(scenario_group)
-            .unwrap()
-            .build()
-            .unwrap();
+        let mut scenario_group = ScenarioGroupBuilder::new("group1", 5);
+        scenario_group.with_subset_slice(1, 3);
+
+        let mut scenario_domain_builder = scenario::ScenarioDomainBuilder::default();
+        scenario_domain_builder.with_group(scenario_group);
+        let scenario_domain = scenario_domain_builder.build().unwrap();
 
         let p = ConstantScenarioParameter {
             meta: ParameterMeta::new("my-parameter".into()),
