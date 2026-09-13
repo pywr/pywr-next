@@ -1,10 +1,47 @@
 {
   "metadata": {
-    "title": "Simple timeseries"
+    "title": "TimeSeries with only odd of a scenarios"
+  },
+  "scenarios": {
+    "groups": [
+      {
+        "name": "scenario1",
+        "size": 10,
+        "labels": [
+          "0",
+          "1",
+          "2",
+          "3",
+          "4",
+          "5",
+          "6",
+          "7",
+          "8",
+          "9"
+        ]
+      }
+    ],
+    "combinations": [
+      [
+        1
+      ],
+      [
+        "3"
+      ],
+      [
+        5
+      ],
+      [
+        "7"
+      ],
+      [
+        9
+      ]
+    ]
   },
   "time": {
     "start": "2021-01-01",
-    "end": "2021-12-31",
+    "end": "2021-01-10",
     "timestep": {
       "type": "Days",
       "days": 1
@@ -28,11 +65,11 @@
         },
         "type": "Input",
         "max_flow": {
-          "type": "Timeseries",
+          "type": "TimeSeries",
           "name": "inflow",
           "columns": {
-            "type": "Column",
-            "name": "inflow1"
+            "type": "Scenario",
+            "name": "scenario1"
           }
         }
       },
@@ -93,8 +130,12 @@
         "phase": "Before",
         "metrics": [
           {
-            "type": "Timeseries",
-            "name": "inflow"
+            "type": "TimeSeries",
+            "name": "inflow",
+            "columns": {
+              "type": "Scenario",
+              "name": "scenario1"
+            }
           },
           {
             "type": "Literal",
@@ -103,17 +144,35 @@
         ]
       }
     ],
-    "timeseries": [
+    "time_series": [
       {
         "meta": {
           "name": "inflow"
         },
-        "type": "Pandas",
+        "type": "Arrow",
+        "format": "CSV",
         "time_col": "date",
-        "path": "inflow.csv",
-        "kwargs": {
-          "dayfirst": true
-        }
+        "path": "inflow2.csv"
+      }
+    ],
+    "metric_sets": [
+      {
+        "name": "nodes",
+        "metrics": [
+          {
+            "type": "Node",
+            "name": "output1"
+          }
+        ]
+      }
+    ],
+    "outputs": [
+      {
+        "name": "nodes",
+        "type": "CSV",
+        "format": "Long",
+        "filename": "time-series4-expected.csv",
+        "metric_set": "nodes"
       }
     ]
   }

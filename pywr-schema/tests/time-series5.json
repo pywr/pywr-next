@@ -1,6 +1,6 @@
 {
   "metadata": {
-    "title": "Timeseries with a subset of a scenario"
+    "title": "TimeSeries with a subset of a scenario"
   },
   "scenarios": {
     "groups": [
@@ -8,9 +8,33 @@
         "name": "scenario1",
         "size": 10,
         "subset": {
-          "type": "Slice",
-          "start": 2,
-          "end": 8
+          "type": "Indices",
+          "indices": [
+            2,
+            3,
+            4,
+            5,
+            6,
+            7
+          ]
+        }
+      },
+      {
+        "name": "scenario2",
+        "size": 5,
+        "labels": [
+          "A",
+          "B",
+          "C",
+          "D",
+          "E"
+        ],
+        "subset": {
+          "type": "Labels",
+          "labels": [
+            "B",
+            "D"
+          ]
         }
       }
     ]
@@ -41,7 +65,7 @@
         },
         "type": "Input",
         "max_flow": {
-          "type": "Timeseries",
+          "type": "TimeSeries",
           "name": "inflow",
           "columns": {
             "type": "Scenario",
@@ -106,7 +130,7 @@
         "phase": "Before",
         "metrics": [
           {
-            "type": "Timeseries",
+            "type": "TimeSeries",
             "name": "inflow",
             "columns": {
               "type": "Scenario",
@@ -120,7 +144,7 @@
         ]
       }
     ],
-    "timeseries": [
+    "time_series": [
       {
         "meta": {
           "name": "inflow"
@@ -147,7 +171,7 @@
         "name": "nodes",
         "type": "CSV",
         "format": "Long",
-        "filename": "timeseries3-expected.csv",
+        "filename": "time-series5-expected.csv",
         "metric_set": "nodes"
       }
     ]

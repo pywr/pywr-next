@@ -3,7 +3,7 @@ use crate::data_tables::{TableCollectionError, TableDataRef};
 use crate::digest::ChecksumError;
 use crate::nodes::{NodeAttribute, NodeComponent, NodeSlot};
 #[cfg(feature = "core")]
-use crate::timeseries::LoadedTimeseriesCollectionError;
+use crate::time_series::LoadedTimeSeriesCollectionError;
 use jiff::civil::DateTime;
 #[cfg(feature = "core")]
 use ndarray::ShapeError;
@@ -128,8 +128,8 @@ pub enum SchemaError {
     #[error("Failed to load parameter {name}: {error}")]
     LoadParameter { name: String, error: String },
     #[cfg(feature = "core")]
-    #[error("Timeseries error: {0}")]
-    Timeseries(#[from] LoadedTimeseriesCollectionError),
+    #[error("TimeSeries error: {0}")]
+    TimeSeries(#[from] LoadedTimeSeriesCollectionError),
     #[error(
         "The output of literal constant values is not supported. This is because they do not have a unique identifier such as a name. If you would like to output a constant value please use a `Constant` parameter."
     )]
@@ -172,7 +172,7 @@ impl TryFrom<SchemaError> for PyErr {
     fn try_from(err: SchemaError) -> Result<Self, Self::Error> {
         match err {
             SchemaError::PythonError(py_err) => Ok(py_err),
-            SchemaError::Timeseries(err) => err.try_into(),
+            SchemaError::TimeSeries(err) => err.try_into(),
             _ => Err(()),
         }
     }

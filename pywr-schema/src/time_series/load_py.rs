@@ -1,5 +1,5 @@
 use crate::py_utils::{try_json_value_into_py, try_load_optional_py_kwargs};
-use crate::timeseries::{LoadedTimeseries, TimeseriesError};
+use crate::time_series::{LoadedTimeSeries, TimeSeriesError};
 use arrow::array::RecordBatch;
 use arrow::pyarrow::PyArrowType;
 use pyo3::ffi::c_str;
@@ -12,7 +12,7 @@ use std::path::Path;
 
 const LOAD_SCRIPT: &CStr = c_str!(include_str!("load.py"));
 
-/// An enum representing the module to load for a Python timeseries loader.
+/// An enum representing the module to load for a Python time series loader.
 pub enum LoadModule {
     /// Use the built-in "load.py" module.
     Builtin,
@@ -28,7 +28,7 @@ pub fn load_record_batch_from_py_callback(
     time_column: Option<&str>,
     args: &Option<Vec<serde_json::Value>>,
     kwargs: &HashMap<String, serde_json::Value>,
-) -> Result<LoadedTimeseries, TimeseriesError> {
+) -> Result<LoadedTimeSeries, TimeSeriesError> {
     // Prepare the Python interpreter if not already
     Python::initialize();
 
@@ -65,5 +65,5 @@ pub fn load_record_batch_from_py_callback(
         Ok(df)
     })?;
 
-    Ok(LoadedTimeseries::new(df.0, time_column.map(|s| s.to_string())))
+    Ok(LoadedTimeSeries::new(df.0, time_column.map(|s| s.to_string())))
 }

@@ -14,7 +14,7 @@
 - [External Data](./external-data/README.md)
     - [Scalar tables](./external-data/scalar-tables.md)
     - [Array tables](./external-data/array-tables.md)
-    - [Time Series](./external-data/timeseries.md)
+    - [Time Series](./external-data/time-series.md)
 - [Custom parameters](./custom_parameters.md)
 - [River routing and attenuation](./river-routing.md)
 - [Multi-models](./multi_models.md)

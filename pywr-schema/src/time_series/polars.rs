@@ -6,25 +6,21 @@ use schemars::JsonSchema;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-/// A dataset that can be loaded using Pandas.
-///
-/// This dataset is loaded using Pandas. This is done via a callback to Python to load the dataset.
-///
 #[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
 #[serde(deny_unknown_fields)]
-pub struct PandasTimeseries {
+pub struct PolarsTimeSeries {
     pub meta: ParameterMeta,
     pub time_col: Option<String>,
     /// Path to the dataset. If this is a relative path, it will be resolved relative to the provided data path.
     pub path: PathBuf,
-    /// Keyword arguments to pass to the relevant Pandas load function.
+    /// Keyword arguments to pass to the relevant Polars load function.
     pub kwargs: Option<HashMap<String, serde_json::Value>>,
     /// Optional checksum to verify the dataset.
     pub checksum: Option<Checksum>,
 }
 
-impl VisitPaths for PandasTimeseries {
+impl VisitPaths for PolarsTimeSeries {
     fn visit_paths<F: FnMut(&Path)>(&self, visitor: &mut F) {
         visitor(&self.path);
     }
@@ -36,27 +32,27 @@ impl VisitPaths for PandasTimeseries {
 
 #[cfg(all(feature = "core", not(feature = "pyo3")))]
 mod core {
-    use super::PandasTimeseries;
-    use crate::timeseries::{LoadedTimeseries, TimeseriesError};
+    use super::PolarsTimeSeries;
+    use crate::time_series::{LoadedTimeSeries, TimeSeriesError};
     use std::path::Path;
 
-    impl PandasTimeseries {
-        pub fn load(&self, _data_path: Option<&Path>) -> Result<LoadedTimeseries, TimeseriesError> {
-            Err(TimeseriesError::PythonNotEnabled)
+    impl PolarsTimeSeries {
+        pub fn load(&self, _data_path: Option<&Path>) -> Result<LoadedTimeSeries, TimeSeriesError> {
+            Err(TimeSeriesError::PythonNotEnabled)
         }
     }
 }
 
 #[cfg(all(feature = "core", feature = "pyo3"))]
 mod core {
-    use super::PandasTimeseries;
-    use crate::timeseries::load_py::{LoadModule, load_record_batch_from_py_callback};
-    use crate::timeseries::{LoadedTimeseries, TimeseriesError};
+    use super::PolarsTimeSeries;
+    use crate::time_series::load_py::{LoadModule, load_record_batch_from_py_callback};
+    use crate::time_series::{LoadedTimeSeries, TimeSeriesError};
     use std::collections::HashMap;
     use std::path::Path;
 
-    impl PandasTimeseries {
-        pub fn load(&self, data_path: Option<&Path>) -> Result<LoadedTimeseries, TimeseriesError> {
+    impl PolarsTimeSeries {
+        pub fn load(&self, data_path: Option<&Path>) -> Result<LoadedTimeSeries, TimeSeriesError> {
             let fp = if self.path.is_absolute() {
                 self.path.clone()
             } else if let Some(data_path) = data_path {
@@ -74,7 +70,7 @@ mod core {
 
             let lt = load_record_batch_from_py_callback(
                 LoadModule::Builtin,
-                "load_pandas",
+                "load_polars",
                 &fp,
                 self.time_col.as_deref(),
                 &None,
@@ -88,8 +84,8 @@ mod core {
         fn make_kwargs(&self) -> HashMap<String, serde_json::Value> {
             let mut kwargs = self.kwargs.clone().unwrap_or_default();
 
-            if !kwargs.contains_key("parse_dates") {
-                kwargs.insert("parse_dates".to_string(), serde_json::Value::Bool(true));
+            if !kwargs.contains_key("try_parse_dates") {
+                kwargs.insert("try_parse_dates".to_string(), serde_json::Value::Bool(true));
             }
 
             kwargs

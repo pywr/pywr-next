@@ -1,21 +1,26 @@
 {
   "metadata": {
-    "title": "Timeseries with a single scenario"
+    "title": "TimeSeries with a subset of a scenario"
   },
   "scenarios": {
     "groups": [
       {
         "name": "scenario1",
-        "size": 10
+        "size": 10,
+        "subset": {
+          "type": "Slice",
+          "start": 2,
+          "end": 8
+        }
       }
     ]
   },
   "time": {
     "start": "2021-01-01",
-    "end": "2021-01-02",
+    "end": "2021-01-10",
     "timestep": {
-      "type": "Hours",
-      "hours": 3
+      "type": "Days",
+      "days": 1
     }
   },
   "network": {
@@ -36,7 +41,7 @@
         },
         "type": "Input",
         "max_flow": {
-          "type": "Timeseries",
+          "type": "TimeSeries",
           "name": "inflow",
           "columns": {
             "type": "Scenario",
@@ -101,7 +106,7 @@
         "phase": "Before",
         "metrics": [
           {
-            "type": "Timeseries",
+            "type": "TimeSeries",
             "name": "inflow",
             "columns": {
               "type": "Scenario",
@@ -115,7 +120,7 @@
         ]
       }
     ],
-    "timeseries": [
+    "time_series": [
       {
         "meta": {
           "name": "inflow"
@@ -123,7 +128,7 @@
         "type": "Arrow",
         "format": "CSV",
         "time_col": "date",
-        "path": "inflow2-3h.csv"
+        "path": "inflow2.csv"
       }
     ],
     "metric_sets": [
@@ -142,7 +147,7 @@
         "name": "nodes",
         "type": "CSV",
         "format": "Long",
-        "filename": "timeseries2-hourly-expected.csv",
+        "filename": "time-series3-expected.csv",
         "metric_set": "nodes"
       }
     ]

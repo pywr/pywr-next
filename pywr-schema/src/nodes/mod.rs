@@ -961,7 +961,7 @@ mod tests {
             "type": "Input",
             "max_flow": {
                 "type": "dataframe",
-                "url" : "timeseries1.csv",
+                "url" : "time-series1.csv",
                 "parse_dates": true,
                 "dayfirst": true,
                 "index_col": 0,
@@ -989,14 +989,14 @@ mod tests {
         let expected_name = String::from("catchment1-p0");
 
         match input_node.max_flow {
-            Some(Metric::Timeseries(ts)) => {
+            Some(Metric::TimeSeries(ts)) => {
                 assert_eq!(ts.name(), &expected_name)
             }
-            _ => panic!("Expected Timeseries"),
+            _ => panic!("Expected TimeSeries"),
         };
 
-        assert_eq!(conversion_data.timeseries.len(), 1);
-        assert_eq!(conversion_data.timeseries[0].name(), &expected_name);
+        assert_eq!(conversion_data.time_series.len(), 1);
+        assert_eq!(conversion_data.time_series[0].name(), &expected_name);
     }
 
     #[test]
@@ -1015,7 +1015,7 @@ mod tests {
                     },
                     {
                         "type": "dataframe",
-                        "url" : "timeseries1.csv",
+                        "url" : "time-series1.csv",
                         "parse_dates": true,
                         "dayfirst": true,
                         "index_col": 0,
@@ -1027,7 +1027,7 @@ mod tests {
                     },
                     {
                         "type": "dataframe",
-                        "url" : "timeseries2.csv",
+                        "url" : "time-series2.csv",
                         "parse_dates": true,
                         "dayfirst": true,
                         "index_col": 0,
@@ -1058,14 +1058,14 @@ mod tests {
 
         match input_node.max_flow {
             Some(Metric::Parameter(parameter_ref)) => assert_eq!(&parameter_ref.name, "catchment1-p0"),
-            _ => panic!("Expected Timeseries"),
+            _ => panic!("Expected TimeSeries"),
         };
 
         assert_eq!(conversion_data.parameters.len(), 3);
 
-        assert_eq!(conversion_data.timeseries.len(), 2);
-        assert_eq!(conversion_data.timeseries[0].name(), expected_name1);
-        assert_eq!(conversion_data.timeseries[1].name(), expected_name2);
+        assert_eq!(conversion_data.time_series.len(), 2);
+        assert_eq!(conversion_data.time_series[0].name(), expected_name1);
+        assert_eq!(conversion_data.time_series[1].name(), expected_name2);
     }
 
     #[test]

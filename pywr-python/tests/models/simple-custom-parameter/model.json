@@ -1,6 +1,6 @@
 {
   "metadata": {
-    "title": "Simple timeseries"
+    "title": "Simple time series"
   },
   "time": {
     "start": "2021-01-01",
@@ -18,7 +18,7 @@
         },
         "type": "Input",
         "max_flow": {
-          "type": "Timeseries",
+          "type": "TimeSeries",
           "name": "inflow",
           "columns": {
             "type": "Column",
@@ -79,7 +79,7 @@
         }
       }
     ],
-    "timeseries": [
+    "time_series": [
       {
         "meta": {
           "name": "inflow"

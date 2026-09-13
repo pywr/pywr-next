@@ -25,15 +25,15 @@ def model_dir(test_dir: Path):
     return test_dir / "models"
 
 
-def test_simple_timeseries(model_dir: Path, tmpdir: Path):
+def test_simple_time_series(model_dir: Path, tmpdir: Path):
     """Test the simple model"""
 
-    filename = model_dir / "simple-timeseries" / "model.json"
+    filename = model_dir / "simple-time-series" / "model.json"
 
     output_fn = tmpdir / "outputs.h5"
 
     schema = ModelSchema.from_path(filename)
-    model = schema.build(data_path=model_dir / "simple-timeseries", output_path=tmpdir)
+    model = schema.build(data_path=model_dir / "simple-time-series", output_path=tmpdir)
     result = model.run("clp")
 
     assert isinstance(result, ModelResult)
@@ -44,7 +44,7 @@ def test_simple_timeseries(model_dir: Path, tmpdir: Path):
     assert result.timings.speed > 0.0
 
     expected_data = pandas.read_csv(
-        model_dir / "simple-timeseries" / "expected.csv", index_col=0, header=[0, 1]
+        model_dir / "simple-time-series" / "expected.csv", index_col=0, header=[0, 1]
     )
 
     with h5py.File(output_fn, "r") as fh:
@@ -76,8 +76,8 @@ def test_simple_timeseries(model_dir: Path, tmpdir: Path):
 @pytest.mark.parametrize(
     "model_name",
     [
-        "simple-timeseries",
-        "simple-storage-timeseries",
+        "simple-time-series",
+        "simple-storage-time-series",
         "simple-custom-parameter",
         "aggregated-node1",
         "piecewise-link1",

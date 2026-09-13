@@ -6,7 +6,7 @@ import pyarrow as pa
 def load_pandas(path: str, index_col: str | int, **kwargs) -> pa.RecordBatch:
     """Helper function to load a pandas DataFrame from a file, and then convert it to a pyarrow RecordBatch.
 
-    This function is used by the `load` function of the `PandasTimeseries` in the Rust extension.
+    This function is used by the `load` function of the `PandasTimeSeries` in the Rust extension.
     """
     import pandas as pd
 

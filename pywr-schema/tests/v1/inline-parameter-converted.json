@@ -109,7 +109,7 @@
               "type": "Column"
             },
             "name": "demand1-p2",
-            "type": "Timeseries"
+            "type": "TimeSeries"
           },
           {
             "name": "demand1-p3",
@@ -121,14 +121,14 @@
               "type": "Column"
             },
             "name": "demand1-p4",
-            "type": "Timeseries"
+            "type": "TimeSeries"
           }
         ],
         "phase": "Before",
         "type": "Aggregated"
       }
     ],
-    "timeseries": [
+    "time_series": [
       {
         "meta": {
           "name": "demand1-p2"
@@ -137,7 +137,7 @@
           "dayfirst": true
         },
         "type": "Pandas",
-        "path": "timeseries1.csv"
+        "path": "time-series1.csv"
       },
       {
         "meta": {
@@ -147,7 +147,7 @@
           "dayfirst": true
         },
         "type": "Pandas",
-        "path": "timeseries2.csv"
+        "path": "time-series2.csv"
       }
     ]
   },

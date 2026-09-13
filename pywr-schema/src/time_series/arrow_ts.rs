@@ -19,7 +19,7 @@ pub enum ArrowFormat {
 #[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
 #[serde(deny_unknown_fields)]
-pub struct ArrowTimeseries {
+pub struct ArrowTimeSeries {
     pub meta: ParameterMeta,
     pub time_col: Option<String>,
     /// Path to the dataset. If this is a relative path, it will be resolved relative to the provided data path.
@@ -31,7 +31,7 @@ pub struct ArrowTimeseries {
     pub checksum: Option<Checksum>,
 }
 
-impl VisitPaths for ArrowTimeseries {
+impl VisitPaths for ArrowTimeSeries {
     fn visit_paths<F: FnMut(&Path)>(&self, visitor: &mut F) {
         visitor(&self.path);
     }
@@ -43,8 +43,8 @@ impl VisitPaths for ArrowTimeseries {
 
 #[cfg(feature = "core")]
 mod core {
-    use super::{ArrowFormat, ArrowTimeseries};
-    use crate::timeseries::{LoadedTimeseries, TimeseriesError};
+    use super::{ArrowFormat, ArrowTimeSeries};
+    use crate::time_series::{LoadedTimeSeries, TimeSeriesError};
     use arrow::array::RecordBatch;
     use arrow::compute::concat_batches;
     use arrow::csv::ReaderBuilder;
@@ -54,8 +54,8 @@ mod core {
     use std::path::Path;
     use std::sync::Arc;
 
-    impl ArrowTimeseries {
-        pub fn load(&self, data_path: Option<&Path>) -> Result<LoadedTimeseries, TimeseriesError> {
+    impl ArrowTimeSeries {
+        pub fn load(&self, data_path: Option<&Path>) -> Result<LoadedTimeSeries, TimeSeriesError> {
             let fp = if self.path.is_absolute() {
                 self.path.clone()
             } else if let Some(data_path) = data_path {
@@ -73,7 +73,7 @@ mod core {
                         "csv" => ArrowFormat::CSV,
                         "ipc" | "arrow" => ArrowFormat::IPC,
                         _ => {
-                            return Err(TimeseriesError::UnsupportedFileFormat {
+                            return Err(TimeSeriesError::UnsupportedFileFormat {
                                 provider: "Arrow".to_string(),
                                 fmt: ext.to_string(),
                             });
@@ -88,16 +88,16 @@ mod core {
             }
 
             let record_batch = match format {
-                ArrowFormat::CSV => load_arrow_timeseries_from_csv(&fp)?,
-                ArrowFormat::IPC => load_arrow_timeseries_from_ipc(&fp)?,
+                ArrowFormat::CSV => load_arrow_time_series_from_csv(&fp)?,
+                ArrowFormat::IPC => load_arrow_time_series_from_ipc(&fp)?,
             };
 
-            Ok(LoadedTimeseries::new(record_batch, self.time_col.clone()))
+            Ok(LoadedTimeSeries::new(record_batch, self.time_col.clone()))
         }
     }
 
-    fn load_arrow_timeseries_from_csv(path: &Path) -> Result<RecordBatch, TimeseriesError> {
-        let mut file = std::fs::File::open(path).map_err(|source| TimeseriesError::IOError {
+    fn load_arrow_time_series_from_csv(path: &Path) -> Result<RecordBatch, TimeSeriesError> {
+        let mut file = std::fs::File::open(path).map_err(|source| TimeSeriesError::IOError {
             source,
             path: path.to_path_buf(),
         })?;
@@ -109,7 +109,7 @@ mod core {
             .infer_schema(
                 &mut file, None, // You can specify the number of rows to sample for schema inference if needed
             )
-            .map_err(|source| TimeseriesError::ArrowError {
+            .map_err(|source| TimeSeriesError::ArrowError {
                 path: path.to_path_buf(),
                 source,
             })?;
@@ -117,7 +117,7 @@ mod core {
         let schema = Arc::new(schema);
 
         // Rewind the file to the beginning after inferring the schema
-        file.rewind().map_err(|source| TimeseriesError::IOError {
+        file.rewind().map_err(|source| TimeSeriesError::IOError {
             path: path.to_path_buf(),
             source,
         })?;
@@ -125,7 +125,7 @@ mod core {
         let reader = ReaderBuilder::new(schema.clone())
             .with_format(format)
             .build(file)
-            .map_err(|source| TimeseriesError::ArrowError {
+            .map_err(|source| TimeSeriesError::ArrowError {
                 path: path.to_path_buf(),
                 source,
             })?;
@@ -133,13 +133,13 @@ mod core {
         let record_batches: Vec<_> =
             reader
                 .collect::<Result<_, _>>()
-                .map_err(|source| TimeseriesError::ArrowError {
+                .map_err(|source| TimeSeriesError::ArrowError {
                     path: path.to_path_buf(),
                     source,
                 })?;
 
         let record_batch =
-            concat_batches(&schema, record_batches.iter()).map_err(|source| TimeseriesError::ArrowError {
+            concat_batches(&schema, record_batches.iter()).map_err(|source| TimeSeriesError::ArrowError {
                 path: path.to_path_buf(),
                 source,
             })?;
@@ -147,15 +147,15 @@ mod core {
         Ok(record_batch)
     }
 
-    fn load_arrow_timeseries_from_ipc(path: &Path) -> Result<RecordBatch, TimeseriesError> {
-        let mut file = std::fs::File::open(path).map_err(|source| TimeseriesError::IOError {
+    fn load_arrow_time_series_from_ipc(path: &Path) -> Result<RecordBatch, TimeSeriesError> {
+        let mut file = std::fs::File::open(path).map_err(|source| TimeSeriesError::IOError {
             source,
             path: path.to_path_buf(),
         })?;
 
         let reader = FileReaderBuilder::default()
             .build(&mut file)
-            .map_err(|source| TimeseriesError::ArrowError {
+            .map_err(|source| TimeSeriesError::ArrowError {
                 path: path.to_path_buf(),
                 source,
             })?;
@@ -163,21 +163,21 @@ mod core {
         let record_batches: Vec<_> =
             reader
                 .collect::<Result<_, _>>()
-                .map_err(|source| TimeseriesError::ArrowError {
+                .map_err(|source| TimeSeriesError::ArrowError {
                     path: path.to_path_buf(),
                     source,
                 })?;
 
         let schema = record_batches
             .first()
-            .ok_or_else(|| TimeseriesError::ArrowError {
+            .ok_or_else(|| TimeSeriesError::ArrowError {
                 path: path.to_path_buf(),
                 source: arrow::error::ArrowError::SchemaError("No record batches found".to_string()),
             })?
             .schema();
 
         let record_batch =
-            concat_batches(&schema, record_batches.iter()).map_err(|source| TimeseriesError::ArrowError {
+            concat_batches(&schema, record_batches.iter()).map_err(|source| TimeSeriesError::ArrowError {
                 path: path.to_path_buf(),
                 source,
             })?;

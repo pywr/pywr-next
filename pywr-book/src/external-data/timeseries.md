@@ -1,7 +1,7 @@
 # Time Series Data
 
 Time series provide values that vary over a model's time domain. Define input datasets in
-`network.timeseries`, then reference them from a parameter, node attribute, or any other field
+`network.time_series`, then reference them from a parameter, node attribute, or any other field
 that accepts a metric. A dataset has a unique `meta.name`, a `type`, and (except for a
 placeholder) a `path`.
 
@@ -29,7 +29,7 @@ Then reference the `inflow` column where a metric is expected:
 
 ```json,ignore
 {
-  "type": "Timeseries",
+  "type": "TimeSeries",
   "name": "inflow-data",
   "columns": {
     "type": "Column",
@@ -60,7 +60,7 @@ or use its columns as scenario values:
 
 ```json,ignore
 {
-  "type": "Timeseries",
+  "type": "TimeSeries",
   "name": "inflow-data",
   "columns": {
     "type": "Scenario",
@@ -89,10 +89,10 @@ The provider `type` values and the optional Arrow `format` values are case-sensi
 
 `"type": "Arrow"` is the native Rust loader and does not require Python. It supports:
 
-| Format | `format` value | Recognised extension when `format` is omitted |
-| --- | --- | --- |
-| CSV | `"CSV"` | `.csv` |
-| Arrow IPC file | `"IPC"` | `.ipc` or `.arrow` |
+| Format         | `format` value | Recognised extension when `format` is omitted |
+|----------------|----------------|-----------------------------------------------|
+| CSV            | `"CSV"`        | `.csv`                                        |
+| Arrow IPC file | `"IPC"`        | `.ipc` or `.arrow`                            |
 
 Arrow CSV files must include a header row. Use ISO 8601 values for dates and timestamps so that
 the Arrow CSV reader can infer temporal columns, for example `2021-01-01` or
@@ -168,7 +168,7 @@ This is useful for formats or preprocessing that are not covered by the built-in
 {
   "meta": {"name": "inflow-data"},
   "type": "Python",
-  "module": "my_project.timeseries",
+  "module": "my_project.time_series",
   "function": "load_inflow",
   "path": "inflow.custom",
   "time_col": "date",

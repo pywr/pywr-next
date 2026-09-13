@@ -20,7 +20,7 @@
         },
         "type": "Catchment",
         "flow": {
-          "type": "Timeseries",
+          "type": "TimeSeries",
           "name": "inflow"
         }
       },
@@ -61,7 +61,7 @@
         "to_node": "term1"
       }
     ],
-    "timeseries": [
+    "time_series": [
       {
         "meta": {
           "name": "inflow"

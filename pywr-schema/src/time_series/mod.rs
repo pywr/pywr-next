@@ -18,11 +18,11 @@ use arrow::{
     array::{Array, ArrayRef},
     record_batch::RecordBatch,
 };
-use arrow_ts::ArrowTimeseries;
-pub use pandas::PandasTimeseries;
-pub use placeholder::PlaceholderTimeseries;
-pub use polars::PolarsTimeseries;
-pub use py::PythonTimeseries;
+use arrow_ts::ArrowTimeSeries;
+pub use pandas::PandasTimeSeries;
+pub use placeholder::PlaceholderTimeSeries;
+pub use polars::PolarsTimeSeries;
+pub use py::PythonTimeSeries;
 #[cfg(feature = "pyo3")]
 use pyo3::{PyErr, pyclass};
 #[cfg(feature = "core")]
@@ -37,8 +37,8 @@ use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumString, IntoStaticS
 use thiserror::Error;
 
 #[derive(Error, Debug)]
-pub enum TimeseriesError {
-    #[error("Timeseries provider '{provider}' does not support '{fmt}' file types")]
+pub enum TimeSeriesError {
+    #[error("TimeSeries provider '{provider}' does not support '{fmt}' file types")]
     UnsupportedFileFormat { provider: String, fmt: String },
     #[cfg(feature = "pyo3")]
     #[error("Python error: {0}")]
@@ -49,8 +49,8 @@ pub enum TimeseriesError {
     #[error("Checksum error: {0}")]
     #[cfg(feature = "core")]
     ChecksumError(#[from] crate::digest::ChecksumError),
-    #[error("Placeholder timeseries `{name}` cannot be loaded.")]
-    PlaceholderTimeseriesNotAllowed { name: String },
+    #[error("Placeholder time series `{name}` cannot be loaded.")]
+    PlaceholderTimeSeriesNotAllowed { name: String },
     #[error("IO error on path `{path}`: {source}")]
     #[cfg(feature = "core")]
     IOError {
@@ -73,11 +73,11 @@ pub enum TimeseriesError {
 }
 
 #[cfg(feature = "pyo3")]
-impl TryFrom<TimeseriesError> for PyErr {
+impl TryFrom<TimeSeriesError> for PyErr {
     type Error = ();
-    fn try_from(err: TimeseriesError) -> Result<Self, Self::Error> {
+    fn try_from(err: TimeSeriesError) -> Result<Self, Self::Error> {
         match err {
-            TimeseriesError::PythonError(py_err) => Ok(py_err),
+            TimeSeriesError::PythonError(py_err) => Ok(py_err),
             _ => Err(()),
         }
     }
@@ -86,92 +86,92 @@ impl TryFrom<TimeseriesError> for PyErr {
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, Display, EnumDiscriminants)]
 #[serde(tag = "type")]
 #[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
-#[strum_discriminants(name(TimeseriesType))]
-pub enum Timeseries {
-    Pandas(PandasTimeseries),
-    Polars(PolarsTimeseries),
-    Python(PythonTimeseries),
-    Arrow(ArrowTimeseries),
-    Parquet(parquet_ts::ParquetTimeseries),
-    Placeholder(PlaceholderTimeseries),
+#[strum_discriminants(name(TimeSeriesType))]
+pub enum TimeSeries {
+    Pandas(PandasTimeSeries),
+    Polars(PolarsTimeSeries),
+    Python(PythonTimeSeries),
+    Arrow(ArrowTimeSeries),
+    Parquet(parquet_ts::ParquetTimeSeries),
+    Placeholder(PlaceholderTimeSeries),
 }
 
-impl Timeseries {
+impl TimeSeries {
     #[cfg(feature = "core")]
-    pub fn load(&self, data_path: Option<&Path>) -> Result<LoadedTimeseries, TimeseriesError> {
+    pub fn load(&self, data_path: Option<&Path>) -> Result<LoadedTimeSeries, TimeSeriesError> {
         match &self {
-            Timeseries::Polars(dataset) => dataset.load(data_path),
-            Timeseries::Pandas(dataset) => dataset.load(data_path),
-            Timeseries::Python(dataset) => dataset.load(data_path),
-            Timeseries::Arrow(dataset) => dataset.load(data_path),
-            Timeseries::Parquet(dataset) => dataset.load(data_path),
-            Timeseries::Placeholder(dataset) => dataset.load(),
+            TimeSeries::Polars(dataset) => dataset.load(data_path),
+            TimeSeries::Pandas(dataset) => dataset.load(data_path),
+            TimeSeries::Python(dataset) => dataset.load(data_path),
+            TimeSeries::Arrow(dataset) => dataset.load(data_path),
+            TimeSeries::Parquet(dataset) => dataset.load(data_path),
+            TimeSeries::Placeholder(dataset) => dataset.load(),
         }
     }
 
     pub fn name(&self) -> &str {
         match &self {
-            Timeseries::Polars(dataset) => dataset.meta.name.as_str(),
-            Timeseries::Pandas(dataset) => dataset.meta.name.as_str(),
-            Timeseries::Python(dataset) => dataset.meta.name.as_str(),
-            Timeseries::Arrow(dataset) => dataset.meta.name.as_str(),
-            Timeseries::Parquet(dataset) => dataset.meta.name.as_str(),
-            Timeseries::Placeholder(dataset) => dataset.meta.name.as_str(),
+            TimeSeries::Polars(dataset) => dataset.meta.name.as_str(),
+            TimeSeries::Pandas(dataset) => dataset.meta.name.as_str(),
+            TimeSeries::Python(dataset) => dataset.meta.name.as_str(),
+            TimeSeries::Arrow(dataset) => dataset.meta.name.as_str(),
+            TimeSeries::Parquet(dataset) => dataset.meta.name.as_str(),
+            TimeSeries::Placeholder(dataset) => dataset.meta.name.as_str(),
         }
     }
 
     pub fn meta(&self) -> &ParameterMeta {
         match &self {
-            Timeseries::Polars(dataset) => &dataset.meta,
-            Timeseries::Pandas(dataset) => &dataset.meta,
-            Timeseries::Python(dataset) => &dataset.meta,
-            Timeseries::Arrow(dataset) => &dataset.meta,
-            Timeseries::Parquet(dataset) => &dataset.meta,
-            Timeseries::Placeholder(dataset) => &dataset.meta,
+            TimeSeries::Polars(dataset) => &dataset.meta,
+            TimeSeries::Pandas(dataset) => &dataset.meta,
+            TimeSeries::Python(dataset) => &dataset.meta,
+            TimeSeries::Arrow(dataset) => &dataset.meta,
+            TimeSeries::Parquet(dataset) => &dataset.meta,
+            TimeSeries::Placeholder(dataset) => &dataset.meta,
         }
     }
 
     pub fn is_placeholder(&self) -> bool {
-        matches!(self, Timeseries::Placeholder(_))
+        matches!(self, TimeSeries::Placeholder(_))
     }
 }
 
-impl VisitPaths for Timeseries {
+impl VisitPaths for TimeSeries {
     fn visit_paths<F: FnMut(&Path)>(&self, visitor: &mut F) {
         match &self {
-            Timeseries::Polars(dataset) => dataset.visit_paths(visitor),
-            Timeseries::Pandas(dataset) => dataset.visit_paths(visitor),
-            Timeseries::Python(dataset) => dataset.visit_paths(visitor),
-            Timeseries::Arrow(dataset) => dataset.visit_paths(visitor),
-            Timeseries::Parquet(dataset) => dataset.visit_paths(visitor),
-            Timeseries::Placeholder(dataset) => dataset.visit_paths(visitor),
+            TimeSeries::Polars(dataset) => dataset.visit_paths(visitor),
+            TimeSeries::Pandas(dataset) => dataset.visit_paths(visitor),
+            TimeSeries::Python(dataset) => dataset.visit_paths(visitor),
+            TimeSeries::Arrow(dataset) => dataset.visit_paths(visitor),
+            TimeSeries::Parquet(dataset) => dataset.visit_paths(visitor),
+            TimeSeries::Placeholder(dataset) => dataset.visit_paths(visitor),
         }
     }
 
     fn visit_paths_mut<F: FnMut(&mut PathBuf)>(&mut self, visitor: &mut F) {
         match self {
-            Timeseries::Polars(dataset) => dataset.visit_paths_mut(visitor),
-            Timeseries::Pandas(dataset) => dataset.visit_paths_mut(visitor),
-            Timeseries::Python(dataset) => dataset.visit_paths_mut(visitor),
-            Timeseries::Arrow(dataset) => dataset.visit_paths_mut(visitor),
-            Timeseries::Parquet(dataset) => dataset.visit_paths_mut(visitor),
-            Timeseries::Placeholder(dataset) => dataset.visit_paths_mut(visitor),
+            TimeSeries::Polars(dataset) => dataset.visit_paths_mut(visitor),
+            TimeSeries::Pandas(dataset) => dataset.visit_paths_mut(visitor),
+            TimeSeries::Python(dataset) => dataset.visit_paths_mut(visitor),
+            TimeSeries::Arrow(dataset) => dataset.visit_paths_mut(visitor),
+            TimeSeries::Parquet(dataset) => dataset.visit_paths_mut(visitor),
+            TimeSeries::Placeholder(dataset) => dataset.visit_paths_mut(visitor),
         }
     }
 }
 
-/// A loaded timeseries dataset.
+/// A loaded time series dataset.
 ///
 /// It is expected that one of the columns in the record batch is a time column, which can be used
-/// to align the timeseries with the model timesteps.
+/// to align the time series with the model timesteps.
 #[cfg(feature = "core")]
-pub struct LoadedTimeseries {
+pub struct LoadedTimeSeries {
     record_batch: RecordBatch,
     time_col: Option<String>,
 }
 
 #[cfg(feature = "core")]
-impl LoadedTimeseries {
+impl LoadedTimeSeries {
     pub fn new(record_batch: RecordBatch, time_col: Option<String>) -> Self {
         Self { record_batch, time_col }
     }
@@ -193,7 +193,7 @@ impl LoadedTimeseries {
 
     /// Returns a reference to a time column.
     ///
-    /// If a time column is specified in the timeseries definition then that column is returned. If no
+    /// If a time column is specified in the time series definition then that column is returned. If no
     /// time column is specified then the first column in the record batch is returned, if its
     /// data type is temporal.
     ///
@@ -260,80 +260,80 @@ impl LoadedTimeseries {
 
 #[derive(Error, Debug)]
 #[cfg(feature = "core")]
-pub enum LoadedTimeseriesCollectionError {
-    #[error("Column '{column}' not found in timeseries input '{name}'")]
+pub enum LoadedTimeSeriesCollectionError {
+    #[error("Column '{column}' not found in time series input '{name}'")]
     ColumnNotFound { name: String, column: String },
-    #[error("Time column '{column}' not found in timeseries input '{name}'")]
+    #[error("Time column '{column}' not found in time series input '{name}'")]
     TimeColumnNotFound { name: String, column: String },
     #[error(
-        "No time column explicitly specified for timeseries input '{name}' and no temporal column could be inferred."
+        "No time column explicitly specified for time series input '{name}' and no temporal column could be inferred."
     )]
     TimeColumnCouldNotBeInferred { name: String },
-    #[error("Failed to load timeseries dataframe from path '{name}': {source}")]
-    TimeseriesError { name: String, source: TimeseriesError },
-    #[error("A timeseries with name '{0}' already exists.")]
-    DuplicateTimeseriesName(String),
-    #[error("Timeseries '{0}' not found in collection.")]
-    TimeseriesNotFound(String),
+    #[error("Failed to load time series dataframe from path '{name}': {source}")]
+    TimeSeriesError { name: String, source: TimeSeriesError },
+    #[error("A time series with name '{0}' already exists.")]
+    DuplicateTimeSeriesName(String),
+    #[error("TimeSeries '{0}' not found in collection.")]
+    TimeSeriesNotFound(String),
     #[error(
-        "The timeseries dataset '{0}' has more than one column of data so a column or scenario name must be provided for any reference"
+        "The time series dataset '{0}' has more than one column of data so a column or scenario name must be provided for any reference"
     )]
-    TimeseriesColumnOrScenarioRequired(String),
-    #[error("The timeseries dataset is empty and has no columns of data.")]
-    TimeseriesHasNoColumns(String),
+    TimeSeriesColumnOrScenarioRequired(String),
+    #[error("The time series dataset is empty and has no columns of data.")]
+    TimeSeriesHasNoColumns(String),
 }
 
 #[cfg(feature = "core")]
-fn make_time_column_not_found_err(name: &str, column: Option<&str>) -> LoadedTimeseriesCollectionError {
+fn make_time_column_not_found_err(name: &str, column: Option<&str>) -> LoadedTimeSeriesCollectionError {
     match column {
-        Some(col) => LoadedTimeseriesCollectionError::TimeColumnNotFound {
+        Some(col) => LoadedTimeSeriesCollectionError::TimeColumnNotFound {
             name: name.to_string(),
             column: col.to_string(),
         },
-        None => LoadedTimeseriesCollectionError::TimeColumnCouldNotBeInferred { name: name.to_string() },
+        None => LoadedTimeSeriesCollectionError::TimeColumnCouldNotBeInferred { name: name.to_string() },
     }
 }
 
 #[cfg(all(feature = "core", feature = "pyo3"))]
-impl TryFrom<LoadedTimeseriesCollectionError> for PyErr {
+impl TryFrom<LoadedTimeSeriesCollectionError> for PyErr {
     type Error = ();
-    fn try_from(err: LoadedTimeseriesCollectionError) -> Result<Self, Self::Error> {
+    fn try_from(err: LoadedTimeSeriesCollectionError) -> Result<Self, Self::Error> {
         match err {
-            LoadedTimeseriesCollectionError::TimeseriesError { source, .. } => source.try_into(),
+            LoadedTimeSeriesCollectionError::TimeSeriesError { source, .. } => source.try_into(),
             _ => Err(()),
         }
     }
 }
 #[derive(Default)]
 #[cfg(feature = "core")]
-pub struct LoadedTimeseriesCollection {
-    timeseries: HashMap<String, LoadedTimeseries>,
+pub struct LoadedTimeSeriesCollection {
+    time_series: HashMap<String, LoadedTimeSeries>,
 }
 
 #[cfg(feature = "core")]
-impl LoadedTimeseriesCollection {
+impl LoadedTimeSeriesCollection {
     pub fn from_schema(
-        timeseries_defs: Option<&[Timeseries]>,
+        time_series_defs: Option<&[TimeSeries]>,
         data_path: Option<&Path>,
-    ) -> Result<Self, LoadedTimeseriesCollectionError> {
-        let mut timeseries = HashMap::new();
-        if let Some(timeseries_defs) = timeseries_defs {
-            for ts in timeseries_defs {
+    ) -> Result<Self, LoadedTimeSeriesCollectionError> {
+        let mut time_series = HashMap::new();
+        if let Some(time_series_defs) = time_series_defs {
+            for ts in time_series_defs {
                 let df = ts
                     .load(data_path)
-                    .map_err(|source| LoadedTimeseriesCollectionError::TimeseriesError {
+                    .map_err(|source| LoadedTimeSeriesCollectionError::TimeSeriesError {
                         name: ts.name().to_string(),
                         source,
                     })?;
-                if timeseries.contains_key(ts.name()) {
-                    return Err(LoadedTimeseriesCollectionError::DuplicateTimeseriesName(
+                if time_series.contains_key(ts.name()) {
+                    return Err(LoadedTimeSeriesCollectionError::DuplicateTimeSeriesName(
                         ts.name().to_string(),
                     ));
                 }
-                timeseries.insert(ts.name().to_string(), df);
+                time_series.insert(ts.name().to_string(), df);
             }
         }
-        Ok(Self { timeseries })
+        Ok(Self { time_series })
     }
 
     pub fn load_column_f64(
@@ -341,20 +341,20 @@ impl LoadedTimeseriesCollection {
         network: &mut pywr_core::network::NetworkBuilder,
         name: &str,
         col: &str,
-    ) -> Result<ParameterName, LoadedTimeseriesCollectionError> {
+    ) -> Result<ParameterName, LoadedTimeSeriesCollectionError> {
         let df = self
-            .timeseries
+            .time_series
             .get(name)
-            .ok_or(LoadedTimeseriesCollectionError::TimeseriesNotFound(name.to_string()))?;
+            .ok_or(LoadedTimeSeriesCollectionError::TimeSeriesNotFound(name.to_string()))?;
 
         let array = df
             .column_by_name(col)
-            .ok_or_else(|| LoadedTimeseriesCollectionError::ColumnNotFound {
+            .ok_or_else(|| LoadedTimeSeriesCollectionError::ColumnNotFound {
                 name: name.to_string(),
                 column: col.to_string(),
             })?;
 
-        // Timeseries is expected to have a time column, which is used to align the timeseries with the model timesteps.
+        // TimeSeries is expected to have a time column, which is used to align the time series with the model timesteps.
         let time_array = df
             .time_column()
             .ok_or_else(|| make_time_column_not_found_err(name, df.time_column_name()))?;
@@ -376,20 +376,20 @@ impl LoadedTimeseriesCollection {
         network: &mut pywr_core::network::NetworkBuilder,
         name: &str,
         col: &str,
-    ) -> Result<ParameterName, LoadedTimeseriesCollectionError> {
+    ) -> Result<ParameterName, LoadedTimeSeriesCollectionError> {
         let df = self
-            .timeseries
+            .time_series
             .get(name)
-            .ok_or(LoadedTimeseriesCollectionError::TimeseriesNotFound(name.to_string()))?;
+            .ok_or(LoadedTimeSeriesCollectionError::TimeSeriesNotFound(name.to_string()))?;
 
         let array = df
             .column_by_name(col)
-            .ok_or_else(|| LoadedTimeseriesCollectionError::ColumnNotFound {
+            .ok_or_else(|| LoadedTimeSeriesCollectionError::ColumnNotFound {
                 name: name.to_string(),
                 column: col.to_string(),
             })?;
 
-        // Timeseries is expected to have a time column, which is used to align the timeseries with the model timesteps.
+        // Time series is expected to have a time column, which is used to align the time series with the model timesteps.
         let time_array = df
             .time_column()
             .ok_or_else(|| make_time_column_not_found_err(name, df.time_column_name()))?;
@@ -410,15 +410,15 @@ impl LoadedTimeseriesCollection {
         &self,
         network: &mut pywr_core::network::NetworkBuilder,
         name: &str,
-    ) -> Result<ParameterName, LoadedTimeseriesCollectionError> {
+    ) -> Result<ParameterName, LoadedTimeSeriesCollectionError> {
         let df = self
-            .timeseries
+            .time_series
             .get(name)
-            .ok_or(LoadedTimeseriesCollectionError::TimeseriesNotFound(name.to_string()))?;
+            .ok_or(LoadedTimeSeriesCollectionError::TimeSeriesNotFound(name.to_string()))?;
 
         let (array, time_array) = match df.num_columns() {
             0 => {
-                return Err(LoadedTimeseriesCollectionError::TimeseriesHasNoColumns(
+                return Err(LoadedTimeSeriesCollectionError::TimeSeriesHasNoColumns(
                     name.to_string(),
                 ));
             }
@@ -433,7 +433,7 @@ impl LoadedTimeseriesCollection {
                 (array, Some(time_array))
             }
             _ => {
-                return Err(LoadedTimeseriesCollectionError::TimeseriesColumnOrScenarioRequired(
+                return Err(LoadedTimeSeriesCollectionError::TimeSeriesColumnOrScenarioRequired(
                     name.to_string(),
                 ));
             }
@@ -456,15 +456,15 @@ impl LoadedTimeseriesCollection {
         &self,
         network: &mut pywr_core::network::NetworkBuilder,
         name: &str,
-    ) -> Result<ParameterName, LoadedTimeseriesCollectionError> {
+    ) -> Result<ParameterName, LoadedTimeSeriesCollectionError> {
         let df = self
-            .timeseries
+            .time_series
             .get(name)
-            .ok_or(LoadedTimeseriesCollectionError::TimeseriesNotFound(name.to_string()))?;
+            .ok_or(LoadedTimeSeriesCollectionError::TimeSeriesNotFound(name.to_string()))?;
 
         let (array, time_array) = match df.num_columns() {
             0 => {
-                return Err(LoadedTimeseriesCollectionError::TimeseriesHasNoColumns(
+                return Err(LoadedTimeSeriesCollectionError::TimeSeriesHasNoColumns(
                     name.to_string(),
                 ));
             }
@@ -479,7 +479,7 @@ impl LoadedTimeseriesCollection {
                 (array, Some(time_array))
             }
             _ => {
-                return Err(LoadedTimeseriesCollectionError::TimeseriesColumnOrScenarioRequired(
+                return Err(LoadedTimeSeriesCollectionError::TimeSeriesColumnOrScenarioRequired(
                     name.to_string(),
                 ));
             }
@@ -498,19 +498,19 @@ impl LoadedTimeseriesCollection {
         Ok(name)
     }
 
-    /// Load a timeseries dataframe as a 2D array F64 parameter.
+    /// Load a time series dataframe as a 2D array F64 parameter.
     pub fn load_df_f64(
         &self,
         network: &mut pywr_core::network::NetworkBuilder,
         name: &str,
         scenario: &str,
-    ) -> Result<ParameterName, LoadedTimeseriesCollectionError> {
+    ) -> Result<ParameterName, LoadedTimeSeriesCollectionError> {
         let df = self
-            .timeseries
+            .time_series
             .get(name)
-            .ok_or(LoadedTimeseriesCollectionError::TimeseriesNotFound(name.to_string()))?;
+            .ok_or(LoadedTimeSeriesCollectionError::TimeSeriesNotFound(name.to_string()))?;
 
-        // Original array as loaded from the timeseries
+        // Original array as loaded from the time series
         let array = df.not_time_columns();
         let time_array = df
             .time_column()
@@ -526,20 +526,20 @@ impl LoadedTimeseriesCollection {
         Ok(name)
     }
 
-    /// Load a timeseries dataframe as a 2D array Usize parameter.
+    /// Load a time series dataframe as a 2D array Usize parameter.
     pub fn load_df_usize(
         &self,
         network: &mut pywr_core::network::NetworkBuilder,
         name: &str,
 
         scenario: &str,
-    ) -> Result<ParameterName, LoadedTimeseriesCollectionError> {
+    ) -> Result<ParameterName, LoadedTimeSeriesCollectionError> {
         let df = self
-            .timeseries
+            .time_series
             .get(name)
-            .ok_or(LoadedTimeseriesCollectionError::TimeseriesNotFound(name.to_string()))?;
+            .ok_or(LoadedTimeSeriesCollectionError::TimeSeriesNotFound(name.to_string()))?;
 
-        // Original array as loaded from the timeseries
+        // Original array as loaded from the time series
         let array = df.not_time_columns();
         let time_array = df
             .time_column()
@@ -559,8 +559,8 @@ impl LoadedTimeseriesCollection {
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PartialEq, Display, EnumDiscriminants)]
 #[serde(tag = "type", deny_unknown_fields)]
 #[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
-#[strum_discriminants(name(TimeseriesColumnsType))]
-pub enum TimeseriesColumns {
+#[strum_discriminants(name(TimeSeriesColumnsType))]
+pub enum TimeSeriesColumns {
     Scenario { name: String },
     Column { name: String },
 }
@@ -569,13 +569,13 @@ pub enum TimeseriesColumns {
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PartialEq)]
 #[serde(deny_unknown_fields)]
 #[cfg_attr(feature = "pyo3", pyclass(from_py_object))]
-pub struct TimeseriesReference {
+pub struct TimeSeriesReference {
     pub name: String,
-    pub columns: Option<TimeseriesColumns>,
+    pub columns: Option<TimeSeriesColumns>,
 }
 
-impl TimeseriesReference {
-    pub fn new(name: String, columns: Option<TimeseriesColumns>) -> Self {
+impl TimeSeriesReference {
+    pub fn new(name: String, columns: Option<TimeSeriesColumns>) -> Self {
         Self { name, columns }
     }
 
@@ -585,24 +585,24 @@ impl TimeseriesReference {
 
     pub fn column(&self) -> Option<&str> {
         match &self.columns {
-            Some(TimeseriesColumns::Column { name }) => Some(name.as_str()),
+            Some(TimeSeriesColumns::Column { name }) => Some(name.as_str()),
             _ => None,
         }
     }
 }
 
-/// Helper struct to convert references to timeseries.
+/// Helper struct to convert references to time series.
 ///
-/// Keeps a reference to the original parameter name and the new timeseries reference. If the
-/// timeseries refers to a table then the original parameter name is no longer required in the
+/// Keeps a reference to the original parameter name and the new time series reference. If the
+/// time series refers to a table then the original parameter name is no longer required in the
 /// final model, but is needed during conversion to ensure that the table is correctly referenced.
 #[derive(Clone)]
-pub struct ConvertedTimeseriesReference {
+pub struct ConvertedTimeSeriesReference {
     pub original_parameter_name: String,
-    pub ts_ref: TimeseriesReference,
+    pub ts_ref: TimeSeriesReference,
 }
 
-impl TryFromV1<DataFrameParameterV1> for ConvertedTimeseriesReference {
+impl TryFromV1<DataFrameParameterV1> for ConvertedTimeSeriesReference {
     type Error = Box<ComponentConversionError>;
 
     fn try_from_v1(
@@ -614,7 +614,7 @@ impl TryFromV1<DataFrameParameterV1> for ConvertedTimeseriesReference {
         let mut ts_name = meta.name.clone();
 
         if let Some(url) = v1.url {
-            // If there is a URL then this entry must be converted into a timeseries
+            // If there is a URL then this entry must be converted into a time series
             let mut pandas_kwargs = v1.pandas_kwargs;
 
             let time_col = match pandas_kwargs.remove("index_col") {
@@ -634,7 +634,7 @@ impl TryFromV1<DataFrameParameterV1> for ConvertedTimeseriesReference {
                 None => None,
             };
 
-            let timeseries = PandasTimeseries {
+            let time_series = PandasTimeSeries {
                 meta: meta.clone(),
                 time_col,
                 path: url,
@@ -642,12 +642,12 @@ impl TryFromV1<DataFrameParameterV1> for ConvertedTimeseriesReference {
                 checksum,
             };
 
-            // The timeseries data that is extracted
-            let timeseries = Timeseries::Pandas(timeseries);
+            // The time series data that is extracted
+            let time_series = TimeSeries::Pandas(time_series);
 
-            // Only add if the timeseries does not already exist
-            if !conversion_data.timeseries.iter().any(|ts| ts.name() == meta.name) {
-                conversion_data.timeseries.push(timeseries);
+            // Only add if the time series does not already exist
+            if !conversion_data.time_series.iter().any(|ts| ts.name() == meta.name) {
+                conversion_data.time_series.push(time_series);
             }
         } else if let Some(table) = v1.table {
             // If this is a reference to a table then we need to point to the table by name, and
@@ -663,10 +663,10 @@ impl TryFromV1<DataFrameParameterV1> for ConvertedTimeseriesReference {
             }));
         };
 
-        // Create the reference to the timeseries data
+        // Create the reference to the time series data
         let columns = match (v1.column, v1.scenario) {
-            (Some(name), None) => Some(TimeseriesColumns::Column { name }),
-            (None, Some(name)) => Some(TimeseriesColumns::Scenario { name }),
+            (Some(name), None) => Some(TimeSeriesColumns::Column { name }),
+            (None, Some(name)) => Some(TimeSeriesColumns::Scenario { name }),
             (Some(_), Some(_)) => {
                 return Err(Box::new(ComponentConversionError::Parameter {
                     name: meta.name.clone(),
@@ -679,8 +679,8 @@ impl TryFromV1<DataFrameParameterV1> for ConvertedTimeseriesReference {
             (None, None) => None,
         };
         // The reference that is returned
-        let reference = TimeseriesReference { name: ts_name, columns };
-        Ok(ConvertedTimeseriesReference {
+        let reference = TimeSeriesReference { name: ts_name, columns };
+        Ok(ConvertedTimeSeriesReference {
             original_parameter_name: meta.name,
             ts_ref: reference,
         })
@@ -713,8 +713,8 @@ mod tests {
         .unwrap()
     }
 
-    fn arrow_timeseries(path: PathBuf, format: Option<arrow_ts::ArrowFormat>) -> Timeseries {
-        Timeseries::Arrow(ArrowTimeseries {
+    fn arrow_time_series(path: PathBuf, format: Option<arrow_ts::ArrowFormat>) -> TimeSeries {
+        TimeSeries::Arrow(ArrowTimeSeries {
             meta: ParameterMeta {
                 name: "test".to_string(),
                 comment: None,
@@ -727,7 +727,7 @@ mod tests {
         })
     }
 
-    fn assert_loaded_values(loaded: LoadedTimeseries) {
+    fn assert_loaded_values(loaded: LoadedTimeSeries) {
         assert_eq!(loaded.record_batch.num_rows(), 3);
         assert_eq!(loaded.record_batch.schema().field(0).data_type(), &DataType::Date32);
         assert_eq!(
@@ -743,36 +743,36 @@ mod tests {
     #[test]
     fn arrow_csv_loader_infers_format_from_extension() {
         let temp_dir = TempDir::new().unwrap();
-        let path = temp_dir.path().join("timeseries.csv");
+        let path = temp_dir.path().join("time-series.csv");
         std::fs::write(&path, "date,value\n1970-01-01,1.0\n1970-01-02,2.0\n1970-01-03,3.0\n").unwrap();
 
-        assert_loaded_values(arrow_timeseries(path, None).load(None).unwrap());
+        assert_loaded_values(arrow_time_series(path, None).load(None).unwrap());
     }
 
     #[test]
     fn arrow_ipc_loader_infers_arrow_extension_and_concatenates_batches() {
         let temp_dir = TempDir::new().unwrap();
-        let path = temp_dir.path().join("timeseries.arrow");
+        let path = temp_dir.path().join("time-series.arrow");
         let batch = test_record_batch();
         let mut writer = FileWriter::try_new(File::create(&path).unwrap(), &batch.schema()).unwrap();
         writer.write(&batch.slice(0, 1)).unwrap();
         writer.write(&batch.slice(1, 2)).unwrap();
         writer.finish().unwrap();
 
-        assert_loaded_values(arrow_timeseries(path, None).load(None).unwrap());
+        assert_loaded_values(arrow_time_series(path, None).load(None).unwrap());
     }
 
     #[test]
     fn parquet_loader_concatenates_batches() {
         let temp_dir = TempDir::new().unwrap();
-        let path = temp_dir.path().join("timeseries.parquet");
+        let path = temp_dir.path().join("time-series.parquet");
         let batch = test_record_batch();
         let mut writer = ArrowWriter::try_new(File::create(&path).unwrap(), batch.schema(), None).unwrap();
         writer.write(&batch.slice(0, 1)).unwrap();
         writer.write(&batch.slice(1, 2)).unwrap();
         writer.close().unwrap();
 
-        let timeseries = Timeseries::Parquet(parquet_ts::ParquetTimeseries {
+        let time_series = TimeSeries::Parquet(parquet_ts::ParquetTimeSeries {
             meta: ParameterMeta {
                 name: "test".to_string(),
                 comment: None,
@@ -782,19 +782,19 @@ mod tests {
             path,
             checksum: None,
         });
-        assert_loaded_values(timeseries.load(None).unwrap());
+        assert_loaded_values(time_series.load(None).unwrap());
     }
 
     #[test]
     fn arrow_loader_rejects_unknown_extension_when_format_is_not_specified() {
-        let error = match arrow_timeseries(PathBuf::from("timeseries.unknown"), None).load(None) {
+        let error = match arrow_time_series(PathBuf::from("time-series.unknown"), None).load(None) {
             Ok(_) => panic!("unknown file extension should not be accepted"),
             Err(error) => error,
         };
 
         assert!(matches!(
             error,
-            TimeseriesError::UnsupportedFileFormat { provider, fmt } if provider == "Arrow" && fmt == "unknown"
+            TimeSeriesError::UnsupportedFileFormat { provider, fmt } if provider == "Arrow" && fmt == "unknown"
         ));
     }
 }
