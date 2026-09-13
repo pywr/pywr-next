@@ -597,7 +597,7 @@ impl ModelSchema {
     ///
     /// See [`ModelSchema::from_v1`] for more information.
     pub fn from_v1_str(v1: &str) -> Result<(Self, Vec<ComponentConversionError>), pywr_v1_schema::PywrSchemaError> {
-        let v1_model: pywr_v1_schema::PywrModel = serde_json::from_str(v1)?;
+        let v1_model = pywr_v1_schema::PywrModel::from_str(v1)?;
 
         Ok(Self::from_v1(v1_model))
     }
