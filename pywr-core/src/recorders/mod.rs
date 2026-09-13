@@ -152,6 +152,64 @@ pub struct LongFmtRecord {
     pub value: f64,
 }
 
+/// Arrow record for long format data.
+pub struct LongFmtArrowRecord {
+    pub time_start: i64,
+    pub time_end: i64,
+    pub simulation_id: u64,
+    pub label: String,
+    pub metric_set: String,
+    pub name: String,
+    pub attribute: String,
+    pub value: f64,
+}
+
+impl LongFmtArrowRecord {
+    /// Get the Arrow schema for long format data.
+    pub fn schema() -> arrow::datatypes::Schema {
+        arrow::datatypes::Schema::new(vec![
+            arrow::datatypes::Field::new(
+                "time_start",
+                arrow::datatypes::DataType::Timestamp(arrow::datatypes::TimeUnit::Millisecond, None),
+                false,
+            ),
+            arrow::datatypes::Field::new(
+                "time_end",
+                arrow::datatypes::DataType::Timestamp(arrow::datatypes::TimeUnit::Millisecond, None),
+                false,
+            ),
+            arrow::datatypes::Field::new("simulation_id", arrow::datatypes::DataType::UInt64, false),
+            arrow::datatypes::Field::new("label", arrow::datatypes::DataType::Utf8, false),
+            arrow::datatypes::Field::new("metric_set", arrow::datatypes::DataType::Utf8, false),
+            arrow::datatypes::Field::new("name", arrow::datatypes::DataType::Utf8, false),
+            arrow::datatypes::Field::new("attribute", arrow::datatypes::DataType::Utf8, false),
+            arrow::datatypes::Field::new("value", arrow::datatypes::DataType::Float64, false),
+        ])
+    }
+}
+
+impl TryFrom<LongFmtRecord> for LongFmtArrowRecord {
+    type Error = jiff::Error;
+    fn try_from(record: LongFmtRecord) -> Result<Self, Self::Error> {
+        Ok(Self {
+            time_start: jiff_datetime_to_arrow_timestamp_ms(&record.time_start)?,
+            time_end: jiff_datetime_to_arrow_timestamp_ms(&record.time_end)?,
+            simulation_id: record.simulation_id as u64,
+            label: record.label,
+            metric_set: record.metric_set,
+            name: record.name,
+            attribute: record.attribute,
+            value: record.value,
+        })
+    }
+}
+
+fn jiff_datetime_to_arrow_timestamp_ms(dt: &DateTime) -> Result<i64, jiff::Error> {
+    let zoned = dt.to_zoned(jiff::tz::TimeZone::UTC)?;
+    let ts = zoned.timestamp();
+    Ok(ts.as_millisecond())
+}
+
 /// Result of finalising a recorder.
 ///
 /// This should be used to store any final results of the recorder, e.g. aggregated values or

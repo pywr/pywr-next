@@ -2,7 +2,8 @@
 use crate::data_tables::{TableCollectionError, TableDataRef};
 use crate::digest::ChecksumError;
 use crate::nodes::{NodeAttribute, NodeComponent, NodeSlot};
-use crate::timeseries::TimeseriesError;
+#[cfg(feature = "core")]
+use crate::timeseries::LoadedTimeseriesCollectionError;
 use jiff::civil::DateTime;
 #[cfg(feature = "core")]
 use ndarray::ShapeError;
@@ -126,8 +127,9 @@ pub enum SchemaError {
     InvalidRollingWindow { name: String },
     #[error("Failed to load parameter {name}: {error}")]
     LoadParameter { name: String, error: String },
+    #[cfg(feature = "core")]
     #[error("Timeseries error: {0}")]
-    Timeseries(#[from] TimeseriesError),
+    Timeseries(#[from] LoadedTimeseriesCollectionError),
     #[error(
         "The output of literal constant values is not supported. This is because they do not have a unique identifier such as a name. If you would like to output a constant value please use a `Constant` parameter."
     )]

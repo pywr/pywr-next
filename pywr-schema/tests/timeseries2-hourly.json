@@ -120,9 +120,10 @@
         "meta": {
           "name": "inflow"
         },
-        "type": "Polars",
+        "type": "Arrow",
+        "format": "CSV",
         "time_col": "date",
-        "url": "inflow2.csv"
+        "path": "inflow2-3h.csv"
       }
     ],
     "metric_sets": [

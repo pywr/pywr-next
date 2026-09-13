@@ -85,7 +85,7 @@
           "name": "inflow"
         },
         "type": "Polars",
-        "url": "inflow.csv"
+        "path": "inflow.csv"
       }
     ],
     "metric_sets": [

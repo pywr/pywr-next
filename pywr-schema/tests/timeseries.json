@@ -108,12 +108,13 @@
         "meta": {
           "name": "inflow"
         },
-        "type": "Polars",
+        "type": "Arrow",
+        "format": "CSV",
         "time_col": "date",
-        "url": "inflow.csv",
+        "path": "inflow.csv",
         "checksum": {
           "type": "SHA256",
-          "hash": "fec0c6d3d9ba3b3dfca7fa68dde3a9053b56cf615cb9293d3b9b92a756493b55"
+          "hash": "8ce3948192c8d6f66ff8769c570e0e701164724b4439355451c0a81959d3c953"
         }
       }
     ],

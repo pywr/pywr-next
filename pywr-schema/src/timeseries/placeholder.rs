@@ -15,11 +15,10 @@ impl VisitPaths for PlaceholderTimeseries {}
 #[cfg(feature = "core")]
 mod core {
     use super::PlaceholderTimeseries;
-    use crate::timeseries::TimeseriesError;
-    use polars::frame::DataFrame;
+    use crate::timeseries::{LoadedTimeseries, TimeseriesError};
 
     impl PlaceholderTimeseries {
-        pub fn load(&self) -> Result<DataFrame, TimeseriesError> {
+        pub fn load(&self) -> Result<LoadedTimeseries, TimeseriesError> {
             Err(TimeseriesError::PlaceholderTimeseriesNotAllowed {
                 name: self.meta.name.clone(),
             })

@@ -110,7 +110,7 @@
         },
         "type": "Pandas",
         "time_col": "date",
-        "url": "inflow.csv",
+        "path": "inflow.csv",
         "kwargs": {
           "dayfirst": true
         }

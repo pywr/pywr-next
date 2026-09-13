@@ -15,7 +15,7 @@ use crate::model::MultiNetworkTransfer;
 use crate::outputs::Output;
 use crate::timeseries::Timeseries;
 #[cfg(feature = "core")]
-use crate::timeseries::{LoadTimeseriesError, LoadedTimeseriesCollection};
+use crate::timeseries::{LoadedTimeseriesCollection, LoadedTimeseriesCollectionError};
 use crate::v1::{ConversionData, TryIntoV2};
 use crate::visit::{VisitMetrics, VisitNodeReferences, VisitPaths};
 #[cfg(all(feature = "core", feature = "pyo3"))]
@@ -113,8 +113,9 @@ pub enum NetworkSchemaBuildError {
     },
     #[error("{0}")]
     TableLoadError(#[from] TableCollectionLoadError),
+    #[cfg(feature = "core")]
     #[error("{0}")]
-    LoadTimeseriesError(#[from] LoadTimeseriesError),
+    LoadedTimeseriesCollectionError(#[from] LoadedTimeseriesCollectionError),
 }
 
 #[cfg(all(feature = "core", feature = "pyo3"))]
@@ -129,7 +130,7 @@ impl TryFrom<NetworkSchemaBuildError> for PyErr {
             NetworkSchemaBuildError::AddLocalParameterError { source, .. } => (*source).try_into(),
             NetworkSchemaBuildError::AddMetricSetError { source, .. } => (*source).try_into(),
             NetworkSchemaBuildError::AddOutputError { source, .. } => (*source).try_into(),
-            NetworkSchemaBuildError::LoadTimeseriesError(e) => e.try_into(),
+            NetworkSchemaBuildError::LoadedTimeseriesCollectionError(e) => e.try_into(),
             _ => Err(()),
         }
     }
@@ -673,7 +674,7 @@ impl NetworkSchema {
             .map_err(|source| NetworkSchemaBuildError::Validation { source })?;
 
         let tables = LoadedTableCollection::from_schema(self.tables.as_deref(), data_path)?;
-        let timeseries = LoadedTimeseriesCollection::from_schema(self.timeseries.as_deref(), domain, data_path)?;
+        let timeseries = LoadedTimeseriesCollection::from_schema(self.timeseries.as_deref(), data_path)?;
 
         let args = LoadArgs {
             schema: self,
@@ -1405,7 +1406,7 @@ mod tests {
                 "nodes": [],
                 "edges": [],
                 "timeseries": [
-                    { "type": "Polars", "meta": { "name": "ts-shared" }, "url": "timeseries.csv" }
+                    { "type": "Polars", "meta": { "name": "ts-shared" }, "path": "timeseries.csv" }
                 ]
             }
             "#,
@@ -1427,7 +1428,7 @@ mod tests {
                 "nodes": [],
                 "edges": [],
                 "timeseries": [
-                    { "type": "Polars", "meta": { "name": "ts-shared" }, "url": "timeseries.csv" }
+                    { "type": "Polars", "meta": { "name": "ts-shared" }, "path": "timeseries.csv" }
                 ]
             }
             "#,
@@ -1439,7 +1440,7 @@ mod tests {
                 "nodes": [],
                 "edges": [],
                 "timeseries": [
-                    { "type": "Polars", "meta": { "name": "ts-shared" }, "url": "other.csv" }
+                    { "type": "Polars", "meta": { "name": "ts-shared" }, "path": "other.csv" }
                 ]
             }
             "#,

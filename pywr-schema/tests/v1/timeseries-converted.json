@@ -131,7 +131,7 @@
           "name": "inflow"
         },
         "type": "Pandas",
-        "url": "inflow.csv",
+        "path": "inflow.csv",
         "kwargs": {
           "dayfirst": true
         }

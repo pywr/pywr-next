@@ -6,15 +6,20 @@ use schemars::JsonSchema;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-/// A dataset that can be loaded using Pandas.
+/// A dataset that is loaded using a user-defined Python function.
 ///
-/// This dataset is loaded using Pandas. This is done via a callback to Python to load the dataset.
-///
+/// The Python function should take a single argument, which is the path to the dataset, and return
+/// a PyArrow RecordBatch. The function can also take additional keyword arguments specified in the
+/// `kwargs` field. The function should be defined in a Python module specified by the `module` field.
 #[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
 #[serde(deny_unknown_fields)]
-pub struct PandasTimeseries {
+pub struct PythonTimeseries {
     pub meta: ParameterMeta,
+    /// The Python module where the function is defined.
+    pub module: String,
+    /// The name of the function to call within the Python module.
+    pub function: String,
     pub time_col: Option<String>,
     /// Path to the dataset. If this is a relative path, it will be resolved relative to the provided data path.
     pub path: PathBuf,
@@ -24,7 +29,7 @@ pub struct PandasTimeseries {
     pub checksum: Option<Checksum>,
 }
 
-impl VisitPaths for PandasTimeseries {
+impl VisitPaths for PythonTimeseries {
     fn visit_paths<F: FnMut(&Path)>(&self, visitor: &mut F) {
         visitor(&self.path);
     }
@@ -36,11 +41,11 @@ impl VisitPaths for PandasTimeseries {
 
 #[cfg(all(feature = "core", not(feature = "pyo3")))]
 mod core {
-    use super::PandasTimeseries;
+    use super::PythonTimeseries;
     use crate::timeseries::{LoadedTimeseries, TimeseriesError};
     use std::path::Path;
 
-    impl PandasTimeseries {
+    impl PythonTimeseries {
         pub fn load(&self, _data_path: Option<&Path>) -> Result<LoadedTimeseries, TimeseriesError> {
             Err(TimeseriesError::PythonNotEnabled)
         }
@@ -49,13 +54,13 @@ mod core {
 
 #[cfg(all(feature = "core", feature = "pyo3"))]
 mod core {
-    use super::PandasTimeseries;
+    use super::PythonTimeseries;
     use crate::timeseries::load_py::{LoadModule, load_record_batch_from_py_callback};
     use crate::timeseries::{LoadedTimeseries, TimeseriesError};
     use std::collections::HashMap;
     use std::path::Path;
 
-    impl PandasTimeseries {
+    impl PythonTimeseries {
         pub fn load(&self, data_path: Option<&Path>) -> Result<LoadedTimeseries, TimeseriesError> {
             let fp = if self.path.is_absolute() {
                 self.path.clone()
@@ -73,8 +78,8 @@ mod core {
             let kwargs = self.make_kwargs();
 
             let lt = load_record_batch_from_py_callback(
-                LoadModule::Builtin,
-                "load_pandas",
+                LoadModule::Custom(self.module.clone()),
+                &self.function,
                 &fp,
                 self.time_col.as_deref(),
                 &None,
@@ -86,13 +91,7 @@ mod core {
 
         /// Make a copy of the kwargs and add the default value for try_parse_dates if not already present.
         fn make_kwargs(&self) -> HashMap<String, serde_json::Value> {
-            let mut kwargs = self.kwargs.clone().unwrap_or_default();
-
-            if !kwargs.contains_key("parse_dates") {
-                kwargs.insert("parse_dates".to_string(), serde_json::Value::Bool(true));
-            }
-
-            kwargs
+            self.kwargs.clone().unwrap_or_default()
         }
     }
 }

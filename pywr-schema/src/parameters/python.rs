@@ -231,7 +231,7 @@ impl PythonParameter {
         })?;
 
         let py_args = Python::attach(|py| try_load_optional_py_args(py, &self.args))?;
-        let py_kwargs = Python::attach(|py| try_load_optional_py_kwargs(py, &self.kwargs))?;
+        let py_kwargs = Python::attach(|py| try_load_optional_py_kwargs(py, self.kwargs.as_ref()))?;
 
         let metrics = match &self.metrics {
             Some(metrics) => metrics

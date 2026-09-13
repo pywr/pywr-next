@@ -55,9 +55,10 @@ def test_simple_timeseries(model_dir: Path, tmpdir: Path):
     with pytest.raises(AggregationError):
         result.network_result.aggregated_value("nodes")
 
-    df = result.network_result.to_dataframe("nodes")
-    assert df.shape[0] == 365 * 3
+    rb = result.network_result.to_record_batch("nodes")
+    assert rb.num_rows == 365 * 3
 
+    df = pl.from_arrow(rb)
     mean_flows = df.group_by(pl.col("name")).agg(pl.col("value").mean()).sort("name")
     assert mean_flows.shape[0] == 3
 
