@@ -7,7 +7,7 @@ use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::network::{LoadArgs, NetworkSchemaBuildError, NetworkSchemaReadError};
 #[cfg(feature = "core")]
-use crate::timeseries::LoadedTimeseriesCollection;
+use crate::time_series::LoadedTimeSeriesCollection;
 use crate::visit::{VisitMetrics, VisitNodeReferences, VisitPaths};
 use crate::{ConversionError, NetworkSchema, NetworkSchemaRef};
 use jiff::Span;
@@ -786,7 +786,7 @@ impl MultiNetworkModelSchema {
 
         let mut network_entry_builders = Vec::with_capacity(self.networks.len());
         let mut network_builder_map = HashMap::with_capacity(self.networks.len());
-        let mut schemas: Vec<(NetworkSchema, LoadedTableCollection, LoadedTimeseriesCollection)> =
+        let mut schemas: Vec<(NetworkSchema, LoadedTableCollection, LoadedTimeSeriesCollection)> =
             Vec::with_capacity(self.networks.len());
 
         // First load all the networks
@@ -796,7 +796,7 @@ impl MultiNetworkModelSchema {
             // Load the network itself
             let mut network_builder = pywr_core::network::NetworkBuilder::default();
 
-            let (schema, tables, timeseries) = match &network_entry.network {
+            let (schema, tables, time_series) = match &network_entry.network {
                 NetworkSchemaRef::Path(path) => {
                     let pth = if let Some(dp) = data_path {
                         if path.is_relative() {
@@ -811,7 +811,7 @@ impl MultiNetworkModelSchema {
                     let network_schema = NetworkSchema::from_path(&pth)
                         .map_err(|source| MultiNetworkModelSchemaBuildError::NetworkReadError { path: pth, source })?;
 
-                    let (tables, timeseries) = network_schema
+                    let (tables, time_series) = network_schema
                         .add_to_network(
                             &mut network_builder,
                             &domain,
@@ -824,10 +824,10 @@ impl MultiNetworkModelSchema {
                             source: Box::new(source),
                         })?;
 
-                    (network_schema, tables, timeseries)
+                    (network_schema, tables, time_series)
                 }
                 NetworkSchemaRef::Inline(network_schema) => {
-                    let (tables, timeseries) = network_schema
+                    let (tables, time_series) = network_schema
                         .add_to_network(
                             &mut network_builder,
                             &domain,
@@ -840,11 +840,11 @@ impl MultiNetworkModelSchema {
                             source: Box::new(source),
                         })?;
 
-                    (network_schema.clone(), tables, timeseries)
+                    (network_schema.clone(), tables, time_series)
                 }
             };
 
-            schemas.push((schema, tables, timeseries));
+            schemas.push((schema, tables, time_series));
 
             network_entry_builders.push(network_builder);
             network_builder_map.insert(network_entry.name.clone(), i);
@@ -865,13 +865,13 @@ impl MultiNetworkModelSchema {
                 let from_network = &mut network_entry_builders[from_network_idx];
 
                 // The transfer metric will fail to load if it is defined as an inter-model transfer itself.
-                let (from_schema, from_tables, from_timeseries) = &schemas[from_network_idx];
+                let (from_schema, from_tables, from_time_series) = &schemas[from_network_idx];
 
                 let args = LoadArgs {
                     schema: from_schema,
                     domain: &domain,
                     tables: from_tables,
-                    timeseries: from_timeseries,
+                    time_series: from_time_series,
                     data_path,
                     inter_network_transfers: &[],
                 };
@@ -980,11 +980,11 @@ mod tests {
     #[test]
     fn test_visit_paths() {
         let mut model_fn = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        model_fn.push("tests/timeseries.json");
+        model_fn.push("tests/time-series.json");
 
         let mut schema = ModelSchema::from_path(model_fn.as_path()).unwrap();
 
-        let expected_paths = vec![PathBuf::from("inflow.csv"), PathBuf::from("timeseries-expected.csv")];
+        let expected_paths = vec![PathBuf::from("inflow.csv"), PathBuf::from("time-series-expected.csv")];
 
         let mut paths: Vec<PathBuf> = Vec::new();
 

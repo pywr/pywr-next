@@ -1,13 +1,21 @@
 {
   "metadata": {
-    "title": "Simple timeseries"
+    "title": "TimeSeries with a single scenario"
+  },
+  "scenarios": {
+    "groups": [
+      {
+        "name": "scenario1",
+        "size": 10
+      }
+    ]
   },
   "time": {
     "start": "2021-01-01",
-    "end": "2021-12-31",
+    "end": "2021-01-02",
     "timestep": {
-      "type": "Days",
-      "days": 1
+      "type": "Hours",
+      "hours": 3
     }
   },
   "network": {
@@ -28,11 +36,11 @@
         },
         "type": "Input",
         "max_flow": {
-          "type": "Timeseries",
+          "type": "TimeSeries",
           "name": "inflow",
           "columns": {
-            "type": "Column",
-            "name": "inflow1"
+            "type": "Scenario",
+            "name": "scenario1"
           }
         }
       },
@@ -93,8 +101,12 @@
         "phase": "Before",
         "metrics": [
           {
-            "type": "Timeseries",
-            "name": "inflow"
+            "type": "TimeSeries",
+            "name": "inflow",
+            "columns": {
+              "type": "Scenario",
+              "name": "scenario1"
+            }
           },
           {
             "type": "Literal",
@@ -103,17 +115,35 @@
         ]
       }
     ],
-    "timeseries": [
+    "time_series": [
       {
         "meta": {
           "name": "inflow"
         },
-        "type": "Pandas",
+        "type": "Arrow",
+        "format": "CSV",
         "time_col": "date",
-        "url": "inflow.csv",
-        "kwargs": {
-          "dayfirst": true
-        }
+        "path": "inflow2-3h.csv"
+      }
+    ],
+    "metric_sets": [
+      {
+        "name": "nodes",
+        "metrics": [
+          {
+            "type": "Node",
+            "name": "output1"
+          }
+        ]
+      }
+    ],
+    "outputs": [
+      {
+        "name": "nodes",
+        "type": "CSV",
+        "format": "Long",
+        "filename": "time-series2-hourly-expected.csv",
+        "metric_set": "nodes"
       }
     ]
   }

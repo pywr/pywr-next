@@ -1,67 +1,73 @@
 {
   "metadata": {
-    "title": "Timeseries with a single scenario"
-  },
-  "scenarios": {
-    "groups": [
-      {
-        "name": "scenario1",
-        "size": 10
-      }
-    ]
+    "title": "Simple time series"
   },
   "time": {
-    "start": "2021-01-01",
-    "end": "2021-01-02",
+    "start": "2021-01-01T00:00:00",
+    "end": "2021-01-31T00:00:00",
     "timestep": {
-      "type": "Hours",
-      "hours": 3
+      "type": "Days",
+      "days": 1
     }
   },
   "network": {
     "nodes": [
       {
-        "meta": {
-          "name": "input2"
+        "type": "Input",
+        "max_flow": {
+          "type": "TimeSeries",
+          "name": "inflow",
+          "columns": {
+            "type": "Column",
+            "name": "inflow1"
+          }
         },
+        "meta": {
+          "name": "input1"
+        }
+      },
+      {
         "type": "Input",
         "max_flow": {
           "type": "Parameter",
           "name": "factored_flow"
+        },
+        "meta": {
+          "name": "input2"
         }
       },
       {
-        "meta": {
-          "name": "input1"
-        },
         "type": "Input",
         "max_flow": {
-          "type": "Timeseries",
-          "name": "inflow",
+          "type": "TimeSeries",
+          "name": "inflow-tbl",
           "columns": {
-            "type": "Scenario",
-            "name": "scenario1"
+            "type": "Column",
+            "name": "inflow1"
           }
+        },
+        "meta": {
+          "name": "input3"
         }
       },
       {
+        "type": "Link",
         "meta": {
           "name": "link1"
-        },
-        "type": "Link"
+        }
       },
       {
-        "meta": {
-          "name": "output1"
-        },
         "type": "Output",
-        "cost": {
-          "type": "Literal",
-          "value": -10
-        },
         "max_flow": {
           "type": "Parameter",
           "name": "demand"
+        },
+        "meta": {
+          "name": "output1"
+        },
+        "cost": {
+          "type": "Literal",
+          "value": -10.0
         }
       }
     ],
@@ -75,37 +81,41 @@
         "to_node": "link1"
       },
       {
+        "from_node": "input3",
+        "to_node": "link1"
+      },
+      {
         "from_node": "link1",
         "to_node": "output1"
       }
     ],
     "parameters": [
       {
+        "type": "Constant",
         "meta": {
           "name": "demand"
         },
-        "type": "Constant",
         "value": {
           "type": "Literal",
           "value": 100.0
         }
       },
       {
+        "type": "Aggregated",
         "meta": {
           "name": "factored_flow"
         },
-        "type": "Aggregated",
         "agg_func": {
           "type": "Product"
         },
         "phase": "Before",
         "metrics": [
           {
-            "type": "Timeseries",
+            "type": "TimeSeries",
             "name": "inflow",
             "columns": {
-              "type": "Scenario",
-              "name": "scenario1"
+              "type": "Column",
+              "name": "inflow1"
             }
           },
           {
@@ -115,34 +125,16 @@
         ]
       }
     ],
-    "timeseries": [
+    "time_series": [
       {
         "meta": {
           "name": "inflow"
         },
-        "type": "Polars",
-        "time_col": "date",
-        "url": "inflow2.csv"
-      }
-    ],
-    "metric_sets": [
-      {
-        "name": "nodes",
-        "metrics": [
-          {
-            "type": "Node",
-            "name": "output1"
-          }
-        ]
-      }
-    ],
-    "outputs": [
-      {
-        "name": "nodes",
-        "type": "CSV",
-        "format": "Long",
-        "filename": "timeseries2-hourly-expected.csv",
-        "metric_set": "nodes"
+        "type": "Pandas",
+        "path": "inflow.csv",
+        "kwargs": {
+          "dayfirst": true
+        }
       }
     ]
   }

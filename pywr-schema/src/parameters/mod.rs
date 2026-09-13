@@ -17,6 +17,7 @@ mod hydropower;
 mod indexed_array;
 mod interpolated;
 
+mod difference;
 mod offset;
 mod placeholder;
 mod polynomial;
@@ -25,7 +26,6 @@ mod python;
 mod rolling;
 mod tables;
 mod thresholds;
-mod difference;
 
 #[cfg(feature = "core")]
 pub use super::data_tables::LoadedTableCollection;
@@ -36,7 +36,7 @@ use crate::error::{ComponentConversionError, ConversionError};
 use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::network::LoadArgs;
-use crate::timeseries::ConvertedTimeseriesReference;
+use crate::time_series::ConvertedTimeSeriesReference;
 use crate::v1::{ConversionData, TryFromV1, TryIntoV2};
 use crate::visit::{VisitMetrics, VisitNodeReferences, VisitPaths};
 pub use aggregated::{AggregatedIndexParameter, AggregatedParameter};
@@ -50,13 +50,13 @@ pub use core::{
     NegativeMaxParameter, NegativeMinParameter, NegativeParameter, VariableSettings,
 };
 pub use delay::{DelayIndexParameter, DelayParameter};
+pub use difference::DifferenceParameter;
 pub use discount_factor::DiscountFactorParameter;
 pub use hydropower::HydropowerTargetParameter;
 pub use indexed_array::IndexedArrayParameter;
 pub use interpolated::InterpolatedParameter;
 pub use offset::OffsetParameter;
 pub use placeholder::PlaceholderParameter;
-pub use difference::DifferenceParameter;
 pub use polynomial::Polynomial1DParameter;
 pub use profiles::{
     DailyProfileParameter, DirunalProfileParameter, MonthlyInterpDay, MonthlyProfileParameter, RadialBasisFunction,
@@ -444,7 +444,7 @@ impl VisitPaths for Parameter {
             Self::Delay(p) => p.visit_paths(visitor),
             Self::DelayIndex(p) => p.visit_paths(visitor),
             Self::Division(p) => p.visit_paths(visitor),
-            Self::Difference(p) =>p.visit_paths(visitor),
+            Self::Difference(p) => p.visit_paths(visitor),
             Self::Offset(p) => p.visit_paths(visitor),
             Self::DiscountFactor(p) => p.visit_paths(visitor),
             Self::Interpolated(p) => p.visit_paths(visitor),
@@ -486,7 +486,7 @@ impl VisitPaths for Parameter {
             Self::Delay(p) => p.visit_paths_mut(visitor),
             Self::DelayIndex(p) => p.visit_paths_mut(visitor),
             Self::Division(p) => p.visit_paths_mut(visitor),
-            Self::Difference(p) =>p.visit_paths_mut(visitor),
+            Self::Difference(p) => p.visit_paths_mut(visitor),
             Self::Offset(p) => p.visit_paths_mut(visitor),
             Self::DiscountFactor(p) => p.visit_paths_mut(visitor),
             Self::Interpolated(p) => p.visit_paths_mut(visitor),
@@ -589,25 +589,25 @@ impl VisitNodeReferences for Parameter {
 }
 
 #[derive(Clone)]
-pub enum ParameterOrTimeseriesRef {
+pub enum ParameterOrTimeSeriesRef {
     // Boxed due to large size difference.
     Parameter(Box<Parameter>),
-    Timeseries(ConvertedTimeseriesReference),
+    TimeSeries(ConvertedTimeSeriesReference),
 }
 
-impl From<Parameter> for ParameterOrTimeseriesRef {
+impl From<Parameter> for ParameterOrTimeSeriesRef {
     fn from(p: Parameter) -> Self {
         Self::Parameter(Box::new(p))
     }
 }
 
-impl From<ConvertedTimeseriesReference> for ParameterOrTimeseriesRef {
-    fn from(t: ConvertedTimeseriesReference) -> Self {
-        Self::Timeseries(t)
+impl From<ConvertedTimeSeriesReference> for ParameterOrTimeSeriesRef {
+    fn from(t: ConvertedTimeSeriesReference) -> Self {
+        Self::TimeSeries(t)
     }
 }
 
-impl TryFromV1<ParameterV1> for ParameterOrTimeseriesRef {
+impl TryFromV1<ParameterV1> for ParameterOrTimeSeriesRef {
     type Error = Box<ComponentConversionError>;
 
     fn try_from_v1(
@@ -615,7 +615,7 @@ impl TryFromV1<ParameterV1> for ParameterOrTimeseriesRef {
         parent_node: Option<&str>,
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let p: ParameterOrTimeseriesRef = match v1 {
+        let p: ParameterOrTimeSeriesRef = match v1 {
             ParameterV1::Core(v1) => match *v1 {
                 CoreParameter::Aggregated(p) => {
                     Parameter::Aggregated(p.try_into_v2(parent_node, conversion_data)?).into()
@@ -683,7 +683,7 @@ impl TryFromV1<ParameterV1> for ParameterOrTimeseriesRef {
                 CoreParameter::Min(p) => Parameter::Min(p.try_into_v2(parent_node, conversion_data)?).into(),
                 CoreParameter::Division(p) => Parameter::Division(p.try_into_v2(parent_node, conversion_data)?).into(),
                 CoreParameter::DataFrame(p) => {
-                    <DataFrameParameterV1 as TryIntoV2<ConvertedTimeseriesReference>>::try_into_v2(
+                    <DataFrameParameterV1 as TryIntoV2<ConvertedTimeSeriesReference>>::try_into_v2(
                         p,
                         parent_node,
                         conversion_data,

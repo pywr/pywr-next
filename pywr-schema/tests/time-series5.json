@@ -1,6 +1,6 @@
 {
   "metadata": {
-    "title": "Timeseries with a subset of a scenario"
+    "title": "TimeSeries with a subset of a scenario"
   },
   "scenarios": {
     "groups": [
@@ -65,7 +65,7 @@
         },
         "type": "Input",
         "max_flow": {
-          "type": "Timeseries",
+          "type": "TimeSeries",
           "name": "inflow",
           "columns": {
             "type": "Scenario",
@@ -130,7 +130,7 @@
         "phase": "Before",
         "metrics": [
           {
-            "type": "Timeseries",
+            "type": "TimeSeries",
             "name": "inflow",
             "columns": {
               "type": "Scenario",
@@ -144,14 +144,15 @@
         ]
       }
     ],
-    "timeseries": [
+    "time_series": [
       {
         "meta": {
           "name": "inflow"
         },
-        "type": "Polars",
+        "type": "Arrow",
+        "format": "CSV",
         "time_col": "date",
-        "url": "inflow2.csv"
+        "path": "inflow2.csv"
       }
     ],
     "metric_sets": [
@@ -170,7 +171,7 @@
         "name": "nodes",
         "type": "CSV",
         "format": "Long",
-        "filename": "timeseries5-expected.csv",
+        "filename": "time-series5-expected.csv",
         "metric_set": "nodes"
       }
     ]

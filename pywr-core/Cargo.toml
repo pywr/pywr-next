@@ -26,6 +26,8 @@ hdf5 = ["dep:hdf5-metno"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+arrow = { workspace = true }
+chrono = { workspace = true }
 ahash = { workspace = true, optional = true }
 coin-or-sys = { path = "../coin-or-sys", optional = true }
 csv = { workspace = true }

@@ -145,8 +145,9 @@ mod tests {
     use super::MultiThresholdParameterBuilder;
     use crate::metric::UnresolvedMetricF64;
     use crate::parameters::{Array1ParameterBuilder, Predicate};
-    use crate::test_utils::{run_and_assert_parameter_u64, simple_model};
-    use ndarray::{Array1, Array2, Axis, concatenate};
+    use crate::test_utils::{arrow_linspace_f64, run_and_assert_parameter_u64, simple_model};
+    use arrow::compute::concat;
+    use ndarray::{Array1, Array2, Axis};
 
     /// Basic functional test of the `MultiThresholdParameter` parameter.
     #[test]
@@ -154,12 +155,10 @@ mod tests {
         let mut model_builder = simple_model(1, None);
 
         // Create an artificial volume series to use for the delay test
-        let v1 = Array1::linspace(1.0, 0.0, 11);
-        let v2 = Array1::linspace(0.1, 1.0, 10);
-
-        let volumes = concatenate![Axis(0), v1, v2];
-
-        let volume = Array1ParameterBuilder::new("test-x".into(), volumes.clone());
+        let v1 = arrow_linspace_f64(1.0, 0.0, 11);
+        let v2 = arrow_linspace_f64(0.1, 1.0, 10);
+        let volumes = concat(&[&v1, &v2]).unwrap();
+        let volume = Array1ParameterBuilder::from_array_ref("test-x".into(), &volumes);
 
         model_builder.network_builder().parameters().f64(Box::new(volume));
 
@@ -186,12 +185,11 @@ mod tests {
         let mut model_builder = simple_model(1, None);
 
         // Create an artificial volume series to use for the delay test
-        let v1 = Array1::linspace(1.0, 0.0, 11);
-        let v2 = Array1::linspace(0.1, 1.0, 10);
+        let v1 = arrow_linspace_f64(1.0, 0.0, 11);
+        let v2 = arrow_linspace_f64(0.1, 1.0, 10);
+        let volumes = concat(&[&v1, &v2]).unwrap();
 
-        let volumes = concatenate![Axis(0), v1, v2];
-
-        let volume = Array1ParameterBuilder::new("test-x".into(), volumes.clone());
+        let volume = Array1ParameterBuilder::from_array_ref("test-x".into(), &volumes);
 
         model_builder.network_builder().parameters().f64(Box::new(volume));
 

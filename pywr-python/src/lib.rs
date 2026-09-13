@@ -5,18 +5,19 @@ use crate::exceptions::{
     PyModelBuilderError, PyModelRunError, PyModelSchemaBuildError, PyMultiNetworkModelBuilderError,
     PyMultiNetworkModelRunError, PyMultiNetworkModelSchemaBuildError, PyRecorderAggregationError,
 };
+use arrow::array::{Float64Builder, RecordBatch, StringBuilder, TimestampMillisecondBuilder, UInt64Builder};
+use arrow::pyarrow::PyArrowType;
 use jiff::civil::DateTime;
-use polars::df;
 use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::{PyKeyError, PyRuntimeError};
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyTuple, PyType};
-use pyo3_polars::PyDataFrame;
 use pywr_core::models::{
     Model, ModelResult, ModelTimings, MultiNetworkModel, MultiNetworkModelResult, MultiNetworkModelTimings,
 };
 use pywr_core::network::NetworkResult;
 use pywr_core::parameters::{ParameterInfo, PyScenarioIndex, PyTimestep};
+use pywr_core::recorders::LongFmtArrowRecord;
 #[cfg(feature = "cbc")]
 use pywr_core::solvers::CbcSolver;
 #[cfg(feature = "clp")]
@@ -102,28 +103,54 @@ impl PyNetworkResult {
         self.inner.results.keys().map(|k| k.to_string()).collect()
     }
 
-    /// Return an output as a dataframe.
-    pub fn to_dataframe(&self, name: &str) -> PyResult<PyDataFrame> {
+    /// Return an output as an Arrow record batch.
+    pub fn to_record_batch(&self, name: &str) -> PyResult<PyArrowType<RecordBatch>> {
         self.inner
             .results
             .get(name)
             .ok_or_else(|| PyKeyError::new_err(format!("Output `{}` not found in results", name)))
             .and_then(|r| {
-                let records: Vec<_> = r.iter_long_fmt_records().collect();
+                let schema = Arc::new(LongFmtArrowRecord::schema());
 
-                df!(
-                    "time_start" => records.iter().map(|r| r.time_start.to_string()).collect::<Vec<_>>(),
-                    "time_end" => records.iter().map(|r| r.time_end.to_string()).collect::<Vec<_>>(),
-                    "simulation_id" => records.iter().map(|r| r.simulation_id as u32).collect::<Vec<_>>(),
-                    "label" => records.iter().map(|r| r.label.as_str()).collect::<Vec<_>>(),
-                    "metric_set" => records.iter().map(|r| r.metric_set.as_str()).collect::<Vec<_>>(),
-                    "name" => records.iter().map(|r| r.name.as_str()).collect::<Vec<_>>(),
-                    "attribute" => records.iter().map(|r| r.attribute.as_str()).collect::<Vec<_>>(),
-                    "value" => records.iter().map(|r| r.value).collect::<Vec<_>>(),
+                let mut time_start = TimestampMillisecondBuilder::new();
+                let mut time_end = TimestampMillisecondBuilder::new();
+                let mut simulation_id = UInt64Builder::new();
+                let mut label = StringBuilder::new();
+                let mut metric_set = StringBuilder::new();
+                let mut name = StringBuilder::new();
+                let mut attribute = StringBuilder::new();
+                let mut value = Float64Builder::new();
+
+                for record in r.iter_long_fmt_records() {
+                    let a_record: LongFmtArrowRecord = record
+                        .try_into()
+                        .map_err(|e| PyRuntimeError::new_err(format!("Failed to serialise record: {}", e)))?;
+                    time_start.append_value(a_record.time_start);
+                    time_end.append_value(a_record.time_end);
+                    simulation_id.append_value(a_record.simulation_id);
+                    label.append_value(a_record.label);
+                    metric_set.append_value(a_record.metric_set);
+                    name.append_value(a_record.name);
+                    attribute.append_value(a_record.attribute);
+                    value.append_value(a_record.value);
+                }
+                let record_batch = RecordBatch::try_new(
+                    schema,
+                    vec![
+                        Arc::new(time_start.finish()),
+                        Arc::new(time_end.finish()),
+                        Arc::new(simulation_id.finish()),
+                        Arc::new(label.finish()),
+                        Arc::new(metric_set.finish()),
+                        Arc::new(name.finish()),
+                        Arc::new(attribute.finish()),
+                        Arc::new(value.finish()),
+                    ],
                 )
-                .map_err(|source| PyRuntimeError::new_err(format!("Failed to create dataframe: {}", source)))
+                .map_err(|e| PyRuntimeError::new_err(format!("Failed to create record batch: {}", e)))?;
+
+                Ok(PyArrowType(record_batch))
             })
-            .map(PyDataFrame)
     }
 }
 

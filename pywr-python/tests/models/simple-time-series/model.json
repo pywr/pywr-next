@@ -1,6 +1,6 @@
 {
   "metadata": {
-    "title": "Simple storage timeseries"
+    "title": "Simple time series"
   },
   "time": {
     "start": "2021-01-01",
@@ -18,27 +18,19 @@
         },
         "type": "Input",
         "max_flow": {
-          "type": "Literal",
-          "value": 9.0
+          "type": "TimeSeries",
+          "name": "inflow",
+          "columns": {
+            "type": "Column",
+            "name": "inflow"
+          }
         }
       },
       {
         "meta": {
-          "name": "storage1"
+          "name": "link1"
         },
-        "type": "Storage",
-        "cost": {
-          "type": "Literal",
-          "value": -1.0
-        },
-        "initial_volume": {
-          "type": "Absolute",
-          "volume": 500.0
-        },
-        "max_volume": {
-          "type": "Literal",
-          "value": 1000.0
-        }
+        "type": "Link"
       },
       {
         "meta": {
@@ -58,10 +50,10 @@
     "edges": [
       {
         "from_node": "input1",
-        "to_node": "storage1"
+        "to_node": "link1"
       },
       {
-        "from_node": "storage1",
+        "from_node": "link1",
         "to_node": "output1"
       }
     ],
@@ -77,6 +69,15 @@
         }
       }
     ],
+    "time_series": [
+      {
+        "meta": {
+          "name": "inflow"
+        },
+        "type": "Polars",
+        "path": "inflow.csv"
+      }
+    ],
     "metric_sets": [
       {
         "name": "nodes",
@@ -87,7 +88,7 @@
           },
           {
             "type": "Node",
-            "name": "storage1"
+            "name": "link1"
           },
           {
             "type": "Node",
@@ -101,6 +102,11 @@
         "name": "outputs",
         "type": "HDF5",
         "filename": "outputs.h5",
+        "metric_set": "nodes"
+      },
+      {
+        "name": "nodes",
+        "type": "Memory",
         "metric_set": "nodes"
       }
     ]

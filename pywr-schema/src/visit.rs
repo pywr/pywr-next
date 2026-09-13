@@ -262,7 +262,7 @@ impl VisitNodeReferences for Metric {
             Metric::Edge(edge_ref) => edge_ref.visit_node_references(visitor),
             Metric::Literal { .. }
             | Metric::Table(_)
-            | Metric::Timeseries(_)
+            | Metric::TimeSeries(_)
             | Metric::Parameter(_)
             | Metric::LocalParameter(_)
             | Metric::InterNetworkTransfer { .. } => {}
@@ -276,7 +276,7 @@ impl VisitNodeReferences for Metric {
             Metric::Edge(edge_ref) => edge_ref.visit_node_references_mut(visitor),
             Metric::Literal { .. }
             | Metric::Table(_)
-            | Metric::Timeseries(_)
+            | Metric::TimeSeries(_)
             | Metric::Parameter(_)
             | Metric::LocalParameter(_)
             | Metric::InterNetworkTransfer { .. } => {}
@@ -290,7 +290,7 @@ impl VisitNodeReferences for IndexMetric {
             IndexMetric::Node(node_ref) => node_ref.visit_node_references(visitor),
             IndexMetric::Constant { .. }
             | IndexMetric::Table(_)
-            | IndexMetric::Timeseries(_)
+            | IndexMetric::TimeSeries(_)
             | IndexMetric::Parameter(_)
             | IndexMetric::LocalParameter(_)
             | IndexMetric::InterNetworkTransfer { .. } => {}
@@ -302,7 +302,7 @@ impl VisitNodeReferences for IndexMetric {
             IndexMetric::Node(node_ref) => node_ref.visit_node_references_mut(visitor),
             IndexMetric::Constant { .. }
             | IndexMetric::Table(_)
-            | IndexMetric::Timeseries(_)
+            | IndexMetric::TimeSeries(_)
             | IndexMetric::Parameter(_)
             | IndexMetric::LocalParameter(_)
             | IndexMetric::InterNetworkTransfer { .. } => {}
