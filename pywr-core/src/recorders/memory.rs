@@ -419,8 +419,7 @@ mod tests {
     #[test]
     fn test_aggregation_orders() {
         let mut scenario_builder = ScenarioDomainBuilder::default();
-        let scenario_group = ScenarioGroupBuilder::new("test-scenario", 2).build().unwrap();
-        scenario_builder = scenario_builder.with_group(scenario_group).unwrap();
+        scenario_builder.with_group(ScenarioGroupBuilder::new("test-scenario", 2));
 
         let mut domain_builder = ModelDomainBuilder::new(default_time_domain_builder());
         domain_builder.scenario(scenario_builder);
