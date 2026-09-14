@@ -37,5 +37,4 @@ pywr-core = { path = "../pywr-core" }
 pywr-schema = { path = "../pywr-schema" }
 pywr-v1-schema = { workspace = true }
 schemars = { workspace = true }
-serde = { workspace = true }
 serde_json = { workspace = true }

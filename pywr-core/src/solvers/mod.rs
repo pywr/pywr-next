@@ -196,13 +196,13 @@ pub trait Solver: Send {
     /// An array of features that this solver provides.
     fn features() -> &'static [SolverFeatures];
     fn setup(
-        model: &Network,
+        network: &Network,
         values: &ConstParameterValues,
         settings: &Self::Settings,
     ) -> Result<Box<Self>, SolverSetupError>;
     fn solve(
         &mut self,
-        model: &Network,
+        network: &Network,
         timestep: &Timestep,
         state: &mut State,
     ) -> Result<SolverTimings, SolverSolveError>;
@@ -214,10 +214,11 @@ pub trait MultiStateSolver: Send {
     fn name() -> &'static str;
     /// An array of features that this solver provides.
     fn features() -> &'static [SolverFeatures];
-    fn setup(model: &Network, num_scenarios: usize, settings: &Self::Settings) -> Result<Box<Self>, SolverSetupError>;
+    fn setup(network: &Network, num_scenarios: usize, settings: &Self::Settings)
+    -> Result<Box<Self>, SolverSetupError>;
     fn solve(
         &mut self,
-        model: &Network,
+        network: &Network,
         timestep: &Timestep,
         states: &mut [State],
     ) -> Result<SolverTimings, SolverSolveError>;

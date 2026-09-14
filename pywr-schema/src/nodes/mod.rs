@@ -62,7 +62,7 @@ use crate::network::LoadArgs;
 use crate::network::NetworkSchema;
 use crate::parameters::Parameter;
 use crate::v1::{ConversionData, TryFromV1, TryIntoV2};
-use crate::visit::{VisitMetrics, VisitNodeReferences, VisitPaths};
+use crate::visit::{Reference, ReferenceMut, VisitMetrics, VisitPaths, VisitReferences};
 pub use abstraction::AbstractionNode;
 pub use attributes::NodeAttribute;
 pub use components::NodeComponent;
@@ -878,48 +878,48 @@ impl VisitPaths for Node {
     }
 }
 
-impl VisitNodeReferences for Node {
-    fn visit_node_references<F: FnMut(&str)>(&self, visitor: &mut F) {
+impl VisitReferences for Node {
+    fn visit_references<F: FnMut(Reference<'_>)>(&self, visitor: &mut F) {
         match self {
-            Node::Input(n) => n.visit_node_references(visitor),
-            Node::Link(n) => n.visit_node_references(visitor),
-            Node::Output(n) => n.visit_node_references(visitor),
-            Node::Storage(n) => n.visit_node_references(visitor),
-            Node::Catchment(n) => n.visit_node_references(visitor),
-            Node::RiverGauge(n) => n.visit_node_references(visitor),
-            Node::LossLink(n) => n.visit_node_references(visitor),
-            Node::River(n) => n.visit_node_references(visitor),
-            Node::RiverSplitWithGauge(n) => n.visit_node_references(visitor),
-            Node::WaterTreatmentWorks(n) => n.visit_node_references(visitor),
-            Node::PiecewiseLink(n) => n.visit_node_references(visitor),
-            Node::PiecewiseStorage(n) => n.visit_node_references(visitor),
-            Node::Delay(n) => n.visit_node_references(visitor),
-            Node::Turbine(n) => n.visit_node_references(visitor),
-            Node::Reservoir(n) => n.visit_node_references(visitor),
-            Node::Placeholder(n) => n.visit_node_references(visitor),
-            Node::Abstraction(n) => n.visit_node_references(visitor),
+            Node::Input(n) => n.visit_references(visitor),
+            Node::Link(n) => n.visit_references(visitor),
+            Node::Output(n) => n.visit_references(visitor),
+            Node::Storage(n) => n.visit_references(visitor),
+            Node::Catchment(n) => n.visit_references(visitor),
+            Node::RiverGauge(n) => n.visit_references(visitor),
+            Node::LossLink(n) => n.visit_references(visitor),
+            Node::River(n) => n.visit_references(visitor),
+            Node::RiverSplitWithGauge(n) => n.visit_references(visitor),
+            Node::WaterTreatmentWorks(n) => n.visit_references(visitor),
+            Node::PiecewiseLink(n) => n.visit_references(visitor),
+            Node::PiecewiseStorage(n) => n.visit_references(visitor),
+            Node::Delay(n) => n.visit_references(visitor),
+            Node::Turbine(n) => n.visit_references(visitor),
+            Node::Reservoir(n) => n.visit_references(visitor),
+            Node::Placeholder(n) => n.visit_references(visitor),
+            Node::Abstraction(n) => n.visit_references(visitor),
         }
     }
 
-    fn visit_node_references_mut<F: FnMut(&mut String)>(&mut self, visitor: &mut F) {
+    fn visit_references_mut<F: FnMut(ReferenceMut<'_>)>(&mut self, visitor: &mut F) {
         match self {
-            Node::Input(n) => n.visit_node_references_mut(visitor),
-            Node::Link(n) => n.visit_node_references_mut(visitor),
-            Node::Output(n) => n.visit_node_references_mut(visitor),
-            Node::Storage(n) => n.visit_node_references_mut(visitor),
-            Node::Catchment(n) => n.visit_node_references_mut(visitor),
-            Node::RiverGauge(n) => n.visit_node_references_mut(visitor),
-            Node::LossLink(n) => n.visit_node_references_mut(visitor),
-            Node::River(n) => n.visit_node_references_mut(visitor),
-            Node::RiverSplitWithGauge(n) => n.visit_node_references_mut(visitor),
-            Node::WaterTreatmentWorks(n) => n.visit_node_references_mut(visitor),
-            Node::PiecewiseLink(n) => n.visit_node_references_mut(visitor),
-            Node::PiecewiseStorage(n) => n.visit_node_references_mut(visitor),
-            Node::Delay(n) => n.visit_node_references_mut(visitor),
-            Node::Turbine(n) => n.visit_node_references_mut(visitor),
-            Node::Reservoir(n) => n.visit_node_references_mut(visitor),
-            Node::Placeholder(n) => n.visit_node_references_mut(visitor),
-            Node::Abstraction(n) => n.visit_node_references_mut(visitor),
+            Node::Input(n) => n.visit_references_mut(visitor),
+            Node::Link(n) => n.visit_references_mut(visitor),
+            Node::Output(n) => n.visit_references_mut(visitor),
+            Node::Storage(n) => n.visit_references_mut(visitor),
+            Node::Catchment(n) => n.visit_references_mut(visitor),
+            Node::RiverGauge(n) => n.visit_references_mut(visitor),
+            Node::LossLink(n) => n.visit_references_mut(visitor),
+            Node::River(n) => n.visit_references_mut(visitor),
+            Node::RiverSplitWithGauge(n) => n.visit_references_mut(visitor),
+            Node::WaterTreatmentWorks(n) => n.visit_references_mut(visitor),
+            Node::PiecewiseLink(n) => n.visit_references_mut(visitor),
+            Node::PiecewiseStorage(n) => n.visit_references_mut(visitor),
+            Node::Delay(n) => n.visit_references_mut(visitor),
+            Node::Turbine(n) => n.visit_references_mut(visitor),
+            Node::Reservoir(n) => n.visit_references_mut(visitor),
+            Node::Placeholder(n) => n.visit_references_mut(visitor),
+            Node::Abstraction(n) => n.visit_references_mut(visitor),
         }
     }
 }

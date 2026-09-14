@@ -10,9 +10,9 @@ use crate::recorders::{
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
 use crate::timestep::Timestep;
+use log::warn;
 use std::ops::Deref;
 use thiserror::Error;
-use tracing::warn;
 
 #[derive(Error, Debug)]
 pub enum AggregationError {
@@ -294,7 +294,7 @@ impl Recorder for MemoryRecorder {
         &self,
         _timestep: &Timestep,
         _scenario_indices: &[ScenarioIndex],
-        _model: &Network,
+        _network: &Network,
         _state: &[State],
         metric_set_states: &[Vec<MetricSetState>],
         internal_state: &mut Option<Box<dyn RecorderInternalState>>,

@@ -373,12 +373,12 @@ impl Solver for ClpSolver {
     }
 
     fn setup(
-        model: &Network,
+        network: &Network,
         values: &ConstParameterValues,
         _settings: &Self::Settings,
     ) -> Result<Box<Self>, SolverSetupError> {
         let builder = SolverBuilder::new(f64::MAX, -f64::MAX);
-        let built = builder.create(model, values)?;
+        let built = builder.create(network, values)?;
 
         let solver = ClpSolver::from_builder(built);
         Ok(Box::new(solver))
@@ -386,12 +386,12 @@ impl Solver for ClpSolver {
 
     fn solve(
         &mut self,
-        model: &Network,
+        network: &Network,
         timestep: &Timestep,
         state: &mut State,
     ) -> Result<SolverTimings, SolverSolveError> {
         let mut timings = SolverTimings::default();
-        self.builder.update(model, timestep, state, &mut timings)?;
+        self.builder.update(network, timestep, state, &mut timings)?;
 
         let now = Instant::now();
         self.clp_simplex
@@ -420,12 +420,12 @@ impl Solver for ClpSolver {
         network_state.reset();
 
         let start_save_solution = Instant::now();
-        for edge in model.edges().iter() {
+        for edge in network.edges().iter() {
             let col = self.builder.col_for_edge(&edge.index()) as usize;
             let flow = solution[col];
             network_state.add_flow(edge, timestep, flow)?;
         }
-        state.complete(model, timestep)?;
+        state.complete(network, timestep)?;
         timings.save_solution += start_save_solution.elapsed();
 
         Ok(timings)
