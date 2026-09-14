@@ -3,6 +3,7 @@ use crate::data_tables::{TableCollectionError, TableDataRef};
 use crate::digest::ChecksumError;
 use crate::nodes::{NodeAttribute, NodeComponent, NodeSlot};
 use crate::timeseries::TimeseriesError;
+use jiff::civil::DateTime;
 #[cfg(feature = "core")]
 use ndarray::ShapeError;
 #[cfg(feature = "pyo3")]
@@ -31,7 +32,7 @@ impl std::fmt::Display for DuplicateNodeName {
     }
 }
 
-/// A problem found by [`crate::NetworkSchema::validate`].
+/// A problem found by [`crate::ModelSchema::validate`] or [`crate::NetworkSchema::validate`].
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
 pub enum ValidationError {
     /// One or more names are used by more than one node.
@@ -40,6 +41,15 @@ pub enum ValidationError {
         .0.iter().map(|d| d.to_string()).collect::<Vec<_>>().join("; ")
     )]
     DuplicateNodeNames(Vec<DuplicateNodeName>),
+    /// The simulation period ends before it starts.
+    #[error("The simulation period ends before it starts: `end` ({end}) precedes `start` ({start}).")]
+    EndBeforeStart { start: DateTime, end: DateTime },
+    /// A timestep frequency string that cannot be parsed as a [`jiff::Span`].
+    #[error("The timestep frequency `{freq}` could not be parsed as a duration: {error}")]
+    UnparsableFrequency { freq: String, error: String },
+    /// A timestep frequency string that parses, but is zero or negative.
+    #[error("The timestep frequency `{freq}` is not a positive duration.")]
+    NonPositiveFrequency { freq: String },
 }
 
 #[derive(Error, Debug)]
