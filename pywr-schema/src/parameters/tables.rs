@@ -5,18 +5,19 @@ use crate::error::SchemaError;
 use crate::network::LoadArgs;
 use crate::parameters::{ConversionData, ParameterMeta};
 use crate::v1::{TryIntoV2, try_convert_parameter_attr};
+use crate::visit::{Reference, ReferenceMut, VisitReferences};
 use crate::{ComponentConversionError, TryFromV1};
 #[cfg(all(feature = "core", feature = "hdf5"))]
 use ndarray::s;
 #[cfg(all(feature = "core", feature = "hdf5"))]
 use pywr_core::parameters::ParameterName;
-use pywr_schema_macros::{PywrVisitAll, skip_serializing_none};
+use pywr_schema_macros::{PywrVisitMetrics, PywrVisitPaths, skip_serializing_none};
 use pywr_v1_schema::parameters::TablesArrayParameter as TablesArrayParameterV1;
 use schemars::JsonSchema;
 use std::path::PathBuf;
 
 #[skip_serializing_none]
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitMetrics, PywrVisitPaths)]
 #[serde(deny_unknown_fields)]
 pub struct TablesArrayParameter {
     pub meta: ParameterMeta,
@@ -27,6 +28,20 @@ pub struct TablesArrayParameter {
     pub checksum: Option<Checksum>,
     pub url: PathBuf,
     pub timestep_offset: Option<i32>,
+}
+
+impl VisitReferences for TablesArrayParameter {
+    fn visit_references<F: FnMut(Reference<'_>)>(&self, visitor: &mut F) {
+        if let Some(scenario) = &self.scenario {
+            visitor(Reference::ScenarioGroup(scenario));
+        }
+    }
+
+    fn visit_references_mut<F: FnMut(ReferenceMut<'_>)>(&mut self, visitor: &mut F) {
+        if let Some(scenario) = &mut self.scenario {
+            visitor(ReferenceMut::ScenarioGroup(scenario));
+        }
+    }
 }
 
 #[cfg(all(feature = "core", feature = "hdf5"))]
