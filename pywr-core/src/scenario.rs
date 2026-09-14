@@ -273,11 +273,10 @@ impl ScenarioDomainBuilder {
             .collect()
     }
 
-    /// Add a [`ScenarioGroup`] to the collection
+    /// Add a [`ScenarioGroupBuilder`] to the builder.
     ///
-    /// # Errors
-    ///
-    /// - [`ScenarioDomainBuilderError::DuplicateGroupName`] if a group with the same name already exists in the builder
+    /// It will be built when the [`ScenarioDomain`] is built. The order of the groups will
+    /// determine the order of the scenarios in the domain.
     pub fn with_group(&mut self, group: ScenarioGroupBuilder) -> &mut Self {
         self.groups.push(group);
 
