@@ -1,7 +1,7 @@
 use super::{
-    BuiltParameter, GeneralAfterParameter, GeneralBeforeParameter, GeneralParameter, GeneralParameterContext,
-    GeneralParameterEntry, MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder, ParameterMeta,
-    ParameterName, ParameterState, Timestep,
+    BuiltParameter, GeneralAfterParameter, GeneralAfterParameterHook, GeneralBeforeParameter, GeneralParameter,
+    GeneralParameterContext, GeneralParameterEntry, MaybeBuiltParameter, Parameter, ParameterBuildError,
+    ParameterBuilder, ParameterMeta, ParameterName, ParameterState, Timestep,
 };
 use crate::metric::{MetricConsumerPhase, MetricF64, MetricU64, UnresolvedMetricF64, UnresolvedMetricU64};
 use crate::network::{Network, ResolutionMaps};
@@ -395,6 +395,76 @@ impl PyClassParameter {
 
         Ok(value)
     }
+
+    fn call_method_no_return(
+        &self,
+        method: &str,
+        ctx: GeneralParameterContext<'_>,
+        internal_state: &mut Option<Box<dyn ParameterState>>,
+    ) -> Result<(), GeneralCalculationError> {
+        let internal = downcast_internal_state_mut::<InternalObj>(internal_state);
+
+        ensure_parameter_info(&mut internal.info_obj, ctx.timestep, ctx.scenario_index).map_err(|py_error| {
+            GeneralCalculationError::PythonError {
+                name: self.common.meta.name.to_string(),
+                object: self.class.to_string(),
+                py_error: Box::new(py_error),
+            }
+        })?;
+
+        // Safe to unwrap as we just ensured it is Some.
+        let info = internal.info_obj.as_ref().unwrap();
+
+        Python::attach(|py| {
+            if internal.user_obj.getattr(py, method).is_ok() {
+                let info_bind = info.bind(py);
+                {
+                    let mut info_mut = info_bind.borrow_mut();
+                    info_mut.timestep = *ctx.timestep;
+                    info_mut.scenario_index = Arc::new(ctx.scenario_index.clone());
+                    self.common
+                        .update_metrics(ctx.network, ctx.state, &mut info_mut.metric_values)?;
+
+                    self.common
+                        .update_indices(ctx.network, ctx.state, &mut info_mut.index_values)?;
+                }
+
+                let args = PyTuple::new(py, [info_bind]).map_err(|py_error| GeneralCalculationError::PythonError {
+                    name: self.common.meta.name.to_string(),
+                    object: self.class.to_string(),
+                    py_error: Box::new(py_error),
+                })?;
+
+                let py_return = internal.user_obj.call_method1(py, method, args).map_err(|py_error| {
+                    GeneralCalculationError::PythonError {
+                        name: self.common.meta.name.to_string(),
+                        object: self.class.to_string(),
+                        py_error: Box::new(py_error),
+                    }
+                })?;
+
+                if py_return.is_none(py) {
+                    Ok(())
+                } else {
+                    Err(GeneralCalculationError::PythonError {
+                        name: self.common.meta.name.to_string(),
+                        object: self.class.to_string(),
+                        py_error: Box::new(pyo3::exceptions::PyTypeError::new_err(format!(
+                            "The method `{method}` should return None, but returned a value."
+                        ))),
+                    })
+                }
+            } else {
+                Err(GeneralCalculationError::PhaseNotEnabled {
+                    ty: "PyClassParameter".to_string(),
+                    phase: method.to_string(), // This is the method name, which corresponds to the phase (before/after)
+                    message: format!("The method `{method}` is not implemented in the Python class."),
+                })
+            }
+        })?;
+
+        Ok(())
+    }
 }
 
 impl Parameter for PyClassParameter {
@@ -429,6 +499,7 @@ impl GeneralBeforeParameter<f64> for PyClassParameter {
         self.call_method("before", ctx, internal_state)
     }
 }
+
 impl GeneralAfterParameter<f64> for PyClassParameter {
     fn after(
         &self,
@@ -436,6 +507,16 @@ impl GeneralAfterParameter<f64> for PyClassParameter {
         internal_state: &mut Option<Box<dyn ParameterState>>,
     ) -> Result<f64, GeneralCalculationError> {
         self.call_method("after", ctx, internal_state)
+    }
+}
+
+impl GeneralAfterParameterHook for PyClassParameter {
+    fn after(
+        &self,
+        ctx: GeneralParameterContext<'_>,
+        internal_state: &mut Option<Box<dyn ParameterState>>,
+    ) -> Result<(), GeneralCalculationError> {
+        self.call_method_no_return("after_hook", ctx, internal_state)
     }
 }
 
@@ -502,6 +583,13 @@ impl PyClassParameterBuilder {
     }
 }
 
+/// Helper enum for identifying which method is being called on the Python class parameter.
+#[derive(Clone, Copy)]
+enum AfterMethodType {
+    After,
+    AfterHook,
+}
+
 impl ParameterBuilder<f64> for PyClassParameterBuilder {
     fn name(&self) -> &ParameterName {
         &self.common.meta.name
@@ -511,17 +599,32 @@ impl ParameterBuilder<f64> for PyClassParameterBuilder {
         self: Box<Self>,
         resolution_maps: &ResolutionMaps,
     ) -> Result<MaybeBuiltParameter<f64>, ParameterBuildError> {
-        let (has_before, has_after) = Python::attach(|py| {
+        let (has_before, after_type) = Python::attach(|py| {
             let has_before = self.class.getattr(py, "before").is_ok();
             let has_after = self.class.getattr(py, "after").is_ok();
-            (has_before, has_after)
-        });
+            let has_after_hook = self.class.getattr(py, "after_hook").is_ok();
 
-        let phase = match (has_before, has_after) {
-            (true, true) => MetricConsumerPhase::Both,
-            (true, false) => MetricConsumerPhase::Before,
-            (false, true) => MetricConsumerPhase::After,
-            (false, false) => {
+            let after_type = match (has_after, has_after_hook) {
+                (true, true) => {
+                    return Err(ParameterBuildError::AmbiguousPhaseDefinition {
+                        detail: "PyClassParameterBuilder cannot have both `after` and `after_hook` methods defined."
+                            .into(),
+                    });
+                }
+                (true, false) => Some(AfterMethodType::After),
+                (false, true) => Some(AfterMethodType::AfterHook),
+                (false, false) => None,
+            };
+
+            Ok((has_before, after_type))
+        })?;
+
+        let phase = match (has_before, after_type) {
+            (true, Some(AfterMethodType::After)) => MetricConsumerPhase::Both,
+            (true, Some(AfterMethodType::AfterHook)) => MetricConsumerPhase::Before,
+            (true, None) => MetricConsumerPhase::Before,
+            (false, Some(AfterMethodType::After)) => MetricConsumerPhase::After,
+            (false, None) | (false, Some(AfterMethodType::AfterHook)) => {
                 return Err(ParameterBuildError::NoCalculationPhase {
                     detail: "PyClassParameterBuilder must have at least one of `before` or `after` methods defined."
                         .into(),
@@ -547,7 +650,13 @@ impl ParameterBuilder<f64> for PyClassParameterBuilder {
 
         let entry = match phase {
             MetricConsumerPhase::Both => GeneralParameterEntry::both(p),
-            MetricConsumerPhase::Before => GeneralParameterEntry::before(p),
+            MetricConsumerPhase::Before => {
+                if let Some(AfterMethodType::AfterHook) = after_type {
+                    GeneralParameterEntry::before_with_after_hook(p)
+                } else {
+                    GeneralParameterEntry::before(p)
+                }
+            }
             MetricConsumerPhase::After => GeneralParameterEntry::after(p),
         };
 
@@ -959,6 +1068,7 @@ mod tests {
 
     enum CounterParameterType {
         BeforeOnly,
+        BeforeAfterHook,
         BeforeAfter,
         AfterOnly,
     }
@@ -1021,6 +1131,27 @@ class MyParameter:
         )
     }
 
+    #[test]
+    fn test_counter_parameter_before_after_hook() {
+        test_counter_parameter(
+            CounterParameterType::BeforeAfterHook,
+            c_str!(
+                r#"
+class MyParameter:
+    def __init__(self, count, **kwargs):
+        self.count = count
+
+    def before(self, info):
+        self.count += info.scenario_index.simulation_id
+        return float(self.count + info.timestep.day)
+
+    def after_hook(self, info):
+        self.count += info.scenario_index.simulation_id
+"#
+            ),
+        )
+    }
+
     /// Test `PyClassParameter` returns the correct value.
     fn test_counter_parameter(counter_parameter_type: CounterParameterType, counter_parameter_str: &'static CStr) {
         // Init Python
@@ -1073,6 +1204,7 @@ class MyParameter:
 
                 let before_value = GeneralBeforeParameter::before(&param, ctx, internal);
                 let after_value = GeneralAfterParameter::after(&param, ctx, internal);
+                let after_hook_value = GeneralAfterParameterHook::after(&param, ctx, internal);
 
                 match counter_parameter_type {
                     CounterParameterType::BeforeOnly => {
@@ -1082,6 +1214,16 @@ class MyParameter:
                             ((ts.index + 1) * si.simulation_id() + ts.date.day() as usize) as f64
                         );
                         assert_matches!(after_value, Err(GeneralCalculationError::PhaseNotEnabled { .. }));
+                        assert_matches!(after_hook_value, Err(GeneralCalculationError::PhaseNotEnabled { .. }));
+                    }
+                    CounterParameterType::BeforeAfterHook => {
+                        assert_approx_eq!(
+                            f64,
+                            before_value.expect("Expected a value from before()"),
+                            ((ts.index * 2 + 1) * si.simulation_id() + ts.date.day() as usize) as f64
+                        );
+                        assert_matches!(after_value, Err(GeneralCalculationError::PhaseNotEnabled { .. }));
+                        assert_eq!((), after_hook_value.expect("Expected a value from after_hook()"));
                     }
                     CounterParameterType::BeforeAfter => {
                         assert_approx_eq!(
@@ -1094,6 +1236,7 @@ class MyParameter:
                             after_value.expect("Expected a value from after()"),
                             ((ts.index * 2 + 2) * si.simulation_id() + ts.date.day() as usize) as f64
                         );
+                        assert_matches!(after_hook_value, Err(GeneralCalculationError::PhaseNotEnabled { .. }));
                     }
                     CounterParameterType::AfterOnly => {
                         assert_matches!(before_value, Err(GeneralCalculationError::PhaseNotEnabled { .. }));
@@ -1102,6 +1245,7 @@ class MyParameter:
                             after_value.expect("Expected a value from after()"),
                             ((ts.index + 1) * si.simulation_id() + ts.date.day() as usize) as f64
                         );
+                        assert_matches!(after_hook_value, Err(GeneralCalculationError::PhaseNotEnabled { .. }));
                     }
                 }
             }

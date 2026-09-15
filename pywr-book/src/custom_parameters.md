@@ -11,9 +11,14 @@ the [Developers Guide](./developers-guide/adding-a-parameter.md) for more inform
 ## Python functions
 
 The simplest way to create a custom parameter is to define a Python function. This function should accept at least one
-argument, which is a `ParameterInfo` object. This object contains information from the model, such as the current time
-step, scenario index, and any metric values that have been requested. Additional arguments can also be passed to the
-function.
+argument, which is a `ParameterInfo` object. This read-only object exposes the current `timestep`, `scenario_index`,
+and any declared metric and index dependencies. Additional arguments can also be passed to the function. Functions are
+evaluated in the `before` phase, before resource allocation.
+
+`info.timestep` provides properties such as `index`, `date`, `day`, `month`, `year`, `days`, and `is_first`.
+`info.scenario_index` provides `simulation_id` and `simulation_indices`. Declared floating-point metrics and unsigned
+integer indices can be read using `info.get_metric(key)` and `info.get_index(key)` respectively. Requesting an
+undeclared key raises `KeyError`.
 
 Here is an example of a simple custom parameter that returns the current time step:
 
@@ -45,7 +50,7 @@ path to the Python file containing the function, and the `object` field specifie
       },
       "object": {
         "type": "Function",
-        "class": "current_time_step"
+        "function": "current_time_step"
       },
       "args": [],
       "kwargs": {}
@@ -57,11 +62,11 @@ path to the Python file containing the function, and the `object` field specifie
 ### Constant arguments
 
 In reality, your function will likely need to accept additional arguments. These arguments might be constants that
-change the behaviour of the function, but do *not* change over time or are a result of the model's simulation state. In
-this case they can be defined as `args` or `kwargs` in the parameter definition. Only simple types that are supported by
-JSON can be used as arguments, such as strings, numbers, and booleans. However, by parameterising these values, you can
-easily change them without modifying the Python code or reuse the same function with different values in different parts
-of the model.
+change the behaviour of the function, but do *not* change over time or result from the model's simulation state. In
+this case they can be defined as `args` or `kwargs` in the parameter definition. Any JSON value can be used, including
+`null`, arrays, and objects; these are passed to Python as `None`, lists, and dictionaries. Non-JSON Python objects
+cannot be supplied this way. By parameterising these values, you can easily change them without modifying the Python
+code or reuse the same function with different values in different parts of the model.
 
 ```python
 # custom_parameters.py
@@ -69,7 +74,7 @@ from pywr import ParameterInfo
 
 
 def current_timestep(
-    info: ParameterInfo, a: float, b: float, some_condition: str = "foo"
+        info: ParameterInfo, a: float, b: float, some_condition: str = "foo"
 ) -> float:
     """Return the current time step."""
     match some_condition:
@@ -97,7 +102,7 @@ To pass these arguments to the function, you can define them in the model's JSON
       },
       "object": {
         "type": "Function",
-        "class": "current_timestep"
+        "function": "current_timestep"
       },
       "args": [
         1.0,
@@ -129,9 +134,10 @@ def factor_volume(info: ParameterInfo, factor: float) -> float:
 ```
 
 The JSON definition of the parameter needs to include a `metrics` and/or `indices` field that specifies which model
-metrics to request. Both fields are a dictionary where the keys are the keys used to retrieve the values from the
-`ParameterInfo` object, and the values specify the metric to retrieve. Metrics are accessed using `get_metric(key)`, and
-indices are accessed using `get_index(key)`.
+dependencies to request. Both fields are dictionaries: their keys are used to retrieve the values from the
+`ParameterInfo` object, and their values specify the metric or index to retrieve. `metrics` provide floating-point
+values accessed using `get_metric(key)`, while `indices` provide unsigned integer values accessed using
+`get_index(key)`.
 
 ```json
 {
@@ -147,7 +153,7 @@ indices are accessed using `get_index(key)`.
       },
       "object": {
         "type": "Function",
-        "class": "factor_volume"
+        "function": "factor_volume"
       },
       "args": [
         2.0
@@ -168,7 +174,7 @@ indices are accessed using `get_index(key)`.
 ## Python classes & stateful parameters
 
 If your parameter needs to maintain state between calls, you can define it as a Python class. This class should
-implement an `__init__` method that setups up the parameter, including any initial state. The `__init__` method is
+implement an `__init__` method that sets up the parameter, including any initial state. The `__init__` method is
 passed the `args` and `kwargs` defined in the JSON file. Pywr will create an instance of the class for every scenario in
 a simulation. These instances will be reused for each time step in the scenario, allowing you to maintain state across
 time steps.
@@ -177,12 +183,12 @@ time steps.
 > This means you do not have to worry about state being shared between scenarios, and do *not* need to implement
 > state for each scenario yourself.
 
-The class should also implement `before` method, which is called for each time step in the scenario. This method should
-accept a `ParameterInfo` object as its only argument.
+The class must implement at least one of `before` or `after`. These methods accept a `ParameterInfo` object as their
+only argument and should return the parameter's configured value type. `before` is called before resource allocation,
+and `after` is called after allocation. A class can implement either method or both.
 
-Finally, the class may also implement an `after` method, which is called after the resource allocation has been
-completed for the time step. This method can be used to perform any final calculations or updates to the parameter
-state.
+For a parameter that needs only a post-allocation state update, a class with `before` may instead
+implement `after_hook`. It is called after allocation, must return `None`, and cannot be used together with `after`.
 
 Here is an example of a simple stateful parameter that counts the number of time steps:
 
@@ -197,11 +203,11 @@ class TimeStepCounter:
     def __init__(self, initial_value: int = 0):
         self.count = initial_value
 
-    def before(self, _info: ParameterInfo) -> float | None:
+    def before(self, _info: ParameterInfo) -> float:
         """Return the current time step count."""
         # Note that `_info` is not used, but it is required by the interface.
         self.count += 1
-        return self.count
+        return float(self.count)
 ```
 
 To use this custom parameter in your model, you can define it in the JSON file as follows:
@@ -253,7 +259,7 @@ Here is an example of how to define a custom parameter in a module (in this case
       },
       "object": {
         "type": "Function",
-        "class": "current_time_step"
+        "function": "current_time_step"
       },
       "args": [],
       "kwargs": {}
@@ -264,11 +270,13 @@ Here is an example of how to define a custom parameter in a module (in this case
 
 ## Returning integers or multiple values
 
-In the examples above the custom parameter functions return a single floating point value. However, you can also return
-integers or multiple values. In the JSON definition of the parameter, you can specify the `return_type` field to
-indicate the type of value the function will return. To return an integer, you can set the `return_type` to `"Int"`. To
-return multiple values, you can set the `return_type` to `"Dict"` and the function should return a dictionary where the
-keys are the names of the values and the values are the values themselves.
+In the examples above the custom parameter functions return a single floating point value. You can also return unsigned
+integers or multiple values by specifying `return_type`. `"Int"` creates an unsigned integer (index) parameter, so the
+returned value must be a non-negative integer that fits in a 64-bit unsigned integer.
+
+Set `return_type` to `"Dict"` to return multiple named values. Each dictionary value must be a Python `float` or a
+non-negative Python `int`: floats become named floating-point values and integers become named unsigned index values.
+Other value types, including negative integers, are not supported.
 
 An example of a custom parameter that returns multiple values is shown below:
 
@@ -277,7 +285,7 @@ An example of a custom parameter that returns multiple values is shown below:
 from pywr import ParameterInfo
 
 
-def multiple_values(info: ParameterInfo, factor: float) -> dict:
+def multiple_values(info: ParameterInfo, factor: float) -> dict[str, float | int]:
     """Return multiple values."""
     return {"value1": info.timestep.index, "value2": info.get_metric("volume") * factor}
 ```
@@ -298,7 +306,7 @@ The corresponding JSON for this parameter would look like this:
       },
       "object": {
         "type": "Function",
-        "class": "multiple_values"
+        "function": "multiple_values"
       },
       "return_type": "Dict",
       "args": [
@@ -316,14 +324,23 @@ The corresponding JSON for this parameter would look like this:
 }
 ```
 
-And the returned values can be accessed in the model using the keys defined in the dictionary.
+The returned values can be accessed in the model using the keys defined in the dictionary. For example:
 
 ```json
 {
   "type": "Parameter",
   "name": "multiple_values",
   "key": "value1"
-  // or "value2" 
+}
+```
+
+or
+
+```json
+{
+  "type": "Parameter",
+  "name": "multiple_values",
+  "key": "value2"
 }
 ```
 
@@ -331,9 +348,9 @@ And the returned values can be accessed in the model using the keys defined in t
 
 The majority of parameters will only need to implement the `before` method, which is called before the resource
 allocation is performed for the time step[^before_v1]. However, in some cases it may be necessary to perform some
-calculations after the resource allocation has been completed. Typically, this is the case when the parameter needs to
-access the results of the resource allocation, such as the allocated flow or the new volume of a reservoir after the
-allocation. In this case, the parameter can implement an `after` method.
+calculations after allocation, such as accessing allocated flow or new reservoir volume. A class parameter can implement
+an `after` method to return a post-allocation parameter value, or `after_hook` to update state without returning a
+value.
 
 The example below lists a custom parameter that implements both `before` and `after` methods. It is a simple crop water
 requirement parameter that calculates the water requirement for a crop based on the current month in `before`, and then
@@ -345,10 +362,11 @@ computes a crop yield in `after` based on the allocated water and the water requ
 {{ #include ../py-listings/agri-parameter/agri_parameter.py}}
 ```
 
-When referring to the parameter in the model, the `return_value` field can be used to specify whether to use the value 
-returned by the `before` or `after` method. By default, the value returned by the `before` method is used, but if you 
-want to use the value from the `after` method you can set `return_value` to `"After"`. The example below shows how to 
-use the `CropParameter` above parameter in a metric set, and specify that the value from the `after` method should be used.
+When referring to a parameter in the model, the `return_value` field on the *parameter reference* (not on the Python
+parameter definition) selects the calculation phase. The default is `"Before"`; use `"After"` to consume the value
+returned by `after`. The other supported reference values are `"AfterOrElseInitial"` and `"Both"`. The selected phase
+must be compatible with the parameter implementation. The example below uses the `CropParameter` above in a metric set
+and selects its `after` value.
 
 [//]: # (@formatter:off)
 
