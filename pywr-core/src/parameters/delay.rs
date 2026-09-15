@@ -103,7 +103,7 @@ impl GeneralBeforeParameter<f64> for DelayParameter<MetricF64, f64> {
         Ok(value)
     }
 }
-impl GeneralAfterParameterHook<f64> for DelayParameter<MetricF64, f64> {
+impl GeneralAfterParameterHook for DelayParameter<MetricF64, f64> {
     fn after(
         &self,
         ctx: GeneralParameterContext<'_>,
@@ -178,7 +178,7 @@ impl GeneralBeforeParameter<u64> for DelayParameter<MetricU64, u64> {
         Ok(value)
     }
 }
-impl GeneralAfterParameterHook<u64> for DelayParameter<MetricU64, u64> {
+impl GeneralAfterParameterHook for DelayParameter<MetricU64, u64> {
     fn after(
         &self,
         ctx: GeneralParameterContext<'_>,
