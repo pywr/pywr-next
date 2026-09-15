@@ -15,7 +15,7 @@ license-files = [
 ]
 dependencies = [
     "pandas",
-    "polars>=1.44.1",
+    "polars>=1.44.2",
     "pyarrow",
     "click",
 ]
@@ -28,7 +28,7 @@ hdf = ["h5py"]
 [dependency-groups]
 dev = [
     "pytest>=9.1.1",
-    "ruff>=0.16.6",
+    "ruff>=0.16.7",
     "maturin>=1.15.0,<2.0",
 ]
 docs = [
