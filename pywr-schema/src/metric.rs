@@ -542,10 +542,10 @@ pub struct ParameterReference {
     pub return_value: Option<ParameterReturnValue>,
 }
 
+#[cfg(feature = "core")]
 impl ParameterReference {
     /// Load a parameter reference into a [`MetricF64`] by attempting to retrieve the parameter
     /// from the `network`.
-    #[cfg(feature = "core")]
     pub fn load_f64(&self) -> UnresolvedMetricF64 {
         let name = ParameterName::new(&self.name, None);
         // Determine the return value to use
@@ -566,7 +566,6 @@ impl ParameterReference {
 
     /// Load a parameter reference into a [`MetricUsize`] by attempting to retrieve the parameter
     /// from the `network`.
-    #[cfg(feature = "core")]
     pub fn load_u64(&self) -> UnresolvedMetricU64 {
         let name = ParameterName::new(&self.name, None);
         // Determine the return value to use
@@ -584,7 +583,7 @@ impl ParameterReference {
             None => UnresolvedMetricU64::ParameterValue { name, return_value },
         }
     }
-    #[cfg(feature = "core")]
+
     pub fn parameter_type(&self, args: &LoadArgs) -> Result<ParameterType, SchemaError> {
         let parameter =
             args.schema
@@ -597,7 +596,6 @@ impl ParameterReference {
         Ok(parameter.parameter_type())
     }
 
-    #[cfg(feature = "core")]
     fn attribute(&self) -> String {
         match &self.key {
             Some(key) => key.clone(),
@@ -659,6 +657,7 @@ pub struct LocalParameterReference {
     pub return_value: Option<ParameterReturnValue>,
 }
 
+#[cfg(feature = "core")]
 impl LocalParameterReference {
     /// Return the parent node name for this local parameter reference. If the `node` field is set,
     /// it will be used. Otherwise, the `parent` argument will be used. If neither is provided, an error will be returned.
@@ -676,7 +675,6 @@ impl LocalParameterReference {
     /// from the `network`. If the `node` field is set, it will be used as the parent node name for
     /// resolving the parameter. Otherwise, the `parent` argument will be used. If neither is
     /// provided, an error will be returned.
-    #[cfg(feature = "core")]
     pub fn load_f64(&self, parent: Option<&str>) -> Result<UnresolvedMetricF64, SchemaError> {
         let parent = self.parent(parent)?;
 
@@ -702,7 +700,6 @@ impl LocalParameterReference {
     /// from the `network`. If the `node` field is set, it will be used as the parent node name for
     /// resolving the parameter. Otherwise, the `parent` argument will be used. If neither is
     /// provided, an error will be returned.
-    #[cfg(feature = "core")]
     pub fn load_u64(&self, parent: Option<&str>) -> Result<UnresolvedMetricU64, SchemaError> {
         let parent = self.parent(parent)?;
         let name = ParameterName::new(&self.name, Some(parent));
@@ -722,7 +719,6 @@ impl LocalParameterReference {
         };
         Ok(m)
     }
-    #[cfg(feature = "core")]
     pub fn parameter_type(&self, args: &LoadArgs) -> Result<ParameterType, SchemaError> {
         let parameter =
             args.schema
@@ -735,7 +731,6 @@ impl LocalParameterReference {
         Ok(parameter.parameter_type())
     }
 
-    #[cfg(feature = "core")]
     fn attribute(&self) -> String {
         match &self.key {
             Some(key) => key.clone(),
