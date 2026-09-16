@@ -38,7 +38,7 @@ categories = ["science", "simulation"]
 [workspace.dependencies]
 ahash = "0.8"
 anyhow = "1.0"
-arrow = { version = "59.3", features = ["pyarrow"] }
+arrow = { version = "59.3" }
 chrono = { version = "0.4", features = ["serde"] }
 clap = "4.6"
 csv = "1.4"

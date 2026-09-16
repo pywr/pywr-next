@@ -19,7 +19,7 @@ highs = ["dep:highs-sys"]
 ipm-ocl = ["dep:ipm-ocl", "dep:ocl"]
 ipm-simd = ["dep:ipm-simd", "dep:wide"]
 microlp = ["dep:microlp"]
-pyo3 = ["dep:pyo3", "dep:ahash"]
+pyo3 = ["dep:pyo3", "dep:ahash", "arrow/pyarrow"]
 # File formats
 hdf5 = ["dep:hdf5-metno"]
 
