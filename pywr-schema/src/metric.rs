@@ -63,7 +63,7 @@ pub enum Metric {
     /// A reference to a global parameter.
     Parameter(ParameterReference),
     /// A reference to a local parameter.
-    LocalParameter(ParameterReference),
+    LocalParameter(LocalParameterReference),
     /// A reference to an inter-network transfer by name.
     InterNetworkTransfer { name: String },
 }
@@ -104,17 +104,9 @@ impl Metric {
             Self::Node(node_ref) => node_ref.load_f64(network, args),
             Self::VirtualNode(node_ref) => node_ref.load_f64(args),
             // Global parameter with no parent
-            Self::Parameter(parameter_ref) => Ok(parameter_ref.load_f64(None)),
+            Self::Parameter(parameter_ref) => Ok(parameter_ref.load_f64()),
             // Local parameter loaded from parent's namespace
-            Self::LocalParameter(parameter_ref) => {
-                if parent.is_none() {
-                    return Err(SchemaError::LocalParameterReferenceRequiresParent(
-                        parameter_ref.name.clone(),
-                    ));
-                }
-
-                Ok(parameter_ref.load_f64(parent))
-            }
+            Self::LocalParameter(parameter_ref) => parameter_ref.load_f64(parent),
             Self::Literal { value } => Ok((*value).into()),
             Self::Table(table_ref) => {
                 let value = args
@@ -153,7 +145,10 @@ impl Metric {
             Self::Node(node_ref) => Ok(node_ref.name.to_string()),
             Self::VirtualNode(node_ref) => Ok(node_ref.name.to_string()),
             Self::Parameter(parameter_ref) => Ok(parameter_ref.name.clone()),
-            Self::LocalParameter(parameter_ref) => Ok(parameter_ref.name.clone()),
+            Self::LocalParameter(parameter_ref) => match &parameter_ref.node {
+                Some(node) => Ok(format!("{}.{}", node, parameter_ref.name)),
+                None => Ok(parameter_ref.name.clone()),
+            },
             Self::Literal { .. } => Err(SchemaError::LiteralConstantOutputNotSupported),
             Self::Table(table_ref) => Ok(table_ref.table.clone()),
             Self::Timeseries(ts_ref) => Ok(ts_ref.name.clone()),
@@ -549,11 +544,10 @@ pub struct ParameterReference {
 
 impl ParameterReference {
     /// Load a parameter reference into a [`MetricF64`] by attempting to retrieve the parameter
-    /// from the `network`. If `parent` is the optional parameter name space from which to load
-    /// the parameter.
+    /// from the `network`.
     #[cfg(feature = "core")]
-    pub fn load_f64(&self, parent: Option<&str>) -> UnresolvedMetricF64 {
-        let name = ParameterName::new(&self.name, parent);
+    pub fn load_f64(&self) -> UnresolvedMetricF64 {
+        let name = ParameterName::new(&self.name, None);
         // Determine the return value to use
         let return_value = self.return_value.unwrap_or_default().into();
 
@@ -571,11 +565,10 @@ impl ParameterReference {
     }
 
     /// Load a parameter reference into a [`MetricUsize`] by attempting to retrieve the parameter
-    /// from the `network`. If `parent` is the optional parameter name space from which to load
-    /// the parameter.
+    /// from the `network`.
     #[cfg(feature = "core")]
-    pub fn load_u64(&self, parent: Option<&str>) -> UnresolvedMetricU64 {
-        let name = ParameterName::new(&self.name, parent);
+    pub fn load_u64(&self) -> UnresolvedMetricU64 {
+        let name = ParameterName::new(&self.name, None);
         // Determine the return value to use
         let return_value = self.return_value.unwrap_or_default().into();
 
@@ -648,6 +641,157 @@ impl ParameterReferenceBuilder {
     }
 }
 
+#[skip_serializing_none]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PartialEq)]
+#[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "pyo3", pyclass(from_py_object))]
+pub struct LocalParameterReference {
+    /// The node that contains the parameter.
+    ///
+    /// This is used to resolve the parameter name in the correct namespace. If not
+    /// provided, then the local parameter will be resolved from the local namespace of the parent node.
+    pub node: Option<String>,
+    /// The name of the parameter
+    pub name: String,
+    /// The key of the parameter. If this is `None` then the default value is used.
+    pub key: Option<String>,
+    /// Which method's return value to use. If this is `None` then the default is used.
+    pub return_value: Option<ParameterReturnValue>,
+}
+
+impl LocalParameterReference {
+    /// Return the parent node name for this local parameter reference. If the `node` field is set,
+    /// it will be used. Otherwise, the `parent` argument will be used. If neither is provided, an error will be returned.
+    fn parent<'a>(&'a self, parent: Option<&'a str>) -> Result<&'a str, SchemaError> {
+        match &self.node {
+            Some(p) => Ok(p.as_str()),
+            None => match parent {
+                Some(node) => Ok(node),
+                None => Err(SchemaError::LocalParameterReferenceRequiresParent(self.name.clone())),
+            },
+        }
+    }
+
+    /// Load a local parameter reference into a [`MetricF64`] by attempting to retrieve the parameter
+    /// from the `network`. If the `node` field is set, it will be used as the parent node name for
+    /// resolving the parameter. Otherwise, the `parent` argument will be used. If neither is
+    /// provided, an error will be returned.
+    #[cfg(feature = "core")]
+    pub fn load_f64(&self, parent: Option<&str>) -> Result<UnresolvedMetricF64, SchemaError> {
+        let parent = self.parent(parent)?;
+
+        let name = ParameterName::new(&self.name, Some(parent));
+        // Determine the return value to use
+        let return_value = self.return_value.unwrap_or_default().into();
+
+        let m = match &self.key {
+            Some(key) => {
+                // Key given; this should be a multi-valued parameter
+                UnresolvedMetricF64::MultiParameterValue {
+                    name,
+                    key: key.to_string(),
+                    return_value,
+                }
+            }
+            None => UnresolvedMetricF64::ParameterValue { name, return_value },
+        };
+        Ok(m)
+    }
+
+    /// Load a local parameter reference into a [`MetricUsize`] by attempting to retrieve the parameter
+    /// from the `network`. If the `node` field is set, it will be used as the parent node name for
+    /// resolving the parameter. Otherwise, the `parent` argument will be used. If neither is
+    /// provided, an error will be returned.
+    #[cfg(feature = "core")]
+    pub fn load_u64(&self, parent: Option<&str>) -> Result<UnresolvedMetricU64, SchemaError> {
+        let parent = self.parent(parent)?;
+        let name = ParameterName::new(&self.name, Some(parent));
+        // Determine the return value to use
+        let return_value = self.return_value.unwrap_or_default().into();
+
+        let m = match &self.key {
+            Some(key) => {
+                // Key given; this should be a multi-valued parameter
+                UnresolvedMetricU64::MultiParameterValue {
+                    name,
+                    key: key.to_string(),
+                    return_value,
+                }
+            }
+            None => UnresolvedMetricU64::ParameterValue { name, return_value },
+        };
+        Ok(m)
+    }
+    #[cfg(feature = "core")]
+    pub fn parameter_type(&self, args: &LoadArgs) -> Result<ParameterType, SchemaError> {
+        let parameter =
+            args.schema
+                .get_parameter_by_name(&self.name)
+                .ok_or_else(|| SchemaError::ParameterNotFound {
+                    name: self.name.clone(),
+                    key: self.key.clone(),
+                })?;
+
+        Ok(parameter.parameter_type())
+    }
+
+    #[cfg(feature = "core")]
+    fn attribute(&self) -> String {
+        match &self.key {
+            Some(key) => key.clone(),
+            None => self.return_value.unwrap_or_default().to_string().to_lowercase(),
+        }
+    }
+}
+
+/// A builder for creating a [`ParameterReference`].
+pub struct LocalParameterReferenceBuilder {
+    node: Option<String>,
+    name: String,
+    key: Option<String>,
+    return_value: Option<ParameterReturnValue>,
+}
+
+impl LocalParameterReferenceBuilder {
+    pub fn new(name: &str) -> Self {
+        Self {
+            node: None,
+            name: name.to_string(),
+            key: None,
+            return_value: None,
+        }
+    }
+
+    pub fn node(&mut self, node: &str) -> &mut Self {
+        self.node = Some(node.to_string());
+        self
+    }
+
+    pub fn name(&mut self, name: &str) -> &mut Self {
+        self.name = name.to_string();
+        self
+    }
+
+    pub fn key(&mut self, key: &str) -> &mut Self {
+        self.key = Some(key.to_string());
+        self
+    }
+
+    pub fn return_value(&mut self, return_value: ParameterReturnValue) -> &mut Self {
+        self.return_value = Some(return_value);
+        self
+    }
+
+    pub fn build(self) -> LocalParameterReference {
+        LocalParameterReference {
+            node: self.node,
+            name: self.name,
+            key: self.key,
+            return_value: self.return_value,
+        }
+    }
+}
+
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PartialEq)]
 #[serde(deny_unknown_fields)]
 #[cfg_attr(feature = "pyo3", pyclass(from_py_object))]
@@ -695,7 +839,7 @@ pub enum IndexMetric {
     Node(NodeAttrReference),
     Timeseries(TimeseriesReference),
     Parameter(ParameterReference),
-    LocalParameter(ParameterReference),
+    LocalParameter(LocalParameterReference),
     InterNetworkTransfer {
         name: String,
     },
@@ -724,17 +868,9 @@ impl IndexMetric {
         match self {
             Self::Node(node_ref) => node_ref.load_u64(args),
             // Global parameter with no parent
-            Self::Parameter(parameter_ref) => Ok(parameter_ref.load_u64(None)),
+            Self::Parameter(parameter_ref) => Ok(parameter_ref.load_u64()),
             // Local parameter loaded from parent's namespace
-            Self::LocalParameter(parameter_ref) => {
-                if parent.is_none() {
-                    return Err(SchemaError::LocalParameterReferenceRequiresParent(
-                        parameter_ref.name.clone(),
-                    ));
-                }
-
-                Ok(parameter_ref.load_u64(parent))
-            }
+            Self::LocalParameter(parameter_ref) => parameter_ref.load_u64(parent),
             Self::Constant { value } => Ok((*value).into()),
             Self::Table(table_ref) => {
                 let value = args
