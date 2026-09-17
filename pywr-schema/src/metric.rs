@@ -179,12 +179,12 @@ impl Metric {
     /// Return the subtype of the metric. This is the type of the metric that is being
     /// referenced. For example, if the metric is a node then the subtype is the type of the
     /// node.
-    fn sub_type(&self, args: &LoadArgs) -> Result<Option<String>, SchemaError> {
+    fn sub_type(&self, args: &LoadArgs, parent: Option<&str>) -> Result<Option<String>, SchemaError> {
         let sub_type = match self {
             Self::Node(node_ref) => Some(node_ref.node_type(args)?.to_string()),
             Self::VirtualNode(node_ref) => Some(node_ref.node_type(args)?.to_string()),
             Self::Parameter(parameter_ref) => Some(parameter_ref.parameter_type(args)?.to_string()),
-            Self::LocalParameter(parameter_ref) => Some(parameter_ref.parameter_type(args)?.to_string()),
+            Self::LocalParameter(parameter_ref) => Some(parameter_ref.parameter_type(args, parent)?.to_string()),
             Self::Literal { .. } => None,
             Self::Table(_) => None,
             Self::Timeseries(_) => None,
@@ -204,7 +204,7 @@ impl Metric {
         let metric = self.load(network, args, parent)?;
 
         let ty = self.to_string();
-        let sub_type = self.sub_type(args)?;
+        let sub_type = self.sub_type(args, parent)?;
 
         Ok(UnresolvedOutputMetric::new(
             self.name()?.as_str(),
@@ -719,14 +719,22 @@ impl LocalParameterReference {
         };
         Ok(m)
     }
-    pub fn parameter_type(&self, args: &LoadArgs) -> Result<ParameterType, SchemaError> {
-        let parameter =
-            args.schema
-                .get_parameter_by_name(&self.name)
-                .ok_or_else(|| SchemaError::ParameterNotFound {
-                    name: self.name.clone(),
-                    key: self.key.clone(),
-                })?;
+    pub fn parameter_type(&self, args: &LoadArgs, parent: Option<&str>) -> Result<ParameterType, SchemaError> {
+        let parent = self.parent(parent)?;
+
+        let node = args
+            .schema
+            .get_node_by_name(parent)
+            .ok_or_else(|| SchemaError::NodeNotFound {
+                name: parent.to_string(),
+            })?;
+
+        let parameter = node
+            .get_local_parameter(&self.name)
+            .ok_or_else(|| SchemaError::ParameterNotFound {
+                name: self.name.clone(),
+                key: self.key.clone(),
+            })?;
 
         Ok(parameter.parameter_type())
     }
