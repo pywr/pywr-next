@@ -27,7 +27,7 @@ impl std::fmt::Display for DuplicateNodeName {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "`{}` ({} node(s), {} virtual node(s))",
+            "The name `{}` is used by {} node(s) and {} virtual node(s), but each name must be unique.",
             self.name, self.nodes, self.virtual_nodes
         )
     }
@@ -36,23 +36,27 @@ impl std::fmt::Display for DuplicateNodeName {
 /// The reason an [`Edge`] is invalid.
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
 pub enum EdgeProblem {
-    #[error("there is no node named `{0}`")]
-    UnknownNode(String),
-    #[error("a node cannot be connected to itself")]
+    /// The `from_node` is not an entry of `nodes`.
+    #[error("There is no node named `{0}` to connect from.")]
+    UnknownFromNode(String),
+    /// The `to_node` is not an entry of `nodes`.
+    #[error("There is no node named `{0}` to connect to.")]
+    UnknownToNode(String),
+    #[error("A node cannot be connected to itself.")]
     SelfEdge,
-    #[error("the `{node_type}` node has no output slot `{slot}`")]
+    #[error("The `{node_type}` node has no output slot `{slot}`.")]
     UnknownFromSlot { node_type: NodeType, slot: NodeSlot },
-    #[error("the `{node_type}` node has no input slot `{slot}`")]
+    #[error("The `{node_type}` node has no input slot `{slot}`.")]
     UnknownToSlot { node_type: NodeType, slot: NodeSlot },
-    #[error("the `{0}` node cannot receive flow")]
+    #[error("The `{0}` node cannot receive flow.")]
     NoInflow(NodeType),
-    #[error("the `{0}` node cannot provide flow")]
+    #[error("The `{0}` node cannot provide flow.")]
     NoOutflow(NodeType),
 }
 
 /// An edge that [`crate::NetworkSchema::validate`] rejected, and why.
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
-#[error("`{edge}` ({problem})")]
+#[error("The edge `{edge}` is invalid. {problem}")]
 pub struct EdgeValidationError {
     /// The invalid edge.
     pub edge: Edge,
@@ -60,15 +64,10 @@ pub struct EdgeValidationError {
     pub problem: EdgeProblem,
 }
 
-/// A problem found by [`crate::ModelSchema::validate`] or [`crate::NetworkSchema::validate`].
+/// A problem with a model that is not about any one of its networks, found by
+/// [`crate::model::TimeDomain::validate`].
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
-pub enum ValidationError {
-    /// One or more names are used by more than one node.
-    #[error(
-        "Node names must be unique. Each name may be used by only one entry of `nodes` or `virtual_nodes`. Duplicate name(s) found: {}",
-        .0.iter().map(|d| d.to_string()).collect::<Vec<_>>().join("; ")
-    )]
-    DuplicateNodeNames(Vec<DuplicateNodeName>),
+pub enum ModelProblem {
     /// The simulation period ends before it starts.
     #[error("The simulation period ends before it starts: `end` ({end}) precedes `start` ({start}).")]
     EndBeforeStart { start: DateTime, end: DateTime },
@@ -78,13 +77,112 @@ pub enum ValidationError {
     /// A timestep frequency string that parses, but is zero or negative.
     #[error("The timestep frequency `{freq}` is not a positive duration.")]
     NonPositiveFrequency { freq: String },
-    /// One or more edges could not connect the nodes they name.
-    #[error(
-        "Invalid edge(s) found: {}",
-        .0.iter().map(|e| e.to_string()).collect::<Vec<_>>().join("; ")
-    )]
-    Edges(Vec<EdgeValidationError>),
 }
+
+/// A problem with one network, found by [`crate::NetworkSchema::validate`].
+#[derive(Error, Debug, Clone, PartialEq, Eq)]
+pub enum NetworkProblem {
+    /// A name used by more than one entry of `nodes` or `virtual_nodes`.
+    #[error("{0}")]
+    DuplicateNodeName(DuplicateNodeName),
+    /// An edge that could not connect the nodes it names.
+    #[error("{0}")]
+    InvalidEdge(EdgeValidationError),
+}
+
+/// The most problems the message of a [`NetworkValidationError`] or a [`ValidationError`] lists.
+///
+/// The message counts the rest; the error itself always holds every problem.
+pub const MAX_PROBLEMS_IN_MESSAGE: usize = 10;
+
+/// Write a heading that counts the problems, then one line for each of the first
+/// [`MAX_PROBLEMS_IN_MESSAGE`], then a count of any left over.
+fn write_problems(
+    f: &mut std::fmt::Formatter<'_>,
+    subject: &str,
+    count: usize,
+    problems: impl Iterator<Item = String>,
+) -> std::fmt::Result {
+    write!(f, "{subject} has {count} problem(s):")?;
+
+    for problem in problems.take(MAX_PROBLEMS_IN_MESSAGE) {
+        write!(f, "\n- {problem}")?;
+    }
+
+    if count > MAX_PROBLEMS_IN_MESSAGE {
+        write!(f, "\n- ... and {} more.", count - MAX_PROBLEMS_IN_MESSAGE)?;
+    }
+
+    Ok(())
+}
+
+/// Every problem [`crate::NetworkSchema::validate`] found with one network.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NetworkValidationError {
+    /// The network's name in a [`crate::MultiNetworkModelSchema`]. `None` for a network validated
+    /// on its own, or as part of a [`crate::ModelSchema`].
+    pub name: Option<String>,
+    /// Never empty. Duplicate names first, sorted by name, then invalid edges in the order listed.
+    pub problems: Vec<NetworkProblem>,
+}
+
+impl std::fmt::Display for NetworkValidationError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let subject = match &self.name {
+            Some(name) => format!("The network `{name}`"),
+            None => "The network".to_string(),
+        };
+
+        write_problems(
+            f,
+            &subject,
+            self.problems.len(),
+            self.problems.iter().map(ToString::to_string),
+        )
+    }
+}
+
+impl std::error::Error for NetworkValidationError {}
+
+/// Every problem [`crate::ModelSchema::validate`] or [`crate::MultiNetworkModelSchema::validate`]
+/// found, with the model's own problems kept apart from those of its networks.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ValidationError {
+    /// The problems that are not about any one network.
+    pub model: Vec<ModelProblem>,
+    /// The networks that have problems.
+    pub networks: Vec<NetworkValidationError>,
+}
+
+impl ValidationError {
+    /// `Ok` if no problems were found, or `Err` with them all.
+    pub(crate) fn into_result(self) -> Result<(), Self> {
+        if self.model.is_empty() && self.networks.is_empty() {
+            Ok(())
+        } else {
+            Err(self)
+        }
+    }
+}
+
+impl std::fmt::Display for ValidationError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let count = self.model.len() + self.networks.iter().map(|n| n.problems.len()).sum::<usize>();
+
+        let model = self.model.iter().map(ToString::to_string);
+
+        let networks = self.networks.iter().flat_map(|network| {
+            network.problems.iter().map(move |problem| match &network.name {
+                Some(name) => format!("Network `{name}`: {problem}"),
+                None => problem.to_string(),
+            })
+        });
+
+        write_problems(f, "The model", count, model.chain(networks))
+    }
+}
+
+impl std::error::Error for ValidationError {}
 
 #[derive(Error, Debug)]
 pub enum SchemaError {

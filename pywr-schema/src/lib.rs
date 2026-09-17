@@ -24,8 +24,8 @@ mod visit;
 
 pub use digest::{Checksum, ChecksumError};
 pub use error::{
-    ComponentConversionError, ConversionError, DuplicateNodeName, EdgeProblem, EdgeValidationError, SchemaError,
-    ValidationError,
+    ComponentConversionError, ConversionError, DuplicateNodeName, EdgeProblem, EdgeValidationError,
+    MAX_PROBLEMS_IN_MESSAGE, ModelProblem, NetworkProblem, NetworkValidationError, SchemaError, ValidationError,
 };
 pub use model::{ModelSchema, ModelSchemaReadError, MultiNetworkModelSchema};
 #[cfg(feature = "core")]
