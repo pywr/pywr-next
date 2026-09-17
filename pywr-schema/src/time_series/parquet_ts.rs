@@ -4,9 +4,9 @@ use pywr_schema_macros::skip_serializing_none;
 use schemars::JsonSchema;
 use std::path::{Path, PathBuf};
 
-/// A dataset that can be loaded using Apache Arrow.
+/// A dataset that can be loaded using Apache Parquet.
 ///
-/// This dataset is loaded using Apache Arrow. This is done using the Rust Arrow library to load
+/// This dataset is loaded using Apache Parquet. This is done using the Rust Parquet library to load
 /// the dataset.
 #[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]

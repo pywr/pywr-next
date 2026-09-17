@@ -64,7 +64,6 @@ ocl = "0.19"
 parquet = { version = "59.3", features = ["arrow"] }
 pyo3 = { version = "0.29" }
 pyo3-log = "0.13"
-pyo3-polars = { version = "0.28", default-features = false }
 pywr-v1-schema = "0.24"
 quote = "1.0"
 rand = "0.10"

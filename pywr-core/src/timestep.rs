@@ -5,10 +5,6 @@ use std::ops::Add;
 use thiserror::Error;
 
 const SECS_IN_DAY: i64 = 60 * 60 * 24;
-const MILLISECS_IN_DAY: i64 = 1000 * SECS_IN_DAY;
-const MILLISECS_IN_HOUR: i64 = 1000 * 60 * 60;
-const MILLISECS_IN_MINUTE: i64 = 1000 * 60;
-const MILLISECS_IN_SECOND: i64 = 1000;
 
 /// A new type for `jiff::SignedDuration` that provides a couple of useful convenience methods.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -38,8 +34,8 @@ impl PywrDuration {
         Self(SignedDuration::from_hours(hours))
     }
 
-    pub fn from_minutes(hours: i64) -> Self {
-        Self(SignedDuration::from_mins(hours))
+    pub fn from_minutes(minutes: i64) -> Self {
+        Self(SignedDuration::from_mins(minutes))
     }
 
     pub fn from_seconds(seconds: i64) -> Self {
@@ -64,34 +60,6 @@ impl PywrDuration {
     /// Returns the number of milliseconds in the duration.
     pub fn milliseconds(&self) -> i64 {
         self.0.as_millis() as i64
-    }
-
-    /// Convert the duration to a string representation that can be parsed by polars
-    /// see: <https://docs.rs/polars/latest/polars/prelude/struct.Duration.html#method.parse>
-    pub fn duration_string(&self) -> String {
-        let milliseconds = self.milliseconds();
-        let mut duration = String::new();
-        let days = milliseconds / MILLISECS_IN_DAY;
-        if days > 0 {
-            duration.push_str(&format!("{days}d",));
-        }
-        let hours = (milliseconds % MILLISECS_IN_DAY) / MILLISECS_IN_HOUR;
-        if hours > 0 {
-            duration.push_str(&format!("{hours}h",));
-        }
-        let minutes = (milliseconds % MILLISECS_IN_HOUR) / MILLISECS_IN_MINUTE;
-        if minutes > 0 {
-            duration.push_str(&format!("{minutes}m",));
-        }
-        let seconds = (milliseconds % MILLISECS_IN_MINUTE) / MILLISECS_IN_SECOND;
-        if seconds > 0 {
-            duration.push_str(&format!("{seconds}s",));
-        }
-        let milliseconds = milliseconds % MILLISECS_IN_SECOND;
-        if milliseconds > 0 {
-            duration.push_str(&format!("{milliseconds}ms",));
-        }
-        duration
     }
 }
 
@@ -406,28 +374,23 @@ mod test {
         let duration = PywrDuration::from_days(5);
         assert_eq!(duration.whole_days(), Some(5));
         assert_eq!(duration.fractional_days(), 5.0);
-        assert_eq!(duration.duration_string(), String::from("5d"));
 
         let duration = PywrDuration::from_hours(12);
         assert_eq!(duration.whole_days(), None);
         assert_eq!(duration.fractional_days(), 0.5);
-        assert_eq!(duration.duration_string(), String::from("12h"));
 
         let duration = PywrDuration::from_minutes(30);
         assert_eq!(duration.whole_days(), None);
         assert_eq!(duration.fractional_days(), 1.0 / 48.0);
-        assert_eq!(duration.duration_string(), String::from("30m"));
 
         let duration_secs = SECS_IN_DAY + 1;
         let duration = PywrDuration::from_seconds(duration_secs);
         assert_eq!(duration.whole_days(), None);
         assert_eq!(duration.fractional_days(), duration_secs as f64 / SECS_IN_DAY as f64);
-        assert_eq!(duration.duration_string(), String::from("1d1s"));
 
         let duration_secs = SECS_IN_DAY - 1;
         let duration = PywrDuration::from_seconds(duration_secs);
         assert_eq!(duration.whole_days(), None);
         assert_eq!(duration.fractional_days(), duration_secs as f64 / SECS_IN_DAY as f64);
-        assert_eq!(duration.duration_string(), String::from("23h59m59s"));
     }
 }

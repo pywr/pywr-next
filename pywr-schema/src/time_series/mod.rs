@@ -269,7 +269,7 @@ pub enum LoadedTimeSeriesCollectionError {
         "No time column explicitly specified for time series input '{name}' and no temporal column could be inferred."
     )]
     TimeColumnCouldNotBeInferred { name: String },
-    #[error("Failed to load time series dataframe from path '{name}': {source}")]
+    #[error("Failed to load time series '{name}': {source}")]
     TimeSeriesError { name: String, source: TimeSeriesError },
     #[error("A time series with name '{0}' already exists.")]
     DuplicateTimeSeriesName(String),
@@ -279,7 +279,7 @@ pub enum LoadedTimeSeriesCollectionError {
         "The time series dataset '{0}' has more than one column of data so a column or scenario name must be provided for any reference"
     )]
     TimeSeriesColumnOrScenarioRequired(String),
-    #[error("The time series dataset is empty and has no columns of data.")]
+    #[error("The time series dataset `{0}` is empty and has no columns of data.")]
     TimeSeriesHasNoColumns(String),
 }
 
@@ -615,30 +615,19 @@ impl TryFromV1<DataFrameParameterV1> for ConvertedTimeSeriesReference {
 
         if let Some(url) = v1.url {
             // If there is a URL then this entry must be converted into a time series
-            let mut pandas_kwargs = v1.pandas_kwargs;
-
-            let time_col = match pandas_kwargs.remove("index_col") {
-                Some(v) => v.as_str().map(|s| s.to_string()),
-                None => None,
-            };
-            // remove the parse_dates for CSV files as this is already passed to read_csv in
-            // pandas_load.py. This prevents from raising a multiple keyword error.
-            if let Some(ext) = url.extension() {
-                if ext == "csv" && pandas_kwargs.contains_key("parse_dates") {
-                    pandas_kwargs.remove("parse_dates");
-                }
-            }
 
             let checksum = match v1.checksum {
                 Some(c) => Checksum::try_from_v1(c, parent_node, conversion_data).ok(),
                 None => None,
             };
 
+            // This conversion relies on the pandas loading function creating a datetime index
+            // which ends up as the first column. This was largely the requirement in v1
             let time_series = PandasTimeSeries {
                 meta: meta.clone(),
-                time_col,
+                time_col: None,
                 path: url,
-                kwargs: Some(pandas_kwargs),
+                kwargs: Some(v1.pandas_kwargs),
                 checksum,
             };
 

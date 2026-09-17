@@ -6,7 +6,7 @@ use crate::parameters::{
 };
 use crate::timestep::{TimeDomain, Timestep, TimestepIndex};
 use arrow::array::{Array, ArrayRef, ArrowPrimitiveType, AsArray, PrimitiveArray};
-use arrow::compute::cast;
+use arrow::compute::{CastOptions, cast_with_options};
 use arrow::datatypes::{DataType, Float64Type, TimeUnit, TimestampMillisecondType, UInt64Type};
 use arrow::temporal_conversions::timestamp_ms_to_datetime;
 use chrono::{Datelike, Timelike};
@@ -82,9 +82,9 @@ impl SimpleParameter<u64> for Array1Parameter<UInt64Type> {
     }
 }
 
-/// Builder for `Float64ArrayParameter` or `UInt64ArrayParameter`.
+/// Builder for `Array1Parameter<T>` parameters
 ///
-/// This builder allows for the construction of a `Float64ArrayParameter` with optional
+/// This builder allows for the construction of a `Array1Parameter<T>` with optional
 /// time-step offset and time array. If a time array is provided, it should correspond to the
 /// time-steps in the array. This array will be used to align the parameter values with the
 /// model's time-steps.
@@ -140,12 +140,18 @@ impl ParameterBuilder<f64> for Array1ParameterBuilder {
         self: Box<Self>,
         resolution_maps: &ResolutionMaps,
     ) -> Result<MaybeBuiltParameter<f64>, ParameterBuildError> {
-        let mut array =
-            cast(&self.array, &DataType::Float64).map_err(|source| ParameterBuildError::ArrayCastError {
+        let options = CastOptions {
+            safe: false, // Error if the cast is not safe (e.g., truncation, overflow).
+            format_options: Default::default(),
+        };
+
+        let mut array = cast_with_options(&self.array, &DataType::Float64, &options).map_err(|source| {
+            ParameterBuildError::ArrayCastError {
                 from: self.array.data_type().clone(),
                 to: DataType::Float64,
                 source,
-            })?;
+            }
+        })?;
 
         if let Some(time_array) = &self.time_array {
             // Convert to DateTime array and align with the time-steps in the model.
@@ -173,10 +179,17 @@ impl ParameterBuilder<u64> for Array1ParameterBuilder {
         self: Box<Self>,
         resolution_maps: &ResolutionMaps,
     ) -> Result<MaybeBuiltParameter<u64>, ParameterBuildError> {
-        let mut array = cast(&self.array, &DataType::UInt64).map_err(|source| ParameterBuildError::ArrayCastError {
-            from: self.array.data_type().clone(),
-            to: DataType::UInt64,
-            source,
+        let options = CastOptions {
+            safe: false, // Error if the cast is not safe (e.g., truncation, overflow).
+            format_options: Default::default(),
+        };
+
+        let mut array = cast_with_options(&self.array, &DataType::UInt64, &options).map_err(|source| {
+            ParameterBuildError::ArrayCastError {
+                from: self.array.data_type().clone(),
+                to: DataType::UInt64,
+                source,
+            }
         })?;
 
         if let Some(time_array) = &self.time_array {
@@ -344,18 +357,18 @@ impl ParameterBuilder<f64> for Array2ParameterBuilder {
             .scenarios()
             .group_scenario_subset(&self.scenario_group)?
         {
-            array = array
-                .into_iter()
-                .enumerate()
-                .filter_map(|(i, a)| subset.contains(&i).then_some(a))
-                .collect();
+            array = subset.iter().filter_map(|&index| array.get(index).cloned()).collect();
         }
 
         // Now we need to cast each array in the vector to Float64Array
+        let options = CastOptions {
+            safe: false, // Error if the cast is not safe (e.g., truncation, overflow).
+            format_options: Default::default(),
+        };
         let f64_array = array
             .into_iter()
             .map(|a| {
-                cast(&a, &DataType::Float64)
+                cast_with_options(&a, &DataType::Float64, &options)
                     .map_err(|source| ParameterBuildError::ArrayCastError {
                         from: a.data_type().clone(),
                         to: DataType::Float64,
@@ -400,18 +413,18 @@ impl ParameterBuilder<u64> for Array2ParameterBuilder {
             .scenarios()
             .group_scenario_subset(&self.scenario_group)?
         {
-            array = array
-                .into_iter()
-                .enumerate()
-                .filter_map(|(i, a)| subset.contains(&i).then_some(a))
-                .collect();
+            array = subset.iter().filter_map(|&index| array.get(index).cloned()).collect();
         }
 
-        // Now we need to cast each array in the vector to Float64Array
+        // Now we need to cast each array in the vector to UInt64Array
+        let options = CastOptions {
+            safe: false, // Error if the cast is not safe (e.g., truncation, overflow).
+            format_options: Default::default(),
+        };
         let u64_array = array
             .into_iter()
             .map(|a| {
-                cast(&a, &DataType::UInt64)
+                cast_with_options(&a, &DataType::UInt64, &options)
                     .map_err(|source| ParameterBuildError::ArrayCastError {
                         from: a.data_type().clone(),
                         to: DataType::UInt64,
@@ -433,14 +446,17 @@ impl ParameterBuilder<u64> for Array2ParameterBuilder {
 
 fn array_to_datetime(array: &ArrayRef) -> Result<Vec<DateTime>, ParameterBuildError> {
     // Convert the array to millisecond timestamps since the Unix epoch.
-    let timestamp_array = cast(array, &DataType::Timestamp(TimeUnit::Millisecond, None)).map_err(|source| {
-        ParameterBuildError::DateParseError {
+    let options = CastOptions {
+        safe: false, // Error if the cast is not safe (e.g., truncation, overflow).
+        format_options: Default::default(),
+    };
+    let timestamp_array = cast_with_options(array, &DataType::Timestamp(TimeUnit::Millisecond, None), &options)
+        .map_err(|source| ParameterBuildError::DateParseError {
             message: format!(
                 "Failed to cast array to Timestamp. Is the array of the correct type? {}",
                 source
             ),
-        }
-    })?;
+        })?;
 
     // SAFETY: We just cast the array to millisecond timestamps, so this is a TimestampMillisecondArray.
     let timestamp_array_ref = timestamp_array.as_primitive::<TimestampMillisecondType>();
@@ -557,10 +573,12 @@ fn subslice_datas_for_time_domain(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::models::ModelDomainBuilder;
+    use crate::scenario::{ScenarioDomainBuilder, ScenarioGroupBuilder};
     use crate::state::StateBuilder;
     use crate::test_utils::default_domain;
     use crate::timestep::{TimeDomainBuilder, TimestepDuration};
-    use arrow::array::{Date32Array, Float64Array, TimestampMillisecondArray};
+    use arrow::array::{Date32Array, Float64Array, TimestampMillisecondArray, UInt64Array};
     use float_cmp::assert_approx_eq;
     use jiff::civil::date;
     use std::num::NonZeroU64;
@@ -689,6 +707,106 @@ mod tests {
                 // Parameter should return the last value in the array if the time-step index exceeds the array length.
                 assert_approx_eq!(f64, p.compute(ctx, &mut state).unwrap(), ts.index.min(5) as f64);
             }
+        }
+    }
+
+    #[test]
+    fn test_array2_parameter_builder_subsets_scenario_data_for_slice() {
+        let scenarios = ScenarioDomainBuilder::default()
+            .with_group(
+                ScenarioGroupBuilder::new("array-scenarios", 5)
+                    .with_subset_slice(1, 4)
+                    .build()
+                    .unwrap(),
+            )
+            .unwrap();
+        let mut domain_builder = ModelDomainBuilder::new(TimeDomainBuilder::new(
+            date(1970, 1, 1).at(0, 0, 0, 0),
+            date(1970, 1, 2).at(0, 0, 0, 0),
+            TimestepDuration::Days(NonZeroU64::new(1).unwrap()),
+        ));
+        domain_builder.scenario(scenarios);
+        let resolution_maps = ResolutionMaps::new(domain_builder.build().unwrap());
+
+        let data = (0..5)
+            .map(|scenario| Float64Array::from(vec![scenario as f64 * 10.0, scenario as f64 * 10.0 + 1.0]))
+            .collect::<Vec<_>>();
+        let builder = Array2ParameterBuilder::from_primitive_arrays("array2".into(), &data, "array-scenarios");
+        let built: MaybeBuiltParameter<f64> = Box::new(builder).build(&resolution_maps).unwrap();
+        let MaybeBuiltParameter::Built(BuiltParameter::Simple(parameter)) = built else {
+            panic!("expected a built simple parameter");
+        };
+
+        let values = StateBuilder::new(Vec::new(), 0).build();
+        for scenario_index in resolution_maps.domain.scenarios().indices() {
+            let source_scenario = scenario_index.schema_index_for_group(0);
+            let mut state = parameter
+                .setup(resolution_maps.domain.time().timesteps(), scenario_index)
+                .unwrap();
+            for timestep in resolution_maps.domain.time().timesteps() {
+                let result = parameter
+                    .compute(
+                        SimpleParameterContext {
+                            timestep,
+                            scenario_index,
+                            values: &values.get_simple_parameter_values(),
+                        },
+                        &mut state,
+                    )
+                    .unwrap();
+                assert_eq!(result, source_scenario as f64 * 10.0 + timestep.index as f64);
+            }
+        }
+    }
+
+    #[test]
+    fn test_array2_parameter_builder_preserves_out_of_order_subset_in_second_scenario_group() {
+        let scenarios = ScenarioDomainBuilder::default()
+            .with_group(ScenarioGroupBuilder::new("other-scenarios", 2).build().unwrap())
+            .unwrap()
+            .with_group(
+                ScenarioGroupBuilder::new("array-scenarios", 4)
+                    .with_subset_indices(vec![3, 1])
+                    .build()
+                    .unwrap(),
+            )
+            .unwrap();
+        let mut domain_builder = ModelDomainBuilder::new(TimeDomainBuilder::new(
+            date(1970, 1, 1).at(0, 0, 0, 0),
+            date(1970, 1, 1).at(0, 0, 0, 0),
+            TimestepDuration::Days(NonZeroU64::new(1).unwrap()),
+        ));
+        domain_builder.scenario(scenarios);
+        let resolution_maps = ResolutionMaps::new(domain_builder.build().unwrap());
+
+        let data = (0..4)
+            .map(|scenario| UInt64Array::from(vec![100 + scenario as u64]))
+            .collect::<Vec<_>>();
+        let builder = Array2ParameterBuilder::from_primitive_arrays("array2".into(), &data, "array-scenarios");
+        let built: MaybeBuiltParameter<u64> = Box::new(builder).build(&resolution_maps).unwrap();
+        let MaybeBuiltParameter::Built(BuiltParameter::Simple(parameter)) = built else {
+            panic!("expected a built simple parameter");
+        };
+
+        let values = StateBuilder::new(Vec::new(), 0).build();
+        for scenario_index in resolution_maps.domain.scenarios().indices() {
+            let source_scenario = scenario_index.schema_index_for_group(1);
+
+            let mut state = parameter
+                .setup(resolution_maps.domain.time().timesteps(), scenario_index)
+                .unwrap();
+            let result = parameter
+                .compute(
+                    SimpleParameterContext {
+                        timestep: resolution_maps.domain.time().first_timestep(),
+                        scenario_index,
+                        values: &values.get_simple_parameter_values(),
+                    },
+                    &mut state,
+                )
+                .unwrap();
+
+            assert_eq!(result, 100 + source_scenario as u64);
         }
     }
 

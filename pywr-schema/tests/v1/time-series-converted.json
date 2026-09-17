@@ -133,7 +133,9 @@
         "type": "Pandas",
         "path": "inflow.csv",
         "kwargs": {
-          "dayfirst": true
+          "dayfirst": true,
+          "index_col": 0,
+          "parse_dates": true
         }
       }
     ]

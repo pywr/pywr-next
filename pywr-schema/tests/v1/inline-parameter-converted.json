@@ -134,7 +134,9 @@
           "name": "demand1-p2"
         },
         "kwargs": {
-          "dayfirst": true
+          "dayfirst": true,
+          "index_col": 0,
+          "parse_dates": true
         },
         "type": "Pandas",
         "path": "time-series1.csv"
@@ -144,7 +146,9 @@
           "name": "demand1-p4"
         },
         "kwargs": {
-          "dayfirst": true
+          "dayfirst": true,
+          "index_col": 0,
+          "parse_dates": true
         },
         "type": "Pandas",
         "path": "time-series2.csv"

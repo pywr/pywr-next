@@ -42,7 +42,6 @@ pub fn load_record_batch_from_py_callback(
                 .ok_or_else(|| PyErr::new::<pyo3::exceptions::PyValueError, _>("Invalid path"))?
                 .into_pyobject(py)?
                 .into_any(),
-            time_column.into_pyobject(py)?.into_any(),
         ];
 
         if let Some(args) = args {

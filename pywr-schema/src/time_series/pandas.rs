@@ -52,7 +52,6 @@ mod core {
     use super::PandasTimeSeries;
     use crate::time_series::load_py::{LoadModule, load_record_batch_from_py_callback};
     use crate::time_series::{LoadedTimeSeries, TimeSeriesError};
-    use std::collections::HashMap;
     use std::path::Path;
 
     impl PandasTimeSeries {
@@ -70,7 +69,7 @@ mod core {
                 checksum.check(&fp)?;
             }
 
-            let kwargs = self.make_kwargs();
+            let kwargs = self.kwargs.clone().unwrap_or_default();
 
             let lt = load_record_batch_from_py_callback(
                 LoadModule::Builtin,
@@ -82,17 +81,6 @@ mod core {
             )?;
 
             Ok(lt)
-        }
-
-        /// Make a copy of the kwargs and add the default value for try_parse_dates if not already present.
-        fn make_kwargs(&self) -> HashMap<String, serde_json::Value> {
-            let mut kwargs = self.kwargs.clone().unwrap_or_default();
-
-            if !kwargs.contains_key("parse_dates") {
-                kwargs.insert("parse_dates".to_string(), serde_json::Value::Bool(true));
-            }
-
-            kwargs
         }
     }
 }
