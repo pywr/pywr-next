@@ -42,8 +42,8 @@ pub enum EdgeProblem {
     /// The `to_node` is not an entry of `nodes`.
     #[error("There is no node named `{0}` to connect to.")]
     UnknownToNode(String),
-    #[error("A node cannot be connected to itself.")]
-    SelfEdge,
+    #[error("The `{0}` node cannot be connected to itself.")]
+    SelfEdge(String),
     #[error("The `{node_type}` node has no output slot `{slot}`.")]
     UnknownFromSlot { node_type: NodeType, slot: NodeSlot },
     #[error("The `{node_type}` node has no input slot `{slot}`.")]
@@ -90,27 +90,10 @@ pub enum NetworkProblem {
     InvalidEdge(EdgeValidationError),
 }
 
-/// The most problems the message of a [`NetworkValidationError`] or a [`ValidationError`] lists.
-///
-/// The message counts the rest; the error itself always holds every problem.
-pub const MAX_PROBLEMS_IN_MESSAGE: usize = 10;
-
-/// Write a heading that counts the problems, then one line for each of the first
-/// [`MAX_PROBLEMS_IN_MESSAGE`], then a count of any left over.
-fn write_problems(
-    f: &mut std::fmt::Formatter<'_>,
-    subject: &str,
-    count: usize,
-    problems: impl Iterator<Item = String>,
-) -> std::fmt::Result {
-    write!(f, "{subject} has {count} problem(s):")?;
-
-    for problem in problems.take(MAX_PROBLEMS_IN_MESSAGE) {
+/// Write one bullet per problem, each on its own line, under a summary written by the caller.
+fn write_problem_lines(f: &mut std::fmt::Formatter<'_>, problems: impl Iterator<Item = String>) -> std::fmt::Result {
+    for problem in problems {
         write!(f, "\n- {problem}")?;
-    }
-
-    if count > MAX_PROBLEMS_IN_MESSAGE {
-        write!(f, "\n- ... and {} more.", count - MAX_PROBLEMS_IN_MESSAGE)?;
     }
 
     Ok(())
@@ -126,19 +109,41 @@ pub struct NetworkValidationError {
     pub problems: Vec<NetworkProblem>,
 }
 
+impl NetworkValidationError {
+    /// A multi-line report: the summary, then one line for each problem.
+    ///
+    /// [`Display`](std::fmt::Display) writes the summary alone, so that this error reads well
+    /// inside a caller's own message. Use the report where every problem should be shown, such as
+    /// when printing to a terminal.
+    pub fn report(&self) -> impl std::fmt::Display {
+        struct Report<'a>(&'a NetworkValidationError);
+
+        impl std::fmt::Display for Report<'_> {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                self.0.write_summary(f)?;
+                write!(f, ":")?;
+                write_problem_lines(f, self.0.problems.iter().map(ToString::to_string))
+            }
+        }
+
+        Report(self)
+    }
+
+    /// Write the summary, without the punctuation that ends it.
+    fn write_summary(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self.name {
+            Some(name) => write!(f, "The network `{name}`")?,
+            None => write!(f, "The network")?,
+        }
+
+        write!(f, " has {} problem(s)", self.problems.len())
+    }
+}
+
 impl std::fmt::Display for NetworkValidationError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let subject = match &self.name {
-            Some(name) => format!("The network `{name}`"),
-            None => "The network".to_string(),
-        };
-
-        write_problems(
-            f,
-            &subject,
-            self.problems.len(),
-            self.problems.iter().map(ToString::to_string),
-        )
+        self.write_summary(f)?;
+        write!(f, ".")
     }
 }
 
@@ -163,22 +168,45 @@ impl ValidationError {
             Err(self)
         }
     }
+
+    /// As [`NetworkValidationError::report`], with each network's problems listed under the
+    /// model's, and named with the network unless it is the model's only one.
+    pub fn report(&self) -> impl std::fmt::Display {
+        struct Report<'a>(&'a ValidationError);
+
+        impl std::fmt::Display for Report<'_> {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                self.0.write_summary(f)?;
+                write!(f, ":")?;
+
+                let model = self.0.model.iter().map(ToString::to_string);
+
+                let networks = self.0.networks.iter().flat_map(|network| {
+                    network.problems.iter().map(move |problem| match &network.name {
+                        Some(name) => format!("Network `{name}`: {problem}"),
+                        None => problem.to_string(),
+                    })
+                });
+
+                write_problem_lines(f, model.chain(networks))
+            }
+        }
+
+        Report(self)
+    }
+
+    /// Write the summary, without the punctuation that ends it.
+    fn write_summary(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let count = self.model.len() + self.networks.iter().map(|n| n.problems.len()).sum::<usize>();
+
+        write!(f, "The model has {count} problem(s)")
+    }
 }
 
 impl std::fmt::Display for ValidationError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let count = self.model.len() + self.networks.iter().map(|n| n.problems.len()).sum::<usize>();
-
-        let model = self.model.iter().map(ToString::to_string);
-
-        let networks = self.networks.iter().flat_map(|network| {
-            network.problems.iter().map(move |problem| match &network.name {
-                Some(name) => format!("Network `{name}`: {problem}"),
-                None => problem.to_string(),
-            })
-        });
-
-        write_problems(f, "The model", count, model.chain(networks))
+        self.write_summary(f)?;
+        write!(f, ".")
     }
 }
 

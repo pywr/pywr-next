@@ -1129,11 +1129,14 @@ mod tests {
             [NetworkProblem::InvalidEdge(e)] if e.problem == EdgeProblem::UnknownToNode("missing".to_string())
         ));
 
+        // The summary counts the model's own problems together with its networks'.
+        assert_eq!(error.to_string(), "The model has 2 problem(s).");
+
         // A single network needs no name, so its problems are listed without one.
-        let message = error.to_string();
-        assert!(message.starts_with("The model has 2 problem(s):\n- The simulation period ends before it starts"));
+        let report = error.report().to_string();
+        assert!(report.starts_with("The model has 2 problem(s):\n- The simulation period ends before it starts"));
         assert!(
-            message
+            report
                 .ends_with("\n- The edge `link1->missing` is invalid. There is no node named `missing` to connect to.")
         );
     }
@@ -1187,7 +1190,7 @@ mod tests {
         ));
 
         assert_eq!(
-            error.to_string(),
+            error.report().to_string(),
             "The model has 2 problem(s):\n\
              - Network `north`: The name `supply` is used by 2 node(s) and 0 virtual node(s), but each name must be unique.\n\
              - Network `north`: The edge `demand->supply` is invalid. The `Output` node cannot provide flow."

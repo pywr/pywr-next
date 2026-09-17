@@ -726,7 +726,7 @@ impl NetworkSchema {
             .ok_or_else(|| EdgeProblem::UnknownToNode(edge.to_node.clone()))?;
 
         if edge.from_node == edge.to_node {
-            return Err(EdgeProblem::SelfEdge);
+            return Err(EdgeProblem::SelfEdge(edge.from_node.clone()));
         }
 
         if let Some(slot) = &edge.from_slot {
@@ -1247,7 +1247,7 @@ mod tests {
                         slot: NodeSlot::Spill,
                     }
                 ),
-                ("link->link".to_string(), EdgeProblem::SelfEdge),
+                ("link->link".to_string(), EdgeProblem::SelfEdge("link".to_string())),
                 (
                     "link->demand[Storage]".to_string(),
                     EdgeProblem::UnknownToSlot {
@@ -1323,7 +1323,10 @@ mod tests {
 
         assert_eq!(
             expect_invalid_edges(&network),
-            vec![("reservoir[Spill]->reservoir".to_string(), EdgeProblem::SelfEdge)]
+            vec![(
+                "reservoir[Spill]->reservoir".to_string(),
+                EdgeProblem::SelfEdge("reservoir".to_string())
+            )]
         );
     }
 
@@ -1406,21 +1409,19 @@ mod tests {
         );
 
         assert_eq!(
-            network.validate().unwrap_err().to_string(),
+            network.validate().unwrap_err().report().to_string(),
             "The network has 2 problem(s):\n\
              - The name `link` is used by 2 node(s) and 0 virtual node(s), but each name must be unique.\n\
              - The edge `link->missing` is invalid. There is no node named `missing` to connect to."
         );
     }
 
-    /// The message lists at most [`crate::error::MAX_PROBLEMS_IN_MESSAGE`] problems and counts
-    /// the rest, while the error itself keeps them all.
+    /// However many problems there are, `Display` stays a single line, while the report lists
+    /// every one of them.
     #[test]
-    fn test_validate_message_is_capped() {
-        use crate::error::MAX_PROBLEMS_IN_MESSAGE;
-
-        let extra = 3;
-        let edges = (0..MAX_PROBLEMS_IN_MESSAGE + extra)
+    fn test_validate_display_summarises_and_report_lists_every_problem() {
+        let count = 13;
+        let edges = (0..count)
             .map(|i| format!(r#"{{ "from_node": "link", "to_node": "missing-{i:02}" }}"#))
             .collect::<Vec<_>>()
             .join(", ");
@@ -1430,16 +1431,16 @@ mod tests {
         ));
 
         let error = network.validate().unwrap_err();
-        assert_eq!(error.problems.len(), MAX_PROBLEMS_IN_MESSAGE + extra);
 
-        let message = error.to_string();
-        let lines: Vec<&str> = message.lines().collect();
+        assert_eq!(error.to_string(), "The network has 13 problem(s).");
 
-        // The heading, the listed problems, and the line counting the rest.
-        assert_eq!(lines.len(), 1 + MAX_PROBLEMS_IN_MESSAGE + 1);
+        // The summary, then one line per problem, down to the last edge listed.
+        let report = error.report().to_string();
+        let lines: Vec<&str> = report.lines().collect();
+
+        assert_eq!(lines.len(), 1 + count);
         assert_eq!(lines[0], "The network has 13 problem(s):");
-        assert!(lines[MAX_PROBLEMS_IN_MESSAGE].contains("`missing-09`"));
-        assert_eq!(lines[MAX_PROBLEMS_IN_MESSAGE + 1], "- ... and 3 more.");
+        assert!(lines[count].contains("`missing-12`"));
     }
 
     #[test]
