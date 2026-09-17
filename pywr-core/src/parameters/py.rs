@@ -699,7 +699,13 @@ impl ParameterBuilder<u64> for PyClassParameterBuilder {
 
         let entry = match phase {
             MetricConsumerPhase::Both => GeneralParameterEntry::both(p),
-            MetricConsumerPhase::Before => GeneralParameterEntry::before(p),
+            MetricConsumerPhase::Before => {
+                if let Some(AfterMethodType::AfterHook) = after_type {
+                    GeneralParameterEntry::before_with_after_hook(p)
+                } else {
+                    GeneralParameterEntry::before(p)
+                }
+            }
             MetricConsumerPhase::After => GeneralParameterEntry::after(p),
         };
 
@@ -736,7 +742,13 @@ impl ParameterBuilder<MultiValue> for PyClassParameterBuilder {
 
         let entry = match phase {
             MetricConsumerPhase::Both => GeneralParameterEntry::both(p),
-            MetricConsumerPhase::Before => GeneralParameterEntry::before(p),
+            MetricConsumerPhase::Before => {
+                if let Some(AfterMethodType::AfterHook) = after_type {
+                    GeneralParameterEntry::before_with_after_hook(p)
+                } else {
+                    GeneralParameterEntry::before(p)
+                }
+            }
             MetricConsumerPhase::After => GeneralParameterEntry::after(p),
         };
 
