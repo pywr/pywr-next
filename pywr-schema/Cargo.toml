@@ -22,6 +22,7 @@ cbc = ["pywr-core/cbc"]
 highs = ["pywr-core/highs"]
 ipm-ocl = ["pywr-core/ipm-ocl"]
 ipm-simd = ["pywr-core/ipm-simd"]
+microlp = ["pywr-core/microlp"]
 test-python = []
 pyo3 = ["dep:pyo3", "pywr-core/pyo3", "dep:pyo3-polars"]
 

@@ -1,6 +1,7 @@
 #[cfg(feature = "core")]
 use crate::SchemaError;
 use crate::agg_funcs::AggFunc;
+use crate::visit::{Reference, ReferenceMut, VisitReferences};
 #[cfg(feature = "core")]
 use pywr_core::recorders::MemoryRecorderBuilder;
 use pywr_schema_macros::{PywrVisitPaths, skip_serializing_none};
@@ -51,6 +52,17 @@ pub struct MemoryOutput {
     pub metric_set: String,
     pub aggregation: Option<MemoryAggregation>,
     pub order: Option<MemoryAggregationOrder>,
+}
+
+/// Written out rather than derived: a derive would walk `metric_set` as a plain `String`.
+impl VisitReferences for MemoryOutput {
+    fn visit_references<F: FnMut(Reference<'_>)>(&self, visitor: &mut F) {
+        visitor(Reference::MetricSet(&self.metric_set));
+    }
+
+    fn visit_references_mut<F: FnMut(ReferenceMut<'_>)>(&mut self, visitor: &mut F) {
+        visitor(ReferenceMut::MetricSet(&mut self.metric_set));
+    }
 }
 
 #[cfg(feature = "core")]
