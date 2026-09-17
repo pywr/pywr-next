@@ -590,6 +590,43 @@ enum AfterMethodType {
     AfterHook,
 }
 
+fn determine_phase(class: &Py<PyAny>) -> Result<(MetricConsumerPhase, Option<AfterMethodType>), ParameterBuildError> {
+    let (has_before, after_type) = Python::attach(|py| {
+        let has_before = class.getattr(py, "before").is_ok();
+        let has_after = class.getattr(py, "after").is_ok();
+        let has_after_hook = class.getattr(py, "after_hook").is_ok();
+
+        let after_type = match (has_after, has_after_hook) {
+            (true, true) => {
+                return Err(ParameterBuildError::AmbiguousPhaseDefinition {
+                    detail: "PyClassParameterBuilder cannot have both `after` and `after_hook` methods defined.".into(),
+                });
+            }
+            (true, false) => Some(AfterMethodType::After),
+            (false, true) => Some(AfterMethodType::AfterHook),
+            (false, false) => None,
+        };
+
+        Ok((has_before, after_type))
+    })?;
+
+    let phase = match (has_before, after_type) {
+        (true, Some(AfterMethodType::After)) | (true, Some(AfterMethodType::AfterHook)) => {
+            Ok(MetricConsumerPhase::Both)
+        }
+        (true, None) => Ok(MetricConsumerPhase::Before),
+        (false, Some(AfterMethodType::After)) => Ok(MetricConsumerPhase::After),
+        (false, None) => Err(ParameterBuildError::NoCalculationPhase {
+            detail: "PyClassParameterBuilder must have at least one of `before` or `after` methods defined.".into(),
+        }),
+        (false, Some(AfterMethodType::AfterHook)) => Err(ParameterBuildError::NoCalculationPhase {
+            detail: "PyClassParameterBuilder must have `before` methods defined if `after_hook` is defined.".into(),
+        }),
+    }?;
+
+    Ok((phase, after_type))
+}
+
 impl ParameterBuilder<f64> for PyClassParameterBuilder {
     fn name(&self) -> &ParameterName {
         &self.common.meta.name
@@ -599,38 +636,7 @@ impl ParameterBuilder<f64> for PyClassParameterBuilder {
         self: Box<Self>,
         resolution_maps: &ResolutionMaps,
     ) -> Result<MaybeBuiltParameter<f64>, ParameterBuildError> {
-        let (has_before, after_type) = Python::attach(|py| {
-            let has_before = self.class.getattr(py, "before").is_ok();
-            let has_after = self.class.getattr(py, "after").is_ok();
-            let has_after_hook = self.class.getattr(py, "after_hook").is_ok();
-
-            let after_type = match (has_after, has_after_hook) {
-                (true, true) => {
-                    return Err(ParameterBuildError::AmbiguousPhaseDefinition {
-                        detail: "PyClassParameterBuilder cannot have both `after` and `after_hook` methods defined."
-                            .into(),
-                    });
-                }
-                (true, false) => Some(AfterMethodType::After),
-                (false, true) => Some(AfterMethodType::AfterHook),
-                (false, false) => None,
-            };
-
-            Ok((has_before, after_type))
-        })?;
-
-        let phase = match (has_before, after_type) {
-            (true, Some(AfterMethodType::After)) => MetricConsumerPhase::Both,
-            (true, Some(AfterMethodType::AfterHook)) => MetricConsumerPhase::Before,
-            (true, None) => MetricConsumerPhase::Before,
-            (false, Some(AfterMethodType::After)) => MetricConsumerPhase::After,
-            (false, None) | (false, Some(AfterMethodType::AfterHook)) => {
-                return Err(ParameterBuildError::NoCalculationPhase {
-                    detail: "PyClassParameterBuilder must have at least one of `before` or `after` methods defined."
-                        .into(),
-                });
-            }
-        };
+        let (phase, after_type) = determine_phase(&self.class)?;
 
         let metrics = resolve_metric_f64_hashmap!(self, &self.common.metrics, resolution_maps, phase, "metrics");
         let indices = resolve_metric_u64_hashmap!(self, &self.common.indices, resolution_maps, phase, "indices");
@@ -673,23 +679,7 @@ impl ParameterBuilder<u64> for PyClassParameterBuilder {
         self: Box<Self>,
         resolution_maps: &ResolutionMaps,
     ) -> Result<MaybeBuiltParameter<u64>, ParameterBuildError> {
-        let (has_before, has_after) = Python::attach(|py| {
-            let has_before = self.class.getattr(py, "before").is_ok();
-            let has_after = self.class.getattr(py, "after").is_ok();
-            (has_before, has_after)
-        });
-
-        let phase = match (has_before, has_after) {
-            (true, true) => MetricConsumerPhase::Both,
-            (true, false) => MetricConsumerPhase::Before,
-            (false, true) => MetricConsumerPhase::After,
-            (false, false) => {
-                return Err(ParameterBuildError::NoCalculationPhase {
-                    detail: "PyClassParameterBuilder must have at least one of `before` or `after` methods defined."
-                        .into(),
-                });
-            }
-        };
+        let (phase, after_type) = determine_phase(&self.class)?;
 
         let metrics = resolve_metric_f64_hashmap!(self, &self.common.metrics, resolution_maps, phase, "metrics");
         let indices = resolve_metric_u64_hashmap!(self, &self.common.indices, resolution_maps, phase, "indices");
@@ -726,23 +716,7 @@ impl ParameterBuilder<MultiValue> for PyClassParameterBuilder {
         self: Box<Self>,
         resolution_maps: &ResolutionMaps,
     ) -> Result<MaybeBuiltParameter<MultiValue>, ParameterBuildError> {
-        let (has_before, has_after) = Python::attach(|py| {
-            let has_before = self.class.getattr(py, "before").is_ok();
-            let has_after = self.class.getattr(py, "after").is_ok();
-            (has_before, has_after)
-        });
-
-        let phase = match (has_before, has_after) {
-            (true, true) => MetricConsumerPhase::Both,
-            (true, false) => MetricConsumerPhase::Before,
-            (false, true) => MetricConsumerPhase::After,
-            (false, false) => {
-                return Err(ParameterBuildError::NoCalculationPhase {
-                    detail: "PyClassParameterBuilder must have at least one of `before` or `after` methods defined."
-                        .into(),
-                });
-            }
-        };
+        let (phase, after_type) = determine_phase(&self.class)?;
 
         let metrics = resolve_metric_f64_hashmap!(self, &self.common.metrics, resolution_maps, phase, "metrics");
         let indices = resolve_metric_u64_hashmap!(self, &self.common.indices, resolution_maps, phase, "indices");
