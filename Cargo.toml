@@ -27,7 +27,7 @@ default-members = [
 [workspace.package]
 readme = "README.md"
 description = "A generalised water resource allocation model."
-version = "2.0.0-beta6"
+version = "2.0.0-beta7"
 edition = "2024"
 rust-version = "1.85"
 authors = ["James Tomlinson <tomo.bbe@gmail.com>"]
@@ -66,7 +66,7 @@ polars = { version = "0.55", default-features = false }
 pyo3 = { version = "0.29" }
 pyo3-log = "0.13"
 pyo3-polars = { version = "0.28", default-features = false }
-pywr-v1-schema = "0.24"
+pywr-v1-schema = "0.25"
 quote = "1.0"
 rand = "0.10"
 rand_chacha = "0.10"

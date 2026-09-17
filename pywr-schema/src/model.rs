@@ -8,14 +8,15 @@ use crate::metric::Metric;
 use crate::network::{LoadArgs, NetworkSchemaBuildError, NetworkSchemaReadError};
 #[cfg(feature = "core")]
 use crate::timeseries::LoadedTimeseriesCollection;
-use crate::visit::{VisitMetrics, VisitNodeReferences, VisitPaths};
+use crate::visit::{Owner, Reference, ReferenceMut, VisitMetrics, VisitPaths, VisitReferences};
 use crate::{ConversionError, NetworkSchema, NetworkSchemaRef};
+use jiff::Span;
 use jiff::civil::{DateTime, date};
 #[cfg(feature = "core")]
 use pywr_core::{
     models::{
         ModelBuilder, ModelDomainBuilder, ModelDomainBuilderError, MultiNetworkEntryBuilder, MultiNetworkModelBuilder,
-        MultiNetworkModelBuilderError, MultiNetworkTransferBuilder,
+        MultiNetworkTransferBuilder,
     },
     timestep::TimestepDuration,
 };
@@ -64,7 +65,7 @@ impl From<pywr_v1_schema::model::Metadata> for Metadata {
 /// The timestep can be defined in three ways:
 /// - A fixed number of non-zero hours.
 /// - A fixed number of non-zero days.
-/// - A frequency string that can be parsed by polars (e.g. '7d').
+/// - A frequency string that can be parsed as a [`jiff::Span`] (e.g. '7d' or 'P7D').
 #[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema, Display, EnumDiscriminants)]
 #[serde(tag = "type", deny_unknown_fields)]
 #[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
@@ -74,7 +75,7 @@ pub enum Timestep {
     Hours { hours: NonZeroU64 },
     /// A fixed number of days.
     Days { days: NonZeroU64 },
-    /// A frequency string that can be parsed by polars.
+    /// A frequency string that can be parsed as a [`jiff::Span`].
     Frequency { freq: String },
 }
 
@@ -111,6 +112,39 @@ impl Default for TimeDomain {
             end: date(2000, 12, 31).at(0, 0, 0, 0),
             timestep: Timestep::default(),
         }
+    }
+}
+
+impl TimeDomain {
+    /// Validate the time domain.
+    ///
+    /// This checks that the simulation period does not end before it starts, and that a
+    /// [`Timestep::Frequency`] string is a duration that `pywr-core` can use. These are the
+    /// problems that would otherwise only appear when the model is built.
+    pub fn validate(&self) -> Result<(), ValidationError> {
+        // The same instant is a period, if a short one, so `>` rather than `>=`.
+        if self.start > self.end {
+            return Err(ValidationError::EndBeforeStart {
+                start: self.start,
+                end: self.end,
+            });
+        }
+
+        if let Timestep::Frequency { freq } = &self.timestep {
+            // The same parse that `pywr_core::timestep::TimeDomainBuilder` makes.
+            let span = freq
+                .parse::<Span>()
+                .map_err(|error| ValidationError::UnparsableFrequency {
+                    freq: freq.clone(),
+                    error: error.to_string(),
+                })?;
+
+            if span.is_zero() || span.is_negative() {
+                return Err(ValidationError::NonPositiveFrequency { freq: freq.clone() });
+            }
+        }
+
+        Ok(())
     }
 }
 
@@ -183,31 +217,29 @@ pub struct ScenarioGroup {
 }
 
 #[cfg(feature = "core")]
-impl TryFrom<ScenarioGroup> for pywr_core::scenario::ScenarioGroup {
-    type Error = pywr_core::scenario::ScenarioDomainBuilderError;
-
-    fn try_from(value: ScenarioGroup) -> Result<Self, Self::Error> {
+impl From<ScenarioGroup> for pywr_core::scenario::ScenarioGroupBuilder {
+    fn from(value: ScenarioGroup) -> Self {
         let mut builder = pywr_core::scenario::ScenarioGroupBuilder::new(&value.name, value.size);
 
         if let Some(labels) = value.labels {
-            builder = builder.with_labels(&labels);
+            builder.with_labels(&labels);
         }
 
         if let Some(subset) = value.subset {
             match subset {
                 ScenarioGroupSubset::Slice(slice) => {
-                    builder = builder.with_subset_slice(slice.start, slice.end);
+                    builder.with_subset_slice(slice.start, slice.end);
                 }
                 ScenarioGroupSubset::Indices(indices) => {
-                    builder = builder.with_subset_indices(indices.indices);
+                    builder.with_subset_indices(indices.indices);
                 }
                 ScenarioGroupSubset::Labels(labels) => {
-                    builder = builder.with_subset_labels(&labels.labels);
+                    builder.with_subset_labels(&labels.labels);
                 }
             }
         }
 
-        builder.build()
+        builder
     }
 }
 
@@ -335,21 +367,19 @@ impl TryFrom<Vec<pywr_v1_schema::model::Scenario>> for ScenarioDomain {
 }
 
 #[cfg(feature = "core")]
-impl TryInto<pywr_core::scenario::ScenarioDomainBuilder> for ScenarioDomain {
-    type Error = pywr_core::scenario::ScenarioDomainBuilderError;
-
-    fn try_into(self) -> Result<pywr_core::scenario::ScenarioDomainBuilder, Self::Error> {
+impl From<ScenarioDomain> for pywr_core::scenario::ScenarioDomainBuilder {
+    fn from(val: ScenarioDomain) -> Self {
         let mut builder = pywr_core::scenario::ScenarioDomainBuilder::default();
 
-        for group in self.groups {
-            builder = builder.with_group(group.try_into()?)?;
+        for group in val.groups {
+            builder.with_group(group.into());
         }
 
-        if let Some(combinations) = self.combinations {
-            builder = builder.with_combinations(combinations.into_iter().collect());
+        if let Some(combinations) = val.combinations {
+            builder.with_combinations(combinations.into_iter().collect());
         }
 
-        Ok(builder)
+        builder
     }
 }
 
@@ -365,10 +395,6 @@ pub enum ModelSchemaReadError {
 #[derive(Error, Debug)]
 #[cfg(feature = "core")]
 pub enum ModelSchemaBuildError {
-    #[error("Failed to construct scenario builder: {0}")]
-    ScenarioBuilderError(#[from] pywr_core::scenario::ScenarioDomainBuilderError),
-    #[error("Failed to construct model domain: {0}")]
-    CoreModelDomainError(#[from] pywr_core::models::ModelDomainError),
     #[error("Failed to construct the network: {source}")]
     NetworkBuildError {
         #[source]
@@ -435,17 +461,25 @@ impl VisitMetrics for ModelSchema {
     }
 }
 
-impl VisitNodeReferences for ModelSchema {
-    fn visit_node_references<F: FnMut(&str)>(&self, visitor: &mut F) {
-        self.network.visit_node_references(visitor);
+impl VisitReferences for ModelSchema {
+    fn visit_references<F: FnMut(Reference<'_>)>(&self, visitor: &mut F) {
+        self.network.visit_references(visitor);
     }
 
-    fn visit_node_references_mut<F: FnMut(&mut String)>(&mut self, visitor: &mut F) {
-        self.network.visit_node_references_mut(visitor);
+    fn visit_references_mut<F: FnMut(ReferenceMut<'_>)>(&mut self, visitor: &mut F) {
+        self.network.visit_references_mut(visitor);
     }
 }
 
 impl ModelSchema {
+    pub fn visit_owned_references<F: FnMut(Owner<'_>, Reference<'_>)>(&self, visitor: &mut F) {
+        self.network.visit_owned_references(visitor);
+    }
+
+    pub fn visit_owned_references_mut<F: FnMut(Owner<'_>, ReferenceMut<'_>)>(&mut self, visitor: &mut F) {
+        self.network.visit_owned_references_mut(visitor);
+    }
+
     pub fn new(title: &str, start: &DateTime, end: &DateTime) -> Self {
         Self {
             metadata: Metadata {
@@ -471,8 +505,9 @@ impl ModelSchema {
         Ok(serde_json::from_str(data.as_str())?)
     }
 
-    /// Validate the model's schema. See [`NetworkSchema::validate`].
+    /// Validate the model's schema. See [`TimeDomain::validate`] and [`NetworkSchema::validate`].
     pub fn validate(&self) -> Result<(), ValidationError> {
+        self.time.validate()?;
         self.network.validate()
     }
 
@@ -486,7 +521,7 @@ impl ModelSchema {
         let time_domain_builder = self.time.clone().into();
 
         let scenario_builder = match &self.scenarios {
-            Some(scenarios) => scenarios.clone().try_into()?,
+            Some(scenarios) => scenarios.clone().into(),
             None => pywr_core::scenario::ScenarioDomainBuilder::default(),
         };
 
@@ -562,7 +597,7 @@ impl ModelSchema {
     ///
     /// See [`ModelSchema::from_v1`] for more information.
     pub fn from_v1_str(v1: &str) -> Result<(Self, Vec<ComponentConversionError>), pywr_v1_schema::PywrSchemaError> {
-        let v1_model: pywr_v1_schema::PywrModel = serde_json::from_str(v1)?;
+        let v1_model = pywr_v1_schema::PywrModel::from_str(v1)?;
 
         Ok(Self::from_v1(v1_model))
     }
@@ -587,8 +622,6 @@ pub struct MultiNetworkEntry {
 #[derive(Error, Debug)]
 #[cfg(feature = "core")]
 pub enum MultiNetworkModelSchemaBuildError {
-    #[error("Failed to construct scenario builder: {0}")]
-    ScenarioBuilderError(#[from] pywr_core::scenario::ScenarioDomainBuilderError),
     #[error("Error building model domain: {0}")]
     CoreModelDomainBuilderError(#[from] ModelDomainBuilderError),
     #[error("Failed to construct the network `{name}`: {source}")]
@@ -608,11 +641,6 @@ pub enum MultiNetworkModelSchemaBuildError {
         name: String,
         #[source]
         source: Box<SchemaError>,
-    },
-    #[error("Failed to build the model: {source}")]
-    ModelBuildError {
-        #[source]
-        source: Box<MultiNetworkModelBuilderError>,
     },
 }
 
@@ -719,8 +747,11 @@ impl MultiNetworkModelSchema {
         Ok(serde_json::from_str(data.as_str())?)
     }
 
-    /// Validate the schema of each network in the model. See [`NetworkSchema::validate`].
+    /// Validate the model's time domain and the schema of each network in the model. See
+    /// [`TimeDomain::validate`] and [`NetworkSchema::validate`].
     pub fn validate(&self) -> Result<(), ValidationError> {
+        self.time.validate()?;
+
         for entry in &self.networks {
             if let NetworkSchemaRef::Inline(network) = &entry.network {
                 network.validate()?;
@@ -738,7 +769,7 @@ impl MultiNetworkModelSchema {
         let time_builder = self.time.clone().into();
 
         let scenario_builder = match &self.scenarios {
-            Some(scenarios) => scenarios.clone().try_into()?,
+            Some(scenarios) => scenarios.clone().into(),
             None => pywr_core::scenario::ScenarioDomainBuilder::default(),
         };
 
@@ -880,7 +911,8 @@ impl MultiNetworkModelSchema {
 #[cfg(test)]
 mod tests {
     use super::{ModelSchema, ScenarioDomain};
-    use crate::model::TimeDomain;
+    use crate::error::ValidationError;
+    use crate::model::{TimeDomain, Timestep};
     use crate::visit::VisitPaths;
     use jiff::civil::date;
     use std::fs;
@@ -964,6 +996,63 @@ mod tests {
         if schema.create_model_builder(model_fn.parent(), None).is_ok() {
             let str = serde_json::to_string_pretty(&schema).unwrap();
             panic!("Expected an error due to missing file: {str}");
+        }
+    }
+
+    /// Return the default time domain with the timestep replaced.
+    fn time_domain_with(timestep: Timestep) -> TimeDomain {
+        TimeDomain {
+            timestep,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn test_validate_period() {
+        let valid: ModelSchema = serde_json::from_str(&model_str()).unwrap();
+        valid.validate().expect("The unmodified model should be valid");
+
+        // A period that ends before it starts is rejected, naming both ends.
+        let mut schema = valid.clone();
+        std::mem::swap(&mut schema.time.start, &mut schema.time.end);
+        assert_eq!(
+            schema.validate(),
+            Err(ValidationError::EndBeforeStart {
+                start: schema.time.start,
+                end: schema.time.end,
+            })
+        );
+
+        // A single instant is a period, if a short one.
+        let mut schema = valid.clone();
+        schema.time.end = schema.time.start;
+        assert_eq!(schema.validate(), Ok(()));
+    }
+
+    #[test]
+    fn test_validate_frequency() {
+        // The forms `jiff` reads: "friendly" and ISO 8601.
+        for freq in ["7d", "1mo", "3h", "P7D"] {
+            let time = time_domain_with(Timestep::Frequency { freq: freq.to_string() });
+            assert_eq!(time.validate(), Ok(()), "`{freq}` should be a valid frequency");
+        }
+
+        // A string that is not a duration at all.
+        for freq in ["every other tuesday", "7", "", "1q"] {
+            let time = time_domain_with(Timestep::Frequency { freq: freq.to_string() });
+            assert!(
+                matches!(time.validate(), Err(ValidationError::UnparsableFrequency { .. })),
+                "`{freq}` should not parse as a frequency"
+            );
+        }
+
+        // A duration that parses, but would never advance the clock.
+        for freq in ["0d", "-7d"] {
+            let time = time_domain_with(Timestep::Frequency { freq: freq.to_string() });
+            assert_eq!(
+                time.validate(),
+                Err(ValidationError::NonPositiveFrequency { freq: freq.to_string() })
+            );
         }
     }
 

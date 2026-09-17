@@ -4,7 +4,7 @@ mod virtual_storage;
 use crate::metric::Metric;
 use crate::nodes::{NodeAttribute, NodeComponent, NodeMeta, NodePosition, PlaceholderNode};
 use crate::parameters::Parameter;
-use crate::visit::VisitNodeReferences;
+use crate::visit::{Reference, ReferenceMut, VisitReferences};
 #[cfg(feature = "core")]
 use crate::{LoadArgs, SchemaError};
 use crate::{VisitMetrics, VisitPaths};
@@ -186,22 +186,22 @@ impl VisitPaths for VirtualNode {
     }
 }
 
-impl VisitNodeReferences for VirtualNode {
-    fn visit_node_references<F: FnMut(&str)>(&self, visitor: &mut F) {
+impl VisitReferences for VirtualNode {
+    fn visit_references<F: FnMut(Reference<'_>)>(&self, visitor: &mut F) {
         match self {
-            VirtualNode::Aggregated(n) => n.visit_node_references(visitor),
-            VirtualNode::AggregatedStorage(n) => n.visit_node_references(visitor),
-            VirtualNode::VirtualStorage(n) => n.visit_node_references(visitor),
-            VirtualNode::Placeholder(n) => n.visit_node_references(visitor),
+            VirtualNode::Aggregated(n) => n.visit_references(visitor),
+            VirtualNode::AggregatedStorage(n) => n.visit_references(visitor),
+            VirtualNode::VirtualStorage(n) => n.visit_references(visitor),
+            VirtualNode::Placeholder(n) => n.visit_references(visitor),
         }
     }
 
-    fn visit_node_references_mut<F: FnMut(&mut String)>(&mut self, visitor: &mut F) {
+    fn visit_references_mut<F: FnMut(ReferenceMut<'_>)>(&mut self, visitor: &mut F) {
         match self {
-            VirtualNode::Aggregated(n) => n.visit_node_references_mut(visitor),
-            VirtualNode::AggregatedStorage(n) => n.visit_node_references_mut(visitor),
-            VirtualNode::VirtualStorage(n) => n.visit_node_references_mut(visitor),
-            VirtualNode::Placeholder(n) => n.visit_node_references_mut(visitor),
+            VirtualNode::Aggregated(n) => n.visit_references_mut(visitor),
+            VirtualNode::AggregatedStorage(n) => n.visit_references_mut(visitor),
+            VirtualNode::VirtualStorage(n) => n.visit_references_mut(visitor),
+            VirtualNode::Placeholder(n) => n.visit_references_mut(visitor),
         }
     }
 }

@@ -104,8 +104,8 @@ pub fn simple_model(num_scenarios: usize, time_builder: Option<TimeDomainBuilder
     simple_network(&mut network_builder, scenario, num_scenarios);
 
     let mut scenario_builder = ScenarioDomainBuilder::default();
-    let scenario_group = ScenarioGroupBuilder::new(scenario, num_scenarios).build().unwrap();
-    scenario_builder = scenario_builder.with_group(scenario_group).unwrap();
+    let scenario_group = ScenarioGroupBuilder::new(scenario, num_scenarios);
+    scenario_builder.with_group(scenario_group);
 
     let mut domain_builder = ModelDomainBuilder::new(time_builder.unwrap_or_else(default_time_domain_builder));
     domain_builder.scenario(scenario_builder);
@@ -649,12 +649,8 @@ pub fn make_random_model_builder<R: Rng>(
     let time_builder = TimeDomainBuilder::new(start, end, duration);
 
     let mut scenario_builder = ScenarioDomainBuilder::default();
-    let scenario_group = ScenarioGroupBuilder::new("test-scenario", num_scenarios)
-        .build()
-        .expect("Could not create scenario group");
-    scenario_builder = scenario_builder
-        .with_group(scenario_group)
-        .expect("Could not add scenario group");
+    let scenario_group = ScenarioGroupBuilder::new("test-scenario", num_scenarios);
+    scenario_builder.with_group(scenario_group);
 
     let mut domain_builder = ModelDomainBuilder::new(time_builder);
     domain_builder.scenario(scenario_builder);

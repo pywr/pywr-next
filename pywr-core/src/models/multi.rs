@@ -1023,8 +1023,8 @@ mod tests {
         let time_builder = default_time_domain_builder();
 
         let mut scenario_builder = ScenarioDomainBuilder::default();
-        let scenario_group = ScenarioGroupBuilder::new("test-scenario", 2).build().unwrap();
-        scenario_builder = scenario_builder.with_group(scenario_group).unwrap();
+        let scenario_group = ScenarioGroupBuilder::new("test-scenario", 2);
+        scenario_builder.with_group(scenario_group);
 
         let mut domain_builder = ModelDomainBuilder::new(time_builder);
         domain_builder.scenario(scenario_builder);
