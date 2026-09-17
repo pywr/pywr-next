@@ -8,7 +8,7 @@ use crate::metric::Metric;
 use crate::network::{LoadArgs, NetworkSchemaBuildError, NetworkSchemaReadError};
 #[cfg(feature = "core")]
 use crate::time_series::LoadedTimeSeriesCollection;
-use crate::visit::{VisitMetrics, VisitNodeReferences, VisitPaths};
+use crate::visit::{Owner, Reference, ReferenceMut, VisitMetrics, VisitPaths, VisitReferences};
 use crate::{ConversionError, NetworkSchema, NetworkSchemaRef};
 use jiff::Span;
 use jiff::civil::{DateTime, date};
@@ -16,7 +16,7 @@ use jiff::civil::{DateTime, date};
 use pywr_core::{
     models::{
         ModelBuilder, ModelDomainBuilder, ModelDomainBuilderError, MultiNetworkEntryBuilder, MultiNetworkModelBuilder,
-        MultiNetworkModelBuilderError, MultiNetworkTransferBuilder,
+        MultiNetworkTransferBuilder,
     },
     timestep::TimestepDuration,
 };
@@ -217,31 +217,29 @@ pub struct ScenarioGroup {
 }
 
 #[cfg(feature = "core")]
-impl TryFrom<ScenarioGroup> for pywr_core::scenario::ScenarioGroup {
-    type Error = pywr_core::scenario::ScenarioDomainBuilderError;
-
-    fn try_from(value: ScenarioGroup) -> Result<Self, Self::Error> {
+impl From<ScenarioGroup> for pywr_core::scenario::ScenarioGroupBuilder {
+    fn from(value: ScenarioGroup) -> Self {
         let mut builder = pywr_core::scenario::ScenarioGroupBuilder::new(&value.name, value.size);
 
         if let Some(labels) = value.labels {
-            builder = builder.with_labels(&labels);
+            builder.with_labels(&labels);
         }
 
         if let Some(subset) = value.subset {
             match subset {
                 ScenarioGroupSubset::Slice(slice) => {
-                    builder = builder.with_subset_slice(slice.start, slice.end);
+                    builder.with_subset_slice(slice.start, slice.end);
                 }
                 ScenarioGroupSubset::Indices(indices) => {
-                    builder = builder.with_subset_indices(indices.indices);
+                    builder.with_subset_indices(indices.indices);
                 }
                 ScenarioGroupSubset::Labels(labels) => {
-                    builder = builder.with_subset_labels(&labels.labels);
+                    builder.with_subset_labels(&labels.labels);
                 }
             }
         }
 
-        builder.build()
+        builder
     }
 }
 
@@ -369,21 +367,19 @@ impl TryFrom<Vec<pywr_v1_schema::model::Scenario>> for ScenarioDomain {
 }
 
 #[cfg(feature = "core")]
-impl TryInto<pywr_core::scenario::ScenarioDomainBuilder> for ScenarioDomain {
-    type Error = pywr_core::scenario::ScenarioDomainBuilderError;
-
-    fn try_into(self) -> Result<pywr_core::scenario::ScenarioDomainBuilder, Self::Error> {
+impl From<ScenarioDomain> for pywr_core::scenario::ScenarioDomainBuilder {
+    fn from(val: ScenarioDomain) -> Self {
         let mut builder = pywr_core::scenario::ScenarioDomainBuilder::default();
 
-        for group in self.groups {
-            builder = builder.with_group(group.try_into()?)?;
+        for group in val.groups {
+            builder.with_group(group.into());
         }
 
-        if let Some(combinations) = self.combinations {
-            builder = builder.with_combinations(combinations.into_iter().collect());
+        if let Some(combinations) = val.combinations {
+            builder.with_combinations(combinations.into_iter().collect());
         }
 
-        Ok(builder)
+        builder
     }
 }
 
@@ -399,10 +395,6 @@ pub enum ModelSchemaReadError {
 #[derive(Error, Debug)]
 #[cfg(feature = "core")]
 pub enum ModelSchemaBuildError {
-    #[error("Failed to construct scenario builder: {0}")]
-    ScenarioBuilderError(#[from] pywr_core::scenario::ScenarioDomainBuilderError),
-    #[error("Failed to construct model domain: {0}")]
-    CoreModelDomainError(#[from] pywr_core::models::ModelDomainError),
     #[error("Failed to construct the network: {source}")]
     NetworkBuildError {
         #[source]
@@ -469,17 +461,25 @@ impl VisitMetrics for ModelSchema {
     }
 }
 
-impl VisitNodeReferences for ModelSchema {
-    fn visit_node_references<F: FnMut(&str)>(&self, visitor: &mut F) {
-        self.network.visit_node_references(visitor);
+impl VisitReferences for ModelSchema {
+    fn visit_references<F: FnMut(Reference<'_>)>(&self, visitor: &mut F) {
+        self.network.visit_references(visitor);
     }
 
-    fn visit_node_references_mut<F: FnMut(&mut String)>(&mut self, visitor: &mut F) {
-        self.network.visit_node_references_mut(visitor);
+    fn visit_references_mut<F: FnMut(ReferenceMut<'_>)>(&mut self, visitor: &mut F) {
+        self.network.visit_references_mut(visitor);
     }
 }
 
 impl ModelSchema {
+    pub fn visit_owned_references<F: FnMut(Owner<'_>, Reference<'_>)>(&self, visitor: &mut F) {
+        self.network.visit_owned_references(visitor);
+    }
+
+    pub fn visit_owned_references_mut<F: FnMut(Owner<'_>, ReferenceMut<'_>)>(&mut self, visitor: &mut F) {
+        self.network.visit_owned_references_mut(visitor);
+    }
+
     pub fn new(title: &str, start: &DateTime, end: &DateTime) -> Self {
         Self {
             metadata: Metadata {
@@ -521,7 +521,7 @@ impl ModelSchema {
         let time_domain_builder = self.time.clone().into();
 
         let scenario_builder = match &self.scenarios {
-            Some(scenarios) => scenarios.clone().try_into()?,
+            Some(scenarios) => scenarios.clone().into(),
             None => pywr_core::scenario::ScenarioDomainBuilder::default(),
         };
 
@@ -597,7 +597,7 @@ impl ModelSchema {
     ///
     /// See [`ModelSchema::from_v1`] for more information.
     pub fn from_v1_str(v1: &str) -> Result<(Self, Vec<ComponentConversionError>), pywr_v1_schema::PywrSchemaError> {
-        let v1_model: pywr_v1_schema::PywrModel = serde_json::from_str(v1)?;
+        let v1_model = pywr_v1_schema::PywrModel::from_str(v1)?;
 
         Ok(Self::from_v1(v1_model))
     }
@@ -622,8 +622,6 @@ pub struct MultiNetworkEntry {
 #[derive(Error, Debug)]
 #[cfg(feature = "core")]
 pub enum MultiNetworkModelSchemaBuildError {
-    #[error("Failed to construct scenario builder: {0}")]
-    ScenarioBuilderError(#[from] pywr_core::scenario::ScenarioDomainBuilderError),
     #[error("Error building model domain: {0}")]
     CoreModelDomainBuilderError(#[from] ModelDomainBuilderError),
     #[error("Failed to construct the network `{name}`: {source}")]
@@ -643,11 +641,6 @@ pub enum MultiNetworkModelSchemaBuildError {
         name: String,
         #[source]
         source: Box<SchemaError>,
-    },
-    #[error("Failed to build the model: {source}")]
-    ModelBuildError {
-        #[source]
-        source: Box<MultiNetworkModelBuilderError>,
     },
 }
 
@@ -776,7 +769,7 @@ impl MultiNetworkModelSchema {
         let time_builder = self.time.clone().into();
 
         let scenario_builder = match &self.scenarios {
-            Some(scenarios) => scenarios.clone().try_into()?,
+            Some(scenarios) => scenarios.clone().into(),
             None => pywr_core::scenario::ScenarioDomainBuilder::default(),
         };
 

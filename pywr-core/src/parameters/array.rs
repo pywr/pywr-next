@@ -712,14 +712,11 @@ mod tests {
 
     #[test]
     fn test_array2_parameter_builder_subsets_scenario_data_for_slice() {
-        let scenarios = ScenarioDomainBuilder::default()
-            .with_group(
-                ScenarioGroupBuilder::new("array-scenarios", 5)
-                    .with_subset_slice(1, 4)
-                    .build()
-                    .unwrap(),
-            )
-            .unwrap();
+        let mut scenario_group = ScenarioGroupBuilder::new("array-scenarios", 5);
+        scenario_group.with_subset_slice(1, 4);
+
+        let mut scenarios = ScenarioDomainBuilder::default();
+        scenarios.with_group(scenario_group);
         let mut domain_builder = ModelDomainBuilder::new(TimeDomainBuilder::new(
             date(1970, 1, 1).at(0, 0, 0, 0),
             date(1970, 1, 2).at(0, 0, 0, 0),
@@ -761,16 +758,14 @@ mod tests {
 
     #[test]
     fn test_array2_parameter_builder_preserves_out_of_order_subset_in_second_scenario_group() {
-        let scenarios = ScenarioDomainBuilder::default()
-            .with_group(ScenarioGroupBuilder::new("other-scenarios", 2).build().unwrap())
-            .unwrap()
-            .with_group(
-                ScenarioGroupBuilder::new("array-scenarios", 4)
-                    .with_subset_indices(vec![3, 1])
-                    .build()
-                    .unwrap(),
-            )
-            .unwrap();
+        let other_scenario_group = ScenarioGroupBuilder::new("other-scenarios", 2);
+        let mut array_scenario_group = ScenarioGroupBuilder::new("array-scenarios", 4);
+        array_scenario_group.with_subset_indices(vec![3, 1]);
+
+        let mut scenarios = ScenarioDomainBuilder::default();
+        scenarios
+            .with_group(other_scenario_group)
+            .with_group(array_scenario_group);
         let mut domain_builder = ModelDomainBuilder::new(TimeDomainBuilder::new(
             date(1970, 1, 1).at(0, 0, 0, 0),
             date(1970, 1, 1).at(0, 0, 0, 0),

@@ -21,11 +21,12 @@ mod vec;
 use crate::ConversionError;
 use crate::digest::{Checksum, ChecksumError};
 use crate::parameters::TableIndex;
+use crate::visit::{Reference, ReferenceMut, VisitReferences};
 #[cfg(feature = "core")]
 use log::{debug, info};
 #[cfg(feature = "pyo3")]
 use pyo3::pyclass;
-use pywr_schema_macros::{PywrVisitAll, skip_serializing_none};
+use pywr_schema_macros::{PywrVisitAll, PywrVisitMetrics, PywrVisitPaths, skip_serializing_none};
 use pywr_v1_schema::parameters::TableDataRef as TableDataRefV1;
 #[cfg(feature = "core")]
 use scalar::LoadedScalarTable;
@@ -350,14 +351,27 @@ impl LoadedTableCollection {
     }
 }
 
+// `VisitReferences` is written out below: the derive would walk `table` as a plain `String`.
 #[skip_serializing_none]
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll, PartialEq)]
+#[derive(
+    serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitMetrics, PywrVisitPaths, PartialEq,
+)]
 #[serde(deny_unknown_fields)]
 #[cfg_attr(feature = "pyo3", pyclass(from_py_object))]
 pub struct TableDataRef {
     pub table: String,
     pub column: Option<TableIndex>,
     pub row: Option<TableIndex>,
+}
+
+impl VisitReferences for TableDataRef {
+    fn visit_references<F: FnMut(Reference<'_>)>(&self, visitor: &mut F) {
+        visitor(Reference::Table(&self.table));
+    }
+
+    fn visit_references_mut<F: FnMut(ReferenceMut<'_>)>(&mut self, visitor: &mut F) {
+        visitor(ReferenceMut::Table(&mut self.table));
+    }
 }
 
 #[cfg(feature = "core")]

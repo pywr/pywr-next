@@ -1960,7 +1960,7 @@ dependencies = [
 
 [[package]]
 name = "pywr-cli"
-version = "2.0.0-beta6"
+version = "2.0.0-beta7"
 dependencies = [
  "anyhow",
  "clap",
@@ -1978,7 +1978,7 @@ dependencies = [
 
 [[package]]
 name = "pywr-core"
-version = "2.0.0-beta6"
+version = "2.0.0-beta7"
 dependencies = [
  "ahash",
  "arrow",
@@ -2011,7 +2011,7 @@ dependencies = [
 
 [[package]]
 name = "pywr-python"
-version = "2.0.0-beta6"
+version = "2.0.0-beta7"
 dependencies = [
  "arrow",
  "jiff",
@@ -2026,7 +2026,7 @@ dependencies = [
 
 [[package]]
 name = "pywr-schema"
-version = "2.0.0-beta6"
+version = "2.0.0-beta7"
 dependencies = [
  "arrow",
  "chrono",
@@ -2057,7 +2057,7 @@ dependencies = [
 
 [[package]]
 name = "pywr-schema-macros"
-version = "2.0.0-beta6"
+version = "2.0.0-beta7"
 dependencies = [
  "heck",
  "quote",
@@ -2066,9 +2066,9 @@ dependencies = [
 
 [[package]]
 name = "pywr-v1-schema"
-version = "0.24.0"
+version = "0.25.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d56e6dfb7492a9cc0943e274ae3b385efbfa4fbb2760bc0b742c739efb747113"
+checksum = "537f27adb2c17afb091174b4af4bec3b1ca80cc410ea4b1642e7e9eb647f8988"
 dependencies = [
  "jiff",
  "pywr-v1-schema-macros",
@@ -2081,9 +2081,9 @@ dependencies = [
 
 [[package]]
 name = "pywr-v1-schema-macros"
-version = "0.24.0"
+version = "0.25.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ed1b89dee50f1f77daa2bff7cdb0674b007745dcac82a80684ea6f424ccd3e31"
+checksum = "69190f1973029b7ae66802982c6e7bb33ce1937be110306b18f728e51c6f777e"
 dependencies = [
  "quote",
  "syn 3.0.5",

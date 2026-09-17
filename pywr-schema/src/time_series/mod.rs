@@ -12,7 +12,7 @@ use crate::digest::Checksum;
 use crate::error::ComponentConversionError;
 use crate::parameters::ParameterMeta;
 use crate::v1::{ConversionData, TryFromV1, TryIntoV2};
-use crate::visit::VisitPaths;
+use crate::visit::{Reference, ReferenceMut, VisitPaths, VisitReferences};
 #[cfg(feature = "core")]
 use arrow::{
     array::{Array, ArrayRef},
@@ -565,6 +565,23 @@ pub enum TimeSeriesColumns {
     Column { name: String },
 }
 
+/// A column name resolves in the timeseries' own data, so only a scenario group is a reference.
+impl VisitReferences for TimeSeriesColumns {
+    fn visit_references<F: FnMut(Reference<'_>)>(&self, visitor: &mut F) {
+        match self {
+            Self::Scenario { name } => visitor(Reference::ScenarioGroup(name)),
+            Self::Column { .. } => {}
+        }
+    }
+
+    fn visit_references_mut<F: FnMut(ReferenceMut<'_>)>(&mut self, visitor: &mut F) {
+        match self {
+            Self::Scenario { name } => visitor(ReferenceMut::ScenarioGroup(name)),
+            Self::Column { .. } => {}
+        }
+    }
+}
+
 #[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PartialEq)]
 #[serde(deny_unknown_fields)]
@@ -572,6 +589,17 @@ pub enum TimeSeriesColumns {
 pub struct TimeSeriesReference {
     pub name: String,
     pub columns: Option<TimeSeriesColumns>,
+}
+
+impl VisitReferences for TimeSeriesReference {
+    fn visit_references<F: FnMut(Reference<'_>)>(&self, visitor: &mut F) {
+        visitor(Reference::TimeSeries(&self.name));
+        self.columns.visit_references(visitor);
+    }
+    fn visit_references_mut<F: FnMut(ReferenceMut<'_>)>(&mut self, visitor: &mut F) {
+        visitor(ReferenceMut::TimeSeries(&mut self.name));
+        self.columns.visit_references_mut(visitor);
+    }
 }
 
 impl TimeSeriesReference {
