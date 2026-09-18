@@ -255,9 +255,23 @@ impl ClpSimplex {
         }
     }
 
-    fn dual_solve(&mut self) -> Result<(), ClpSolveStatusError> {
+    fn set_unchanged_flags(&mut self, unchanged: c_int) {
         unsafe {
-            let _ret = Clp_dual(self.ptr, 0);
+            PywrClp_setUnchangedFlags(self.ptr, unchanged);
+        }
+    }
+
+    fn dual_solve(&mut self) -> Result<(), ClpSolveStatusError> {
+        const KEEP_WORK_AREAS: c_int = 1;
+        const REUSE_FACTORIZATION: c_int = 2;
+
+        // SKIP_UNCHANGED_INITIALIZATION is not currently used because it does not pass the test suite.
+        // const SKIP_UNCHANGED_INITIALIZATION: c_int = 4;
+
+        let options = KEEP_WORK_AREAS | REUSE_FACTORIZATION; // | SKIP_UNCHANGED_INITIALIZATION;
+
+        unsafe {
+            let _ret = PywrClp_dualWithOptions(self.ptr, 0, options);
             let primary = Clp_status(self.ptr);
             let secondary = Clp_secondaryStatus(self.ptr);
             to_clp_result(primary, secondary)
@@ -402,9 +416,25 @@ impl Solver for ClpSolver {
         self.clp_simplex.change_row_lower(self.builder.row_lower());
         self.clp_simplex.change_row_upper(self.builder.row_upper());
 
+        const ROW_COLUMN_COUNTS_SAME: c_int = 1;
+        const MATRIX_SAME: c_int = 2;
+        const COLUMN_LOWER_SAME: c_int = 128;
+        const COLUMN_UPPER_SAME: c_int = 256;
+        const BASIS_SAME: c_int = 512;
+
+        let mut unchanged = ROW_COLUMN_COUNTS_SAME | COLUMN_LOWER_SAME | COLUMN_UPPER_SAME | BASIS_SAME;
+
+        let mut matrix_changed = false;
         for (row, column, coefficient) in self.builder.coefficients_to_update() {
-            self.clp_simplex.modify_coefficient(*row, *column, *coefficient)
+            self.clp_simplex.modify_coefficient(*row, *column, *coefficient);
+            matrix_changed = true;
         }
+
+        if !matrix_changed {
+            unchanged |= MATRIX_SAME;
+        }
+
+        self.clp_simplex.set_unchanged_flags(unchanged);
 
         timings.update_constraints += now.elapsed();
 
