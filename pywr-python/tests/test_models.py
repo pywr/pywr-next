@@ -141,7 +141,7 @@ def test_multi_model(model_dir: Path, model_name: str):
     ],
 )
 def test_timeseries_backends(
-        model_dir: Path, tmpdir: Path, backend: str, file_format: str, infer_time_col: bool
+    model_dir: Path, tmpdir: Path, backend: str, file_format: str, infer_time_col: bool
 ):
     """Test the simple model with different timeseries backends"""
     filename = model_dir / "time-series-formats" / "model.json"
