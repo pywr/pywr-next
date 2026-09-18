@@ -869,13 +869,8 @@ pub enum ParameterBuildError {
         scenarios: usize,
         group: String,
     },
-    #[error("Error subsetting array with dimensions {array_shape:?} with subset {subset:?}: {source}")]
-    ArraySubSetError {
-        array_shape: Vec<usize>,
-        subset: Vec<usize>,
-        #[source]
-        source: ShapeError,
-    },
+    #[error("Error subsetting array with {array_cols} columns with subset {subset:?}.")]
+    ArraySubSetError { array_cols: usize, subset: Vec<usize> },
     #[error("Error casting array from {from:?} to {to:?}: {source}")]
     ArrayCastError {
         from: DataType,
@@ -883,6 +878,8 @@ pub enum ParameterBuildError {
         #[source]
         source: arrow::error::ArrowError,
     },
+    #[error("Array contains at-least one null value.")]
+    ArrayContainsNulls,
     #[error("Error parsing dates: {message}")]
     DateParseError { message: String },
     #[error("Number of data values ({data}) does not match the number of timestamps ({time}).")]

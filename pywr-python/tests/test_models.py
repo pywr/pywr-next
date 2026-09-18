@@ -4,7 +4,6 @@ from pathlib import Path
 import h5py
 import numpy as np
 import pandas
-import polars
 import polars as pl
 import pytest
 from polars.testing import assert_frame_equal
@@ -142,7 +141,7 @@ def test_multi_model(model_dir: Path, model_name: str):
     ],
 )
 def test_timeseries_backends(
-    model_dir: Path, tmpdir: Path, backend: str, file_format: str, infer_time_col: bool
+        model_dir: Path, tmpdir: Path, backend: str, file_format: str, infer_time_col: bool
 ):
     """Test the simple model with different timeseries backends"""
     filename = model_dir / "time-series-formats" / "model.json"
@@ -192,7 +191,7 @@ def test_timeseries_backends(
                     raise ValueError(f"Unknown format: {file_format}")
 
         case "polars":
-            input_df = polars.read_csv(input_csv, try_parse_dates=True)
+            input_df = pl.read_csv(input_csv, try_parse_dates=True)
             match file_format:
                 case "csv":
                     input_df.write_csv(tmpdir / "inflow.csv")

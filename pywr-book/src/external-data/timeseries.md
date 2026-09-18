@@ -128,8 +128,8 @@ always reads Parquet.
 `"type": "Pandas"` uses a callback to the Python environment. It requires a Pywr build with
 Python support, plus the Python packages `pandas` and `pyarrow` in the Python environment used
 to run Pywr. The built-in loader supports `.csv`, `.xlsx`, and `.h5` files, using the appropriate
-Pandas reader. `kwargs` are passed to that reader. Pywr supplies `"parse_dates": true` unless
-you provide `parse_dates` yourself.
+Pandas reader. `kwargs` are passed to that reader. Pywr supplies `"parse_dates": true` to the CSV and XLSX read
+functions unless it is explicitly provided.
 
 ```json,ignore
 {
@@ -146,7 +146,7 @@ you provide `parse_dates` yourself.
 `"type": "Polars"` also uses the Python environment. It requires a Python-enabled Pywr build,
 and the Python packages `polars` and `pyarrow`. The built-in loader supports `.csv`, `.parquet`,
 and `.json` files. Its `kwargs` are forwarded to the selected Polars reader. Pywr supplies
-`"try_parse_dates": true` unless it is explicitly provided.
+`"try_parse_dates": true` to the CSV read function unless it is explicitly provided.
 
 ```json,ignore
 {

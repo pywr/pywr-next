@@ -158,6 +158,10 @@ impl ParameterBuilder<f64> for Array1ParameterBuilder {
             array = subslice_data_for_time_domain(&array, time_array, resolution_maps.domain.time())?;
         }
 
+        if array.null_count() > 0 {
+            return Err(ParameterBuildError::ArrayContainsNulls);
+        }
+
         // SAFETY: We just cast the array to Float64, so it is safe to assume it is a Float64Array.
         // We clone the array to ensure we have ownership of the data.
         let array = array.as_primitive::<Float64Type>().clone();
@@ -195,6 +199,10 @@ impl ParameterBuilder<u64> for Array1ParameterBuilder {
         if let Some(time_array) = &self.time_array {
             // Convert to DateTime array and align with the time-steps in the model.
             array = subslice_data_for_time_domain(&array, time_array, resolution_maps.domain.time())?;
+        }
+
+        if array.null_count() > 0 {
+            return Err(ParameterBuildError::ArrayContainsNulls);
         }
 
         // SAFETY: We just cast the array to UInt64, so it is safe to assume it is a UInt64Array.
@@ -357,7 +365,14 @@ impl ParameterBuilder<f64> for Array2ParameterBuilder {
             .scenarios()
             .group_scenario_subset(&self.scenario_group)?
         {
-            array = subset.iter().filter_map(|&index| array.get(index).cloned()).collect();
+            array = subset
+                .iter()
+                .map(|&index| array.get(index).cloned())
+                .collect::<Option<Vec<_>>>()
+                .ok_or_else(|| ParameterBuildError::ArraySubSetError {
+                    array_cols: array.len(),
+                    subset: subset.to_vec(),
+                })?;
         }
 
         // Now we need to cast each array in the vector to Float64Array
@@ -368,13 +383,19 @@ impl ParameterBuilder<f64> for Array2ParameterBuilder {
         let f64_array = array
             .into_iter()
             .map(|a| {
-                cast_with_options(&a, &DataType::Float64, &options)
+                let a = cast_with_options(&a, &DataType::Float64, &options)
                     .map_err(|source| ParameterBuildError::ArrayCastError {
                         from: a.data_type().clone(),
                         to: DataType::Float64,
                         source,
                     })
-                    .map(|a| a.as_primitive::<Float64Type>().clone())
+                    .map(|a| a.as_primitive::<Float64Type>().clone())?;
+
+                if a.null_count() > 0 {
+                    return Err(ParameterBuildError::ArrayContainsNulls);
+                }
+
+                Ok(a)
             })
             .collect::<Result<Vec<_>, _>>()?;
 
@@ -413,7 +434,14 @@ impl ParameterBuilder<u64> for Array2ParameterBuilder {
             .scenarios()
             .group_scenario_subset(&self.scenario_group)?
         {
-            array = subset.iter().filter_map(|&index| array.get(index).cloned()).collect();
+            array = subset
+                .iter()
+                .map(|&index| array.get(index).cloned())
+                .collect::<Option<Vec<_>>>()
+                .ok_or_else(|| ParameterBuildError::ArraySubSetError {
+                    array_cols: array.len(),
+                    subset: subset.to_vec(),
+                })?;
         }
 
         // Now we need to cast each array in the vector to UInt64Array
@@ -424,13 +452,17 @@ impl ParameterBuilder<u64> for Array2ParameterBuilder {
         let u64_array = array
             .into_iter()
             .map(|a| {
-                cast_with_options(&a, &DataType::UInt64, &options)
+                let a = cast_with_options(&a, &DataType::UInt64, &options)
                     .map_err(|source| ParameterBuildError::ArrayCastError {
                         from: a.data_type().clone(),
                         to: DataType::UInt64,
                         source,
                     })
-                    .map(|a| a.as_primitive::<UInt64Type>().clone())
+                    .map(|a| a.as_primitive::<UInt64Type>().clone())?;
+                if a.null_count() > 0 {
+                    return Err(ParameterBuildError::ArrayContainsNulls);
+                }
+                Ok(a)
             })
             .collect::<Result<Vec<_>, _>>()?;
 

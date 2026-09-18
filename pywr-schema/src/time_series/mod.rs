@@ -18,8 +18,9 @@ use arrow::{
     array::{Array, ArrayRef},
     record_batch::RecordBatch,
 };
-use arrow_ts::ArrowTimeSeries;
+pub use arrow_ts::{ArrowFormat, ArrowTimeSeries};
 pub use pandas::PandasTimeSeries;
+pub use parquet_ts::ParquetTimeSeries;
 pub use placeholder::PlaceholderTimeSeries;
 pub use polars::PolarsTimeSeries;
 pub use py::PythonTimeSeries;
@@ -92,7 +93,7 @@ pub enum TimeSeries {
     Polars(PolarsTimeSeries),
     Python(PythonTimeSeries),
     Arrow(ArrowTimeSeries),
-    Parquet(parquet_ts::ParquetTimeSeries),
+    Parquet(ParquetTimeSeries),
     Placeholder(PlaceholderTimeSeries),
 }
 
@@ -789,7 +790,7 @@ mod tests {
         writer.write(&batch.slice(1, 2)).unwrap();
         writer.close().unwrap();
 
-        let time_series = TimeSeries::Parquet(parquet_ts::ParquetTimeSeries {
+        let time_series = TimeSeries::Parquet(ParquetTimeSeries {
             meta: ParameterMeta {
                 name: "test".to_string(),
                 comment: None,

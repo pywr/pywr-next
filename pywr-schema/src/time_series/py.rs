@@ -23,7 +23,7 @@ pub struct PythonTimeSeries {
     pub time_col: Option<String>,
     /// Path to the dataset. If this is a relative path, it will be resolved relative to the provided data path.
     pub path: PathBuf,
-    /// Keyword arguments to pass to the relevant Pandas load function.
+    /// Keyword arguments to pass to the given load function.
     pub kwargs: Option<HashMap<String, serde_json::Value>>,
     /// Optional checksum to verify the dataset.
     pub checksum: Option<Checksum>,
