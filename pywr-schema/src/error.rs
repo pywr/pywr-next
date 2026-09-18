@@ -42,15 +42,15 @@ pub enum EdgeProblem {
     /// The `to_node` is not an entry of `nodes`.
     #[error("There is no node named `{0}` to connect to.")]
     UnknownToNode(String),
-    #[error("The `{0}` node cannot be connected to itself.")]
+    #[error("The node `{0}` cannot be connected to itself.")]
     SelfEdge(String),
-    #[error("The `{node_type}` node has no output slot `{slot}`.")]
+    #[error("This `{node_type}` node has no output slot `{slot}`.")]
     UnknownFromSlot { node_type: NodeType, slot: NodeSlot },
-    #[error("The `{node_type}` node has no input slot `{slot}`.")]
+    #[error("This `{node_type}` node has no input slot `{slot}`.")]
     UnknownToSlot { node_type: NodeType, slot: NodeSlot },
-    #[error("The `{0}` node cannot receive flow.")]
+    #[error("`{0}` nodes cannot receive flow.")]
     NoInflow(NodeType),
-    #[error("The `{0}` node cannot provide flow.")]
+    #[error("`{0}` nodes cannot provide flow.")]
     NoOutflow(NodeType),
 }
 

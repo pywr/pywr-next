@@ -1193,7 +1193,7 @@ mod tests {
             error.report().to_string(),
             "The model has 2 problem(s):\n\
              - Network `north`: The name `supply` is used by 2 node(s) and 0 virtual node(s), but each name must be unique.\n\
-             - Network `north`: The edge `demand->supply` is invalid. The `Output` node cannot provide flow."
+             - Network `north`: The edge `demand->supply` is invalid. `Output` nodes cannot provide flow."
         );
     }
 
