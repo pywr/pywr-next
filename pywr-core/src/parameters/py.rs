@@ -654,16 +654,11 @@ impl ParameterBuilder<f64> for PyClassParameterBuilder {
             common,
         };
 
-        let entry = match phase {
-            MetricConsumerPhase::Both => GeneralParameterEntry::both(p),
-            MetricConsumerPhase::Before => {
-                if let Some(AfterMethodType::AfterHook) = after_type {
-                    GeneralParameterEntry::before_with_after_hook(p)
-                } else {
-                    GeneralParameterEntry::before(p)
-                }
-            }
-            MetricConsumerPhase::After => GeneralParameterEntry::after(p),
+        let entry = match (phase, after_type) {
+            (_, Some(AfterMethodType::AfterHook)) => GeneralParameterEntry::before_with_after_hook(p),
+            (MetricConsumerPhase::Both, _) => GeneralParameterEntry::both(p),
+            (MetricConsumerPhase::Before, _) => GeneralParameterEntry::before(p),
+            (MetricConsumerPhase::After, _) => GeneralParameterEntry::after(p),
         };
 
         Ok(BuiltParameter::General(entry).into())
@@ -697,16 +692,11 @@ impl ParameterBuilder<u64> for PyClassParameterBuilder {
             common,
         };
 
-        let entry = match phase {
-            MetricConsumerPhase::Both => GeneralParameterEntry::both(p),
-            MetricConsumerPhase::Before => {
-                if let Some(AfterMethodType::AfterHook) = after_type {
-                    GeneralParameterEntry::before_with_after_hook(p)
-                } else {
-                    GeneralParameterEntry::before(p)
-                }
-            }
-            MetricConsumerPhase::After => GeneralParameterEntry::after(p),
+        let entry = match (phase, after_type) {
+            (_, Some(AfterMethodType::AfterHook)) => GeneralParameterEntry::before_with_after_hook(p),
+            (MetricConsumerPhase::Both, _) => GeneralParameterEntry::both(p),
+            (MetricConsumerPhase::Before, _) => GeneralParameterEntry::before(p),
+            (MetricConsumerPhase::After, _) => GeneralParameterEntry::after(p),
         };
 
         Ok(BuiltParameter::General(entry).into())
@@ -740,16 +730,11 @@ impl ParameterBuilder<MultiValue> for PyClassParameterBuilder {
             common,
         };
 
-        let entry = match phase {
-            MetricConsumerPhase::Both => GeneralParameterEntry::both(p),
-            MetricConsumerPhase::Before => {
-                if let Some(AfterMethodType::AfterHook) = after_type {
-                    GeneralParameterEntry::before_with_after_hook(p)
-                } else {
-                    GeneralParameterEntry::before(p)
-                }
-            }
-            MetricConsumerPhase::After => GeneralParameterEntry::after(p),
+        let entry = match (phase, after_type) {
+            (_, Some(AfterMethodType::AfterHook)) => GeneralParameterEntry::before_with_after_hook(p),
+            (MetricConsumerPhase::Both, _) => GeneralParameterEntry::both(p),
+            (MetricConsumerPhase::Before, _) => GeneralParameterEntry::before(p),
+            (MetricConsumerPhase::After, _) => GeneralParameterEntry::after(p),
         };
 
         Ok(BuiltParameter::General(entry).into())
@@ -1046,7 +1031,7 @@ mod tests {
     use super::*;
     use crate::scenario::ScenarioIndexBuilder;
     use crate::state::StateBuilder;
-    use crate::test_utils::default_time_domain_builder;
+    use crate::test_utils::{default_domain, default_time_domain_builder};
     use float_cmp::assert_approx_eq;
     use pyo3::ffi::c_str;
     use std::assert_matches;
@@ -1057,6 +1042,91 @@ mod tests {
         BeforeAfterHook,
         BeforeAfter,
         AfterOnly,
+    }
+
+    #[test]
+    fn class_parameter_builder_uses_after_hook_entry() {
+        Python::initialize();
+
+        let class: Py<PyAny> = Python::attach(|py| {
+            PyModule::from_code(
+                py,
+                c_str!(
+                    r#"
+class MyParameter:
+    def before(self, info):
+        return 1
+
+    def after_hook(self, info):
+        pass
+"#
+                ),
+                c_str!(""),
+                c_str!(""),
+            )
+            .unwrap()
+            .getattr("MyParameter")
+            .unwrap()
+            .into()
+        });
+
+        macro_rules! assert_after_hook_entry {
+            ($ty:ty) => {{
+                let (class, args, kwargs) = Python::attach(|py| {
+                    (
+                        class.clone_ref(py),
+                        PyTuple::empty(py).unbind(),
+                        PyDict::new(py).unbind(),
+                    )
+                });
+                let builder = PyClassParameterBuilder::new("my-parameter".into(), class, args, kwargs);
+                let resolution_maps = ResolutionMaps::new(default_domain());
+                let entry: GeneralParameterEntry<$ty> =
+                    match ParameterBuilder::<$ty>::build(Box::new(builder), &resolution_maps).unwrap() {
+                        MaybeBuiltParameter::Built(BuiltParameter::General(entry)) => entry,
+                        _ => panic!("expected a built general parameter"),
+                    };
+
+                assert!(entry.before.is_some());
+                assert!(matches!(
+                    entry.after,
+                    Some(super::super::GeneralAfterOperation::Hook(_))
+                ));
+            }};
+        }
+
+        assert_after_hook_entry!(f64);
+        assert_after_hook_entry!(u64);
+        assert_after_hook_entry!(MultiValue);
+    }
+
+    #[test]
+    fn function_parameter_builder_uses_before_only_entry() {
+        Python::initialize();
+
+        let function = Python::attach(|py| {
+            PyModule::from_code(
+                py,
+                c_str!("def my_function(info):\n    return 1.0\n"),
+                c_str!(""),
+                c_str!(""),
+            )
+            .unwrap()
+            .getattr("my_function")
+            .unwrap()
+            .into()
+        });
+        let (args, kwargs) = Python::attach(|py| (PyTuple::empty(py).unbind(), PyDict::new(py).unbind()));
+        let builder = PyFuncParameterBuilder::new("my-parameter".into(), function, args, kwargs);
+        let resolution_maps = ResolutionMaps::new(default_domain());
+        let entry: GeneralParameterEntry<f64> =
+            match ParameterBuilder::<f64>::build(Box::new(builder), &resolution_maps).unwrap() {
+                MaybeBuiltParameter::Built(BuiltParameter::General(entry)) => entry,
+                _ => panic!("expected a built general parameter"),
+            };
+
+        assert!(entry.before.is_some());
+        assert!(entry.after.is_none());
     }
 
     #[test]
