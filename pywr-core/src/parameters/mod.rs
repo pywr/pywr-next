@@ -72,7 +72,6 @@ pub use max::{MaxParameter, MaxParameterBuilder};
 pub use min::{MinParameter, MinParameterBuilder};
 pub use multi_threshold::{MultiThresholdParameter, MultiThresholdParameterBuilder};
 pub use muskingum::{MuskingumInitialCondition, MuskingumParameter, MuskingumParameterBuilder};
-use ndarray::ShapeError;
 pub use negative::{NegativeParameter, NegativeParameterBuilder};
 pub use negativemax::{NegativeMaxParameter, NegativeMaxParameterBuilder};
 pub use negativemin::{NegativeMinParameter, NegativeMinParameterBuilder};
