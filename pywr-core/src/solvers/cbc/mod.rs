@@ -3,7 +3,7 @@ mod settings;
 use super::builder::{ColType, SolverBuilder};
 use crate::network::Network;
 use crate::solvers::builder::BuiltSolver;
-use crate::solvers::{Solver, SolverFeatures, SolverSetupError, SolverSolveError, SolverTimings};
+use crate::solvers::{Solver, SolverConfig, SolverFeatures, SolverSetupError, SolverSolveError, SolverTimings};
 use crate::state::{ConstParameterValues, State};
 use crate::timestep::Timestep;
 use coin_or_sys::cbc::*;
@@ -233,9 +233,19 @@ impl CbcSolver {
     }
 }
 
-impl Solver for CbcSolver {
-    type Settings = CbcSolverSettings;
+impl SolverConfig for CbcSolverSettings {
+    type Solver = CbcSolver;
 
+    fn setup(&self, network: &Network, values: &ConstParameterValues) -> Result<Box<Self::Solver>, SolverSetupError> {
+        let builder = SolverBuilder::new(f64::MAX, -f64::MAX);
+        let built = builder.create(network, values)?;
+
+        let solver = CbcSolver::from_builder(built);
+        Ok(Box::new(solver))
+    }
+}
+
+impl Solver for CbcSolver {
     fn name() -> &'static str {
         "cbc"
     }
@@ -247,18 +257,6 @@ impl Solver for CbcSolver {
             SolverFeatures::AggregatedNodeFactors,
             SolverFeatures::MutualExclusivity,
         ]
-    }
-
-    fn setup(
-        network: &Network,
-        values: &ConstParameterValues,
-        _settings: &Self::Settings,
-    ) -> Result<Box<Self>, SolverSetupError> {
-        let builder = SolverBuilder::new(f64::MAX, -f64::MAX);
-        let built = builder.create(network, values)?;
-
-        let solver = CbcSolver::from_builder(built);
-        Ok(Box::new(solver))
     }
 
     fn solve(
