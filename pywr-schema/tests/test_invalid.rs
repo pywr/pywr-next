@@ -1,4 +1,4 @@
-use pywr_schema::{ModelSchema, ValidationError};
+use pywr_schema::{ModelSchema, NetworkProblem};
 #[cfg(feature = "core")]
 use pywr_schema::{ModelSchemaBuildError, NetworkSchemaBuildError};
 use std::fs;
@@ -54,8 +54,14 @@ macro_rules! invalid_schema_tests {
             match schema.validate() {
                 Ok(()) => panic!("Expected validation to fail, but the schema was valid!"),
                 Err(e) => {
-                    if !matches!(e, ValidationError::$expected_err { .. }) {
-                        panic!("Expected error: ValidationError::{}, but got: {:?}", stringify!($expected_err), e);
+                    let found = e
+                        .networks
+                        .iter()
+                        .flat_map(|network| &network.problems)
+                        .any(|problem| matches!(problem, NetworkProblem::$expected_err { .. }));
+
+                    if !found {
+                        panic!("Expected problem: NetworkProblem::{}, but got: {:?}", stringify!($expected_err), e);
                     }
                 }
             }
@@ -80,11 +86,11 @@ macro_rules! invalid_schema_tests {
 invalid_schema_tests! {
     // Two virtual nodes sharing a name. The two are built into separate pywr-core collections,
     // so the core builder never sees a clash.
-    duplicate_virtual_node_name: "duplicate-virtual-node-name.json", DuplicateNodeNames,
+    duplicate_virtual_node_name: "duplicate-virtual-node-name.json", DuplicateNodeName,
     // A simple and a composite node sharing a name. The composite node expands only to
     // sub-named core nodes, so again the core builder never sees a clash. Validation is the
     // only thing standing between this model and a silently wrong network.
-    duplicate_node_name_with_composite: "duplicate-node-name-with-composite.json", DuplicateNodeNames,
+    duplicate_node_name_with_composite: "duplicate-node-name-with-composite.json", DuplicateNodeName,
 }
 
 fn deserialise_test_model(model_path: &Path) -> ModelSchema {
