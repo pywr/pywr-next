@@ -86,7 +86,9 @@ pub struct ParameterMeta {
     pub tags: HashMap<String, String>,
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
+#[derive(
+    serde::Deserialize, serde::Serialize, Debug, Clone, PartialEq, Eq, JsonSchema, PywrVisitAll, Display, EnumIter,
+)]
 pub enum ParameterPhase {
     Before,
     After,

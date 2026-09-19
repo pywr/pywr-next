@@ -132,7 +132,7 @@ impl GeneralBeforeParameter<f64> for RollingParameter<MetricF64, f64, AggFuncF64
         }
     }
 }
-impl GeneralAfterParameterHook<f64> for RollingParameter<MetricF64, f64, AggFuncF64> {
+impl GeneralAfterParameterHook for RollingParameter<MetricF64, f64, AggFuncF64> {
     fn after(
         &self,
         ctx: GeneralParameterContext<'_>,
@@ -215,7 +215,7 @@ impl GeneralBeforeParameter<u64> for RollingParameter<MetricU64, u64, AggFuncU64
         }
     }
 }
-impl GeneralAfterParameterHook<u64> for RollingParameter<MetricU64, u64, AggFuncU64> {
+impl GeneralAfterParameterHook for RollingParameter<MetricU64, u64, AggFuncU64> {
     fn after(
         &self,
         ctx: GeneralParameterContext<'_>,

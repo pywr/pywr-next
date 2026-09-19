@@ -3,11 +3,11 @@ mod hdf;
 mod memory;
 mod placeholder;
 
-pub use self::csv::CsvOutput;
+pub use self::csv::{CsvFormat, CsvMetricSet, CsvMetricSetType, CsvOutput};
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
 pub use hdf::Hdf5Output;
-pub use memory::MemoryOutput;
+pub use memory::{MemoryAggregation, MemoryAggregationOrder, MemoryOutput};
 pub use placeholder::PlaceholderOutput;
 use pywr_schema_macros::{PywrVisitPaths, PywrVisitReferences};
 use schemars::JsonSchema;

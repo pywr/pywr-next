@@ -438,7 +438,7 @@ impl<T: TestValue> GeneralAfterParameter<T> for TestParameter<T> {
     }
 }
 
-impl<T: TestValue> GeneralAfterParameterHook<T> for TestParameter<T> {
+impl<T: TestValue> GeneralAfterParameterHook for TestParameter<T> {
     fn after(
         &self,
         context: GeneralParameterContext<'_>,

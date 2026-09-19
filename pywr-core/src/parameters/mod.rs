@@ -769,7 +769,7 @@ pub trait GeneralAfterParameter<T>: GeneralParameter {
 
 /// A trait that defines a component that performs an action after the network is updated each
 /// time-step, but does not produce a value.
-pub trait GeneralAfterParameterHook<T>: GeneralParameter {
+pub trait GeneralAfterParameterHook: GeneralParameter {
     fn after(
         &self,
         context: GeneralParameterContext<'_>,
@@ -780,7 +780,7 @@ pub trait GeneralAfterParameterHook<T>: GeneralParameter {
 #[derive(Debug, Clone)]
 enum GeneralAfterOperation<T> {
     Value(Arc<dyn GeneralAfterParameter<T>>),
-    Hook(Arc<dyn GeneralAfterParameterHook<T>>),
+    Hook(Arc<dyn GeneralAfterParameterHook>),
 }
 
 #[derive(Debug)]
@@ -829,7 +829,7 @@ impl<T: 'static> GeneralParameterEntry<T> {
 
     pub fn before_with_after_hook<P>(parameter: P) -> Self
     where
-        P: GeneralBeforeParameter<T> + GeneralAfterParameterHook<T> + 'static,
+        P: GeneralBeforeParameter<T> + GeneralAfterParameterHook + 'static,
     {
         let parameter = Arc::new(parameter);
         Self {
@@ -916,6 +916,8 @@ pub enum ParameterBuildError {
     NoCalculationPhase { detail: String },
     #[error("Metric for `{attr}` attribute is unused. {message}")]
     UnusedMetric { attr: String, message: String },
+    #[error("Ambiguous phase definition: {detail}")]
+    AmbiguousPhaseDefinition { detail: String },
 }
 
 pub enum BuiltParameter<T> {
@@ -1648,7 +1650,7 @@ enum GeneralAfterScheduleOperation<T> {
         output: GeneralAfterValueIndex<T>,
     },
     Hook {
-        parameter: Arc<dyn GeneralAfterParameterHook<T>>,
+        parameter: Arc<dyn GeneralAfterParameterHook>,
     },
 }
 

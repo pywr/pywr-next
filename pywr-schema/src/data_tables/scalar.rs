@@ -94,28 +94,28 @@ impl LoadedScalarTable {
         }
     }
 
-    /// Load a CSV file with a row-based index of size `rows`.
-    pub fn from_csv_row(path: &Path, rows: usize) -> Result<LoadedScalarTable, TableError> {
-        match rows {
+    /// Load a CSV file whose first `key_size` columns hold the row keys.
+    pub fn from_csv_row(path: &Path, key_size: usize) -> Result<LoadedScalarTable, TableError> {
+        match key_size {
             1 => Ok(LoadedScalarTable::One(load_csv_rows_scalar_table(path)?)),
             2 => Ok(LoadedScalarTable::Two(load_csv_rows_scalar_table(path)?)),
-            3 => Ok(LoadedScalarTable::Two(load_csv_rows_scalar_table(path)?)),
-            4 => Ok(LoadedScalarTable::Two(load_csv_rows_scalar_table(path)?)),
+            3 => Ok(LoadedScalarTable::Three(load_csv_rows_scalar_table(path)?)),
+            4 => Ok(LoadedScalarTable::Four(load_csv_rows_scalar_table(path)?)),
             _ => Err(TableError::FormatNotSupported(
                 "CSV row scalar table with more than four index columns is not supported.".to_string(),
             )),
         }
     }
 
-    /// Load a CSV file with a col-based index of size `cols`.
-    pub fn from_csv_col(path: &Path, cols: usize) -> Result<LoadedScalarTable, TableError> {
-        match cols {
+    /// Load a CSV file whose first `key_size` header rows hold the column keys.
+    pub fn from_csv_col(path: &Path, key_size: usize) -> Result<LoadedScalarTable, TableError> {
+        match key_size {
             1 => Ok(LoadedScalarTable::One(load_csv_cols_scalar_table(path)?)),
             2 => Ok(LoadedScalarTable::Two(load_csv_cols_scalar_table(path)?)),
-            3 => Ok(LoadedScalarTable::Two(load_csv_cols_scalar_table(path)?)),
-            4 => Ok(LoadedScalarTable::Two(load_csv_cols_scalar_table(path)?)),
+            3 => Ok(LoadedScalarTable::Three(load_csv_cols_scalar_table(path)?)),
+            4 => Ok(LoadedScalarTable::Four(load_csv_cols_scalar_table(path)?)),
             _ => Err(TableError::FormatNotSupported(
-                "CSV row scalar table with more than four index columns is not supported.".to_string(),
+                "CSV column scalar table with more than four index rows is not supported.".to_string(),
             )),
         }
     }
@@ -469,6 +469,45 @@ mod tests {
         assert!(matches!(
             table.get_scalar(&["A", "extra"]),
             Err(TableError::WrongKeySize(1, 2))
+        ));
+    }
+
+    #[test]
+    fn test_from_csv_row_key_sizes() {
+        for n in 1..=4 {
+            let headers: Vec<String> = (1..=n).map(|i| format!("key{i}")).collect();
+            let keys: Vec<String> = (1..=n).map(|i| format!("k{i}")).collect();
+            let key: Vec<&str> = keys.iter().map(String::as_str).collect();
+            let mut file = NamedTempFile::new().unwrap();
+            writeln!(file, "{},value", headers.join(",")).unwrap();
+            writeln!(file, "{},1.5", keys.join(",")).unwrap();
+            let table = LoadedScalarTable::from_csv_row(file.path(), n).unwrap();
+            assert_eq!(table.get_scalar(&key).unwrap().as_f64(), 1.5);
+            assert!(matches!(table.get_scalar(&key[1..]), Err(TableError::WrongKeySize(e, _)) if e == n));
+        }
+        assert!(matches!(
+            LoadedScalarTable::from_csv_row(Path::new("unused.csv"), 5),
+            Err(TableError::FormatNotSupported(_))
+        ));
+    }
+
+    #[test]
+    fn test_from_csv_col_key_sizes() {
+        for n in 1..=4 {
+            let keys: Vec<String> = (1..=n).map(|i| format!("b{i}")).collect();
+            let key: Vec<&str> = keys.iter().map(String::as_str).collect();
+            let mut file = NamedTempFile::new().unwrap();
+            for i in 1..=n {
+                writeln!(file, "a{i},b{i}").unwrap();
+            }
+            writeln!(file, "1.5,2.5").unwrap();
+            let table = LoadedScalarTable::from_csv_col(file.path(), n).unwrap();
+            assert_eq!(table.get_scalar(&key).unwrap().as_f64(), 2.5);
+            assert!(matches!(table.get_scalar(&key[1..]), Err(TableError::WrongKeySize(e, _)) if e == n));
+        }
+        assert!(matches!(
+            LoadedScalarTable::from_csv_col(Path::new("unused.csv"), 5),
+            Err(TableError::FormatNotSupported(_))
         ));
     }
 }

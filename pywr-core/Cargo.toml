@@ -54,7 +54,7 @@ thiserror = { workspace = true }
 wide = { workspace = true, optional = true }
 
 [dev-dependencies]
-criterion = { workspace = true }
+criterion = { workspace = true, features = ["html_reports"] }
 
 [[bench]]
 name = "random_models"
