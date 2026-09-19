@@ -75,6 +75,7 @@
           "name": "Failure index"
         },
         "type": "ControlCurveIndex",
+        "phase": "Before",
         "storage_metric": {
           "type": "Node",
           "name": "Reservoir",
