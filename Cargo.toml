@@ -12,6 +12,7 @@ members = [
     "pywr-python",
     "pywr-schema",
     "pywr-schema-macros",
+    "pywr-project",
 ]
 
 # IPM packages are not default because they require nightly (portable_simd).
@@ -21,6 +22,7 @@ default-members = [
     "pywr-schema",
     "pywr-cli",
     # "pywr-python",
+    "pywr-project",
 ]
 
 [workspace.package]
