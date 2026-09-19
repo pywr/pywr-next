@@ -513,6 +513,29 @@ impl Node {
         }
     }
 
+    /// Returns the attributes that this node has.
+    pub fn attributes(&self) -> Vec<NodeAttribute> {
+        match self {
+            Node::Input(_) => InputNodeAttribute::iter().map(Into::into).collect(),
+            Node::Link(_) => LinkNodeAttribute::iter().map(Into::into).collect(),
+            Node::Output(_) => OutputNodeAttribute::iter().map(Into::into).collect(),
+            Node::Storage(_) => StorageNodeAttribute::iter().map(Into::into).collect(),
+            Node::Catchment(_) => CatchmentNodeAttribute::iter().map(Into::into).collect(),
+            Node::RiverGauge(_) => RiverGaugeNodeAttribute::iter().map(Into::into).collect(),
+            Node::LossLink(_) => LossLinkNodeAttribute::iter().map(Into::into).collect(),
+            Node::River(_) => RiverNodeAttribute::iter().map(Into::into).collect(),
+            Node::RiverSplitWithGauge(_) => RiverSplitWithGaugeNodeAttribute::iter().map(Into::into).collect(),
+            Node::WaterTreatmentWorks(_) => WaterTreatmentWorksNodeAttribute::iter().map(Into::into).collect(),
+            Node::PiecewiseLink(_) => PiecewiseLinkNodeAttribute::iter().map(Into::into).collect(),
+            Node::PiecewiseStorage(_) => PiecewiseStorageNodeAttribute::iter().map(Into::into).collect(),
+            Node::Delay(_) => DelayNodeAttribute::iter().map(Into::into).collect(),
+            Node::Turbine(_) => TurbineNodeAttribute::iter().map(Into::into).collect(),
+            Node::Reservoir(_) => ReservoirNodeAttribute::iter().map(Into::into).collect(),
+            Node::Placeholder(_) => Vec::new(),
+            Node::Abstraction(_) => AbstractionNodeAttribute::iter().map(Into::into).collect(),
+        }
+    }
+
     /// Returns the default component for the node, if defined.
     pub fn default_component(&self) -> Option<NodeComponent> {
         match self {
@@ -1029,6 +1052,55 @@ mod tests {
             let mut node: Node = node_type.into();
             node.meta_mut().name = "renamed".to_string();
             assert_eq!(node.name(), "renamed");
+        }
+    }
+
+    /// A node should not list the same attribute twice.
+    #[test]
+    fn test_attributes_are_unique() {
+        for node_type in NodeType::iter() {
+            let node: Node = node_type.into();
+            let attributes = node.attributes();
+
+            for (i, attribute) in attributes.iter().enumerate() {
+                assert!(
+                    !attributes[i + 1..].contains(attribute),
+                    "{node_type} lists the attribute {attribute} more than once"
+                );
+            }
+        }
+    }
+
+    /// The attributes a node lists should be exactly those its build accepts.
+    ///
+    /// This pins the schema-only list to [`Node::create_metric`], which is where an unsupported
+    /// attribute is refused, so that the two cannot drift apart.
+    #[cfg(feature = "core")]
+    #[test]
+    fn test_attributes_match_create_metric() {
+        use crate::nodes::NodeAttribute;
+        use pywr_core::network::NetworkBuilder;
+
+        for node_type in NodeType::iter() {
+            let node: Node = node_type.into();
+            let attributes = node.attributes();
+
+            for attribute in NodeAttribute::iter() {
+                let mut builder = NetworkBuilder::default();
+                let result = node.create_metric(&mut builder, Some(attribute));
+
+                if attributes.contains(&attribute) {
+                    assert!(
+                        result.is_ok(),
+                        "{node_type} lists the attribute {attribute} but refuses it in a metric"
+                    );
+                } else {
+                    assert!(
+                        result.is_err(),
+                        "{node_type} does not list the attribute {attribute} but accepts it in a metric"
+                    );
+                }
+            }
         }
     }
 
