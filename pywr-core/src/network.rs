@@ -2212,6 +2212,7 @@ mod tests {
         default_domain, default_domain_builder, run_all_solvers, simple_model, simple_storage_model,
         simple_storage_network,
     };
+    use arrow::array::Float64Array;
     use float_cmp::assert_approx_eq;
     use ndarray::{Array, Array2};
     use std::default::Default;
@@ -2531,9 +2532,9 @@ mod tests {
         builder
             .parameters()
             .f64(Box::new(ConstantParameterBuilder::new("lifecycle-const".into(), 10.0)))
-            .f64(Box::new(Array1ParameterBuilder::new(
+            .f64(Box::new(Array1ParameterBuilder::from_primitive_array(
                 "lifecycle-simple".into(),
-                Array::from_elem(domain.time().timesteps().len(), 20.0),
+                Float64Array::from(vec![20.0; domain.time().timesteps().len()]),
             )))
             .f64(Box::new(TestParameterBuilder::network_lifecycle(
                 "lifecycle-general",

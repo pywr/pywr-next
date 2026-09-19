@@ -401,7 +401,9 @@ impl ParameterBuilder<u64> for RollingParameterBuilder<UnresolvedMetricU64, u64,
 mod tests {
     use super::*;
     use crate::parameters::Array1ParameterBuilder;
-    use crate::test_utils::{run_and_assert_parameter, run_and_assert_parameter_u64, simple_model};
+    use crate::test_utils::{
+        arrow_linspace_f64, arrow_linspace_u64, run_and_assert_parameter, run_and_assert_parameter_u64, simple_model,
+    };
     use ndarray::{Array1, Array2, Axis};
 
     #[test]
@@ -409,7 +411,8 @@ mod tests {
     fn test_rolling_f64() {
         let mut model_builder = simple_model(1, None);
 
-        let metric = Array1ParameterBuilder::new("my-metric".into(), Array1::from(Array1::linspace(1.0, 21.0, 21)));
+        let array = arrow_linspace_f64(1.0, 21.0, 21);
+        let metric = Array1ParameterBuilder::from_primitive_array("my-metric".into(), array);
         model_builder.network_builder().parameters().f64(Box::new(metric));
 
         let parameter = RollingParameterBuilder::new(
@@ -440,9 +443,8 @@ mod tests {
     fn test_rolling_u64() {
         let mut model_builder = simple_model(1, None);
 
-        let values: Array1<u64> = Array1::from(Array1::linspace(1.0, 21.0, 21).map(|x| *x as u64));
-
-        let metric = Array1ParameterBuilder::new("my-metric".into(), values.clone());
+        let values = arrow_linspace_u64(1, 21, 21);
+        let metric = Array1ParameterBuilder::from_primitive_array("my-metric".into(), values);
         model_builder.network_builder().parameters().u64(Box::new(metric));
 
         let parameter = RollingParameterBuilder::new(

@@ -14,16 +14,16 @@ license-files = [
     "coin-or-sys/vendor/Cbc/LICENSE"
 ]
 dependencies = [
-    "pandas",
-    "polars>=1.44.2",
     "pyarrow",
     "click",
 ]
 dynamic = ["version"]
 
 [project.optional-dependencies]
+pandas = ["pandas"]
+polars = ["polars"]
 excel = ["openpyxl"]
-hdf = ["h5py"]
+hdf = ["h5py", "tables"]
 
 [dependency-groups]
 dev = [

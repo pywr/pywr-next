@@ -35,11 +35,12 @@ use crate::solvers::Solver;
 ))]
 use crate::solvers::SolverSettings;
 use crate::timestep::{TimeDomainBuilder, TimestepDuration};
+use arrow::array::{Float64Array, UInt64Array};
 use csv::{Reader, ReaderBuilder};
 use float_cmp::{F64Margin, approx_eq};
 use jiff::ToSpan;
 use jiff::civil::date;
-use ndarray::{Array, Array2};
+use ndarray::Array2;
 use rand::{Rng, RngExt};
 use rand_distr::{Distribution, Normal};
 use std::num::NonZeroU64;
@@ -77,8 +78,13 @@ pub fn simple_network(builder: &mut NetworkBuilder, inflow_scenario: &str, num_i
     builder.connect("input", "link");
     builder.connect("link", "output");
 
-    let inflow = Array::from_shape_fn((366, num_inflow_scenarios), |(i, j)| 1.0 + i as f64 + j as f64);
-    let inflow = Array2ParameterBuilder::new("inflow".into(), inflow, inflow_scenario);
+    let mut inflow = Vec::with_capacity(num_inflow_scenarios);
+    for j in 0..num_inflow_scenarios {
+        let column = (0..366).map(|i| 1.0 + i as f64 + j as f64).collect::<Vec<_>>();
+        inflow.push(Float64Array::from(column));
+    }
+
+    let inflow = Array2ParameterBuilder::from_primitive_arrays("inflow".into(), &inflow, inflow_scenario);
 
     builder.parameters().f64(Box::new(inflow));
 
@@ -577,13 +583,17 @@ fn make_simple_system<R: Rng + ?Sized>(
 
     let inflow_distr: Normal<f64> = Normal::new(9.0, 1.0).unwrap();
 
-    let mut inflow = Array2::zeros((num_timesteps, num_inflow_scenarios));
-
-    for x in inflow.iter_mut() {
-        *x = inflow_distr.sample(rng).max(0.0);
+    let mut inflow: Vec<Float64Array> = Vec::with_capacity(num_inflow_scenarios);
+    for _ in 0..num_inflow_scenarios {
+        inflow.push(
+            (0..num_timesteps)
+                .map(|_| inflow_distr.sample(rng).max(0.0))
+                .collect::<Float64Array>(),
+        );
     }
 
-    let inflow = Array2ParameterBuilder::new(inflow_parameter_name, inflow, inflow_scenario);
+    let inflow =
+        Array2ParameterBuilder::from_primitive_arrays(inflow_parameter_name, inflow.as_slice(), inflow_scenario);
 
     builder.parameters().f64(Box::new(inflow));
 }
@@ -677,15 +687,45 @@ pub fn make_random_model_builder<R: Rng>(
     ModelBuilder::new(domain, network_builder)
 }
 
-#[cfg(all(test, feature = "ipm-simd"))]
-mod tests {
-    use super::make_random_model_builder;
-    use crate::solvers::{SimdIpmF64Solver, SimdIpmSolverSettings};
-    use rand::SeedableRng;
-    use rand_chacha::ChaCha8Rng;
+pub fn arrow_linspace_f64(start: f64, end: f64, num: usize) -> Float64Array {
+    let step = (end - start) / (num - 1) as f64;
+    Float64Array::from_iter((0..num).map(|i| start + i as f64 * step))
+}
 
+pub fn arrow_linspace_u64(start: u64, end: u64, num: usize) -> UInt64Array {
+    let step = (end - start) / (num - 1) as u64;
+    UInt64Array::from_iter((0..num).map(|i| start + i as u64 * step))
+}
+
+/// Compare two arrays of f64
+pub fn assert_approx_array_eq(calculated_values: &[f64], expected_values: &[f64]) {
+    let margins = F64Margin {
+        epsilon: 2.0,
+        ulps: (f64::EPSILON * 2.0) as i64,
+    };
+    for (i, (calculated, expected)) in calculated_values.iter().zip(expected_values).enumerate() {
+        if !approx_eq!(f64, *calculated, *expected, margins) {
+            panic!(
+                r#"assertion failed on item #{i:?}
+                    actual: `{calculated:?}`,
+                    expected: `{expected:?}`"#,
+            )
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::arrow_linspace_f64;
+
+    #[cfg(feature = "ipm-simd")]
     #[test]
     fn test_random_model() {
+        use super::make_random_model_builder;
+        use crate::solvers::{SimdIpmF64Solver, SimdIpmSolverSettings};
+        use rand::SeedableRng;
+        use rand_chacha::ChaCha8Rng;
+
         let n_sys = 50;
         let density = 5;
         let n_sc = 12;
@@ -702,21 +742,25 @@ mod tests {
             .run_multi_scenario::<SimdIpmF64Solver>(&settings)
             .expect("Failed to run model!");
     }
-}
 
-/// Compare two arrays of f64
-pub fn assert_approx_array_eq(calculated_values: &[f64], expected_values: &[f64]) {
-    let margins = F64Margin {
-        epsilon: 2.0,
-        ulps: (f64::EPSILON * 2.0) as i64,
-    };
-    for (i, (calculated, expected)) in calculated_values.iter().zip(expected_values).enumerate() {
-        if !approx_eq!(f64, *calculated, *expected, margins) {
-            panic!(
-                r#"assertion failed on item #{i:?}
-                    actual: `{calculated:?}`,
-                    expected: `{expected:?}`"#,
-            )
+    #[test]
+    fn test_linspace_f64() {
+        let start = 0.0;
+        let end = 10.0;
+        let num = 5;
+        let array = arrow_linspace_f64(start, end, num);
+        let expected = [0.0, 2.5, 5.0, 7.5, 10.0];
+        assert_eq!(array.len(), expected.len());
+        for (i, (value, expected)) in array.iter().zip(expected.iter()).enumerate() {
+            let value = value.unwrap();
+            let expected = *expected;
+            assert!(
+                (value - expected).abs() < f64::EPSILON,
+                "Value at index {} is {}, expected {}",
+                i,
+                value,
+                expected
+            );
         }
     }
 }
