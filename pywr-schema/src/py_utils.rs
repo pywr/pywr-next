@@ -85,7 +85,7 @@ pub fn try_load_optional_py_args(py: Python, args: &Option<Vec<Value>>) -> Resul
 /// If `kwargs` is `None`, an empty dictionary is returned. If `kwargs` is `Some`, each value is converted
 /// to a Python object and returned as a dictionary.
 #[cfg(all(feature = "core", feature = "pyo3"))]
-pub fn try_load_optional_py_kwargs(py: Python, kwargs: &Option<HashMap<String, Value>>) -> Result<Py<PyDict>, PyErr> {
+pub fn try_load_optional_py_kwargs(py: Python, kwargs: Option<&HashMap<String, Value>>) -> Result<Py<PyDict>, PyErr> {
     match kwargs {
         None => Ok(PyDict::new(py).unbind()),
         Some(kwargs) => {

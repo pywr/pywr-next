@@ -11,12 +11,12 @@ use crate::nodes::NodeType;
 #[cfg(feature = "core")]
 use crate::nodes::VirtualNodeType;
 use crate::nodes::{NodeAttribute, NodeComponent};
-use crate::parameters::ParameterOrTimeseriesRef;
+use crate::parameters::ParameterOrTimeSeriesRef;
 #[cfg(feature = "core")]
 use crate::parameters::ParameterType;
 #[cfg(feature = "core")]
-use crate::timeseries::TimeseriesColumns;
-use crate::timeseries::TimeseriesReference;
+use crate::time_series::TimeSeriesColumns;
+use crate::time_series::TimeSeriesReference;
 use crate::v1::{ConversionData, TryFromV1, TryIntoV2};
 use crate::visit::{Reference, ReferenceMut, VisitReferences};
 #[cfg(feature = "pyo3")]
@@ -58,8 +58,8 @@ pub enum Metric {
     VirtualNode(VirtualNodeAttrReference),
     /// An attribute of an edge.
     Edge(EdgeReference),
-    /// A reference to a value from a timeseries.
-    Timeseries(TimeseriesReference),
+    /// A reference to a value from a time series.
+    TimeSeries(TimeSeriesReference),
     /// A reference to a global parameter.
     Parameter(ParameterReference),
     /// A reference to a local parameter.
@@ -126,17 +126,17 @@ impl Metric {
                     })?;
                 Ok(value.into())
             }
-            Self::Timeseries(ts_ref) => {
+            Self::TimeSeries(ts_ref) => {
                 let param_name = match &ts_ref.columns {
-                    Some(TimeseriesColumns::Scenario { name }) => {
-                        args.timeseries
+                    Some(TimeSeriesColumns::Scenario { name }) => {
+                        args.time_series
                             .load_df_f64(network, ts_ref.name.as_ref(), name.as_str())?
                     }
-                    Some(TimeseriesColumns::Column { name }) => {
-                        args.timeseries
+                    Some(TimeSeriesColumns::Column { name }) => {
+                        args.time_series
                             .load_column_f64(network, ts_ref.name.as_ref(), name.as_str())?
                     }
-                    None => args.timeseries.load_single_column_f64(network, ts_ref.name.as_ref())?,
+                    None => args.time_series.load_single_column_f64(network, ts_ref.name.as_ref())?,
                 };
                 Ok(UnresolvedMetricF64::new_parameter_before(param_name))
             }
@@ -156,7 +156,7 @@ impl Metric {
             Self::LocalParameter(parameter_ref) => Ok(parameter_ref.name.clone()),
             Self::Literal { .. } => Err(SchemaError::LiteralConstantOutputNotSupported),
             Self::Table(table_ref) => Ok(table_ref.table.clone()),
-            Self::Timeseries(ts_ref) => Ok(ts_ref.name.clone()),
+            Self::TimeSeries(ts_ref) => Ok(ts_ref.name.clone()),
             Self::InterNetworkTransfer { name } => Ok(name.clone()),
             Self::Edge(edge_ref) => Ok(edge_ref.edge.to_string()),
         }
@@ -170,7 +170,7 @@ impl Metric {
             Self::LocalParameter(p_ref) => p_ref.attribute(),
             Self::Literal { .. } => "value".to_string(),
             Self::Table(tbl_ref) => tbl_ref.key().join(";").to_string(),
-            Self::Timeseries(ts_ref) => ts_ref
+            Self::TimeSeries(ts_ref) => ts_ref
                 .column()
                 .map(|c| c.to_string())
                 .unwrap_or_else(|| "value".to_string()),
@@ -192,7 +192,7 @@ impl Metric {
             Self::LocalParameter(parameter_ref) => Some(parameter_ref.parameter_type(args)?.to_string()),
             Self::Literal { .. } => None,
             Self::Table(_) => None,
-            Self::Timeseries(_) => None,
+            Self::TimeSeries(_) => None,
             Self::InterNetworkTransfer { .. } => None,
             Self::Edge { .. } => None,
         };
@@ -248,10 +248,10 @@ impl TryFromV1<ParameterValueV1> for Metric {
             }),
             ParameterValueV1::Table(tbl) => Self::Table(tbl.try_into()?),
             ParameterValueV1::Inline(param) => {
-                // Inline parameters are converted to either a parameter or a timeseries
+                // Inline parameters are converted to either a parameter or a time series
                 // The actual component is extracted into the conversion data leaving a reference
                 // to the component in the metric.
-                let definition: ParameterOrTimeseriesRef = (*param).try_into_v2(parent_node, conversion_data).map_err(
+                let definition: ParameterOrTimeSeriesRef = (*param).try_into_v2(parent_node, conversion_data).map_err(
                     |e: Box<ComponentConversionError>| match *e {
                         ComponentConversionError::Parameter { error, .. } => error,
                         ComponentConversionError::Node { error, .. } => error,
@@ -261,7 +261,7 @@ impl TryFromV1<ParameterValueV1> for Metric {
                     },
                 )?;
                 match definition {
-                    ParameterOrTimeseriesRef::Parameter(p) => {
+                    ParameterOrTimeSeriesRef::Parameter(p) => {
                         let reference = ParameterReference {
                             name: p.name().to_string(),
                             key: None,
@@ -271,7 +271,7 @@ impl TryFromV1<ParameterValueV1> for Metric {
 
                         Self::Parameter(reference)
                     }
-                    ParameterOrTimeseriesRef::Timeseries(t) => Self::Timeseries(t.ts_ref),
+                    ParameterOrTimeSeriesRef::TimeSeries(t) => Self::TimeSeries(t.ts_ref),
                 }
             }
         };
@@ -693,7 +693,7 @@ pub enum IndexMetric {
     Table(TableDataRef),
     /// An attribute of a node.
     Node(NodeAttrReference),
-    Timeseries(TimeseriesReference),
+    TimeSeries(TimeSeriesReference),
     Parameter(ParameterReference),
     LocalParameter(ParameterReference),
     InterNetworkTransfer {
@@ -746,18 +746,18 @@ impl IndexMetric {
                     })?;
                 Ok(value.into())
             }
-            Self::Timeseries(ts_ref) => {
+            Self::TimeSeries(ts_ref) => {
                 let param_name = match &ts_ref.columns {
-                    Some(TimeseriesColumns::Scenario { name }) => {
-                        args.timeseries
+                    Some(TimeSeriesColumns::Scenario { name }) => {
+                        args.time_series
                             .load_df_usize(network, ts_ref.name.as_ref(), name.as_str())?
                     }
-                    Some(TimeseriesColumns::Column { name }) => {
-                        args.timeseries
+                    Some(TimeSeriesColumns::Column { name }) => {
+                        args.time_series
                             .load_column_usize(network, ts_ref.name.as_ref(), name.as_str())?
                     }
                     None => args
-                        .timeseries
+                        .time_series
                         .load_single_column_usize(network, ts_ref.name.as_ref())?,
                 };
                 Ok(UnresolvedMetricU64::new_parameter_before(param_name))
@@ -796,10 +796,10 @@ impl TryFromV1<ParameterValueV1> for IndexMetric {
             }),
             ParameterValueV1::Table(tbl) => Self::Table(tbl.try_into()?),
             ParameterValueV1::Inline(param) => {
-                // Inline parameters are converted to either a parameter or a timeseries
+                // Inline parameters are converted to either a parameter or a time series
                 // The actual component is extracted into the conversion data leaving a reference
                 // to the component in the metric.
-                let definition: ParameterOrTimeseriesRef = (*param).try_into_v2(parent_node, conversion_data).map_err(
+                let definition: ParameterOrTimeSeriesRef = (*param).try_into_v2(parent_node, conversion_data).map_err(
                     |e: Box<ComponentConversionError>| match *e {
                         ComponentConversionError::Parameter { error, .. } => error,
                         ComponentConversionError::Node { error, .. } => error,
@@ -809,7 +809,7 @@ impl TryFromV1<ParameterValueV1> for IndexMetric {
                     },
                 )?;
                 match definition {
-                    ParameterOrTimeseriesRef::Parameter(p) => {
+                    ParameterOrTimeSeriesRef::Parameter(p) => {
                         let reference = ParameterReference {
                             name: p.name().to_string(),
                             key: None,
@@ -819,7 +819,7 @@ impl TryFromV1<ParameterValueV1> for IndexMetric {
 
                         Self::Parameter(reference)
                     }
-                    ParameterOrTimeseriesRef::Timeseries(t) => Self::Timeseries(t.ts_ref),
+                    ParameterOrTimeSeriesRef::TimeSeries(t) => Self::TimeSeries(t.ts_ref),
                 }
             }
         };

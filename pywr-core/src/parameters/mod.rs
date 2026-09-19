@@ -46,6 +46,7 @@ pub use activation_function::ActivationFunction;
 pub use aggregated::{AggregatedParameter, AggregatedParameterBuilder};
 pub use aggregated_index::{AggregatedIndexParameter, AggregatedIndexParameterBuilder};
 pub use array::{Array1Parameter, Array1ParameterBuilder, Array2Parameter, Array2ParameterBuilder};
+use arrow::datatypes::DataType;
 pub use asymmetric::{AsymmetricSwitchIndexParameter, AsymmetricSwitchIndexParameterBuilder};
 pub use constant::{ConstantParameter, ConstantParameterBuilder};
 pub use constant_scenario::{ConstantScenarioParameter, ConstantScenarioParameterBuilder};
@@ -66,11 +67,11 @@ pub use hydropower::{HydropowerTargetData, HydropowerTargetParameter, Hydropower
 pub use indexed_array::{IndexedArrayParameter, IndexedArrayParameterBuilder};
 pub use interpolate::{InterpolationError, interpolate, linear_interpolation};
 pub use interpolated::{InterpolatedParameter, InterpolatedParameterBuilder};
+use jiff::civil::DateTime;
 pub use max::{MaxParameter, MaxParameterBuilder};
 pub use min::{MinParameter, MinParameterBuilder};
 pub use multi_threshold::{MultiThresholdParameter, MultiThresholdParameterBuilder};
 pub use muskingum::{MuskingumInitialCondition, MuskingumParameter, MuskingumParameterBuilder};
-use ndarray::ShapeError;
 pub use negative::{NegativeParameter, NegativeParameterBuilder};
 pub use negativemax::{NegativeMaxParameter, NegativeMaxParameterBuilder};
 pub use negativemin::{NegativeMinParameter, NegativeMinParameterBuilder};
@@ -867,12 +868,37 @@ pub enum ParameterBuildError {
         scenarios: usize,
         group: String,
     },
-    #[error("Error subsetting array with dimensions {array_shape:?} with subset {subset:?}: {source}")]
-    ArraySubSetError {
-        array_shape: Vec<usize>,
-        subset: Vec<usize>,
+    #[error(
+        "Number of columns ({array_cols}) does not match the size ({scenarios}) of the specified scenario group '{group}'."
+    )]
+    ArrayNumColsForScenarioMismatch {
+        array_cols: usize,
+        scenarios: usize,
+        group: String,
+    },
+    #[error("Error subsetting array with {array_cols} columns with subset {subset:?}.")]
+    ArraySubSetError { array_cols: usize, subset: Vec<usize> },
+    #[error("Error casting array from {from:?} to {to:?}: {source}")]
+    ArrayCastError {
+        from: DataType,
+        to: DataType,
         #[source]
-        source: ShapeError,
+        source: arrow::error::ArrowError,
+    },
+    #[error("Array contains at-least one null value.")]
+    ArrayContainsNulls,
+    #[error("Error parsing dates: {message}")]
+    DateParseError { message: String },
+    #[error("Number of data values ({data}) does not match the number of timestamps ({time}).")]
+    TimeArrayLengthMismatch { time: usize, data: usize },
+    #[error(
+        "Error aligning data domain ({data_start} - {data_end}) to time domain ({time_domain_start} - {time_domain_end})."
+    )]
+    TimeAlignmentError {
+        time_domain_start: DateTime,
+        time_domain_end: DateTime,
+        data_start: DateTime,
+        data_end: DateTime,
     },
     #[error("Could not resolve f64 metric for `{attr}` attribute: {source}")]
     ResolveMetricF64Error {
