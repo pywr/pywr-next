@@ -109,6 +109,30 @@
       },
       {
         "meta": {
+          "name": "scalar-row-row-row"
+        },
+        "type": "Scalar",
+        "format": "CSV",
+        "lookup": {
+          "type": "Row",
+          "cols": 3
+        },
+        "url": "tbl-scalar-row-row-row.csv"
+      },
+      {
+        "meta": {
+          "name": "scalar-col-col-col"
+        },
+        "type": "Scalar",
+        "format": "CSV",
+        "lookup": {
+          "type": "Col",
+          "rows": 3
+        },
+        "url": "tbl-scalar-col-col-col.csv"
+      },
+      {
+        "meta": {
           "name": "array-row"
         },
         "type": "Array",
@@ -257,6 +281,24 @@
             "table": "scalar-row-col",
             "row": "A",
             "column": "\uD83D\uDC0D"
+          },
+          {
+            "type": "Table",
+            "table": "scalar-row-row-row",
+            "row": [
+              "B",
+              "Y",
+              "P"
+            ]
+          },
+          {
+            "type": "Table",
+            "table": "scalar-col-col-col",
+            "column": [
+              "B",
+              "X",
+              "P"
+            ]
           },
           {
             "type": "Parameter",
