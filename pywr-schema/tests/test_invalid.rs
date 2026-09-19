@@ -91,6 +91,9 @@ invalid_schema_tests! {
     // sub-named core nodes, so again the core builder never sees a clash. Validation is the
     // only thing standing between this model and a silently wrong network.
     duplicate_node_name_with_composite: "duplicate-node-name-with-composite.json", DuplicateNodeName,
+    // Two parameters sharing a name. The core builder would refuse this too, but validation now
+    // refuses it first, as it does the same clash in tables, timeseries and metric sets.
+    duplicate_parameter_name: "duplicate-parameter-name.json", DuplicateParameterName,
 }
 
 fn deserialise_test_model(model_path: &Path) -> ModelSchema {
