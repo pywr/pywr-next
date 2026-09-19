@@ -121,7 +121,7 @@ pub enum ModelProblem {
 /// A problem with one network, found by [`crate::NetworkSchema::validate`].
 ///
 /// A name must be unique within its list, not across lists: `nodes` and `virtual_nodes` share one
-/// name-space, and `parameters`, `tables`, `timeseries` and `metric_sets` each have their own.
+/// name-space, and `parameters`, `tables`, `time_series` and `metric_sets` each have their own.
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
 pub enum NetworkProblem {
     /// A name used by more than one entry of `nodes` or `virtual_nodes`.
@@ -133,9 +133,9 @@ pub enum NetworkProblem {
     /// A name used by more than one entry of `tables`.
     #[error("The name `{name}` is used by {count} tables, but each name must be unique.")]
     DuplicateTableName { name: String, count: usize },
-    /// A name used by more than one entry of `timeseries`.
-    #[error("The name `{name}` is used by {count} timeseries, but each name must be unique.")]
-    DuplicateTimeseriesName { name: String, count: usize },
+    /// A name used by more than one entry of `time_series`.
+    #[error("The name `{name}` is used by {count} time series, but each name must be unique.")]
+    DuplicateTimeSeriesName { name: String, count: usize },
     /// A name used by more than one entry of `metric_sets`.
     #[error("The name `{name}` is used by {count} metric sets, but each name must be unique.")]
     DuplicateMetricSetName { name: String, count: usize },
@@ -160,7 +160,7 @@ pub struct NetworkValidationError {
     /// on its own, or as part of a [`crate::ModelSchema`].
     pub name: Option<String>,
     /// Never empty. Duplicate names first, list by list in the order nodes, parameters, tables,
-    /// timeseries, metric sets, each sorted by name; then invalid edges in the order listed.
+    /// time series, metric sets, each sorted by name; then invalid edges in the order listed.
     pub problems: Vec<NetworkProblem>,
 }
 

@@ -862,9 +862,9 @@ impl NetworkSchema {
                     .map(|(name, count)| NetworkProblem::DuplicateTableName { name, count }),
             )
             .chain(
-                duplicate_names(self.timeseries.as_deref(), Timeseries::name)
+                duplicate_names(self.time_series.as_deref(), TimeSeries::name)
                     .into_iter()
-                    .map(|(name, count)| NetworkProblem::DuplicateTimeseriesName { name, count }),
+                    .map(|(name, count)| NetworkProblem::DuplicateTimeSeriesName { name, count }),
             )
             .chain(
                 duplicate_names(self.metric_sets.as_deref(), |metric_set| metric_set.name.as_str())
@@ -1587,7 +1587,7 @@ mod tests {
                     { "meta": { "name": "tbl" }, "type": "Scalar", "format": "CSV", "lookup": { "type": "Row", "cols": 1 }, "url": "tbl.csv" },
                     { "meta": { "name": "shared" }, "format": "Placeholder" }
                 ],
-                "timeseries": [
+                "time_series": [
                     { "meta": { "name": "ts" }, "type": "Polars", "time_col": "date", "url": "ts.csv" },
                     { "meta": { "name": "ts" }, "type": "Placeholder" },
                     { "meta": { "name": "shared" }, "type": "Placeholder" }
@@ -1623,7 +1623,7 @@ mod tests {
                     name: "tbl".to_string(),
                     count: 2,
                 },
-                NetworkProblem::DuplicateTimeseriesName {
+                NetworkProblem::DuplicateTimeSeriesName {
                     name: "ts".to_string(),
                     count: 2,
                 },
@@ -1645,7 +1645,7 @@ mod tests {
              - The name `p1` is used by 2 parameters, but each name must be unique.\n\
              - The name `p2` is used by 3 parameters, but each name must be unique.\n\
              - The name `tbl` is used by 2 tables, but each name must be unique.\n\
-             - The name `ts` is used by 2 timeseries, but each name must be unique.\n\
+             - The name `ts` is used by 2 time series, but each name must be unique.\n\
              - The name `ms` is used by 2 metric sets, but each name must be unique.\n\
              - The edge `link->missing` is invalid. There is no node named `missing` to connect to."
         );
