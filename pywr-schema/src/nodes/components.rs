@@ -44,6 +44,9 @@ pub enum NodeComponent {
 /// - `From<MySubset> for NodeComponent`
 /// - `TryFrom<NodeComponent> for MySubset`
 ///
+/// The generated enum derives `Debug`, `Clone`, `PartialEq`, `Eq` and
+/// [`strum_macros::EnumIter`], so that the variants of a subset can be iterated.
+///
 #[macro_export]
 macro_rules! node_component_subset_enum {
     (
@@ -55,7 +58,7 @@ macro_rules! node_component_subset_enum {
         }
     ) => {
         $(#[$meta])*
-        #[derive(Debug, Clone, PartialEq, Eq)]
+        #[derive(Debug, Clone, PartialEq, Eq, ::strum_macros::EnumIter)]
         $vis enum $name {
             $(
                 $(#[$variant_meta])*
