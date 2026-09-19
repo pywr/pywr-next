@@ -333,6 +333,26 @@ impl VisitReferences for NetworkSchema {
     }
 }
 
+/// The names used by more than one of `items`, with how many use each, sorted by name.
+fn duplicate_names<T>(items: Option<&[T]>, name_of: impl Fn(&T) -> &str) -> Vec<(String, usize)> {
+    let mut counts: HashMap<&str, usize> = HashMap::new();
+
+    for item in items.into_iter().flatten() {
+        *counts.entry(name_of(item)).or_default() += 1;
+    }
+
+    let mut duplicates: Vec<(String, usize)> = counts
+        .into_iter()
+        .filter(|(_, count)| *count > 1)
+        .map(|(name, count)| (name.to_string(), count))
+        .collect();
+
+    // The hash map's order is random.
+    duplicates.sort();
+
+    duplicates
+}
+
 impl NetworkSchema {
     /// Visit every reference together with the top-level component holding it.
     pub fn visit_owned_references<F: FnMut(Owner<'_>, Reference<'_>)>(&self, visitor: &mut F) {
@@ -831,6 +851,26 @@ impl NetworkSchema {
         let problems: Vec<NetworkProblem> = duplicates
             .into_iter()
             .map(NetworkProblem::DuplicateNodeName)
+            .chain(
+                duplicate_names(self.parameters.as_deref(), Parameter::name)
+                    .into_iter()
+                    .map(|(name, count)| NetworkProblem::DuplicateParameterName { name, count }),
+            )
+            .chain(
+                duplicate_names(self.tables.as_deref(), DataTable::name)
+                    .into_iter()
+                    .map(|(name, count)| NetworkProblem::DuplicateTableName { name, count }),
+            )
+            .chain(
+                duplicate_names(self.timeseries.as_deref(), Timeseries::name)
+                    .into_iter()
+                    .map(|(name, count)| NetworkProblem::DuplicateTimeseriesName { name, count }),
+            )
+            .chain(
+                duplicate_names(self.metric_sets.as_deref(), |metric_set| metric_set.name.as_str())
+                    .into_iter()
+                    .map(|(name, count)| NetworkProblem::DuplicateMetricSetName { name, count }),
+            )
             .chain(invalid_edges.into_iter().map(NetworkProblem::InvalidEdge))
             .collect();
 
@@ -1515,6 +1555,98 @@ mod tests {
             network.validate().unwrap_err().report().to_string(),
             "The network has 2 problem(s):\n\
              - The name `link` is used by 2 node(s) and 0 virtual node(s), but each name must be unique.\n\
+             - The edge `link->missing` is invalid. There is no node named `missing` to connect to."
+        );
+    }
+
+    /// Every list is checked, and every duplicate is reported in the documented order. A
+    /// placeholder entry counts like any other, and a name shared across lists is not a duplicate.
+    #[test]
+    fn test_validate_reports_duplicate_names_in_every_list() {
+        let network = parse_network(
+            r#"
+            {
+                "nodes": [
+                    { "meta": { "name": "link" }, "type": "Link" },
+                    { "meta": { "name": "link" }, "type": "Link" },
+                    { "meta": { "name": "shared" }, "type": "Link" }
+                ],
+                "edges": [
+                    { "from_node": "link", "to_node": "missing" }
+                ],
+                "parameters": [
+                    { "meta": { "name": "p2" }, "type": "Constant", "value": { "type": "Literal", "value": 1.0 } },
+                    { "meta": { "name": "p1" }, "type": "Constant", "value": { "type": "Literal", "value": 1.0 } },
+                    { "meta": { "name": "p2" }, "type": "Placeholder" },
+                    { "meta": { "name": "p1" }, "type": "Constant", "value": { "type": "Literal", "value": 2.0 } },
+                    { "meta": { "name": "p2" }, "type": "Constant", "value": { "type": "Literal", "value": 3.0 } },
+                    { "meta": { "name": "shared" }, "type": "Constant", "value": { "type": "Literal", "value": 1.0 } }
+                ],
+                "tables": [
+                    { "meta": { "name": "tbl" }, "format": "Placeholder" },
+                    { "meta": { "name": "tbl" }, "type": "Scalar", "format": "CSV", "lookup": { "type": "Row", "cols": 1 }, "url": "tbl.csv" },
+                    { "meta": { "name": "shared" }, "format": "Placeholder" }
+                ],
+                "timeseries": [
+                    { "meta": { "name": "ts" }, "type": "Polars", "time_col": "date", "url": "ts.csv" },
+                    { "meta": { "name": "ts" }, "type": "Placeholder" },
+                    { "meta": { "name": "shared" }, "type": "Placeholder" }
+                ],
+                "metric_sets": [
+                    { "name": "ms", "filters": { "all_nodes": true } },
+                    { "name": "ms", "filters": { "all_virtual_nodes": true } },
+                    { "name": "shared", "filters": { "all_nodes": true } }
+                ]
+            }
+            "#,
+        );
+
+        let problems = expect_problems(&network);
+
+        assert_eq!(
+            problems,
+            vec![
+                NetworkProblem::DuplicateNodeName(DuplicateNodeName {
+                    name: "link".to_string(),
+                    nodes: 2,
+                    virtual_nodes: 0,
+                }),
+                NetworkProblem::DuplicateParameterName {
+                    name: "p1".to_string(),
+                    count: 2,
+                },
+                NetworkProblem::DuplicateParameterName {
+                    name: "p2".to_string(),
+                    count: 3,
+                },
+                NetworkProblem::DuplicateTableName {
+                    name: "tbl".to_string(),
+                    count: 2,
+                },
+                NetworkProblem::DuplicateTimeseriesName {
+                    name: "ts".to_string(),
+                    count: 2,
+                },
+                NetworkProblem::DuplicateMetricSetName {
+                    name: "ms".to_string(),
+                    count: 2,
+                },
+                NetworkProblem::InvalidEdge(EdgeValidationError {
+                    edge: network.edges[0].clone(),
+                    problem: EdgeProblem::UnknownToNode("missing".to_string()),
+                }),
+            ]
+        );
+
+        assert_eq!(
+            network.validate().unwrap_err().report().to_string(),
+            "The network has 7 problem(s):\n\
+             - The name `link` is used by 2 node(s) and 0 virtual node(s), but each name must be unique.\n\
+             - The name `p1` is used by 2 parameters, but each name must be unique.\n\
+             - The name `p2` is used by 3 parameters, but each name must be unique.\n\
+             - The name `tbl` is used by 2 tables, but each name must be unique.\n\
+             - The name `ts` is used by 2 timeseries, but each name must be unique.\n\
+             - The name `ms` is used by 2 metric sets, but each name must be unique.\n\
              - The edge `link->missing` is invalid. There is no node named `missing` to connect to."
         );
     }
