@@ -11,8 +11,14 @@ pub enum NodeSlot {
     Spill,
     Compensation,
     Abstraction,
-    Split { position: usize },
-    User { name: String },
+    #[strum(to_string = "Split[{position}]")]
+    Split {
+        position: usize,
+    },
+    #[strum(to_string = "User[{name}]")]
+    User {
+        name: String,
+    },
 }
 
 impl NodeSlot {

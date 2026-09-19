@@ -717,13 +717,25 @@ impl NetworkSchema {
     ///
     /// An end whose name is used by more than one node resolves to the first of them.
     pub fn validate_edge(&self, edge: &Edge) -> Result<(), EdgeProblem> {
-        let from_node = self
-            .get_node_by_name(&edge.from_node)
-            .ok_or_else(|| EdgeProblem::UnknownFromNode(edge.from_node.clone()))?;
+        let from_node = self.get_node_by_name(&edge.from_node).ok_or_else(|| {
+            match self.get_virtual_node_by_name(&edge.from_node) {
+                Some(virtual_node) => EdgeProblem::VirtualFromNode {
+                    name: edge.from_node.clone(),
+                    node_type: virtual_node.node_type(),
+                },
+                None => EdgeProblem::UnknownFromNode(edge.from_node.clone()),
+            }
+        })?;
 
-        let to_node = self
-            .get_node_by_name(&edge.to_node)
-            .ok_or_else(|| EdgeProblem::UnknownToNode(edge.to_node.clone()))?;
+        let to_node =
+            self.get_node_by_name(&edge.to_node)
+                .ok_or_else(|| match self.get_virtual_node_by_name(&edge.to_node) {
+                    Some(virtual_node) => EdgeProblem::VirtualToNode {
+                        name: edge.to_node.clone(),
+                        node_type: virtual_node.node_type(),
+                    },
+                    None => EdgeProblem::UnknownToNode(edge.to_node.clone()),
+                })?;
 
         if edge.from_node == edge.to_node {
             return Err(EdgeProblem::SelfEdge(edge.from_node.clone()));
@@ -733,8 +745,10 @@ impl NetworkSchema {
             from_node
                 .validate_output_slot(Some(slot))
                 .map_err(|_| EdgeProblem::UnknownFromSlot {
+                    name: from_node.name().to_string(),
                     node_type: from_node.node_type(),
                     slot: slot.clone(),
+                    valid: from_node.iter_output_slots().map(|slots| slots.collect()),
                 })?;
         }
 
@@ -742,17 +756,25 @@ impl NetworkSchema {
             to_node
                 .validate_input_slot(Some(slot))
                 .map_err(|_| EdgeProblem::UnknownToSlot {
+                    name: to_node.name().to_string(),
                     node_type: to_node.node_type(),
                     slot: slot.clone(),
+                    valid: to_node.iter_input_slots().map(|slots| slots.collect()),
                 })?;
         }
 
         if !from_node.provides_outflow() {
-            return Err(EdgeProblem::NoOutflow(from_node.node_type()));
+            return Err(EdgeProblem::NoOutflow {
+                name: from_node.name().to_string(),
+                node_type: from_node.node_type(),
+            });
         }
 
         if !to_node.accepts_inflow() {
-            return Err(EdgeProblem::NoInflow(to_node.node_type()));
+            return Err(EdgeProblem::NoInflow {
+                name: to_node.name().to_string(),
+                node_type: to_node.node_type(),
+            });
         }
 
         Ok(())
@@ -1114,7 +1136,7 @@ pub enum NetworkSchemaRef {
 mod tests {
     use super::{NetworkMergeError, NetworkSchema};
     use crate::error::{DuplicateNodeName, EdgeProblem, EdgeValidationError, NetworkProblem};
-    use crate::nodes::{NodeSlot, NodeType};
+    use crate::nodes::{NodeSlot, NodeType, VirtualNodeType};
     use std::str::FromStr;
 
     /// Return the problems reported by [`NetworkSchema::validate`], or panic if it succeeded.
@@ -1199,8 +1221,8 @@ mod tests {
         );
     }
 
-    /// A network with an edge for every [`EdgeProblem`], and into both node types that cannot
-    /// receive flow.
+    /// A network with an edge for every [`EdgeProblem`] that does not need a virtual node, and
+    /// into both node types that cannot receive flow.
     const NETWORK_WITH_INVALID_EDGES: &str = r#"
     {
         "nodes": [
@@ -1230,7 +1252,13 @@ mod tests {
         assert_eq!(
             expect_invalid_edges(&network),
             vec![
-                ("link->supply".to_string(), EdgeProblem::NoInflow(NodeType::Input)),
+                (
+                    "link->supply".to_string(),
+                    EdgeProblem::NoInflow {
+                        name: "supply".to_string(),
+                        node_type: NodeType::Input,
+                    }
+                ),
                 (
                     "link->missing".to_string(),
                     EdgeProblem::UnknownToNode("missing".to_string())
@@ -1239,32 +1267,45 @@ mod tests {
                     "absent->link".to_string(),
                     EdgeProblem::UnknownFromNode("absent".to_string())
                 ),
-                ("demand->link".to_string(), EdgeProblem::NoOutflow(NodeType::Output)),
+                (
+                    "demand->link".to_string(),
+                    EdgeProblem::NoOutflow {
+                        name: "demand".to_string(),
+                        node_type: NodeType::Output,
+                    }
+                ),
                 (
                     "link[Spill]->demand".to_string(),
                     EdgeProblem::UnknownFromSlot {
+                        name: "link".to_string(),
                         node_type: NodeType::Link,
                         slot: NodeSlot::Spill,
+                        valid: None,
                     }
                 ),
                 ("link->link".to_string(), EdgeProblem::SelfEdge("link".to_string())),
                 (
                     "link->demand[Storage]".to_string(),
                     EdgeProblem::UnknownToSlot {
+                        name: "demand".to_string(),
                         node_type: NodeType::Output,
                         slot: NodeSlot::Storage,
+                        valid: None,
                     }
                 ),
                 (
                     "link->catchment".to_string(),
-                    EdgeProblem::NoInflow(NodeType::Catchment)
+                    EdgeProblem::NoInflow {
+                        name: "catchment".to_string(),
+                        node_type: NodeType::Catchment,
+                    }
                 ),
             ]
         );
     }
 
-    /// Edges connect only entries of `nodes`, so a virtual node's name is unknown to an edge
-    /// even though the network defines it.
+    /// Edges connect only entries of `nodes`. A virtual node at either end is reported as the
+    /// virtual node it is, rather than as a name the network does not define.
     #[test]
     fn test_validate_rejects_virtual_node_as_edge_end() {
         let network = parse_network(
@@ -1283,7 +1324,8 @@ mod tests {
                 ],
                 "edges": [
                     { "from_node": "supply", "to_node": "demand" },
-                    { "from_node": "licence", "to_node": "demand" }
+                    { "from_node": "licence", "to_node": "demand" },
+                    { "from_node": "supply", "to_node": "licence" }
                 ]
             }
             "#,
@@ -1291,10 +1333,22 @@ mod tests {
 
         assert_eq!(
             expect_invalid_edges(&network),
-            vec![(
-                "licence->demand".to_string(),
-                EdgeProblem::UnknownFromNode("licence".to_string())
-            )]
+            vec![
+                (
+                    "licence->demand".to_string(),
+                    EdgeProblem::VirtualFromNode {
+                        name: "licence".to_string(),
+                        node_type: VirtualNodeType::Aggregated,
+                    }
+                ),
+                (
+                    "supply->licence".to_string(),
+                    EdgeProblem::VirtualToNode {
+                        name: "licence".to_string(),
+                        node_type: VirtualNodeType::Aggregated,
+                    }
+                ),
+            ]
         );
     }
 
@@ -1366,10 +1420,53 @@ mod tests {
             vec![(
                 "without-spill[Spill]->river".to_string(),
                 EdgeProblem::UnknownFromSlot {
+                    name: "without-spill".to_string(),
                     node_type: NodeType::Reservoir,
                     slot: NodeSlot::Spill,
+                    valid: Some(vec![NodeSlot::Storage]),
                 }
             )]
+        );
+    }
+
+    /// A slot problem names the slots the node does have, so that a mistyped slot can be
+    /// corrected without reading the node's definition; a node with no slots of that kind says so.
+    #[test]
+    fn test_invalid_slot_problem_lists_the_slots_the_node_has() {
+        let network = parse_network(
+            r#"
+            {
+                "nodes": [
+                    {
+                        "meta": { "name": "split" },
+                        "type": "RiverSplitWithGauge",
+                        "splits": [
+                            { "factor": { "type": "Literal", "value": 0.5 } },
+                            { "factor": { "type": "Literal", "value": 0.5 }, "slot_name": "to-supply" }
+                        ]
+                    },
+                    { "meta": { "name": "river" }, "type": "Link" },
+                    { "meta": { "name": "demand" }, "type": "Output" }
+                ],
+                "edges": [
+                    { "from_node": "split", "from_slot": { "type": "Split", "position": 5 }, "to_node": "river" },
+                    { "from_node": "river", "from_slot": { "type": "Spill" }, "to_node": "demand" }
+                ]
+            }
+            "#,
+        );
+
+        let messages: Vec<String> = expect_invalid_edges(&network)
+            .iter()
+            .map(|(_, problem)| problem.to_string())
+            .collect();
+
+        assert_eq!(
+            messages,
+            vec![
+                "The `RiverSplitWithGauge` node `split` has no output slot `Split[5]`. Its output slots are: `River`, `Split[0]`, `User[to-supply]`.",
+                "The `Link` node `river` has no output slot `Spill`. Nodes of this type have no output slots.",
+            ]
         );
     }
 

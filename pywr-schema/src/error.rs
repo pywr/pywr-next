@@ -2,7 +2,7 @@
 use crate::data_tables::{TableCollectionError, TableDataRef};
 use crate::digest::ChecksumError;
 use crate::edge::Edge;
-use crate::nodes::{NodeAttribute, NodeComponent, NodeSlot, NodeType};
+use crate::nodes::{NodeAttribute, NodeComponent, NodeSlot, NodeType, VirtualNodeType};
 use crate::timeseries::TimeseriesError;
 use jiff::civil::DateTime;
 #[cfg(feature = "core")]
@@ -33,6 +33,19 @@ impl std::fmt::Display for DuplicateNodeName {
     }
 }
 
+/// The `"input"` or `"output"` slots a node has, for the end of a message about one it does not.
+/// `None` is a node type that never has such slots, as opposed to a node configured without any.
+fn slot_list_message(end: &str, slots: Option<&[NodeSlot]>) -> String {
+    match slots {
+        None => format!("Nodes of this type have no {end} slots."),
+        Some([]) => format!("As configured, it has no {end} slots."),
+        Some(slots) => {
+            let slots: Vec<String> = slots.iter().map(|slot| format!("`{slot}`")).collect();
+            format!("Its {end} slots are: {}.", slots.join(", "))
+        }
+    }
+}
+
 /// The reason an [`Edge`] is invalid.
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
 pub enum EdgeProblem {
@@ -42,16 +55,41 @@ pub enum EdgeProblem {
     /// The `to_node` is not an entry of `nodes`.
     #[error("There is no node named `{0}` to connect to.")]
     UnknownToNode(String),
+    /// The `from_node` is a virtual node, which an edge cannot connect.
+    #[error(
+        "The `{node_type}` virtual node `{name}` cannot be connected from. Only nodes in `nodes` can be connected by edges."
+    )]
+    VirtualFromNode { name: String, node_type: VirtualNodeType },
+    /// The `to_node` is a virtual node, which an edge cannot connect.
+    #[error(
+        "The `{node_type}` virtual node `{name}` cannot be connected to. Only nodes in `nodes` can be connected by edges."
+    )]
+    VirtualToNode { name: String, node_type: VirtualNodeType },
+    /// Both ends are the same node.
     #[error("The node `{0}` cannot be connected to itself.")]
     SelfEdge(String),
-    #[error("This `{node_type}` node has no output slot `{slot}`.")]
-    UnknownFromSlot { node_type: NodeType, slot: NodeSlot },
-    #[error("This `{node_type}` node has no input slot `{slot}`.")]
-    UnknownToSlot { node_type: NodeType, slot: NodeSlot },
-    #[error("`{0}` nodes cannot receive flow.")]
-    NoInflow(NodeType),
-    #[error("`{0}` nodes cannot provide flow.")]
-    NoOutflow(NodeType),
+    /// The `from_slot` is not one of the `from_node`'s output slots.
+    #[error("The `{node_type}` node `{name}` has no output slot `{slot}`. {}", slot_list_message("output", .valid.as_deref()))]
+    UnknownFromSlot {
+        name: String,
+        node_type: NodeType,
+        slot: NodeSlot,
+        valid: Option<Vec<NodeSlot>>,
+    },
+    /// The `to_slot` is not one of the `to_node`'s input slots.
+    #[error("The `{node_type}` node `{name}` has no input slot `{slot}`. {}", slot_list_message("input", .valid.as_deref()))]
+    UnknownToSlot {
+        name: String,
+        node_type: NodeType,
+        slot: NodeSlot,
+        valid: Option<Vec<NodeSlot>>,
+    },
+    /// The `to_node` is a node that cannot be the receiving end of an edge.
+    #[error("The `{node_type}` node `{name}` cannot receive flow.")]
+    NoInflow { name: String, node_type: NodeType },
+    /// The `from_node` is a node that cannot be the providing end of an edge.
+    #[error("The `{node_type}` node `{name}` cannot provide flow.")]
+    NoOutflow { name: String, node_type: NodeType },
 }
 
 /// An edge that [`crate::NetworkSchema::validate`] rejected, and why.
