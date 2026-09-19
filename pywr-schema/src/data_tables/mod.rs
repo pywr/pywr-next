@@ -39,7 +39,7 @@ use thiserror::Error;
 #[cfg(feature = "core")]
 use vec::LoadedVecTable;
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, Display, EnumIter)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitPaths, Display, EnumIter)]
 pub enum DataTableValueType {
     Scalar,
     Array,
@@ -52,7 +52,9 @@ pub struct TableMeta {
     pub comment: Option<String>,
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, Display, EnumDiscriminants)]
+#[derive(
+    serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitPaths, Display, EnumDiscriminants,
+)]
 #[serde(tag = "format")]
 #[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
 #[strum_discriminants(name(DataTableType))]
@@ -88,7 +90,9 @@ impl DataTable {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, Display, EnumDiscriminants)]
+#[derive(
+    serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitPaths, Display, EnumDiscriminants,
+)]
 #[serde(tag = "type", deny_unknown_fields)]
 #[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
 #[strum_discriminants(name(CsvDataTableLookupType))]
@@ -99,7 +103,7 @@ pub enum CsvDataTableLookup {
 }
 
 /// An external table of data that can be referenced
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitPaths)]
 pub struct CsvDataTable {
     pub meta: TableMeta,
     #[serde(rename = "type")]
@@ -146,7 +150,7 @@ impl CsvDataTable {
 }
 
 /// A placeholder for an external table of data that can be referenced
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitPaths)]
 pub struct PlaceholderTable {
     pub meta: TableMeta,
 }

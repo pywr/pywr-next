@@ -211,6 +211,19 @@ where
     }
 }
 
+impl<T> VisitPaths for Box<T>
+where
+    T: VisitPaths,
+{
+    fn visit_paths<F: FnMut(&Path)>(&self, visitor: &mut F) {
+        self.as_ref().visit_paths(visitor);
+    }
+
+    fn visit_paths_mut<F: FnMut(&mut PathBuf)>(&mut self, visitor: &mut F) {
+        self.as_mut().visit_paths_mut(visitor);
+    }
+}
+
 impl VisitPaths for u8 {}
 impl VisitPaths for i8 {}
 impl VisitPaths for u16 {}
@@ -224,6 +237,7 @@ impl<const N: usize> VisitPaths for [f64; N] {}
 impl<const N: usize> VisitPaths for [Metric; N] {}
 impl VisitPaths for bool {}
 impl VisitPaths for u64 {}
+impl VisitPaths for usize {}
 impl VisitPaths for String {}
 impl VisitPaths for PathBuf {
     fn visit_paths<F: FnMut(&Path)>(&self, visitor: &mut F) {
@@ -235,6 +249,7 @@ impl VisitPaths for PathBuf {
     }
 }
 impl VisitPaths for NonZeroUsize {}
+impl VisitPaths for NonZeroI64 {}
 
 impl VisitPaths for serde_json::Value {}
 
