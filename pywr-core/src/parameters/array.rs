@@ -373,6 +373,16 @@ impl ParameterBuilder<f64> for Array2ParameterBuilder {
                     array_cols: array.len(),
                     subset: subset.to_vec(),
                 })?;
+        } else {
+            // If there is no subset, we need to ensure that the number of arrays matches the number of scenarios in the group.
+            let scenario_group_size = resolution_maps.domain.scenarios().group_size(&self.scenario_group)?;
+            if array.len() != scenario_group_size {
+                return Err(ParameterBuildError::ArrayNumColsForScenarioMismatch {
+                    array_cols: array.len(),
+                    scenarios: scenario_group_size,
+                    group: self.scenario_group.clone(),
+                });
+            }
         }
 
         // Now we need to cast each array in the vector to Float64Array
@@ -442,6 +452,16 @@ impl ParameterBuilder<u64> for Array2ParameterBuilder {
                     array_cols: array.len(),
                     subset: subset.to_vec(),
                 })?;
+        } else {
+            // If there is no subset, we need to ensure that the number of arrays matches the number of scenarios in the group.
+            let scenario_group_size = resolution_maps.domain.scenarios().group_size(&self.scenario_group)?;
+            if array.len() != scenario_group_size {
+                return Err(ParameterBuildError::ArrayNumColsForScenarioMismatch {
+                    array_cols: array.len(),
+                    scenarios: scenario_group_size,
+                    group: self.scenario_group.clone(),
+                });
+            }
         }
 
         // Now we need to cast each array in the vector to UInt64Array
@@ -740,6 +760,50 @@ mod tests {
                 assert_approx_eq!(f64, p.compute(ctx, &mut state).unwrap(), ts.index.min(5) as f64);
             }
         }
+    }
+
+    fn build_array2_parameter_builder_errors_with_wrong_cols(data_cols: usize) {
+        assert_ne!(
+            data_cols, 5,
+            "data_cols must not be equal to the number of scenarios (5) for this test"
+        );
+        let scenario_group = ScenarioGroupBuilder::new("array-scenarios", 5);
+
+        let mut scenarios = ScenarioDomainBuilder::default();
+        scenarios.with_group(scenario_group);
+        let mut domain_builder = ModelDomainBuilder::new(TimeDomainBuilder::new(
+            date(1970, 1, 1).at(0, 0, 0, 0),
+            date(1970, 1, 2).at(0, 0, 0, 0),
+            TimestepDuration::Days(NonZeroU64::new(1).unwrap()),
+        ));
+        domain_builder.scenario(scenarios);
+        let resolution_maps = ResolutionMaps::new(domain_builder.build().unwrap());
+
+        let data = (0..data_cols)
+            .map(|scenario| Float64Array::from(vec![scenario as f64 * 10.0, scenario as f64 * 10.0 + 1.0]))
+            .collect::<Vec<_>>();
+        let builder = Array2ParameterBuilder::from_primitive_arrays("array2".into(), &data, "array-scenarios");
+        let result: Result<MaybeBuiltParameter<f64>, ParameterBuildError> = Box::new(builder).build(&resolution_maps);
+
+        match result {
+            Ok(_) => panic!("Expected error due to mismatch in number of columns and scenarios"),
+            Err(ParameterBuildError::ArrayNumColsForScenarioMismatch {
+                array_cols,
+                scenarios,
+                group,
+            }) => {
+                assert_eq!(array_cols, data_cols);
+                assert_eq!(scenarios, 5);
+                assert_eq!(group, "array-scenarios");
+            }
+            Err(e) => panic!("Unexpected error: {:?}", e),
+        }
+    }
+
+    #[test]
+    fn test_array2_parameter_builder_errors_with_wrong_cols() {
+        build_array2_parameter_builder_errors_with_wrong_cols(4);
+        build_array2_parameter_builder_errors_with_wrong_cols(6);
     }
 
     #[test]
