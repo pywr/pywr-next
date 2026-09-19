@@ -167,19 +167,19 @@ impl Model {
     }
 
     /// Check whether a solver `S` has the required features to run this model.
-    pub fn check_solver_features<C>(&self) -> bool
+    pub fn check_solver_features<C>(&self, solver_config: &C) -> bool
     where
         C: SolverConfig,
     {
-        self.network.check_solver_features::<C>()
+        self.network.check_solver_features(solver_config)
     }
 
     /// Check whether a solver `S` has the required features to run this model.
-    pub fn check_multi_scenario_solver_features<C>(&self) -> bool
+    pub fn check_multi_scenario_solver_features<C>(&self, solver_config: &C) -> bool
     where
         C: MultiStateSolverConfig,
     {
-        self.network.check_multi_scenario_solver_features::<C>()
+        self.network.check_multi_scenario_solver_features(solver_config)
     }
 
     pub fn setup<C>(&self, solver_config: &C) -> Result<ModelState<Vec<Box<C::Solver>>>, ModelSetupError>

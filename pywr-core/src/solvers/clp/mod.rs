@@ -358,7 +358,18 @@ impl ClpSolver {
 
 impl SolverConfig for ClpSolverSettings {
     type Solver = ClpSolver;
+    fn name(&self) -> &'static str {
+        "clp"
+    }
 
+    fn features(&self) -> &'static [SolverFeatures] {
+        &[
+            SolverFeatures::AggregatedNode,
+            SolverFeatures::AggregatedNodeFactors,
+            SolverFeatures::AggregatedNodeDynamicFactors,
+            SolverFeatures::VirtualStorage,
+        ]
+    }
     fn setup(&self, network: &Network, values: &ConstParameterValues) -> Result<Box<Self::Solver>, SolverSetupError> {
         let builder = SolverBuilder::new(f64::MAX, -f64::MAX);
         let built = builder.create(network, values)?;
@@ -369,19 +380,6 @@ impl SolverConfig for ClpSolverSettings {
 }
 
 impl Solver for ClpSolver {
-    fn name() -> &'static str {
-        "clp"
-    }
-
-    fn features() -> &'static [SolverFeatures] {
-        &[
-            SolverFeatures::AggregatedNode,
-            SolverFeatures::AggregatedNodeFactors,
-            SolverFeatures::AggregatedNodeDynamicFactors,
-            SolverFeatures::VirtualStorage,
-        ]
-    }
-
     fn solve(
         &mut self,
         network: &Network,

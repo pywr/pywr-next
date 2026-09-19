@@ -83,21 +83,11 @@ impl MicroLpSolver {
 impl SolverConfig for MicroLpSolverSettings {
     type Solver = MicroLpSolver;
 
-    fn setup(&self, network: &Network, values: &ConstParameterValues) -> Result<Box<Self::Solver>, SolverSetupError> {
-        let builder = SolverBuilder::new(f64::INFINITY, f64::NEG_INFINITY);
-        let built = builder.create(network, values)?;
-
-        let solver = MicroLpSolver { builder: built };
-        Ok(Box::new(solver))
-    }
-}
-
-impl Solver for MicroLpSolver {
-    fn name() -> &'static str {
+    fn name(&self) -> &'static str {
         "microlp"
     }
 
-    fn features() -> &'static [SolverFeatures] {
+    fn features(&self) -> &'static [SolverFeatures] {
         &[
             SolverFeatures::VirtualStorage,
             SolverFeatures::MutualExclusivity,
@@ -108,6 +98,16 @@ impl Solver for MicroLpSolver {
         ]
     }
 
+    fn setup(&self, network: &Network, values: &ConstParameterValues) -> Result<Box<Self::Solver>, SolverSetupError> {
+        let builder = SolverBuilder::new(f64::INFINITY, f64::NEG_INFINITY);
+        let built = builder.create(network, values)?;
+
+        let solver = MicroLpSolver { builder: built };
+        Ok(Box::new(solver))
+    }
+}
+
+impl Solver for MicroLpSolver {
     fn solve(
         &mut self,
         network: &Network,
