@@ -2,7 +2,7 @@
 use crate::data_tables::LoadedTableCollection;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
-use crate::error::{ComponentConversionError, ValidationError};
+use crate::error::{ComponentConversionError, ModelProblem, ValidationError};
 use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::network::{LoadArgs, NetworkSchemaBuildError, NetworkSchemaReadError};
@@ -121,10 +121,14 @@ impl TimeDomain {
     /// This checks that the simulation period does not end before it starts, and that a
     /// [`Timestep::Frequency`] string is a duration that `pywr-core` can use. These are the
     /// problems that would otherwise only appear when the model is built.
-    pub fn validate(&self) -> Result<(), ValidationError> {
+    ///
+    /// Both are checked, and every problem found is returned.
+    pub fn validate(&self) -> Result<(), Vec<ModelProblem>> {
+        let mut problems = Vec::new();
+
         // The same instant is a period, if a short one, so `>` rather than `>=`.
         if self.start > self.end {
-            return Err(ValidationError::EndBeforeStart {
+            problems.push(ModelProblem::EndBeforeStart {
                 start: self.start,
                 end: self.end,
             });
@@ -132,19 +136,19 @@ impl TimeDomain {
 
         if let Timestep::Frequency { freq } = &self.timestep {
             // The same parse that `pywr_core::timestep::TimeDomainBuilder` makes.
-            let span = freq
-                .parse::<Span>()
-                .map_err(|error| ValidationError::UnparsableFrequency {
+            match freq.parse::<Span>() {
+                Err(error) => problems.push(ModelProblem::UnparsableFrequency {
                     freq: freq.clone(),
                     error: error.to_string(),
-                })?;
-
-            if span.is_zero() || span.is_negative() {
-                return Err(ValidationError::NonPositiveFrequency { freq: freq.clone() });
+                }),
+                Ok(span) if span.is_zero() || span.is_negative() => {
+                    problems.push(ModelProblem::NonPositiveFrequency { freq: freq.clone() })
+                }
+                Ok(_) => {}
             }
         }
 
-        Ok(())
+        if problems.is_empty() { Ok(()) } else { Err(problems) }
     }
 }
 
@@ -507,8 +511,11 @@ impl ModelSchema {
 
     /// Validate the model's schema. See [`TimeDomain::validate`] and [`NetworkSchema::validate`].
     pub fn validate(&self) -> Result<(), ValidationError> {
-        self.time.validate()?;
-        self.network.validate()
+        ValidationError {
+            model: self.time.validate().err().unwrap_or_default(),
+            networks: self.network.validate().err().into_iter().collect(),
+        }
+        .into_result()
     }
 
     /// Create a [`pywr_core::models::ModelBuilder`] from the schema.
@@ -749,15 +756,27 @@ impl MultiNetworkModelSchema {
 
     /// Validate the model's time domain and the schema of each network in the model. See
     /// [`TimeDomain::validate`] and [`NetworkSchema::validate`].
+    ///
+    /// Every problem found is returned. Each network's problems carry the network's name. Only
+    /// inline networks are checked; a network given by path is not read.
     pub fn validate(&self) -> Result<(), ValidationError> {
-        self.time.validate()?;
+        let networks = self
+            .networks
+            .iter()
+            .filter_map(|entry| match &entry.network {
+                NetworkSchemaRef::Inline(network) => network.validate().err().map(|mut error| {
+                    error.name = Some(entry.name.clone());
+                    error
+                }),
+                NetworkSchemaRef::Path(_) => None,
+            })
+            .collect();
 
-        for entry in &self.networks {
-            if let NetworkSchemaRef::Inline(network) = &entry.network {
-                network.validate()?;
-            }
+        ValidationError {
+            model: self.time.validate().err().unwrap_or_default(),
+            networks,
         }
-        Ok(())
+        .into_result()
     }
 
     #[cfg(feature = "core")]
@@ -910,8 +929,9 @@ impl MultiNetworkModelSchema {
 
 #[cfg(test)]
 mod tests {
-    use super::{ModelSchema, ScenarioDomain};
-    use crate::error::ValidationError;
+    use super::{ModelSchema, MultiNetworkModelSchema, ScenarioDomain};
+    use crate::edge::Edge;
+    use crate::error::{EdgeProblem, ModelProblem, NetworkProblem, ValidationError};
     use crate::model::{TimeDomain, Timestep};
     use crate::visit::VisitPaths;
     use jiff::civil::date;
@@ -1017,9 +1037,12 @@ mod tests {
         std::mem::swap(&mut schema.time.start, &mut schema.time.end);
         assert_eq!(
             schema.validate(),
-            Err(ValidationError::EndBeforeStart {
-                start: schema.time.start,
-                end: schema.time.end,
+            Err(ValidationError {
+                model: vec![ModelProblem::EndBeforeStart {
+                    start: schema.time.start,
+                    end: schema.time.end,
+                }],
+                networks: vec![],
             })
         );
 
@@ -1040,10 +1063,10 @@ mod tests {
         // A string that is not a duration at all.
         for freq in ["every other tuesday", "7", "", "1q"] {
             let time = time_domain_with(Timestep::Frequency { freq: freq.to_string() });
-            assert!(
-                matches!(time.validate(), Err(ValidationError::UnparsableFrequency { .. })),
-                "`{freq}` should not parse as a frequency"
-            );
+            let problems = time
+                .validate()
+                .expect_err(&format!("`{freq}` should not parse as a frequency"));
+            assert!(matches!(problems[..], [ModelProblem::UnparsableFrequency { .. }]));
         }
 
         // A duration that parses, but would never advance the clock.
@@ -1051,9 +1074,127 @@ mod tests {
             let time = time_domain_with(Timestep::Frequency { freq: freq.to_string() });
             assert_eq!(
                 time.validate(),
-                Err(ValidationError::NonPositiveFrequency { freq: freq.to_string() })
+                Err(vec![ModelProblem::NonPositiveFrequency { freq: freq.to_string() }])
             );
         }
+    }
+
+    /// The period and the frequency are both checked, so a time domain can report both.
+    #[test]
+    fn test_validate_time_domain_reports_every_problem() {
+        let mut time = time_domain_with(Timestep::Frequency {
+            freq: "-7d".to_string(),
+        });
+        std::mem::swap(&mut time.start, &mut time.end);
+
+        assert_eq!(
+            time.validate(),
+            Err(vec![
+                ModelProblem::EndBeforeStart {
+                    start: time.start,
+                    end: time.end,
+                },
+                ModelProblem::NonPositiveFrequency {
+                    freq: "-7d".to_string()
+                },
+            ])
+        );
+    }
+
+    /// A model's own problems and its network's problems are reported together, but apart.
+    #[test]
+    fn test_validate_model_reports_model_and_network_problems_apart() {
+        let mut schema: ModelSchema = serde_json::from_str(&model_str()).unwrap();
+        std::mem::swap(&mut schema.time.start, &mut schema.time.end);
+        schema.network.edges.push(Edge {
+            from_node: "link1".to_string(),
+            to_node: "missing".to_string(),
+            from_slot: None,
+            to_slot: None,
+        });
+
+        let error = schema.validate().unwrap_err();
+
+        assert_eq!(
+            error.model,
+            vec![ModelProblem::EndBeforeStart {
+                start: schema.time.start,
+                end: schema.time.end,
+            }]
+        );
+        assert_eq!(error.networks.len(), 1);
+        assert_eq!(error.networks[0].name, None);
+        assert!(matches!(
+            error.networks[0].problems.as_slice(),
+            [NetworkProblem::InvalidEdge(e)] if e.problem == EdgeProblem::UnknownToNode("missing".to_string())
+        ));
+
+        // The summary counts the model's own problems together with its networks'.
+        assert_eq!(error.to_string(), "The model has 2 problem(s).");
+
+        // A single network needs no name, so its problems are listed without one.
+        let report = error.report().to_string();
+        assert!(report.starts_with("The model has 2 problem(s):\n- The simulation period ends before it starts"));
+        assert!(
+            report
+                .ends_with("\n- The edge `link1->missing` is invalid. There is no node named `missing` to connect to.")
+        );
+    }
+
+    /// Each inline network of a multi-network model is checked, and a network's problems are
+    /// reported under its name. A valid network is left out.
+    #[test]
+    fn test_validate_multi_network_model_names_each_network() {
+        let schema: MultiNetworkModelSchema = r#"
+        {
+            "metadata": { "title": "Two networks" },
+            "time": { "start": "2015-01-01", "end": "2015-12-31", "timestep": { "type": "Days", "days": 1 } },
+            "networks": [
+                {
+                    "name": "valid",
+                    "network": {
+                        "nodes": [
+                            { "meta": { "name": "supply" }, "type": "Input" },
+                            { "meta": { "name": "demand" }, "type": "Output" }
+                        ],
+                        "edges": [{ "from_node": "supply", "to_node": "demand" }]
+                    },
+                    "transfers": []
+                },
+                {
+                    "name": "north",
+                    "network": {
+                        "nodes": [
+                            { "meta": { "name": "supply" }, "type": "Input" },
+                            { "meta": { "name": "supply" }, "type": "Input" },
+                            { "meta": { "name": "demand" }, "type": "Output" }
+                        ],
+                        "edges": [{ "from_node": "demand", "to_node": "supply" }]
+                    },
+                    "transfers": []
+                }
+            ]
+        }
+        "#
+        .parse()
+        .expect("Failed to parse test model JSON");
+
+        let error = schema.validate().unwrap_err();
+
+        assert!(error.model.is_empty());
+        assert_eq!(error.networks.len(), 1);
+        assert_eq!(error.networks[0].name.as_deref(), Some("north"));
+        assert!(matches!(
+            error.networks[0].problems.as_slice(),
+            [NetworkProblem::DuplicateNodeName(_), NetworkProblem::InvalidEdge(_)]
+        ));
+
+        assert_eq!(
+            error.report().to_string(),
+            "The model has 2 problem(s):\n\
+             - Network `north`: The name `supply` is used by 2 node(s) and 0 virtual node(s), but each name must be unique.\n\
+             - Network `north`: The edge `demand->supply` is invalid. The `Output` node `demand` cannot provide flow."
+        );
     }
 
     #[test]
