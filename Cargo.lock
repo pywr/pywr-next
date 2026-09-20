@@ -1982,6 +1982,7 @@ version = "2.0.0-beta7"
 dependencies = [
  "ahash",
  "arrow",
+ "arrow-schema",
  "chrono",
  "coin-or-sys",
  "criterion",
@@ -2005,6 +2006,7 @@ dependencies = [
  "rand_distr",
  "rayon",
  "serde",
+ "serde_json",
  "thiserror 2.0.20",
  "wide",
 ]
