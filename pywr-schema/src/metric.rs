@@ -722,19 +722,30 @@ impl LocalParameterReference {
     pub fn parameter_type(&self, args: &LoadArgs, parent: Option<&str>) -> Result<ParameterType, SchemaError> {
         let parent = self.parent(parent)?;
 
-        let node = args
-            .schema
-            .get_node_by_name(parent)
-            .ok_or_else(|| SchemaError::NodeNotFound {
-                name: parent.to_string(),
-            })?;
-
-        let parameter = node
-            .get_local_parameter(&self.name)
-            .ok_or_else(|| SchemaError::ParameterNotFound {
-                name: self.name.clone(),
-                key: self.key.clone(),
-            })?;
+        // First try a regular network node, then a virtual node if that fails. This is because
+        // local parameters can be defined on both types of nodes.
+        let parameter = match args.schema.get_node_by_name(parent) {
+            Some(node) => node
+                .get_local_parameter(&self.name)
+                .ok_or_else(|| SchemaError::ParameterNotFound {
+                    name: self.name.clone(),
+                    key: self.key.clone(),
+                })?,
+            // If the parent is not a regular node, try a virtual node
+            None => match args.schema.get_virtual_node_by_name(parent) {
+                Some(vnode) => vnode
+                    .get_local_parameter(&self.name)
+                    .ok_or_else(|| SchemaError::ParameterNotFound {
+                        name: self.name.clone(),
+                        key: self.key.clone(),
+                    })?,
+                None => {
+                    return Err(SchemaError::NodeNotFound {
+                        name: parent.to_string(),
+                    });
+                }
+            },
+        };
 
         Ok(parameter.parameter_type())
     }
@@ -747,7 +758,7 @@ impl LocalParameterReference {
     }
 }
 
-/// A builder for creating a [`ParameterReference`].
+/// A builder for creating a [`LocalParameterReference`].
 pub struct LocalParameterReferenceBuilder {
     node: Option<String>,
     name: String,
