@@ -566,7 +566,7 @@ pub enum TimeSeriesColumns {
     Column { name: String },
 }
 
-/// A column name resolves in the timeseries' own data, so only a scenario group is a reference.
+/// A column name resolves in the time series' own data, so only a scenario group is a reference.
 impl VisitReferences for TimeSeriesColumns {
     fn visit_references<F: FnMut(Reference<'_>)>(&self, visitor: &mut F) {
         match self {
