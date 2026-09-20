@@ -13,7 +13,7 @@ categories.workspace = true
 
 [features]
 # Core feature requires additional dependencies
-core = ["dep:pywr-core", "dep:ndarray"]
+core = ["dep:pywr-core", "dep:ndarray", "dep:arrow", "dep:parquet"]
 default = ["core", "pyo3", "hdf5", "clp"]
 
 # Core solvers
@@ -32,7 +32,7 @@ hdf5 = ["dep:hdf5-metno", "pywr-core/hdf5"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-arrow = { workspace = true }
+arrow = { workspace = true, optional = true }
 chrono = { workspace = true }
 csv = { workspace = true }
 digest = { workspace = true }
@@ -44,7 +44,7 @@ jiff = { workspace = true }
 log = { workspace = true }
 md-5 = { workspace = true }
 ndarray = { workspace = true, optional = true }
-parquet = { workspace = true }
+parquet = { workspace = true, optional = true }
 pyo3 = { workspace = true, optional = true }
 # pyo3-polars = { workspace = true, optional = true }
 pywr-core = { path = "../pywr-core", default-features = false, optional = true }
