@@ -198,12 +198,24 @@ impl VisitPaths for NetworkSchema {
             node.visit_paths(visitor);
         }
 
+        for virtual_node in self.virtual_nodes.as_deref().into_iter().flatten() {
+            virtual_node.visit_paths(visitor);
+        }
+
         for parameter in self.parameters.as_deref().into_iter().flatten() {
             parameter.visit_paths(visitor);
         }
 
+        for table in self.tables.as_deref().into_iter().flatten() {
+            table.visit_paths(visitor);
+        }
+
         for time_series in self.time_series.as_deref().into_iter().flatten() {
             time_series.visit_paths(visitor);
+        }
+
+        for metric_set in self.metric_sets.as_deref().into_iter().flatten() {
+            metric_set.visit_paths(visitor);
         }
 
         for outputs in self.outputs.as_deref().into_iter().flatten() {
@@ -215,12 +227,24 @@ impl VisitPaths for NetworkSchema {
             node.visit_paths_mut(visitor);
         }
 
+        for virtual_node in self.virtual_nodes.as_deref_mut().into_iter().flatten() {
+            virtual_node.visit_paths_mut(visitor);
+        }
+
         for parameter in self.parameters.as_deref_mut().into_iter().flatten() {
             parameter.visit_paths_mut(visitor);
         }
 
+        for table in self.tables.as_deref_mut().into_iter().flatten() {
+            table.visit_paths_mut(visitor);
+        }
+
         for time_series in self.time_series.as_deref_mut().into_iter().flatten() {
             time_series.visit_paths_mut(visitor);
+        }
+
+        for metric_set in self.metric_sets.as_deref_mut().into_iter().flatten() {
+            metric_set.visit_paths_mut(visitor);
         }
 
         for outputs in self.outputs.as_deref_mut().into_iter().flatten() {
@@ -1183,6 +1207,8 @@ mod tests {
     use super::{NetworkMergeError, NetworkSchema};
     use crate::error::{DuplicateNodeName, EdgeProblem, EdgeValidationError, NetworkProblem};
     use crate::nodes::{NodeSlot, NodeType, VirtualNodeType};
+    use crate::visit::VisitPaths;
+    use std::path::PathBuf;
     use std::str::FromStr;
 
     /// Return the problems reported by [`NetworkSchema::validate`], or panic if it succeeded.
@@ -2140,5 +2166,139 @@ mod tests {
             .merge(other)
             .expect_err("Merge should reject duplicate output names");
         assert!(matches!(err, NetworkMergeError::DuplicateOutputName(name) if name == "out-shared"));
+    }
+
+    /// A network holding a path in every list that can hold one, each named for its location so
+    /// that a missed one is identifiable. The metric set's aggregator nests a second one in `child`.
+    const NETWORK_WITH_PATHS: &str = r#"
+    {
+        "nodes": [
+            {
+                "meta": { "name": "supply" },
+                "type": "Input",
+                "parameters": [
+                    {
+                        "meta": { "name": "supply-local" },
+                        "type": "Python",
+                        "source": { "type": "Path", "path": "node-local-parameter.py" },
+                        "object": { "type": "Class", "class": "FloatParameter" }
+                    }
+                ]
+            },
+            { "meta": { "name": "demand" }, "type": "Output" }
+        ],
+        "edges": [
+            { "from_node": "supply", "to_node": "demand" }
+        ],
+        "virtual_nodes": [
+            {
+                "meta": { "name": "licence" },
+                "type": "Aggregated",
+                "nodes": [{ "name": "supply" }],
+                "parameters": [
+                    {
+                        "meta": { "name": "licence-local" },
+                        "type": "Python",
+                        "source": { "type": "Path", "path": "virtual-node-local-parameter.py" },
+                        "object": { "type": "Class", "class": "FloatParameter" }
+                    }
+                ]
+            }
+        ],
+        "parameters": [
+            {
+                "meta": { "name": "global" },
+                "type": "Python",
+                "source": { "type": "Path", "path": "global-parameter.py" },
+                "object": { "type": "Class", "class": "FloatParameter" }
+            }
+        ],
+        "tables": [
+            {
+                "meta": { "name": "t1" },
+                "type": "Scalar",
+                "format": "CSV",
+                "lookup": { "type": "Row", "cols": 1 },
+                "url": "table.csv"
+            },
+            {
+                "meta": { "name": "t2" },
+                "format": "Placeholder"
+            }
+        ],
+        "time_series": [
+            { "type": "Polars", "meta": { "name": "ts1" }, "path": "timeseries.csv" }
+        ],
+        "metric_sets": [
+            {
+                "name": "ms1",
+                "metrics": [{ "type": "Node", "name": "demand" }],
+                "aggregator": {
+                    "func": {
+                        "type": "Python",
+                        "source": { "type": "Path", "path": "aggregation.py" },
+                        "object": "agg"
+                    },
+                    "child": {
+                        "func": {
+                            "type": "Python",
+                            "source": { "type": "Path", "path": "child-aggregation.py" },
+                            "object": "child_agg"
+                        }
+                    }
+                }
+            }
+        ],
+        "outputs": [
+            { "name": "csv-out", "type": "CSV", "format": "Long", "filename": "output.csv", "metric_set": "ms1" }
+        ]
+    }
+    "#;
+
+    /// Every path in [`NETWORK_WITH_PATHS`], sorted. The placeholder table holds none.
+    const EXPECTED_PATHS: [&str; 8] = [
+        "aggregation.py",
+        "child-aggregation.py",
+        "global-parameter.py",
+        "node-local-parameter.py",
+        "output.csv",
+        "table.csv",
+        "timeseries.csv",
+        "virtual-node-local-parameter.py",
+    ];
+
+    /// Collect every visited path, sorted, so the assertions do not depend on the walk order.
+    fn collect_paths(network: &NetworkSchema) -> Vec<String> {
+        let mut paths: Vec<String> = Vec::new();
+        network.visit_paths(&mut |path| paths.push(path.to_string_lossy().into_owned()));
+        paths.sort();
+        paths
+    }
+
+    /// Every list that can hold a path should be reached by the visitor.
+    #[test]
+    fn test_visit_paths_reaches_every_path() {
+        let network = parse_network(NETWORK_WITH_PATHS);
+
+        assert_eq!(collect_paths(&network), EXPECTED_PATHS);
+    }
+
+    /// The mutable visitor should hand out borrows into the schema, so that a path it rewrites
+    /// is replaced in the network itself.
+    #[test]
+    fn test_visit_paths_mut_rewrites_every_path() {
+        const NEW_PATH: &str = "rebased/on/another/directory";
+
+        let mut network = parse_network(NETWORK_WITH_PATHS);
+
+        let mut count = 0;
+        network.visit_paths_mut(&mut |path| {
+            *path = PathBuf::from(NEW_PATH);
+            count += 1;
+        });
+        assert_eq!(count, EXPECTED_PATHS.len());
+
+        // Any path left un-rewritten is one the mutable visitor failed to reach.
+        assert_eq!(collect_paths(&network), [NEW_PATH; EXPECTED_PATHS.len()]);
     }
 }
