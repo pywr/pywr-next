@@ -1,6 +1,6 @@
 {
   "metadata": {
-    "title": "Simple timeseries"
+    "title": "Simple time series"
   },
   "timestepper": {
     "start": "2021-01-01",

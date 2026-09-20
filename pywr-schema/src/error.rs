@@ -3,7 +3,8 @@ use crate::data_tables::{TableCollectionError, TableDataRef};
 use crate::digest::ChecksumError;
 use crate::edge::Edge;
 use crate::nodes::{NodeAttribute, NodeComponent, NodeSlot, NodeType, VirtualNodeType};
-use crate::timeseries::TimeseriesError;
+#[cfg(feature = "core")]
+use crate::time_series::LoadedTimeSeriesCollectionError;
 use jiff::civil::DateTime;
 #[cfg(feature = "core")]
 use ndarray::ShapeError;
@@ -118,11 +119,26 @@ pub enum ModelProblem {
 }
 
 /// A problem with one network, found by [`crate::NetworkSchema::validate`].
+///
+/// A name must be unique within its list, not across lists: `nodes` and `virtual_nodes` share one
+/// name-space, and `parameters`, `tables`, `timeseries` and `metric_sets` each have their own.
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
 pub enum NetworkProblem {
     /// A name used by more than one entry of `nodes` or `virtual_nodes`.
     #[error("{0}")]
     DuplicateNodeName(DuplicateNodeName),
+    /// A name used by more than one entry of `parameters`.
+    #[error("The name `{name}` is used by {count} parameters, but each name must be unique.")]
+    DuplicateParameterName { name: String, count: usize },
+    /// A name used by more than one entry of `tables`.
+    #[error("The name `{name}` is used by {count} tables, but each name must be unique.")]
+    DuplicateTableName { name: String, count: usize },
+    /// A name used by more than one entry of `timeseries`.
+    #[error("The name `{name}` is used by {count} timeseries, but each name must be unique.")]
+    DuplicateTimeseriesName { name: String, count: usize },
+    /// A name used by more than one entry of `metric_sets`.
+    #[error("The name `{name}` is used by {count} metric sets, but each name must be unique.")]
+    DuplicateMetricSetName { name: String, count: usize },
     /// An edge that could not connect the nodes it names.
     #[error("{0}")]
     InvalidEdge(EdgeValidationError),
@@ -143,7 +159,8 @@ pub struct NetworkValidationError {
     /// The network's name in a [`crate::MultiNetworkModelSchema`]. `None` for a network validated
     /// on its own, or as part of a [`crate::ModelSchema`].
     pub name: Option<String>,
-    /// Never empty. Duplicate names first, sorted by name, then invalid edges in the order listed.
+    /// Never empty. Duplicate names first, list by list in the order nodes, parameters, tables,
+    /// timeseries, metric sets, each sorted by name; then invalid edges in the order listed.
     pub problems: Vec<NetworkProblem>,
 }
 
@@ -324,8 +341,9 @@ pub enum SchemaError {
     InvalidRollingWindow { name: String },
     #[error("Failed to load parameter {name}: {error}")]
     LoadParameter { name: String, error: String },
-    #[error("Timeseries error: {0}")]
-    Timeseries(#[from] TimeseriesError),
+    #[cfg(feature = "core")]
+    #[error("TimeSeries error: {0}")]
+    TimeSeries(#[from] LoadedTimeSeriesCollectionError),
     #[error(
         "The output of literal constant values is not supported. This is because they do not have a unique identifier such as a name. If you would like to output a constant value please use a `Constant` parameter."
     )]
@@ -368,7 +386,7 @@ impl TryFrom<SchemaError> for PyErr {
     fn try_from(err: SchemaError) -> Result<Self, Self::Error> {
         match err {
             SchemaError::PythonError(py_err) => Ok(py_err),
-            SchemaError::Timeseries(err) => err.try_into(),
+            SchemaError::TimeSeries(err) => err.try_into(),
             _ => Err(()),
         }
     }

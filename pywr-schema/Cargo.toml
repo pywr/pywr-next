@@ -13,7 +13,7 @@ categories.workspace = true
 
 [features]
 # Core feature requires additional dependencies
-core = ["dep:pywr-core", "dep:polars", "dep:ndarray"]
+core = ["dep:pywr-core", "dep:ndarray"]
 default = ["core", "pyo3", "hdf5", "clp"]
 
 # Core solvers
@@ -24,7 +24,7 @@ ipm-ocl = ["pywr-core/ipm-ocl"]
 ipm-simd = ["pywr-core/ipm-simd"]
 microlp = ["pywr-core/microlp"]
 test-python = []
-pyo3 = ["dep:pyo3", "pywr-core/pyo3", "dep:pyo3-polars"]
+pyo3 = ["dep:pyo3", "pywr-core/pyo3"]
 
 # File formats
 hdf5 = ["dep:hdf5-metno", "pywr-core/hdf5"]
@@ -32,6 +32,7 @@ hdf5 = ["dep:hdf5-metno", "pywr-core/hdf5"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+arrow = { workspace = true }
 chrono = { workspace = true }
 csv = { workspace = true }
 digest = { workspace = true }
@@ -43,10 +44,9 @@ jiff = { workspace = true }
 log = { workspace = true }
 md-5 = { workspace = true }
 ndarray = { workspace = true, optional = true }
-# "timezones" feature is only needed v0.52 (see https://github.com/pola-rs/polars/issues/25148)
-polars = { workspace = true, features = ["lazy", "rows", "ndarray", "diff", "dtype-datetime", "dtype-date", "dynamic_group_by", "timezones", "temporal"], optional = true }
+parquet = { workspace = true }
 pyo3 = { workspace = true, optional = true }
-pyo3-polars = { workspace = true, optional = true }
+# pyo3-polars = { workspace = true, optional = true }
 pywr-core = { path = "../pywr-core", default-features = false, optional = true }
 pywr-schema-macros = { path = "../pywr-schema-macros" }
 pywr-v1-schema = { workspace = true }

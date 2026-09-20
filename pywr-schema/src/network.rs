@@ -1,6 +1,6 @@
 use super::edge::Edge;
 use super::nodes::{Node, NodeOrVirtualNode, VirtualNode};
-use super::parameters::{Parameter, ParameterOrTimeseriesRef};
+use super::parameters::{Parameter, ParameterOrTimeSeriesRef};
 use crate::ConversionError;
 use crate::data_tables::DataTable;
 #[cfg(feature = "core")]
@@ -16,9 +16,9 @@ use crate::metric_sets::MetricSet;
 #[cfg(feature = "core")]
 use crate::model::MultiNetworkTransfer;
 use crate::outputs::Output;
-use crate::timeseries::Timeseries;
+use crate::time_series::TimeSeries;
 #[cfg(feature = "core")]
-use crate::timeseries::{LoadTimeseriesError, LoadedTimeseriesCollection};
+use crate::time_series::{LoadedTimeSeriesCollection, LoadedTimeSeriesCollectionError};
 use crate::v1::{ConversionData, TryIntoV2};
 use crate::visit::{Owner, Reference, ReferenceMut, VisitMetrics, VisitPaths, VisitReferences};
 #[cfg(all(feature = "core", feature = "pyo3"))]
@@ -116,8 +116,9 @@ pub enum NetworkSchemaBuildError {
     },
     #[error("{0}")]
     TableLoadError(#[from] TableCollectionLoadError),
+    #[cfg(feature = "core")]
     #[error("{0}")]
-    LoadTimeseriesError(#[from] LoadTimeseriesError),
+    LoadedTimeSeriesCollectionError(#[from] LoadedTimeSeriesCollectionError),
 }
 
 #[cfg(all(feature = "core", feature = "pyo3"))]
@@ -132,7 +133,7 @@ impl TryFrom<NetworkSchemaBuildError> for PyErr {
             NetworkSchemaBuildError::AddLocalParameterError { source, .. } => (*source).try_into(),
             NetworkSchemaBuildError::AddMetricSetError { source, .. } => (*source).try_into(),
             NetworkSchemaBuildError::AddOutputError { source, .. } => (*source).try_into(),
-            NetworkSchemaBuildError::LoadTimeseriesError(e) => e.try_into(),
+            NetworkSchemaBuildError::LoadedTimeSeriesCollectionError(e) => e.try_into(),
             _ => Err(()),
         }
     }
@@ -149,8 +150,8 @@ pub enum NetworkMergeError {
     DuplicateEdge { from_node: String, to_node: String },
     #[error("Duplicate table name found when merging networks: {0}")]
     DuplicateTableName(String),
-    #[error("Duplicate timeseries name found when merging networks: {0}")]
-    DuplicateTimeseriesName(String),
+    #[error("Duplicate time series name found when merging networks: {0}")]
+    DuplicateTimeSeriesName(String),
     #[error("Duplicate output name found when merging networks: {0}")]
     DuplicateOutputName(String),
     #[error("Duplicate metric found when merging metric sets with name `{0}`")]
@@ -163,7 +164,7 @@ pub struct LoadArgs<'a> {
     pub schema: &'a NetworkSchema,
     pub domain: &'a ModelDomain,
     pub tables: &'a LoadedTableCollection,
-    pub timeseries: &'a LoadedTimeseriesCollection,
+    pub time_series: &'a LoadedTimeSeriesCollection,
     pub data_path: Option<&'a Path>,
     pub inter_network_transfers: &'a [MultiNetworkTransfer],
 }
@@ -178,7 +179,7 @@ pub struct NetworkSchema {
     pub virtual_nodes: Option<Vec<VirtualNode>>,
     pub parameters: Option<Vec<Parameter>>,
     pub tables: Option<Vec<DataTable>>,
-    pub timeseries: Option<Vec<Timeseries>>,
+    pub time_series: Option<Vec<TimeSeries>>,
     pub metric_sets: Option<Vec<MetricSet>>,
     pub outputs: Option<Vec<Output>>,
 }
@@ -209,8 +210,8 @@ impl VisitPaths for NetworkSchema {
             table.visit_paths(visitor);
         }
 
-        for timeseries in self.timeseries.as_deref().into_iter().flatten() {
-            timeseries.visit_paths(visitor);
+        for time_series in self.time_series.as_deref().into_iter().flatten() {
+            time_series.visit_paths(visitor);
         }
 
         for metric_set in self.metric_sets.as_deref().into_iter().flatten() {
@@ -238,8 +239,8 @@ impl VisitPaths for NetworkSchema {
             table.visit_paths_mut(visitor);
         }
 
-        for timeseries in self.timeseries.as_deref_mut().into_iter().flatten() {
-            timeseries.visit_paths_mut(visitor);
+        for time_series in self.time_series.as_deref_mut().into_iter().flatten() {
+            time_series.visit_paths_mut(visitor);
         }
 
         for metric_set in self.metric_sets.as_deref_mut().into_iter().flatten() {
@@ -356,6 +357,26 @@ impl VisitReferences for NetworkSchema {
     }
 }
 
+/// The names used by more than one of `items`, with how many use each, sorted by name.
+fn duplicate_names<T>(items: Option<&[T]>, name_of: impl Fn(&T) -> &str) -> Vec<(String, usize)> {
+    let mut counts: HashMap<&str, usize> = HashMap::new();
+
+    for item in items.into_iter().flatten() {
+        *counts.entry(name_of(item)).or_default() += 1;
+    }
+
+    let mut duplicates: Vec<(String, usize)> = counts
+        .into_iter()
+        .filter(|(_, count)| *count > 1)
+        .map(|(name, count)| (name.to_string(), count))
+        .collect();
+
+    // The hash map's order is random.
+    duplicates.sort();
+
+    duplicates
+}
+
 impl NetworkSchema {
     /// Visit every reference together with the top-level component holding it.
     pub fn visit_owned_references<F: FnMut(Owner<'_>, Reference<'_>)>(&self, visitor: &mut F) {
@@ -440,15 +461,15 @@ impl NetworkSchema {
     /// that the conversion has been successful.
     pub fn from_v1(v1: pywr_v1_schema::PywrNetwork) -> (Self, Vec<ComponentConversionError>) {
         let mut errors = Vec::new();
-        // We will use this to store any timeseries or parameters that are extracted from the v1 nodes
+        // We will use this to store any time series or parameters that are extracted from the v1 nodes
         let mut conversion_data = ConversionData::default();
 
         let mut nodes = Vec::with_capacity(v1.nodes.as_ref().map(|n| n.len()).unwrap_or_default());
         let mut virtual_nodes = Vec::with_capacity(v1.nodes.as_ref().map(|n| n.len()).unwrap_or_default());
         let mut parameters = Vec::new();
-        let mut timeseries = Vec::new();
+        let mut time_series = Vec::new();
 
-        // Extract nodes and any timeseries data from the v1 nodes
+        // Extract nodes and any time series data from the v1 nodes
         if let Some(v1_nodes) = v1.nodes {
             // First find any virtual nodes so these can be used to determine metric conversion types
             for node in v1_nodes.iter() {
@@ -506,35 +527,36 @@ impl NetworkSchema {
             None => Vec::new(),
         };
 
-        // Collect any parameters that have been replaced by timeseries
+        // Collect any parameters that have been replaced by time series
         // These references will be referred to by ParameterReferences elsewhere in the schema
-        // We will update these references to TimeseriesReferences later
-        let mut timeseries_refs = Vec::new();
+        // We will update these references to TimeSeriesReferences later
+        let mut time_series_refs = Vec::new();
         if let Some(params) = v1.parameters {
             // Reset the unnamed count for global parameters
             conversion_data.reset_count();
             for p in params {
-                let result: Result<ParameterOrTimeseriesRef, _> = p.try_into_v2(None, &mut conversion_data);
+                let result: Result<ParameterOrTimeSeriesRef, _> = p.try_into_v2(None, &mut conversion_data);
                 match result {
                     Ok(p_or_t) => match p_or_t {
-                        ParameterOrTimeseriesRef::Parameter(p) => parameters.push(*p),
-                        ParameterOrTimeseriesRef::Timeseries(t) => timeseries_refs.push(t),
+                        ParameterOrTimeSeriesRef::Parameter(p) => parameters.push(*p),
+                        ParameterOrTimeSeriesRef::TimeSeries(t) => time_series_refs.push(t),
                     },
                     Err(e) => errors.push(*e),
                 }
             }
         }
 
-        // Finally add any extracted timeseries data to the timeseries list
-        timeseries.extend(conversion_data.timeseries);
+        // Finally add any extracted time series data to the time series list
+        time_series.extend(conversion_data.time_series);
         parameters.extend(conversion_data.parameters);
 
-        // Closure to update a parameter ref with a timeseries ref when names match.
+        // Closure to update a parameter ref with a time series ref when names match.
         // We match on the original parameter name because the parameter name may have been changed
         let update_to_ts_ref = &mut |m: &mut Metric| {
             if let Metric::Parameter(p) = m {
-                if let Some(converted_ts_ref) = timeseries_refs.iter().find(|ts| ts.original_parameter_name == p.name) {
-                    *m = Metric::Timeseries(converted_ts_ref.ts_ref.clone());
+                if let Some(converted_ts_ref) = time_series_refs.iter().find(|ts| ts.original_parameter_name == p.name)
+                {
+                    *m = Metric::TimeSeries(converted_ts_ref.ts_ref.clone());
                 }
             }
         };
@@ -562,7 +584,11 @@ impl NetworkSchema {
             None
         };
         let parameters = if !parameters.is_empty() { Some(parameters) } else { None };
-        let timeseries = if !timeseries.is_empty() { Some(timeseries) } else { None };
+        let time_series = if !time_series.is_empty() {
+            Some(time_series)
+        } else {
+            None
+        };
 
         (
             Self {
@@ -571,7 +597,7 @@ impl NetworkSchema {
                 virtual_nodes,
                 parameters,
                 tables,
-                timeseries,
+                time_series,
                 metric_sets,
                 outputs,
             },
@@ -670,22 +696,22 @@ impl NetworkSchema {
         self.get_table_by_name(name).is_some()
     }
 
-    pub fn get_timeseries_by_name(&self, name: &str) -> Option<&Timeseries> {
-        match &self.timeseries {
-            Some(timeseries) => timeseries.iter().find(|t| t.name() == name),
+    pub fn get_time_series_by_name(&self, name: &str) -> Option<&TimeSeries> {
+        match &self.time_series {
+            Some(time_series) => time_series.iter().find(|t| t.name() == name),
             None => None,
         }
     }
 
-    pub fn get_timeseries_by_name_mut(&mut self, name: &str) -> Option<&mut Timeseries> {
-        match &mut self.timeseries {
-            Some(timeseries) => timeseries.iter_mut().find(|t| t.name() == name),
+    pub fn get_time_series_by_name_mut(&mut self, name: &str) -> Option<&mut TimeSeries> {
+        match &mut self.time_series {
+            Some(time_series) => time_series.iter_mut().find(|t| t.name() == name),
             None => None,
         }
     }
 
-    pub fn timeseries_exists(&self, name: &str) -> bool {
-        self.get_timeseries_by_name(name).is_some()
+    pub fn time_series_exists(&self, name: &str) -> bool {
+        self.get_time_series_by_name(name).is_some()
     }
 
     pub fn get_metric_set_by_name(&self, name: &str) -> Option<&MetricSet> {
@@ -849,6 +875,26 @@ impl NetworkSchema {
         let problems: Vec<NetworkProblem> = duplicates
             .into_iter()
             .map(NetworkProblem::DuplicateNodeName)
+            .chain(
+                duplicate_names(self.parameters.as_deref(), Parameter::name)
+                    .into_iter()
+                    .map(|(name, count)| NetworkProblem::DuplicateParameterName { name, count }),
+            )
+            .chain(
+                duplicate_names(self.tables.as_deref(), DataTable::name)
+                    .into_iter()
+                    .map(|(name, count)| NetworkProblem::DuplicateTableName { name, count }),
+            )
+            .chain(
+                duplicate_names(self.time_series.as_deref(), TimeSeries::name)
+                    .into_iter()
+                    .map(|(name, count)| NetworkProblem::DuplicateTimeseriesName { name, count }),
+            )
+            .chain(
+                duplicate_names(self.metric_sets.as_deref(), |metric_set| metric_set.name.as_str())
+                    .into_iter()
+                    .map(|(name, count)| NetworkProblem::DuplicateMetricSetName { name, count }),
+            )
             .chain(invalid_edges.into_iter().map(NetworkProblem::InvalidEdge))
             .collect();
 
@@ -867,19 +913,19 @@ impl NetworkSchema {
         data_path: Option<&Path>,
         output_path: Option<&Path>,
         inter_network_transfers: &[MultiNetworkTransfer],
-    ) -> Result<(LoadedTableCollection, LoadedTimeseriesCollection), NetworkSchemaBuildError> {
+    ) -> Result<(LoadedTableCollection, LoadedTimeSeriesCollection), NetworkSchemaBuildError> {
         // Reject an invalid schema before doing any work to build it.
         self.validate()
             .map_err(|source| NetworkSchemaBuildError::Validation { source })?;
 
         let tables = LoadedTableCollection::from_schema(self.tables.as_deref(), data_path)?;
-        let timeseries = LoadedTimeseriesCollection::from_schema(self.timeseries.as_deref(), domain, data_path)?;
+        let time_series = LoadedTimeSeriesCollection::from_schema(self.time_series.as_deref(), data_path)?;
 
         let args = LoadArgs {
             schema: self,
             domain,
             tables: &tables,
-            timeseries: &timeseries,
+            time_series: &time_series,
             data_path,
             inter_network_transfers,
         };
@@ -968,7 +1014,7 @@ impl NetworkSchema {
             }
         }
 
-        Ok((tables, timeseries))
+        Ok((tables, time_series))
     }
 
     /// Merge another [`NetworkSchema`] into this one.
@@ -1076,19 +1122,19 @@ impl NetworkSchema {
             }
         }
 
-        // Merge timeseries
-        if let Some(other_timeseries) = other.timeseries {
-            for ts in other_timeseries {
-                match self.get_timeseries_by_name_mut(ts.name()) {
+        // Merge time series
+        if let Some(other_time_series) = other.time_series {
+            for ts in other_time_series {
+                match self.get_time_series_by_name_mut(ts.name()) {
                     Some(existing_ts) => {
                         if existing_ts.is_placeholder() {
                             *existing_ts = ts;
                         } else {
-                            return Err(NetworkMergeError::DuplicateTimeseriesName(ts.name().to_string()));
+                            return Err(NetworkMergeError::DuplicateTimeSeriesName(ts.name().to_string()));
                         }
                     }
                     None => {
-                        self.timeseries.get_or_insert_default().push(ts);
+                        self.time_series.get_or_insert_default().push(ts);
                     }
                 }
             }
@@ -1539,6 +1585,98 @@ mod tests {
         );
     }
 
+    /// Every list is checked, and every duplicate is reported in the documented order. A
+    /// placeholder entry counts like any other, and a name shared across lists is not a duplicate.
+    #[test]
+    fn test_validate_reports_duplicate_names_in_every_list() {
+        let network = parse_network(
+            r#"
+            {
+                "nodes": [
+                    { "meta": { "name": "link" }, "type": "Link" },
+                    { "meta": { "name": "link" }, "type": "Link" },
+                    { "meta": { "name": "shared" }, "type": "Link" }
+                ],
+                "edges": [
+                    { "from_node": "link", "to_node": "missing" }
+                ],
+                "parameters": [
+                    { "meta": { "name": "p2" }, "type": "Constant", "value": { "type": "Literal", "value": 1.0 } },
+                    { "meta": { "name": "p1" }, "type": "Constant", "value": { "type": "Literal", "value": 1.0 } },
+                    { "meta": { "name": "p2" }, "type": "Placeholder" },
+                    { "meta": { "name": "p1" }, "type": "Constant", "value": { "type": "Literal", "value": 2.0 } },
+                    { "meta": { "name": "p2" }, "type": "Constant", "value": { "type": "Literal", "value": 3.0 } },
+                    { "meta": { "name": "shared" }, "type": "Constant", "value": { "type": "Literal", "value": 1.0 } }
+                ],
+                "tables": [
+                    { "meta": { "name": "tbl" }, "format": "Placeholder" },
+                    { "meta": { "name": "tbl" }, "type": "Scalar", "format": "CSV", "lookup": { "type": "Row", "cols": 1 }, "url": "tbl.csv" },
+                    { "meta": { "name": "shared" }, "format": "Placeholder" }
+                ],
+                "time_series": [
+                    { "meta": { "name": "ts" }, "type": "Polars", "time_col": "date", "path": "ts.csv" },
+                    { "meta": { "name": "ts" }, "type": "Placeholder" },
+                    { "meta": { "name": "shared" }, "type": "Placeholder" }
+                ],
+                "metric_sets": [
+                    { "name": "ms", "filters": { "all_nodes": true } },
+                    { "name": "ms", "filters": { "all_virtual_nodes": true } },
+                    { "name": "shared", "filters": { "all_nodes": true } }
+                ]
+            }
+            "#,
+        );
+
+        let problems = expect_problems(&network);
+
+        assert_eq!(
+            problems,
+            vec![
+                NetworkProblem::DuplicateNodeName(DuplicateNodeName {
+                    name: "link".to_string(),
+                    nodes: 2,
+                    virtual_nodes: 0,
+                }),
+                NetworkProblem::DuplicateParameterName {
+                    name: "p1".to_string(),
+                    count: 2,
+                },
+                NetworkProblem::DuplicateParameterName {
+                    name: "p2".to_string(),
+                    count: 3,
+                },
+                NetworkProblem::DuplicateTableName {
+                    name: "tbl".to_string(),
+                    count: 2,
+                },
+                NetworkProblem::DuplicateTimeseriesName {
+                    name: "ts".to_string(),
+                    count: 2,
+                },
+                NetworkProblem::DuplicateMetricSetName {
+                    name: "ms".to_string(),
+                    count: 2,
+                },
+                NetworkProblem::InvalidEdge(EdgeValidationError {
+                    edge: network.edges[0].clone(),
+                    problem: EdgeProblem::UnknownToNode("missing".to_string()),
+                }),
+            ]
+        );
+
+        assert_eq!(
+            network.validate().unwrap_err().report().to_string(),
+            "The network has 7 problem(s):\n\
+             - The name `link` is used by 2 node(s) and 0 virtual node(s), but each name must be unique.\n\
+             - The name `p1` is used by 2 parameters, but each name must be unique.\n\
+             - The name `p2` is used by 3 parameters, but each name must be unique.\n\
+             - The name `tbl` is used by 2 tables, but each name must be unique.\n\
+             - The name `ts` is used by 2 timeseries, but each name must be unique.\n\
+             - The name `ms` is used by 2 metric sets, but each name must be unique.\n\
+             - The edge `link->missing` is invalid. There is no node named `missing` to connect to."
+        );
+    }
+
     /// However many problems there are, `Display` stays a single line, while the report lists
     /// every one of them.
     #[test]
@@ -1899,13 +2037,13 @@ mod tests {
     }
 
     #[test]
-    fn test_merge_replaces_placeholder_timeseries() {
+    fn test_merge_replaces_placeholder_time_series() {
         let mut base = parse_network(
             r#"
             {
                 "nodes": [],
                 "edges": [],
-                "timeseries": [
+                "time_series": [
                     { "type": "Placeholder", "meta": { "name": "ts-shared" } }
                 ]
             }
@@ -1917,30 +2055,30 @@ mod tests {
             {
                 "nodes": [],
                 "edges": [],
-                "timeseries": [
-                    { "type": "Polars", "meta": { "name": "ts-shared" }, "url": "timeseries.csv" }
+                "time_series": [
+                    { "type": "Polars", "meta": { "name": "ts-shared" }, "path": "time-series.csv" }
                 ]
             }
             "#,
         );
 
-        base.merge(other).expect("Merge should replace placeholder timeseries");
+        base.merge(other).expect("Merge should replace placeholder time series");
 
         let merged = base
-            .get_timeseries_by_name("ts-shared")
-            .expect("Timeseries should exist after merge");
+            .get_time_series_by_name("ts-shared")
+            .expect("TimeSeries should exist after merge");
         assert!(!merged.is_placeholder());
     }
 
     #[test]
-    fn test_merge_rejects_duplicate_timeseries_name() {
+    fn test_merge_rejects_duplicate_time_series_name() {
         let mut base = parse_network(
             r#"
             {
                 "nodes": [],
                 "edges": [],
-                "timeseries": [
-                    { "type": "Polars", "meta": { "name": "ts-shared" }, "url": "timeseries.csv" }
+                "time_series": [
+                    { "type": "Polars", "meta": { "name": "ts-shared" }, "path": "time-series.csv" }
                 ]
             }
             "#,
@@ -1951,8 +2089,8 @@ mod tests {
             {
                 "nodes": [],
                 "edges": [],
-                "timeseries": [
-                    { "type": "Polars", "meta": { "name": "ts-shared" }, "url": "other.csv" }
+                "time_series": [
+                    { "type": "Polars", "meta": { "name": "ts-shared" }, "path": "other.csv" }
                 ]
             }
             "#,
@@ -1960,8 +2098,8 @@ mod tests {
 
         let err = base
             .merge(other)
-            .expect_err("Merge should reject duplicate timeseries names");
-        assert!(matches!(err, NetworkMergeError::DuplicateTimeseriesName(name) if name == "ts-shared"));
+            .expect_err("Merge should reject duplicate time series names");
+        assert!(matches!(err, NetworkMergeError::DuplicateTimeSeriesName(name) if name == "ts-shared"));
     }
 
     #[test]
@@ -2088,8 +2226,8 @@ mod tests {
                 "format": "Placeholder"
             }
         ],
-        "timeseries": [
-            { "type": "Polars", "meta": { "name": "ts1" }, "url": "timeseries.csv" }
+        "time_series": [
+            { "type": "Polars", "meta": { "name": "ts1" }, "path": "timeseries.csv" }
         ],
         "metric_sets": [
             {

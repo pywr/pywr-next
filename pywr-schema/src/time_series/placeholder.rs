@@ -6,21 +6,20 @@ use schemars::JsonSchema;
 #[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
 #[serde(deny_unknown_fields)]
-pub struct PlaceholderTimeseries {
+pub struct PlaceholderTimeSeries {
     pub meta: ParameterMeta,
 }
 
-impl VisitPaths for PlaceholderTimeseries {}
+impl VisitPaths for PlaceholderTimeSeries {}
 
 #[cfg(feature = "core")]
 mod core {
-    use super::PlaceholderTimeseries;
-    use crate::timeseries::TimeseriesError;
-    use polars::frame::DataFrame;
+    use super::PlaceholderTimeSeries;
+    use crate::time_series::{LoadedTimeSeries, TimeSeriesError};
 
-    impl PlaceholderTimeseries {
-        pub fn load(&self) -> Result<DataFrame, TimeseriesError> {
-            Err(TimeseriesError::PlaceholderTimeseriesNotAllowed {
+    impl PlaceholderTimeSeries {
+        pub fn load(&self) -> Result<LoadedTimeSeries, TimeSeriesError> {
+            Err(TimeSeriesError::PlaceholderTimeSeriesNotAllowed {
                 name: self.meta.name.clone(),
             })
         }
