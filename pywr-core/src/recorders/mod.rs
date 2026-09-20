@@ -7,6 +7,7 @@ mod hdf;
 mod memory;
 mod metric_set;
 mod py;
+mod snapshot;
 
 use crate::metric::{
     MetricConsumerPhase, MetricF64, MetricF64Error, MetricF64ResolutionError, MetricU64, MetricU64Error,
@@ -37,6 +38,10 @@ pub use metric_set::{
 };
 use ndarray::Array2;
 use ndarray::prelude::*;
+pub use snapshot::{
+    Snapshot, SnapshotBuffer, SnapshotData, SnapshotMeta, SnapshotMetricSetItem, SnapshotMetricSetMeta,
+    SnapshotRecorder, SnapshotRecorderBuilder,
+};
 use std::any::Any;
 use std::fmt::Debug;
 use thiserror::Error;
@@ -49,7 +54,7 @@ pub struct RecorderMeta {
 }
 
 impl RecorderMeta {
-    fn new(name: &str) -> Self {
+    pub fn new(name: &str) -> Self {
         Self {
             name: name.to_string(),
             comment: "".to_string(),
@@ -123,8 +128,8 @@ pub enum RecorderDataFrameError {
     RecorderCannotBeConvertedToDataFrame,
 }
 
-pub trait RecorderInternalState: Any {}
-impl<T> RecorderInternalState for T where T: Any {}
+pub trait RecorderInternalState: Any + Send {}
+impl<T> RecorderInternalState for T where T: Any + Send {}
 
 /// Helper function to downcast to internal recorder state and print a helpful panic
 /// message if this fails.
@@ -259,6 +264,15 @@ pub trait Recorder: Send + Sync + Debug {
         _metric_set_states: &[Vec<MetricSetState>],
         _internal_state: &mut Option<Box<dyn RecorderInternalState>>,
     ) -> Result<(), RecorderSaveError> {
+        Ok(())
+    }
+
+    /// Wait until data queued by prior [`Self::save`] calls is flushed.
+    ///
+    /// Most recorders save synchronously, so the default implementation has
+    /// nothing to do. Asynchronous recorders override this to provide a
+    /// durability barrier to callers that need to publish their output.
+    fn flush(&self, _internal_state: &mut Option<Box<dyn RecorderInternalState>>) -> Result<(), RecorderSaveError> {
         Ok(())
     }
 
