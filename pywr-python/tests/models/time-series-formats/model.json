@@ -1,10 +1,10 @@
 {
   "metadata": {
-    "title": "Simple timeseries"
+    "title": "Simple time series"
   },
   "time": {
     "start": "2021-01-01",
-    "end": "2021-12-31",
+    "end": "2021-01-31",
     "timestep": {
       "type": "Days",
       "days": 1
@@ -16,15 +16,7 @@
         "meta": {
           "name": "input1"
         },
-        "type": "Input",
-        "max_flow": {
-          "type": "Timeseries",
-          "name": "inflow",
-          "columns": {
-            "type": "Column",
-            "name": "inflow"
-          }
-        }
+        "type": "Input"
       },
       {
         "meta": {
@@ -69,30 +61,41 @@
         }
       }
     ],
-    "timeseries": [
+    "time_series": [
       {
         "meta": {
           "name": "inflow"
         },
-        "type": "Polars",
-        "url": "inflow.csv"
+        "type": "Placeholder"
       }
     ],
     "metric_sets": [
       {
-        "name": "nodes",
+        "name": "timeseries",
         "metrics": [
           {
-            "type": "Node",
-            "name": "input1"
+            "type": "TimeSeries",
+            "name": "inflow",
+            "columns": {
+              "type": "Column",
+              "name": "inflow1"
+            }
           },
           {
-            "type": "Node",
-            "name": "link1"
+            "type": "TimeSeries",
+            "name": "inflow",
+            "columns": {
+              "type": "Column",
+              "name": "inflow2"
+            }
           },
           {
-            "type": "Node",
-            "name": "output1"
+            "type": "TimeSeries",
+            "name": "inflow",
+            "columns": {
+              "type": "Column",
+              "name": "inflow3"
+            }
           }
         ]
       }
@@ -102,12 +105,12 @@
         "name": "outputs",
         "type": "HDF5",
         "filename": "outputs.h5",
-        "metric_set": "nodes"
+        "metric_set": "timeseries"
       },
       {
-        "name": "nodes",
+        "name": "timeseries",
         "type": "Memory",
-        "metric_set": "nodes"
+        "metric_set": "timeseries"
       }
     ]
   }

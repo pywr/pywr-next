@@ -12,34 +12,26 @@ use crate::parameters::{
 use crate::recorders::{AssertionF64RecorderBuilder, AssertionU64RecorderBuilder};
 use crate::scenario::{ScenarioDomainBuilder, ScenarioGroupBuilder};
 #[cfg(feature = "cbc")]
-use crate::solvers::CbcSolver;
+use crate::solvers::CbcSolverSettings;
 #[cfg(feature = "ipm-ocl")]
-use crate::solvers::ClIpmF64Solver;
+use crate::solvers::ClIpmF64Settings;
 #[cfg(feature = "clp")]
-use crate::solvers::ClpSolver;
+use crate::solvers::ClpSolverSettings;
 #[cfg(feature = "highs")]
-use crate::solvers::HighsSolver;
-#[cfg(any(feature = "ipm-simd", feature = "ipm-ocl"))]
-use crate::solvers::MultiStateSolver;
+use crate::solvers::HighsSolverSettings;
 #[cfg(feature = "ipm-simd")]
-use crate::solvers::SimdIpmF64Solver;
+use crate::solvers::SimdIpmSolverSettings;
+#[cfg(any(feature = "ipm-simd", feature = "ipm-ocl"))]
+use crate::solvers::{MultiStateSolver, MultiStateSolverConfig};
 #[cfg(any(feature = "cbc", feature = "clp", feature = "highs", feature = "microlp"))]
-use crate::solvers::Solver;
-#[cfg(any(
-    feature = "cbc",
-    feature = "clp",
-    feature = "highs",
-    feature = "ipm-ocl",
-    feature = "ipm-simd",
-    feature = "microlp"
-))]
-use crate::solvers::SolverSettings;
+use crate::solvers::{Solver, SolverConfig};
 use crate::timestep::{TimeDomainBuilder, TimestepDuration};
+use arrow::array::{Float64Array, UInt64Array};
 use csv::{Reader, ReaderBuilder};
 use float_cmp::{F64Margin, approx_eq};
 use jiff::ToSpan;
 use jiff::civil::date;
-use ndarray::{Array, Array2};
+use ndarray::Array2;
 use rand::{Rng, RngExt};
 use rand_distr::{Distribution, Normal};
 use std::num::NonZeroU64;
@@ -77,8 +69,13 @@ pub fn simple_network(builder: &mut NetworkBuilder, inflow_scenario: &str, num_i
     builder.connect("input", "link");
     builder.connect("link", "output");
 
-    let inflow = Array::from_shape_fn((366, num_inflow_scenarios), |(i, j)| 1.0 + i as f64 + j as f64);
-    let inflow = Array2ParameterBuilder::new("inflow".into(), inflow, inflow_scenario);
+    let mut inflow = Vec::with_capacity(num_inflow_scenarios);
+    for j in 0..num_inflow_scenarios {
+        let column = (0..366).map(|i| 1.0 + i as f64 + j as f64).collect::<Vec<_>>();
+        inflow.push(Float64Array::from(column));
+    }
+
+    let inflow = Array2ParameterBuilder::from_primitive_arrays("inflow".into(), &inflow, inflow_scenario);
 
     builder.parameters().f64(Box::new(inflow));
 
@@ -400,21 +397,29 @@ pub fn run_all_solvers(
     #[cfg(feature = "clp")]
     {
         if !solvers_to_skip.contains(&"clp") {
-            check_features_and_run::<ClpSolver>(model, !solvers_without_features.contains(&"clp"), expected_outputs);
+            check_features_and_run::<ClpSolverSettings>(
+                model,
+                !solvers_without_features.contains(&"clp"),
+                expected_outputs,
+            );
         }
     }
 
     #[cfg(feature = "cbc")]
     {
         if !solvers_to_skip.contains(&"cbc") {
-            check_features_and_run::<CbcSolver>(model, !solvers_without_features.contains(&"cbc"), expected_outputs);
+            check_features_and_run::<CbcSolverSettings>(
+                model,
+                !solvers_without_features.contains(&"cbc"),
+                expected_outputs,
+            );
         }
     }
 
     #[cfg(feature = "highs")]
     {
         if !solvers_to_skip.contains(&"highs") {
-            check_features_and_run::<HighsSolver>(
+            check_features_and_run::<HighsSolverSettings>(
                 model,
                 !solvers_without_features.contains(&"highs"),
                 expected_outputs,
@@ -425,7 +430,7 @@ pub fn run_all_solvers(
     #[cfg(feature = "microlp")]
     {
         if !solvers_to_skip.contains(&"microlp") {
-            check_features_and_run::<crate::solvers::MicroLpSolver>(
+            check_features_and_run::<crate::solvers::MicroLpSolverSettings>(
                 model,
                 !solvers_without_features.contains(&"microlp"),
                 expected_outputs,
@@ -436,7 +441,7 @@ pub fn run_all_solvers(
     #[cfg(feature = "ipm-simd")]
     {
         if !solvers_to_skip.contains(&"ipm-simd") {
-            check_features_and_run_multi::<SimdIpmF64Solver>(
+            check_features_and_run_multi::<SimdIpmSolverSettings>(
                 model,
                 !solvers_without_features.contains(&"ipm-simd"),
                 expected_outputs,
@@ -447,7 +452,7 @@ pub fn run_all_solvers(
     #[cfg(feature = "ipm-ocl")]
     {
         if !solvers_to_skip.contains(&"ipm-ocl") {
-            check_features_and_run_multi::<ClIpmF64Solver>(
+            check_features_and_run_multi::<ClIpmF64Settings>(
                 model,
                 !solvers_without_features.contains(&"ipm-ocl"),
                 expected_outputs,
@@ -475,21 +480,20 @@ pub fn run_all_solvers(
 
 /// Check features and
 #[cfg(any(feature = "cbc", feature = "clp", feature = "highs", feature = "microlp"))]
-fn check_features_and_run<S>(model: &Model, expect_features: bool, expected_outputs: &[Box<dyn VerifyExpected>])
+fn check_features_and_run<C>(model: &Model, expect_features: bool, expected_outputs: &[Box<dyn VerifyExpected>])
 where
-    S: Solver,
-    <S as Solver>::Settings: SolverSettings + Default,
+    C: SolverConfig + Default,
 {
-    let has_features = model.check_solver_features::<S>();
+    let has_features = model.check_solver_features::<C>();
     if expect_features {
         assert!(
             has_features,
             "Solver `{}` was expected to have the required features",
-            S::name()
+            C::Solver::name()
         );
         model
-            .run::<S>(&Default::default())
-            .unwrap_or_else(|e| panic!("Failed to solve with {}: {}", S::name(), e));
+            .run::<C>(&Default::default())
+            .unwrap_or_else(|e| panic!("Failed to solve with {}: {}", C::Solver::name(), e));
 
         // Verify any expected outputs
         for expected_output in expected_outputs {
@@ -499,35 +503,34 @@ where
         assert!(
             !has_features,
             "Solver `{}` was not expected to have the required features",
-            S::name()
+            C::Solver::name()
         );
     }
 }
 
 /// Check features and run with a multi-scenario solver
 #[cfg(any(feature = "ipm-simd", feature = "ipm-ocl"))]
-fn check_features_and_run_multi<S>(model: &Model, expect_features: bool, _expected_outputs: &[Box<dyn VerifyExpected>])
+fn check_features_and_run_multi<C>(model: &Model, expect_features: bool, _expected_outputs: &[Box<dyn VerifyExpected>])
 where
-    S: MultiStateSolver,
-    <S as MultiStateSolver>::Settings: SolverSettings + Default,
+    C: MultiStateSolverConfig + Default,
 {
-    let has_features = model.check_multi_scenario_solver_features::<S>();
+    let has_features = model.check_multi_scenario_solver_features::<C>();
     if expect_features {
         assert!(
             has_features,
             "Solver `{}` (with features: {:#?}) was expected to have the required features: {:?}",
-            S::name(),
-            S::features(),
+            C::Solver::name(),
+            C::Solver::features(),
             model.required_features()
         );
         model
-            .run_multi_scenario::<S>(&Default::default())
-            .unwrap_or_else(|_| panic!("Failed to solve with: {}", S::name()));
+            .run_multi_scenario::<C>(&Default::default())
+            .unwrap_or_else(|_| panic!("Failed to solve with: {}", C::Solver::name()));
     } else {
         assert!(
             !has_features,
             "Solver `{}` was not expected to have the required features",
-            S::name()
+            C::Solver::name()
         );
     }
 }
@@ -577,13 +580,17 @@ fn make_simple_system<R: Rng + ?Sized>(
 
     let inflow_distr: Normal<f64> = Normal::new(9.0, 1.0).unwrap();
 
-    let mut inflow = Array2::zeros((num_timesteps, num_inflow_scenarios));
-
-    for x in inflow.iter_mut() {
-        *x = inflow_distr.sample(rng).max(0.0);
+    let mut inflow: Vec<Float64Array> = Vec::with_capacity(num_inflow_scenarios);
+    for _ in 0..num_inflow_scenarios {
+        inflow.push(
+            (0..num_timesteps)
+                .map(|_| inflow_distr.sample(rng).max(0.0))
+                .collect::<Float64Array>(),
+        );
     }
 
-    let inflow = Array2ParameterBuilder::new(inflow_parameter_name, inflow, inflow_scenario);
+    let inflow =
+        Array2ParameterBuilder::from_primitive_arrays(inflow_parameter_name, inflow.as_slice(), inflow_scenario);
 
     builder.parameters().f64(Box::new(inflow));
 }
@@ -677,31 +684,14 @@ pub fn make_random_model_builder<R: Rng>(
     ModelBuilder::new(domain, network_builder)
 }
 
-#[cfg(all(test, feature = "ipm-simd"))]
-mod tests {
-    use super::make_random_model_builder;
-    use crate::solvers::{SimdIpmF64Solver, SimdIpmSolverSettings};
-    use rand::SeedableRng;
-    use rand_chacha::ChaCha8Rng;
+pub fn arrow_linspace_f64(start: f64, end: f64, num: usize) -> Float64Array {
+    let step = (end - start) / (num - 1) as f64;
+    Float64Array::from_iter((0..num).map(|i| start + i as f64 * step))
+}
 
-    #[test]
-    fn test_random_model() {
-        let n_sys = 50;
-        let density = 5;
-        let n_sc = 12;
-
-        // Make a consistent random number generator
-        // ChaCha8 should be consistent across builds and platforms
-        let mut rng = ChaCha8Rng::seed_from_u64(0);
-        let model = make_random_model_builder(n_sys, density, n_sc, &mut rng)
-            .build()
-            .expect("Failed to builder random model.");
-
-        let settings = SimdIpmSolverSettings::default();
-        model
-            .run_multi_scenario::<SimdIpmF64Solver>(&settings)
-            .expect("Failed to run model!");
-    }
+pub fn arrow_linspace_u64(start: u64, end: u64, num: usize) -> UInt64Array {
+    let step = (end - start) / (num - 1) as u64;
+    UInt64Array::from_iter((0..num).map(|i| start + i as u64 * step))
 }
 
 /// Compare two arrays of f64
@@ -717,6 +707,55 @@ pub fn assert_approx_array_eq(calculated_values: &[f64], expected_values: &[f64]
                     actual: `{calculated:?}`,
                     expected: `{expected:?}`"#,
             )
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::arrow_linspace_f64;
+
+    #[cfg(feature = "ipm-simd")]
+    #[test]
+    fn test_random_model() {
+        use super::make_random_model_builder;
+        use crate::solvers::SimdIpmSolverSettings;
+        use rand::SeedableRng;
+        use rand_chacha::ChaCha8Rng;
+
+        let n_sys = 50;
+        let density = 5;
+        let n_sc = 12;
+
+        // Make a consistent random number generator
+        // ChaCha8 should be consistent across builds and platforms
+        let mut rng = ChaCha8Rng::seed_from_u64(0);
+        let model = make_random_model_builder(n_sys, density, n_sc, &mut rng)
+            .build()
+            .expect("Failed to builder random model.");
+
+        let settings = SimdIpmSolverSettings::default();
+        model.run_multi_scenario(&settings).expect("Failed to run model!");
+    }
+
+    #[test]
+    fn test_linspace_f64() {
+        let start = 0.0;
+        let end = 10.0;
+        let num = 5;
+        let array = arrow_linspace_f64(start, end, num);
+        let expected = [0.0, 2.5, 5.0, 7.5, 10.0];
+        assert_eq!(array.len(), expected.len());
+        for (i, (value, expected)) in array.iter().zip(expected.iter()).enumerate() {
+            let value = value.unwrap();
+            let expected = *expected;
+            assert!(
+                (value - expected).abs() < f64::EPSILON,
+                "Value at index {} is {}, expected {}",
+                i,
+                value,
+                expected
+            );
         }
     }
 }

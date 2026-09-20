@@ -211,6 +211,19 @@ where
     }
 }
 
+impl<T> VisitPaths for Box<T>
+where
+    T: VisitPaths,
+{
+    fn visit_paths<F: FnMut(&Path)>(&self, visitor: &mut F) {
+        self.as_ref().visit_paths(visitor);
+    }
+
+    fn visit_paths_mut<F: FnMut(&mut PathBuf)>(&mut self, visitor: &mut F) {
+        self.as_mut().visit_paths_mut(visitor);
+    }
+}
+
 impl VisitPaths for u8 {}
 impl VisitPaths for i8 {}
 impl VisitPaths for u16 {}
@@ -224,6 +237,7 @@ impl<const N: usize> VisitPaths for [f64; N] {}
 impl<const N: usize> VisitPaths for [Metric; N] {}
 impl VisitPaths for bool {}
 impl VisitPaths for u64 {}
+impl VisitPaths for usize {}
 impl VisitPaths for String {}
 impl VisitPaths for PathBuf {
     fn visit_paths<F: FnMut(&Path)>(&self, visitor: &mut F) {
@@ -235,6 +249,7 @@ impl VisitPaths for PathBuf {
     }
 }
 impl VisitPaths for NonZeroUsize {}
+impl VisitPaths for NonZeroI64 {}
 
 impl VisitPaths for serde_json::Value {}
 
@@ -255,8 +270,8 @@ pub enum Reference<'a> {
     LocalParameter { node: Option<&'a str>, name: &'a str },
     /// Resolved in the network's `tables`.
     Table(&'a str),
-    /// Resolved in the network's `timeseries`.
-    Timeseries(&'a str),
+    /// Resolved in the network's `time_series`.
+    TimeSeries(&'a str),
     /// Resolved in the network's `metric_sets`. Only an output names one.
     MetricSet(&'a str),
     /// Resolved in the model's `scenarios.groups`, not in the network.
@@ -275,7 +290,7 @@ pub enum ReferenceMut<'a> {
         name: &'a mut String,
     },
     Table(&'a mut String),
-    Timeseries(&'a mut String),
+    TimeSeries(&'a mut String),
     MetricSet(&'a mut String),
     ScenarioGroup(&'a mut String),
 }
@@ -316,7 +331,7 @@ impl VisitReferences for Metric {
             Metric::VirtualNode(node_ref) => node_ref.visit_references(visitor),
             Metric::Edge(edge_ref) => edge_ref.visit_references(visitor),
             Metric::Table(table_ref) => table_ref.visit_references(visitor),
-            Metric::Timeseries(ts_ref) => ts_ref.visit_references(visitor),
+            Metric::TimeSeries(ts_ref) => ts_ref.visit_references(visitor),
             Metric::Parameter(p_ref) => visitor(Reference::Parameter(&p_ref.name)),
             Metric::LocalParameter(p_ref) => visitor(Reference::LocalParameter {
                 node: p_ref.node.as_deref(),
@@ -333,7 +348,7 @@ impl VisitReferences for Metric {
             Metric::VirtualNode(node_ref) => node_ref.visit_references_mut(visitor),
             Metric::Edge(edge_ref) => edge_ref.visit_references_mut(visitor),
             Metric::Table(table_ref) => table_ref.visit_references_mut(visitor),
-            Metric::Timeseries(ts_ref) => ts_ref.visit_references_mut(visitor),
+            Metric::TimeSeries(ts_ref) => ts_ref.visit_references_mut(visitor),
             Metric::Parameter(p_ref) => visitor(ReferenceMut::Parameter(&mut p_ref.name)),
             Metric::LocalParameter(p_ref) => visitor(ReferenceMut::LocalParameter {
                 node: p_ref.node.as_mut(),
@@ -349,7 +364,7 @@ impl VisitReferences for IndexMetric {
         match self {
             IndexMetric::Node(node_ref) => node_ref.visit_references(visitor),
             IndexMetric::Table(table_ref) => table_ref.visit_references(visitor),
-            IndexMetric::Timeseries(ts_ref) => ts_ref.visit_references(visitor),
+            IndexMetric::TimeSeries(ts_ref) => ts_ref.visit_references(visitor),
             IndexMetric::Parameter(p_ref) => visitor(Reference::Parameter(&p_ref.name)),
             IndexMetric::LocalParameter(p_ref) => visitor(Reference::LocalParameter {
                 node: p_ref.node.as_deref(),
@@ -363,7 +378,7 @@ impl VisitReferences for IndexMetric {
         match self {
             IndexMetric::Node(node_ref) => node_ref.visit_references_mut(visitor),
             IndexMetric::Table(table_ref) => table_ref.visit_references_mut(visitor),
-            IndexMetric::Timeseries(ts_ref) => ts_ref.visit_references_mut(visitor),
+            IndexMetric::TimeSeries(ts_ref) => ts_ref.visit_references_mut(visitor),
             IndexMetric::Parameter(p_ref) => visitor(ReferenceMut::Parameter(&mut p_ref.name)),
             IndexMetric::LocalParameter(p_ref) => visitor(ReferenceMut::LocalParameter {
                 node: p_ref.node.as_mut(),
@@ -780,9 +795,9 @@ mod tests {
                         "type": "Negative",
                         "phase": "Before",
                         "parameter": {
-                            "type": "Timeseries",
-                            "name": "local-parameter-timeseries",
-                            "columns": { "type": "Column", "name": "timeseries-column" }
+                            "type": "TimeSeries",
+                            "name": "local-parameter-time-series",
+                            "columns": { "type": "Column", "name": "time-series-column" }
                         }
                     }
                 ],
@@ -832,9 +847,9 @@ mod tests {
                     { "type": "LocalParameter", "name": "index-metric-local-parameter" },
                     { "type": "Table", "table": "index-metric-table" },
                     {
-                        "type": "Timeseries",
-                        "name": "index-metric-timeseries",
-                        "columns": { "type": "Scenario", "name": "timeseries-columns-scenario-group" }
+                        "type": "TimeSeries",
+                        "name": "index-metric-time-series",
+                        "columns": { "type": "Scenario", "name": "time-series-columns-scenario-group" }
                     },
                     { "type": "Node", "name": "index-metric-node" }
                 ]
@@ -876,7 +891,7 @@ mod tests {
 
     /// Every reference in [`NETWORK_WITH_REFERENCES`], sorted. Definitions are absent: the metric
     /// set `ms1` is defined but never named, and the `edges` entry contributes only its endpoints.
-    /// So is `timeseries-column`, which resolves in the timeseries' own data.
+    /// So is `time-series-column`, which resolves in the time series' own data.
     const EXPECTED_REFERENCES: [&str; 27] = [
         "Edge:metric-edge-from->metric-edge-to",
         "LocalParameter:index-metric-local-parameter",
@@ -897,13 +912,13 @@ mod tests {
         "Parameter:virtual-node-local-parameter",
         "ScenarioGroup:constant-scenario-group",
         "ScenarioGroup:tables-array-scenario-group",
-        "ScenarioGroup:timeseries-columns-scenario-group",
+        "ScenarioGroup:time-series-columns-scenario-group",
         "Table:constant-scenario-values-table",
         "Table:constant-value-table",
         "Table:index-metric-table",
         "Table:node-table",
-        "Timeseries:index-metric-timeseries",
-        "Timeseries:local-parameter-timeseries",
+        "TimeSeries:index-metric-time-series",
+        "TimeSeries:local-parameter-time-series",
         "VirtualNode:virtual-node-metric",
     ];
 
@@ -922,7 +937,7 @@ mod tests {
                 }
             }
             Reference::Table(name) => format!("Table:{name}"),
-            Reference::Timeseries(name) => format!("Timeseries:{name}"),
+            Reference::TimeSeries(name) => format!("TimeSeries:{name}"),
             Reference::MetricSet(name) => format!("MetricSet:{name}"),
             Reference::ScenarioGroup(name) => format!("ScenarioGroup:{name}"),
         }
@@ -943,7 +958,7 @@ mod tests {
                 }
             }
             ReferenceMut::Table(name) => format!("Table:{name}"),
-            ReferenceMut::Timeseries(name) => format!("Timeseries:{name}"),
+            ReferenceMut::TimeSeries(name) => format!("TimeSeries:{name}"),
             ReferenceMut::MetricSet(name) => format!("MetricSet:{name}"),
             ReferenceMut::ScenarioGroup(name) => format!("ScenarioGroup:{name}"),
         }
@@ -1001,7 +1016,7 @@ mod tests {
                 | ReferenceMut::Parameter(name)
                 | ReferenceMut::LocalParameter { node: _, name }
                 | ReferenceMut::Table(name)
-                | ReferenceMut::Timeseries(name)
+                | ReferenceMut::TimeSeries(name)
                 | ReferenceMut::MetricSet(name)
                 | ReferenceMut::ScenarioGroup(name) => *name = "rewritten".to_string(),
                 // An edge's endpoints are rewritten through their own `Node` arm.
@@ -1037,7 +1052,7 @@ mod tests {
                 "node \"supply\": LocalParameter:node-local-parameter",
                 "node \"supply\": Parameter:node-parameter",
                 "node \"supply\": Table:node-table",
-                "node \"supply\": Timeseries:local-parameter-timeseries",
+                "node \"supply\": TimeSeries:local-parameter-time-series",
                 // A CSV output may name several metric sets, and yields one reference each.
                 "output \"csv-out\": MetricSet:csv-output-metric-set-1",
                 "output \"csv-out\": MetricSet:csv-output-metric-set-2",
@@ -1048,9 +1063,9 @@ mod tests {
                 "parameter \"constant-scenario\": Table:constant-scenario-values-table",
                 "parameter \"index-agg\": LocalParameter:index-metric-local-parameter",
                 "parameter \"index-agg\": Node:index-metric-node",
-                "parameter \"index-agg\": ScenarioGroup:timeseries-columns-scenario-group",
+                "parameter \"index-agg\": ScenarioGroup:time-series-columns-scenario-group",
                 "parameter \"index-agg\": Table:index-metric-table",
-                "parameter \"index-agg\": Timeseries:index-metric-timeseries",
+                "parameter \"index-agg\": TimeSeries:index-metric-time-series",
                 "parameter \"index-holder\": Edge:metric-edge-from->metric-edge-to",
                 "parameter \"index-holder\": Node:metric-edge-from",
                 "parameter \"index-holder\": Node:metric-edge-to",

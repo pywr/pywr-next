@@ -55,12 +55,12 @@ model_tests! {
     test_flow_agg1: ("flow-agg1.json", vec![("flow-agg1-expected.csv", ResultsShape::Long)], vec![], vec![]),
     test_hdf1: ("hdf1.json", vec![], vec![], vec![]), // TODO asserting h5 results not possible with this framework
     test_memory1: ("memory1.json", vec![], vec![], vec![]),  // TODO asserting memory results not possible with this framework
-    test_timeseries: ("timeseries.json", vec![("timeseries-expected.csv", ResultsShape::Long)], vec![], vec![]),
-    test_timeseries2: ("timeseries2.json", vec![("timeseries2-expected.csv", ResultsShape::Long)], vec![], vec![]),
-    test_timeseries3: ("timeseries3.json", vec![("timeseries3-expected.csv", ResultsShape::Long)], vec![], vec![]),
-    test_timeseries4: ("timeseries4.json", vec![("timeseries4-expected.csv", ResultsShape::Long)], vec![], vec![]),
-    test_timeseries5: ("timeseries5.json", vec![("timeseries5-expected.csv", ResultsShape::Long)], vec![], vec![]),
-    test_timeseries2_hourly: ("timeseries2-hourly.json", vec![("timeseries2-hourly-expected.csv", ResultsShape::Long)], vec![], vec![]),
+    test_time_series: ("time-series.json", vec![("time-series-expected.csv", ResultsShape::Long)], vec![], vec![]),
+    test_time_series2: ("time-series2.json", vec![("time-series2-expected.csv", ResultsShape::Long)], vec![], vec![]),
+    test_time_series3: ("time-series3.json", vec![("time-series3-expected.csv", ResultsShape::Long)], vec![], vec![]),
+    test_time_series4: ("time-series4.json", vec![("time-series4-expected.csv", ResultsShape::Long)], vec![], vec![]),
+    test_time_series5: ("time-series5.json", vec![("time-series5-expected.csv", ResultsShape::Long)], vec![], vec![]),
+    test_time_series2_hourly: ("time-series2-hourly.json", vec![("time-series2-hourly-expected.csv", ResultsShape::Long)], vec![], vec![]),
     test_storage_max_volumes: ("storage_max_volumes.json", vec![], vec![], vec![]),
     test_mutual_exclusivity1: ("mutual-exclusivity1.json", vec![("mutual-exclusivity1.csv", ResultsShape::Long)], vec!["clp", "ipm-simd", "ipm-ocl"], vec![]),
     test_mutual_exclusivity2: ("mutual-exclusivity2.json", vec![("mutual-exclusivity2.csv", ResultsShape::Long)], vec!["clp", "ipm-simd", "ipm-ocl"], vec![]),
@@ -114,14 +114,14 @@ model_tests! {
     test_hydropower1: ("hydropower1.json", vec![("hydropower1-expected.csv", ResultsShape::Long)], vec![], vec![]),
 }
 
-/// Test Pandas backend for reading timeseries data.
+/// Test Pandas backend for reading time series data.
 ///
 /// This test requires Python environment with Pandas
 #[test]
-fn test_timeseries_pandas() {
-    let input = "timeseries_pandas.json";
+fn test_time_series_pandas() {
+    let input = "time-series_pandas.json";
     let input_pth = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join(input);
-    let expected = [("timeseries-expected.csv", ResultsShape::Long)];
+    let expected = [("time-series-expected.csv", ResultsShape::Long)];
     let _expected_paths = expected
         .into_iter()
         .map(|(p, shape)| (Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join(p), shape))
@@ -187,7 +187,7 @@ macro_rules! convert_tests {
 }
 
 convert_tests! {
-    test_convert_timeseries: ("v1/timeseries.json", "v1/timeseries-converted.json"),
+    test_convert_time_series: ("v1/time-series.json", "v1/time-series-converted.json"),
     test_convert_inline_parameter: ("v1/inline-parameter.json", "v1/inline-parameter-converted.json"),
     test_convert_river_split_with_gauge1: ("v1/river_split_with_gauge1.json", "v1/river_split_with_gauge1-converted.json"),
     test_convert_breaklink: ("v1/breaklink.json", "v1/breaklink-converted.json"),

@@ -20,7 +20,8 @@ use crate::recorders::{
 };
 use crate::scenario::ScenarioIndex;
 use crate::solvers::{
-    MultiStateSolver, Solver, SolverFeatures, SolverSettings, SolverSetupError, SolverSolveError, SolverTimings,
+    MultiStateSolver, MultiStateSolverConfig, Solver, SolverConfig, SolverFeatures, SolverSetupError, SolverSolveError,
+    SolverTimings,
 };
 use crate::state::{MultiValue, State, StateBuilder};
 use crate::timestep::Timestep;
@@ -617,36 +618,35 @@ impl Network {
     }
 
     /// Check whether a solver `S` has the required features to run this network.
-    pub fn check_solver_features<S>(&self) -> bool
+    pub fn check_solver_features<C>(&self) -> bool
     where
-        S: Solver,
+        C: SolverConfig,
     {
         let required_features = self.required_features();
 
-        required_features.iter().all(|f| S::features().contains(f))
+        required_features.iter().all(|f| C::Solver::features().contains(f))
     }
 
     /// Check whether a solver `S` has the required features to run this network.
-    pub fn check_multi_scenario_solver_features<S>(&self) -> bool
+    pub fn check_multi_scenario_solver_features<C>(&self) -> bool
     where
-        S: MultiStateSolver,
+        C: MultiStateSolverConfig,
     {
         let required_features = self.required_features();
 
-        required_features.iter().all(|f| S::features().contains(f))
+        required_features.iter().all(|f| C::Solver::features().contains(f))
     }
 
-    pub fn setup_solver<S>(
+    pub fn setup_solver<C>(
         &self,
         scenario_indices: &[ScenarioIndex],
         state: &NetworkState,
-        settings: &S::Settings,
-    ) -> Result<Vec<Box<S>>, NetworkSolverSetupError>
+        solver_config: &C,
+    ) -> Result<Vec<Box<C::Solver>>, NetworkSolverSetupError>
     where
-        S: Solver,
-        <S as Solver>::Settings: SolverSettings,
+        C: SolverConfig,
     {
-        if !settings.ignore_feature_requirements() && !self.check_solver_features::<S>() {
+        if !solver_config.ignore_feature_requirements() && !self.check_solver_features::<C>() {
             return Err(NetworkSolverSetupError::MissingSolverFeatures);
         }
 
@@ -655,26 +655,25 @@ impl Network {
         for scenario_index in scenario_indices {
             // Create a solver for each scenario
             let const_values = state.state(scenario_index).get_const_parameter_values();
-            let solver = S::setup(self, &const_values, settings)?;
+            let solver = solver_config.setup(self, &const_values)?;
             solvers.push(solver);
         }
 
         Ok(solvers)
     }
 
-    pub fn setup_multi_scenario_solver<S>(
+    pub fn setup_multi_scenario_solver<C>(
         &self,
         scenario_indices: &[ScenarioIndex],
-        settings: &S::Settings,
-    ) -> Result<Box<S>, NetworkSolverSetupError>
+        solver_config: &C,
+    ) -> Result<Box<C::Solver>, NetworkSolverSetupError>
     where
-        S: MultiStateSolver,
-        <S as MultiStateSolver>::Settings: SolverSettings,
+        C: MultiStateSolverConfig,
     {
-        if !settings.ignore_feature_requirements() && !self.check_multi_scenario_solver_features::<S>() {
+        if !solver_config.ignore_feature_requirements() && !self.check_multi_scenario_solver_features::<C>() {
             return Err(NetworkSolverSetupError::MissingSolverFeatures);
         }
-        Ok(S::setup(self, scenario_indices.len(), settings)?)
+        Ok(solver_config.setup(self, scenario_indices.len())?)
     }
 
     /// Finalise the run of the network, performing any final calculations and returning
@@ -2207,11 +2206,12 @@ mod tests {
     };
     use crate::recorders::AssertionF64RecorderBuilder;
     use crate::scenario::{ScenarioDomainBuilder, ScenarioGroupBuilder};
-    use crate::solvers::{ClpSolver, ClpSolverSettings};
+    use crate::solvers::ClpSolverSettings;
     use crate::test_utils::{
         default_domain, default_domain_builder, run_all_solvers, simple_model, simple_storage_model,
         simple_storage_network,
     };
+    use arrow::array::Float64Array;
     use float_cmp::assert_approx_eq;
     use ndarray::{Array, Array2};
     use std::default::Default;
@@ -2508,7 +2508,7 @@ mod tests {
         let model = ModelBuilder::new(domain, reverse_parameter_chain_network())
             .build()
             .unwrap();
-        let mut state = model.setup::<ClpSolver>(&ClpSolverSettings::default()).unwrap();
+        let mut state = model.setup(&ClpSolverSettings::default()).unwrap();
         let mut timings = NetworkTimings::new_without_component_timings();
         model.step(&mut state, None, &mut timings).unwrap();
 
@@ -2531,9 +2531,9 @@ mod tests {
         builder
             .parameters()
             .f64(Box::new(ConstantParameterBuilder::new("lifecycle-const".into(), 10.0)))
-            .f64(Box::new(Array1ParameterBuilder::new(
+            .f64(Box::new(Array1ParameterBuilder::from_primitive_array(
                 "lifecycle-simple".into(),
-                Array::from_elem(domain.time().timesteps().len(), 20.0),
+                Float64Array::from(vec![20.0; domain.time().timesteps().len()]),
             )))
             .f64(Box::new(TestParameterBuilder::network_lifecycle(
                 "lifecycle-general",
@@ -2709,7 +2709,7 @@ mod tests {
             ParameterIndex::General(registration) => registration,
             _ => panic!("expected a general parameter"),
         };
-        let mut state = model.setup::<ClpSolver>(&ClpSolverSettings::default()).unwrap();
+        let mut state = model.setup(&ClpSolverSettings::default()).unwrap();
         let mut timings = NetworkTimings::new_without_component_timings();
         model.step(&mut state, None, &mut timings).unwrap();
 
@@ -2735,7 +2735,7 @@ mod tests {
 
         let mut timings = NetworkTimings::new_without_component_timings();
 
-        let mut state = model.setup::<ClpSolver>(&ClpSolverSettings::default()).unwrap();
+        let mut state = model.setup(&ClpSolverSettings::default()).unwrap();
 
         let output_node = model.network().get_node_by_name("output", None).unwrap();
 
@@ -2891,7 +2891,7 @@ mod tests {
 
         let model = model_builder.build().unwrap();
 
-        let mut state = model.setup::<ClpSolver>(&ClpSolverSettings::default()).unwrap();
+        let mut state = model.setup(&ClpSolverSettings::default()).unwrap();
 
         let input_max_flow_idx = model.network().get_parameter_index_by_name(&my_constant).unwrap();
 

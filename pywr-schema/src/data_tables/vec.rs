@@ -51,12 +51,12 @@ where
         }
     }
 
-    pub fn from_csv_row(path: &Path, rows: usize) -> Result<Self, TableError>
+    pub fn from_csv_row(path: &Path, key_size: usize) -> Result<Self, TableError>
     where
         T: FromStr,
         TableError: From<T::Err>,
     {
-        match rows {
+        match key_size {
             1 => Ok(LoadedVecTable::One(load_csv_row_vec_table(path)?)),
             2 => Ok(LoadedVecTable::Two(load_csv_row_vec_table(path)?)),
             3 => Ok(LoadedVecTable::Three(load_csv_row_vec_table(path)?)),
@@ -67,18 +67,18 @@ where
         }
     }
 
-    pub fn from_csv_col(path: &Path, cols: usize) -> Result<Self, TableError>
+    pub fn from_csv_col(path: &Path, key_size: usize) -> Result<Self, TableError>
     where
         T: FromStr,
         TableError: From<T::Err>,
     {
-        match cols {
+        match key_size {
             1 => Ok(LoadedVecTable::One(load_csv_col_vec_table(path)?)),
             2 => Ok(LoadedVecTable::Two(load_csv_col_vec_table(path)?)),
             3 => Ok(LoadedVecTable::Three(load_csv_col_vec_table(path)?)),
             4 => Ok(LoadedVecTable::Four(load_csv_col_vec_table(path)?)),
             _ => Err(TableError::FormatNotSupported(
-                "CSV row array table with more than four index columns is not supported.".to_string(),
+                "CSV column array table with more than four index rows is not supported.".to_string(),
             )),
         }
     }
