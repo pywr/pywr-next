@@ -1588,7 +1588,7 @@ mod tests {
                     { "meta": { "name": "shared" }, "format": "Placeholder" }
                 ],
                 "time_series": [
-                    { "meta": { "name": "ts" }, "type": "Polars", "time_col": "date", "url": "ts.csv" },
+                    { "meta": { "name": "ts" }, "type": "Polars", "time_col": "date", "path": "ts.csv" },
                     { "meta": { "name": "ts" }, "type": "Placeholder" },
                     { "meta": { "name": "shared" }, "type": "Placeholder" }
                 ],
