@@ -20,7 +20,7 @@
         },
         "type": "Catchment",
         "flow": {
-          "type": "Timeseries",
+          "type": "TimeSeries",
           "name": "inflow"
         }
       },
@@ -61,14 +61,15 @@
         "to_node": "term1"
       }
     ],
-    "timeseries": [
+    "time_series": [
       {
         "meta": {
           "name": "inflow"
         },
-        "type": "Polars",
+        "type": "Arrow",
+        "format": "CSV",
         "time_col": "date",
-        "url": "inflow.csv"
+        "path": "inflow.csv"
       }
     ],
     "metric_sets": [

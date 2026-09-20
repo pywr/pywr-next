@@ -2,13 +2,13 @@
 //!
 //! This module contains traits for converting from Pywr v1 schema to Pywr v2 schema.
 //! The traits are implemented for all types that can be converted. Due to differences in
-//! the schemas some conversions may extract [`Parameter`]s and [`Timeseries`] from the
+//! the schemas some conversions may extract [`Parameter`]s and [`TimeSeries`] from the
 //! original data. This is primarily due to the fact that the v2 schema does not support
-//! inline (and unnamed) parameters, and includes a separate timeseries section.
+//! inline (and unnamed) parameters, and includes a separate time series section.
 //!
-//! The struct [`ConversionData`] is used to store these extracted parameters and timeseries.
-//! It also tracks a count of unnamed parameters and timeseries. This is used during conversion
-//! of meta-data to provide a unique name for unnamed parameters and timeseries.
+//! The struct [`ConversionData`] is used to store these extracted parameters and time series.
+//! It also tracks a count of unnamed parameters and time series. This is used during conversion
+//! of meta-data to provide a unique name for unnamed parameters and time series.
 
 use std::collections::HashMap;
 
@@ -17,19 +17,19 @@ use crate::error::ComponentConversionError;
 use crate::metric::Metric;
 use crate::nodes::{NodeMeta, StorageInitialVolume};
 use crate::parameters::{ConstantFloatVec, Parameter, ParameterMeta};
-use crate::timeseries::Timeseries;
+use crate::time_series::TimeSeries;
 use pywr_v1_schema::nodes::NodeMeta as NodeMetaV1;
 use pywr_v1_schema::parameters::{
     ExternalDataRef, ParameterMeta as ParameterMetaV1, ParameterValue, ParameterValues, TableDataRef,
 };
 
-/// Counters for unnamed parameters and timeseries.
+/// Counters for unnamed parameters and time series.
 #[derive(Default)]
 pub struct ConversionData {
     unnamed_count: usize,
     pub virtual_nodes: Vec<String>,
     pub parameters: Vec<Parameter>,
-    pub timeseries: Vec<Timeseries>,
+    pub time_series: Vec<TimeSeries>,
 }
 
 impl ConversionData {

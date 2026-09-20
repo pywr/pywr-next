@@ -1,7 +1,7 @@
 from datetime import datetime
 from os import PathLike
 
-import polars as pl
+import pyarrow as pa
 
 class ParameterInfo:
     """Provides data for a custom Pywr parameter.
@@ -219,8 +219,8 @@ class NetworkResult:
             name: The name of the output to retrieve.
         """
 
-    def to_dataframe(self, name: str) -> pl.DataFrame:
-        """Get the output of a recorder by name as a polars DataFrame.
+    def to_record_batch(self, name: str) -> pa.RecordBatch:
+        """Get the output of a recorder by name as an Arrow record batch.
 
         Args:
             name: The name of the output to retrieve.

@@ -19,13 +19,15 @@ highs = ["dep:highs-sys"]
 ipm-ocl = ["dep:ipm-ocl", "dep:ocl"]
 ipm-simd = ["dep:ipm-simd", "dep:wide"]
 microlp = ["dep:microlp"]
-pyo3 = ["dep:pyo3", "dep:ahash"]
+pyo3 = ["dep:pyo3", "dep:ahash", "arrow/pyarrow"]
 # File formats
 hdf5 = ["dep:hdf5-metno"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+arrow = { workspace = true }
+chrono = { workspace = true }
 ahash = { workspace = true, optional = true }
 coin-or-sys = { path = "../coin-or-sys", optional = true }
 csv = { workspace = true }

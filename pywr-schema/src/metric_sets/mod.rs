@@ -10,7 +10,7 @@ use crate::network::LoadArgs;
 use crate::parameters::{Parameter, ParameterPhase, PythonReturnType};
 #[cfg(feature = "core")]
 use pywr_core::recorders::UnresolvedOutputMetric;
-use pywr_schema_macros::{PywrVisitReferences, skip_serializing_none};
+use pywr_schema_macros::{PywrVisitPaths, PywrVisitReferences, skip_serializing_none};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::num::NonZeroI64;
@@ -25,6 +25,7 @@ use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumString, IntoStaticS
     Copy,
     Clone,
     JsonSchema,
+    PywrVisitPaths,
     PywrVisitReferences,
     Display,
     EnumDiscriminants,
@@ -58,7 +59,7 @@ impl From<MetricAggFrequency> for pywr_core::recorders::AggregationFrequency {
 ///
 /// If the metric set has a child aggregator then the aggregation will be performed over the
 /// aggregated values of the child aggregator.
-#[derive(Deserialize, Serialize, Clone, JsonSchema, PywrVisitReferences)]
+#[derive(Deserialize, Serialize, Clone, JsonSchema, PywrVisitPaths, PywrVisitReferences)]
 #[serde(deny_unknown_fields)]
 pub struct MetricAggregator {
     /// Optional aggregation frequency.
@@ -86,7 +87,7 @@ impl MetricAggregator {
 ///
 /// The filters allow the default metrics for all nodes, virtual nodes, parameters and/or edges in
 /// a model to be added to a metric set.
-#[derive(Deserialize, Serialize, Clone, JsonSchema, Default, PywrVisitReferences)]
+#[derive(Deserialize, Serialize, Clone, JsonSchema, Default, PywrVisitPaths, PywrVisitReferences)]
 #[serde(deny_unknown_fields)]
 pub struct MetricSetFilters {
     #[serde(default)]
@@ -176,7 +177,7 @@ impl MetricSetFilters {
 /// Metrics added by the filters will be appended to any metrics specified for the metric attribute,
 /// if they are not a duplication.
 #[skip_serializing_none]
-#[derive(Deserialize, Serialize, Clone, JsonSchema, PywrVisitReferences)]
+#[derive(Deserialize, Serialize, Clone, JsonSchema, PywrVisitPaths, PywrVisitReferences)]
 #[serde(deny_unknown_fields)]
 pub struct MetricSet {
     pub name: String,
