@@ -60,12 +60,14 @@ pub enum TimeSeriesError {
         source: std::io::Error,
     },
     #[error("Arrow error on path `{path}`: {source}")]
+    #[cfg(feature = "core")]
     ArrowError {
         path: PathBuf,
         #[source]
         source: arrow::error::ArrowError,
     },
     #[error("Parquet error on path `{path}`: {source}")]
+    #[cfg(feature = "core")]
     ParquetError {
         path: PathBuf,
         #[source]
