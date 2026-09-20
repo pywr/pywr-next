@@ -12,28 +12,19 @@ use crate::parameters::{
 use crate::recorders::{AssertionF64RecorderBuilder, AssertionU64RecorderBuilder};
 use crate::scenario::{ScenarioDomainBuilder, ScenarioGroupBuilder};
 #[cfg(feature = "cbc")]
-use crate::solvers::CbcSolver;
+use crate::solvers::CbcSolverSettings;
 #[cfg(feature = "ipm-ocl")]
-use crate::solvers::ClIpmF64Solver;
+use crate::solvers::ClIpmF64Settings;
 #[cfg(feature = "clp")]
-use crate::solvers::ClpSolver;
+use crate::solvers::ClpSolverSettings;
 #[cfg(feature = "highs")]
-use crate::solvers::HighsSolver;
-#[cfg(any(feature = "ipm-simd", feature = "ipm-ocl"))]
-use crate::solvers::MultiStateSolver;
+use crate::solvers::HighsSolverSettings;
 #[cfg(feature = "ipm-simd")]
-use crate::solvers::SimdIpmF64Solver;
+use crate::solvers::SimdIpmSolverSettings;
+#[cfg(any(feature = "ipm-simd", feature = "ipm-ocl"))]
+use crate::solvers::{MultiStateSolver, MultiStateSolverConfig};
 #[cfg(any(feature = "cbc", feature = "clp", feature = "highs", feature = "microlp"))]
-use crate::solvers::Solver;
-#[cfg(any(
-    feature = "cbc",
-    feature = "clp",
-    feature = "highs",
-    feature = "ipm-ocl",
-    feature = "ipm-simd",
-    feature = "microlp"
-))]
-use crate::solvers::SolverSettings;
+use crate::solvers::{Solver, SolverConfig};
 use crate::timestep::{TimeDomainBuilder, TimestepDuration};
 use arrow::array::{Float64Array, UInt64Array};
 use csv::{Reader, ReaderBuilder};
@@ -406,21 +397,29 @@ pub fn run_all_solvers(
     #[cfg(feature = "clp")]
     {
         if !solvers_to_skip.contains(&"clp") {
-            check_features_and_run::<ClpSolver>(model, !solvers_without_features.contains(&"clp"), expected_outputs);
+            check_features_and_run::<ClpSolverSettings>(
+                model,
+                !solvers_without_features.contains(&"clp"),
+                expected_outputs,
+            );
         }
     }
 
     #[cfg(feature = "cbc")]
     {
         if !solvers_to_skip.contains(&"cbc") {
-            check_features_and_run::<CbcSolver>(model, !solvers_without_features.contains(&"cbc"), expected_outputs);
+            check_features_and_run::<CbcSolverSettings>(
+                model,
+                !solvers_without_features.contains(&"cbc"),
+                expected_outputs,
+            );
         }
     }
 
     #[cfg(feature = "highs")]
     {
         if !solvers_to_skip.contains(&"highs") {
-            check_features_and_run::<HighsSolver>(
+            check_features_and_run::<HighsSolverSettings>(
                 model,
                 !solvers_without_features.contains(&"highs"),
                 expected_outputs,
@@ -431,7 +430,7 @@ pub fn run_all_solvers(
     #[cfg(feature = "microlp")]
     {
         if !solvers_to_skip.contains(&"microlp") {
-            check_features_and_run::<crate::solvers::MicroLpSolver>(
+            check_features_and_run::<crate::solvers::MicroLpSolverSettings>(
                 model,
                 !solvers_without_features.contains(&"microlp"),
                 expected_outputs,
@@ -442,7 +441,7 @@ pub fn run_all_solvers(
     #[cfg(feature = "ipm-simd")]
     {
         if !solvers_to_skip.contains(&"ipm-simd") {
-            check_features_and_run_multi::<SimdIpmF64Solver>(
+            check_features_and_run_multi::<SimdIpmSolverSettings>(
                 model,
                 !solvers_without_features.contains(&"ipm-simd"),
                 expected_outputs,
@@ -453,7 +452,7 @@ pub fn run_all_solvers(
     #[cfg(feature = "ipm-ocl")]
     {
         if !solvers_to_skip.contains(&"ipm-ocl") {
-            check_features_and_run_multi::<ClIpmF64Solver>(
+            check_features_and_run_multi::<ClIpmF64Settings>(
                 model,
                 !solvers_without_features.contains(&"ipm-ocl"),
                 expected_outputs,
@@ -481,21 +480,20 @@ pub fn run_all_solvers(
 
 /// Check features and
 #[cfg(any(feature = "cbc", feature = "clp", feature = "highs", feature = "microlp"))]
-fn check_features_and_run<S>(model: &Model, expect_features: bool, expected_outputs: &[Box<dyn VerifyExpected>])
+fn check_features_and_run<C>(model: &Model, expect_features: bool, expected_outputs: &[Box<dyn VerifyExpected>])
 where
-    S: Solver,
-    <S as Solver>::Settings: SolverSettings + Default,
+    C: SolverConfig + Default,
 {
-    let has_features = model.check_solver_features::<S>();
+    let has_features = model.check_solver_features::<C>();
     if expect_features {
         assert!(
             has_features,
             "Solver `{}` was expected to have the required features",
-            S::name()
+            C::Solver::name()
         );
         model
-            .run::<S>(&Default::default())
-            .unwrap_or_else(|e| panic!("Failed to solve with {}: {}", S::name(), e));
+            .run::<C>(&Default::default())
+            .unwrap_or_else(|e| panic!("Failed to solve with {}: {}", C::Solver::name(), e));
 
         // Verify any expected outputs
         for expected_output in expected_outputs {
@@ -505,35 +503,34 @@ where
         assert!(
             !has_features,
             "Solver `{}` was not expected to have the required features",
-            S::name()
+            C::Solver::name()
         );
     }
 }
 
 /// Check features and run with a multi-scenario solver
 #[cfg(any(feature = "ipm-simd", feature = "ipm-ocl"))]
-fn check_features_and_run_multi<S>(model: &Model, expect_features: bool, _expected_outputs: &[Box<dyn VerifyExpected>])
+fn check_features_and_run_multi<C>(model: &Model, expect_features: bool, _expected_outputs: &[Box<dyn VerifyExpected>])
 where
-    S: MultiStateSolver,
-    <S as MultiStateSolver>::Settings: SolverSettings + Default,
+    C: MultiStateSolverConfig + Default,
 {
-    let has_features = model.check_multi_scenario_solver_features::<S>();
+    let has_features = model.check_multi_scenario_solver_features::<C>();
     if expect_features {
         assert!(
             has_features,
             "Solver `{}` (with features: {:#?}) was expected to have the required features: {:?}",
-            S::name(),
-            S::features(),
+            C::Solver::name(),
+            C::Solver::features(),
             model.required_features()
         );
         model
-            .run_multi_scenario::<S>(&Default::default())
-            .unwrap_or_else(|_| panic!("Failed to solve with: {}", S::name()));
+            .run_multi_scenario::<C>(&Default::default())
+            .unwrap_or_else(|_| panic!("Failed to solve with: {}", C::Solver::name()));
     } else {
         assert!(
             !has_features,
             "Solver `{}` was not expected to have the required features",
-            S::name()
+            C::Solver::name()
         );
     }
 }
@@ -722,7 +719,7 @@ mod tests {
     #[test]
     fn test_random_model() {
         use super::make_random_model_builder;
-        use crate::solvers::{SimdIpmF64Solver, SimdIpmSolverSettings};
+        use crate::solvers::SimdIpmSolverSettings;
         use rand::SeedableRng;
         use rand_chacha::ChaCha8Rng;
 
@@ -738,9 +735,7 @@ mod tests {
             .expect("Failed to builder random model.");
 
         let settings = SimdIpmSolverSettings::default();
-        model
-            .run_multi_scenario::<SimdIpmF64Solver>(&settings)
-            .expect("Failed to run model!");
+        model.run_multi_scenario(&settings).expect("Failed to run model!");
     }
 
     #[test]

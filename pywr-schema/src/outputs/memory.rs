@@ -91,7 +91,7 @@ mod tests {
     #[cfg(feature = "core")]
     use float_cmp::assert_approx_eq;
     #[cfg(feature = "core")]
-    use pywr_core::solvers::{ClpSolver, ClpSolverSettings};
+    use pywr_core::solvers::ClpSolverSettings;
     use std::fs::read_to_string;
     use std::str::FromStr;
     #[cfg(feature = "core")]
@@ -122,7 +122,7 @@ mod tests {
         let builder = schema.create_model_builder(None, Some(temp_dir.path())).unwrap();
         let model = builder.build().unwrap();
 
-        let result = model.run::<ClpSolver>(&ClpSolverSettings::default()).unwrap();
+        let result = model.run(&ClpSolverSettings::default()).unwrap();
 
         let result = result
             .network_result

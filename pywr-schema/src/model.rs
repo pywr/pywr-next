@@ -1224,7 +1224,7 @@ mod core_tests {
     use ndarray::{Array1, Array2, Axis};
     use pywr_core::metric::UnresolvedMetricF64;
     use pywr_core::recorders::AssertionF64RecorderBuilder;
-    use pywr_core::{solvers::ClpSolver, test_utils::run_all_solvers};
+    use pywr_core::{solvers::ClpSolverSettings, test_utils::run_all_solvers};
     use std::fs::read_to_string;
     use std::path::PathBuf;
 
@@ -1423,7 +1423,7 @@ mod core_tests {
 
         let model = builder.build().unwrap();
 
-        model.run::<ClpSolver>(&Default::default()).unwrap();
+        model.run(&ClpSolverSettings::default()).unwrap();
     }
 
     /// Test the multi2 model
@@ -1470,6 +1470,6 @@ mod core_tests {
 
         let model = builder.build().unwrap();
 
-        model.run::<ClpSolver>(&Default::default()).unwrap();
+        model.run(&ClpSolverSettings::default()).unwrap();
     }
 }

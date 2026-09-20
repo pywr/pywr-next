@@ -2,7 +2,7 @@ mod settings;
 use super::builder::{ColType, SolverBuilder};
 use crate::network::Network;
 use crate::solvers::builder::BuiltSolver;
-use crate::solvers::{Solver, SolverFeatures, SolverSetupError, SolverSolveError, SolverTimings};
+use crate::solvers::{Solver, SolverConfig, SolverFeatures, SolverSetupError, SolverSolveError, SolverTimings};
 use crate::state::{ConstParameterValues, State};
 use crate::timestep::Timestep;
 use microlp::{ComparisonOp, OptimizationDirection, Problem};
@@ -80,9 +80,19 @@ impl MicroLpSolver {
     }
 }
 
-impl Solver for MicroLpSolver {
-    type Settings = MicroLpSolverSettings;
+impl SolverConfig for MicroLpSolverSettings {
+    type Solver = MicroLpSolver;
 
+    fn setup(&self, network: &Network, values: &ConstParameterValues) -> Result<Box<Self::Solver>, SolverSetupError> {
+        let builder = SolverBuilder::new(f64::INFINITY, f64::NEG_INFINITY);
+        let built = builder.create(network, values)?;
+
+        let solver = MicroLpSolver { builder: built };
+        Ok(Box::new(solver))
+    }
+}
+
+impl Solver for MicroLpSolver {
     fn name() -> &'static str {
         "microlp"
     }
@@ -96,18 +106,6 @@ impl Solver for MicroLpSolver {
             SolverFeatures::AggregatedNodeDynamicFactors,
             SolverFeatures::VirtualStorage,
         ]
-    }
-
-    fn setup(
-        network: &Network,
-        values: &ConstParameterValues,
-        _settings: &Self::Settings,
-    ) -> Result<Box<Self>, SolverSetupError> {
-        let builder = SolverBuilder::new(f64::INFINITY, f64::NEG_INFINITY);
-        let built = builder.create(network, values)?;
-
-        let solver = MicroLpSolver { builder: built };
-        Ok(Box::new(solver))
     }
 
     fn solve(

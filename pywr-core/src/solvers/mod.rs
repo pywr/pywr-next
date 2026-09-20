@@ -33,7 +33,10 @@ mod ipm_simd;
 mod microlp;
 
 #[cfg(feature = "ipm-ocl")]
-pub use self::ipm_ocl::{ClIpmF32Solver, ClIpmF64Solver, ClIpmSolverSettings, ClIpmSolverSettingsBuilder};
+pub use self::ipm_ocl::{
+    ClIpmF32Settings, ClIpmF32SettingsBuilder, ClIpmF32Solver, ClIpmF64Settings, ClIpmF64SettingsBuilder,
+    ClIpmF64Solver, ClIpmSolverSettings, ClIpmSolverSettingsBuilder,
+};
 #[cfg(feature = "ipm-simd")]
 pub use self::ipm_simd::{SimdIpmF64Solver, SimdIpmSolverSettings, SimdIpmSolverSettingsBuilder};
 use crate::NodeIndex;
@@ -123,6 +126,12 @@ pub enum SolverSetupError {
     HighsError(#[from] highs::HighsStatusError),
 }
 
+pub trait SolverConfig: SolverSettings {
+    type Solver: Solver;
+
+    fn setup(&self, network: &Network, values: &ConstParameterValues) -> Result<Box<Self::Solver>, SolverSetupError>;
+}
+
 /// Errors that can occur during solver solve.
 #[derive(Debug, Error)]
 pub enum SolverSolveError {
@@ -190,16 +199,10 @@ pub enum SolverSolveError {
 }
 
 pub trait Solver: Send {
-    type Settings;
-
     fn name() -> &'static str;
     /// An array of features that this solver provides.
     fn features() -> &'static [SolverFeatures];
-    fn setup(
-        network: &Network,
-        values: &ConstParameterValues,
-        settings: &Self::Settings,
-    ) -> Result<Box<Self>, SolverSetupError>;
+
     fn solve(
         &mut self,
         network: &Network,
@@ -208,14 +211,17 @@ pub trait Solver: Send {
     ) -> Result<SolverTimings, SolverSolveError>;
 }
 
-pub trait MultiStateSolver: Send {
-    type Settings;
+pub trait MultiStateSolverConfig: SolverSettings {
+    type Solver: MultiStateSolver;
 
+    fn setup(&self, network: &Network, num_scenarios: usize) -> Result<Box<Self::Solver>, SolverSetupError>;
+}
+
+pub trait MultiStateSolver: Send {
     fn name() -> &'static str;
     /// An array of features that this solver provides.
     fn features() -> &'static [SolverFeatures];
-    fn setup(network: &Network, num_scenarios: usize, settings: &Self::Settings)
-    -> Result<Box<Self>, SolverSetupError>;
+
     fn solve(
         &mut self,
         network: &Network,

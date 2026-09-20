@@ -18,19 +18,11 @@ use pywr_core::models::{
 use pywr_core::network::NetworkResult;
 use pywr_core::parameters::{ParameterInfo, PyScenarioIndex, PyTimestep};
 use pywr_core::recorders::LongFmtArrowRecord;
-#[cfg(feature = "cbc")]
-use pywr_core::solvers::CbcSolver;
-#[cfg(feature = "clp")]
-use pywr_core::solvers::ClpSolver;
-#[cfg(feature = "highs")]
-use pywr_core::solvers::HighsSolver;
 #[cfg(any(feature = "ipm-simd", feature = "ipm-ocl"))]
-use pywr_core::solvers::MultiStateSolver;
-#[cfg(feature = "ipm-simd")]
-use pywr_core::solvers::SimdIpmF64Solver;
+use pywr_core::solvers::MultiStateSolverConfig;
+use pywr_core::solvers::SolverConfig;
 #[cfg(feature = "ipm-ocl")]
-use pywr_core::solvers::{ClIpmF32Solver, ClIpmF64Solver, ClIpmSolverSettings};
-use pywr_core::solvers::{Solver, SolverSettings};
+use pywr_core::solvers::{ClIpmF32Settings, ClIpmF64Settings};
 use pywr_schema::metric::Metric;
 use pywr_schema::{
     ComponentConversionError, ConversionData, ConversionError, ModelSchema, MultiNetworkModelSchema, TryIntoV2,
@@ -279,26 +271,24 @@ struct PyModel {
 impl PyModel {
     /// Run a model using the specified solver unlocking the GIL
     #[cfg(any(feature = "clp", feature = "highs"))]
-    fn run_allowing_threads_py<S>(&self, py: Python<'_>, settings: &S::Settings) -> PyResult<PyModelResult>
+    fn run_allowing_threads_py<C>(&self, py: Python<'_>, solver_config: &C) -> PyResult<PyModelResult>
     where
-        S: Solver,
-        <S as Solver>::Settings: SolverSettings + Sync,
+        C: SolverConfig + Sync,
     {
         let inner = py
-            .detach(|| self.inner.run::<S>(settings))
+            .detach(|| self.inner.run(solver_config))
             .map_err(PyModelRunError::from)?;
         Ok(PyModelResult { inner })
     }
 
     /// Run a model using the specified multi solver unlocking the GIL
     #[cfg(any(feature = "ipm-simd", feature = "ipm-ocl"))]
-    fn run_multi_allowing_threads_py<S>(&self, py: Python<'_>, settings: &S::Settings) -> PyResult<PyModelResult>
+    fn run_multi_allowing_threads_py<C>(&self, py: Python<'_>, solver_config: &C) -> PyResult<PyModelResult>
     where
-        S: MultiStateSolver,
-        <S as MultiStateSolver>::Settings: SolverSettings + Sync,
+        C: MultiStateSolverConfig + Sync,
     {
         let inner = py
-            .detach(|| self.inner.run_multi_scenario::<S>(settings))
+            .detach(|| self.inner.run_multi_scenario(solver_config))
             .map_err(PyModelRunError::from)?;
         Ok(PyModelResult { inner })
     }
@@ -329,29 +319,29 @@ impl PyModel {
         match solver_name {
             #[cfg(feature = "clp")]
             "clp" => {
-                let settings = solver_settings::build_clp_settings_py(solver_kwargs)?;
-                self.run_allowing_threads_py::<ClpSolver>(py, &settings)
+                let solver_config = solver_settings::build_clp_settings_py(solver_kwargs)?;
+                self.run_allowing_threads_py(py, &solver_config)
             }
             #[cfg(feature = "cbc")]
             "cbc" => {
-                let settings = solver_settings::build_cbc_settings_py(solver_kwargs)?;
-                self.run_allowing_threads_py::<CbcSolver>(py, &settings)
+                let solver_config = solver_settings::build_cbc_settings_py(solver_kwargs)?;
+                self.run_allowing_threads_py(py, &solver_config)
             }
             #[cfg(feature = "highs")]
             "highs" => {
-                let settings = solver_settings::build_highs_settings_py(solver_kwargs)?;
-                self.run_allowing_threads_py::<HighsSolver>(py, &settings)
+                let solver_config = solver_settings::build_highs_settings_py(solver_kwargs)?;
+                self.run_allowing_threads_py(py, &solver_config)
             }
             #[cfg(feature = "ipm-simd")]
             "ipm-simd" => {
-                let settings = solver_settings::build_ipm_simd_settings_py(solver_kwargs)?;
-                self.run_multi_allowing_threads_py::<SimdIpmF64Solver>(py, &settings)
+                let solver_config = solver_settings::build_ipm_simd_settings_py(solver_kwargs)?;
+                self.run_multi_allowing_threads_py(py, &solver_config)
             }
             #[cfg(feature = "ipm-ocl")]
-            "clipm-f32" => self.run_multi_allowing_threads_py::<ClIpmF32Solver>(py, &ClIpmSolverSettings::default()),
+            "clipm-f32" => self.run_multi_allowing_threads_py(py, &ClIpmF32Settings::default()),
 
             #[cfg(feature = "ipm-ocl")]
-            "clipm-f64" => self.run_multi_allowing_threads_py::<ClIpmF64Solver>(py, &ClIpmSolverSettings::default()),
+            "clipm-f64" => self.run_multi_allowing_threads_py(py, &ClIpmF64Settings::default()),
             _ => Err(PyRuntimeError::new_err(format!("Unknown solver: {solver_name}",))),
         }
     }
@@ -365,30 +355,24 @@ struct PyMultiNetworkModel {
 impl PyMultiNetworkModel {
     /// Run a model using the specified solver unlocking the GIL
     #[cfg(any(feature = "clp", feature = "highs"))]
-    fn run_allowing_threads_py<S>(&self, py: Python<'_>, settings: &S::Settings) -> PyResult<PyMultiNetworkModelResult>
+    fn run_allowing_threads_py<C>(&self, py: Python<'_>, solver_config: &C) -> PyResult<PyMultiNetworkModelResult>
     where
-        S: Solver,
-        <S as Solver>::Settings: SolverSettings + Sync,
+        C: SolverConfig + Sync,
     {
         let inner = py
-            .detach(|| self.inner.run::<S>(settings))
+            .detach(|| self.inner.run(solver_config))
             .map_err(PyMultiNetworkModelRunError::from)?;
         Ok(PyMultiNetworkModelResult { inner })
     }
 
     /// Run a model using the specified multi solver unlocking the GIL
     #[cfg(any(feature = "ipm-simd", feature = "ipm-ocl"))]
-    fn run_multi_allowing_threads_py<S>(
-        &self,
-        py: Python<'_>,
-        settings: &S::Settings,
-    ) -> PyResult<PyMultiNetworkModelResult>
+    fn run_multi_allowing_threads_py<C>(&self, py: Python<'_>, solver_config: &C) -> PyResult<PyMultiNetworkModelResult>
     where
-        S: MultiStateSolver,
-        <S as MultiStateSolver>::Settings: SolverSettings + Sync,
+        C: MultiStateSolverConfig + Sync,
     {
         let inner = py
-            .detach(|| self.inner.run_multi_scenario::<S>(settings))
+            .detach(|| self.inner.run_multi_scenario(solver_config))
             .map_err(PyMultiNetworkModelRunError::from)?;
         Ok(PyMultiNetworkModelResult { inner })
     }
@@ -419,29 +403,29 @@ impl PyMultiNetworkModel {
         match solver_name {
             #[cfg(feature = "clp")]
             "clp" => {
-                let settings = solver_settings::build_clp_settings_py(solver_kwargs)?;
-                self.run_allowing_threads_py::<ClpSolver>(py, &settings)
+                let solver_config = solver_settings::build_clp_settings_py(solver_kwargs)?;
+                self.run_allowing_threads_py(py, &solver_config)
             }
             #[cfg(feature = "cbc")]
             "cbc" => {
-                let settings = solver_settings::build_cbc_settings_py(solver_kwargs)?;
-                self.run_allowing_threads_py::<CbcSolver>(py, &settings)
+                let solver_config = solver_settings::build_cbc_settings_py(solver_kwargs)?;
+                self.run_allowing_threads_py(py, &solver_config)
             }
             #[cfg(feature = "highs")]
             "highs" => {
-                let settings = solver_settings::build_highs_settings_py(solver_kwargs)?;
-                self.run_allowing_threads_py::<HighsSolver>(py, &settings)
+                let solver_config = solver_settings::build_highs_settings_py(solver_kwargs)?;
+                self.run_allowing_threads_py(py, &solver_config)
             }
             #[cfg(feature = "ipm-simd")]
             "ipm-simd" => {
-                let settings = solver_settings::build_ipm_simd_settings_py(solver_kwargs)?;
-                self.run_multi_allowing_threads_py::<SimdIpmF64Solver>(py, &settings)
+                let solver_config = solver_settings::build_ipm_simd_settings_py(solver_kwargs)?;
+                self.run_multi_allowing_threads_py(py, &solver_config)
             }
             #[cfg(feature = "ipm-ocl")]
-            "clipm-f32" => self.run_multi_allowing_threads_py::<ClIpmF32Solver>(py, &ClIpmSolverSettings::default()),
+            "clipm-f32" => self.run_multi_allowing_threads_py(py, &ClIpmF32Settings::default()),
 
             #[cfg(feature = "ipm-ocl")]
-            "clipm-f64" => self.run_multi_allowing_threads_py::<ClIpmF64Solver>(py, &ClIpmSolverSettings::default()),
+            "clipm-f64" => self.run_multi_allowing_threads_py(py, &ClIpmF64Settings::default()),
             _ => Err(PyRuntimeError::new_err(format!("Unknown solver: {solver_name}",))),
         }
     }
