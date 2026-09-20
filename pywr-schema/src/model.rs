@@ -1,13 +1,14 @@
 #[cfg(feature = "core")]
 use crate::data_tables::LoadedTableCollection;
+use crate::error::{ComponentConversionError, ModelProblem, ScenarioProblem, ValidationError};
 #[cfg(feature = "core")]
-use crate::error::SchemaError;
-use crate::error::{ComponentConversionError, ModelProblem, ValidationError};
+use crate::error::{ScenarioValidationError, SchemaError};
 use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::network::{LoadArgs, NetworkSchemaBuildError, NetworkSchemaReadError};
 #[cfg(feature = "core")]
 use crate::time_series::LoadedTimeSeriesCollection;
+use crate::util::duplicates;
 use crate::visit::{Owner, Reference, ReferenceMut, VisitMetrics, VisitPaths, VisitReferences};
 use crate::{ConversionError, NetworkSchema, NetworkSchemaRef};
 use jiff::Span;
@@ -22,6 +23,7 @@ use pywr_core::{
 };
 use pywr_schema_macros::skip_serializing_none;
 use schemars::JsonSchema;
+use std::collections::BTreeSet;
 #[cfg(feature = "core")]
 use std::collections::HashMap;
 use std::num::NonZeroU64;
@@ -220,6 +222,152 @@ pub struct ScenarioGroup {
     pub subset: Option<ScenarioGroupSubset>,
 }
 
+impl ScenarioGroup {
+    /// Every problem with this group: its size, then its labels, then its subset.
+    ///
+    /// Its name is not checked here; a name is only a problem beside the other groups'.
+    fn problems(&self) -> Vec<ScenarioProblem> {
+        let mut problems = Vec::new();
+
+        if self.size == 0 {
+            problems.push(ScenarioProblem::EmptyGroup {
+                group: self.name.clone(),
+            });
+        }
+
+        if let Some(labels) = &self.labels {
+            if labels.len() != self.size {
+                problems.push(ScenarioProblem::IncorrectNumberOfLabels {
+                    group: self.name.clone(),
+                    found: labels.len(),
+                    expected: self.size,
+                });
+            }
+
+            problems.extend(duplicates(labels, String::as_str).into_iter().map(|(label, count)| {
+                ScenarioProblem::DuplicateLabel {
+                    group: self.name.clone(),
+                    label: label.to_string(),
+                    count,
+                }
+            }));
+        }
+
+        match &self.subset {
+            Some(ScenarioGroupSubset::Slice(slice)) => {
+                // A `start` past the group is always caught by one of these two checks.
+                if slice.start >= slice.end {
+                    problems.push(ScenarioProblem::EmptySlice {
+                        group: self.name.clone(),
+                        start: slice.start,
+                        end: slice.end,
+                    });
+                }
+
+                if slice.end > self.size {
+                    problems.push(ScenarioProblem::SliceOutOfRange {
+                        group: self.name.clone(),
+                        size: self.size,
+                        end: slice.end,
+                    });
+                }
+            }
+            Some(ScenarioGroupSubset::Indices(subset)) => {
+                if subset.indices.is_empty() {
+                    problems.push(ScenarioProblem::EmptySubset {
+                        group: self.name.clone(),
+                    });
+                }
+
+                // A set, so that an entry repeated out of range is reported once.
+                let out_of_range: BTreeSet<usize> =
+                    subset.indices.iter().copied().filter(|i| *i >= self.size).collect();
+
+                problems.extend(
+                    out_of_range
+                        .into_iter()
+                        .map(|index| ScenarioProblem::SubsetIndexOutOfRange {
+                            group: self.name.clone(),
+                            size: self.size,
+                            index,
+                        }),
+                );
+
+                problems.extend(
+                    duplicates(&subset.indices, |index| *index)
+                        .into_iter()
+                        .map(|(index, count)| ScenarioProblem::DuplicateSubsetIndex {
+                            group: self.name.clone(),
+                            index,
+                            count,
+                        }),
+                );
+            }
+            Some(ScenarioGroupSubset::Labels(subset)) => {
+                if subset.labels.is_empty() {
+                    problems.push(ScenarioProblem::EmptySubset {
+                        group: self.name.clone(),
+                    });
+                }
+
+                match &self.labels {
+                    None => problems.push(ScenarioProblem::SubsetNeedsGroupLabels {
+                        group: self.name.clone(),
+                    }),
+                    Some(labels) => {
+                        let missing: BTreeSet<&String> = subset.labels.iter().filter(|l| !labels.contains(l)).collect();
+
+                        problems.extend(missing.into_iter().map(|label| ScenarioProblem::SubsetLabelNotFound {
+                            group: self.name.clone(),
+                            label: label.clone(),
+                        }));
+                    }
+                }
+
+                problems.extend(
+                    duplicates(&subset.labels, String::as_str)
+                        .into_iter()
+                        .map(|(label, count)| ScenarioProblem::DuplicateSubsetLabel {
+                            group: self.name.clone(),
+                            label: label.to_string(),
+                            count,
+                        }),
+                );
+            }
+            None => {}
+        }
+
+        problems
+    }
+
+    /// The problem with `entry`, if it does not name a scenario of this group. `combination` is
+    /// the entry's combination's position in `combinations`.
+    fn combination_entry_problem(&self, combination: usize, entry: &ScenarioLabelOrIndex) -> Option<ScenarioProblem> {
+        match entry {
+            ScenarioLabelOrIndex::Index(index) => {
+                (*index >= self.size).then(|| ScenarioProblem::CombinationIndexOutOfRange {
+                    combination,
+                    group: self.name.clone(),
+                    size: self.size,
+                    index: *index,
+                })
+            }
+            ScenarioLabelOrIndex::Label(label) => match &self.labels {
+                None => Some(ScenarioProblem::CombinationNeedsGroupLabels {
+                    combination,
+                    group: self.name.clone(),
+                    label: label.clone(),
+                }),
+                Some(labels) => (!labels.contains(label)).then(|| ScenarioProblem::CombinationLabelNotFound {
+                    combination,
+                    group: self.name.clone(),
+                    label: label.clone(),
+                }),
+            },
+        }
+    }
+}
+
 #[cfg(feature = "core")]
 impl From<ScenarioGroup> for pywr_core::scenario::ScenarioGroupBuilder {
     fn from(value: ScenarioGroup) -> Self {
@@ -358,6 +506,82 @@ pub struct ScenarioDomain {
     pub combinations: Option<Vec<Vec<ScenarioLabelOrIndex>>>,
 }
 
+impl ScenarioDomain {
+    /// Validate the scenario domain, returning every problem found. See [`ScenarioProblem`] for
+    /// the problems detected.
+    ///
+    /// The references a network makes to these groups are checked by [`ModelSchema::validate`].
+    pub fn validate(&self) -> Result<(), Vec<ScenarioProblem>> {
+        let mut problems: Vec<ScenarioProblem> = duplicates(&self.groups, |group| group.name.as_str())
+            .into_iter()
+            .map(|(name, count)| ScenarioProblem::DuplicateGroupName {
+                name: name.to_string(),
+                count,
+            })
+            .collect();
+
+        problems.extend(self.groups.iter().flat_map(ScenarioGroup::problems));
+
+        if let Some(combinations) = &self.combinations {
+            problems.extend(self.combination_problems(combinations));
+        }
+
+        if problems.is_empty() { Ok(()) } else { Err(problems) }
+    }
+
+    /// Every problem with `combinations`, in the order they are listed.
+    fn combination_problems(&self, combinations: &[Vec<ScenarioLabelOrIndex>]) -> Vec<ScenarioProblem> {
+        if self.groups.is_empty() {
+            return vec![ScenarioProblem::CombinationsWithoutGroups];
+        }
+
+        // A subset and a combination are two ways to constrain the same domain, and `pywr-core`
+        // refuses to apply both.
+        let mut problems: Vec<ScenarioProblem> = self
+            .groups
+            .iter()
+            .filter(|group| group.subset.is_some())
+            .map(|group| ScenarioProblem::CombinationsAndSubset {
+                group: group.name.clone(),
+            })
+            .collect();
+
+        if combinations.is_empty() {
+            problems.push(ScenarioProblem::EmptyCombinations);
+        }
+
+        for (combination, entries) in combinations.iter().enumerate() {
+            if entries.len() != self.groups.len() {
+                problems.push(ScenarioProblem::IncorrectCombinationLength {
+                    combination,
+                    found: entries.len(),
+                    expected: self.groups.len(),
+                });
+            }
+
+            // Entries past the last group have no group to be checked against; the length
+            // problem above covers them.
+            for (entry, group) in entries.iter().zip(&self.groups) {
+                problems.extend(group.combination_entry_problem(combination, entry));
+            }
+        }
+
+        problems
+    }
+}
+
+#[cfg(feature = "core")]
+impl ScenarioDomain {
+    /// The builder for this domain, once [`validate`](Self::validate) accepts it, as
+    /// `NetworkSchema::add_to_network` validates the network before building it.
+    fn validated_builder(&self) -> Result<pywr_core::scenario::ScenarioDomainBuilder, ScenarioValidationError> {
+        self.validate()
+            .map_err(|problems| ScenarioValidationError { problems })?;
+
+        Ok(self.clone().into())
+    }
+}
+
 impl TryFrom<Vec<pywr_v1_schema::model::Scenario>> for ScenarioDomain {
     type Error = ConversionError;
 
@@ -403,6 +627,11 @@ pub enum ModelSchemaBuildError {
     NetworkBuildError {
         #[source]
         source: Box<NetworkSchemaBuildError>,
+    },
+    #[error("Scenario validation failed: {source}")]
+    ScenarioValidation {
+        #[from]
+        source: ScenarioValidationError,
     },
     #[error("Error building model domain: {0}")]
     CoreModelDomainBuilderError(#[from] ModelDomainBuilderError),
@@ -475,6 +704,36 @@ impl VisitReferences for ModelSchema {
     }
 }
 
+/// Every problem with a model's `scenarios` and with the references its `networks` make to them,
+/// as [`ValidationError::scenarios`] holds them. Each network is paired with its name in a
+/// [`MultiNetworkModelSchema`], or `None` for a model with a single network.
+fn scenario_problems<'a>(
+    scenarios: Option<&ScenarioDomain>,
+    networks: impl IntoIterator<Item = (Option<&'a str>, &'a NetworkSchema)>,
+) -> Vec<ScenarioProblem> {
+    let mut problems = scenarios.and_then(|domain| domain.validate().err()).unwrap_or_default();
+
+    let groups: BTreeSet<&str> = scenarios
+        .map(|domain| domain.groups.iter().map(|group| group.name.as_str()).collect())
+        .unwrap_or_default();
+
+    for (network_name, network) in networks {
+        network.visit_owned_references(&mut |owner, reference| {
+            if let Reference::ScenarioGroup(group) = reference {
+                if !groups.contains(group) {
+                    problems.push(ScenarioProblem::UnknownGroupReference {
+                        network: network_name.map(ToString::to_string),
+                        owner: owner.to_string(),
+                        group: group.to_string(),
+                    });
+                }
+            }
+        });
+    }
+
+    problems
+}
+
 impl ModelSchema {
     pub fn visit_owned_references<F: FnMut(Owner<'_>, Reference<'_>)>(&self, visitor: &mut F) {
         self.network.visit_owned_references(visitor);
@@ -509,10 +768,13 @@ impl ModelSchema {
         Ok(serde_json::from_str(data.as_str())?)
     }
 
-    /// Validate the model's schema. See [`TimeDomain::validate`] and [`NetworkSchema::validate`].
+    /// Validate the model's schema. See [`TimeDomain::validate`], [`ScenarioDomain::validate`]
+    /// and [`NetworkSchema::validate`]. The network's references to scenario groups are checked
+    /// here too; see [`ValidationError::scenarios`].
     pub fn validate(&self) -> Result<(), ValidationError> {
         ValidationError {
             model: self.time.validate().err().unwrap_or_default(),
+            scenarios: scenario_problems(self.scenarios.as_ref(), [(None, &self.network)]),
             networks: self.network.validate().err().into_iter().collect(),
         }
         .into_result()
@@ -528,7 +790,7 @@ impl ModelSchema {
         let time_domain_builder = self.time.clone().into();
 
         let scenario_builder = match &self.scenarios {
-            Some(scenarios) => scenarios.clone().into(),
+            Some(scenarios) => scenarios.validated_builder()?,
             None => pywr_core::scenario::ScenarioDomainBuilder::default(),
         };
 
@@ -631,6 +893,11 @@ pub struct MultiNetworkEntry {
 pub enum MultiNetworkModelSchemaBuildError {
     #[error("Error building model domain: {0}")]
     CoreModelDomainBuilderError(#[from] ModelDomainBuilderError),
+    #[error("Scenario validation failed: {source}")]
+    ScenarioValidation {
+        #[from]
+        source: ScenarioValidationError,
+    },
     #[error("Failed to construct the network `{name}`: {source}")]
     NetworkBuildError {
         name: String,
@@ -754,26 +1021,36 @@ impl MultiNetworkModelSchema {
         Ok(serde_json::from_str(data.as_str())?)
     }
 
-    /// Validate the model's time domain and the schema of each network in the model. See
-    /// [`TimeDomain::validate`] and [`NetworkSchema::validate`].
+    /// Validate the model's time domain, its scenarios, and the schema of each network in the
+    /// model. See [`TimeDomain::validate`], [`ScenarioDomain::validate`] and
+    /// [`NetworkSchema::validate`].
     ///
-    /// Every problem found is returned. Each network's problems carry the network's name. Only
-    /// inline networks are checked; a network given by path is not read.
+    /// Every problem found is returned. Each network's problems carry the network's name, as does
+    /// each reference it makes to a scenario group the model does not have. Only inline networks
+    /// are checked; a network given by path is not read.
     pub fn validate(&self) -> Result<(), ValidationError> {
-        let networks = self
-            .networks
-            .iter()
-            .filter_map(|entry| match &entry.network {
-                NetworkSchemaRef::Inline(network) => network.validate().err().map(|mut error| {
-                    error.name = Some(entry.name.clone());
-                    error
-                }),
+        let inline = || {
+            self.networks.iter().filter_map(|entry| match &entry.network {
+                NetworkSchemaRef::Inline(network) => Some((entry.name.as_str(), network)),
                 NetworkSchemaRef::Path(_) => None,
+            })
+        };
+
+        let networks = inline()
+            .filter_map(|(name, network)| {
+                network.validate().err().map(|mut error| {
+                    error.name = Some(name.to_string());
+                    error
+                })
             })
             .collect();
 
         ValidationError {
             model: self.time.validate().err().unwrap_or_default(),
+            scenarios: scenario_problems(
+                self.scenarios.as_ref(),
+                inline().map(|(name, network)| (Some(name), network)),
+            ),
             networks,
         }
         .into_result()
@@ -788,7 +1065,7 @@ impl MultiNetworkModelSchema {
         let time_builder = self.time.clone().into();
 
         let scenario_builder = match &self.scenarios {
-            Some(scenarios) => scenarios.clone().into(),
+            Some(scenarios) => scenarios.validated_builder()?,
             None => pywr_core::scenario::ScenarioDomainBuilder::default(),
         };
 
@@ -931,7 +1208,7 @@ impl MultiNetworkModelSchema {
 mod tests {
     use super::{ModelSchema, MultiNetworkModelSchema, ScenarioDomain};
     use crate::edge::Edge;
-    use crate::error::{EdgeProblem, ModelProblem, NetworkProblem, ValidationError};
+    use crate::error::{EdgeProblem, ModelProblem, NetworkProblem, ScenarioProblem, ValidationError};
     use crate::model::{TimeDomain, Timestep};
     use crate::visit::VisitPaths;
     use jiff::civil::date;
@@ -1042,6 +1319,7 @@ mod tests {
                     start: schema.time.start,
                     end: schema.time.end,
                 }],
+                scenarios: vec![],
                 networks: vec![],
             })
         );
@@ -1101,11 +1379,12 @@ mod tests {
         );
     }
 
-    /// A model's own problems and its network's problems are reported together, but apart.
+    /// A model's own problems, its scenarios' and its network's are reported together, but apart.
     #[test]
     fn test_validate_model_reports_model_and_network_problems_apart() {
         let mut schema: ModelSchema = serde_json::from_str(&model_str()).unwrap();
         std::mem::swap(&mut schema.time.start, &mut schema.time.end);
+        schema.scenarios = Some(scenarios(r#"{ "groups": [{ "name": "A", "size": 0 }] }"#));
         schema.network.edges.push(Edge {
             from_node: "link1".to_string(),
             to_node: "missing".to_string(),
@@ -1122,6 +1401,10 @@ mod tests {
                 end: schema.time.end,
             }]
         );
+        assert_eq!(
+            error.scenarios,
+            vec![ScenarioProblem::EmptyGroup { group: "A".to_string() }]
+        );
         assert_eq!(error.networks.len(), 1);
         assert_eq!(error.networks[0].name, None);
         assert!(matches!(
@@ -1129,12 +1412,18 @@ mod tests {
             [NetworkProblem::InvalidEdge(e)] if e.problem == EdgeProblem::UnknownToNode("missing".to_string())
         ));
 
-        // The summary counts the model's own problems together with its networks'.
-        assert_eq!(error.to_string(), "The model has 2 problem(s).");
+        // The summary counts all three together.
+        assert_eq!(error.to_string(), "The model has 3 problem(s).");
 
-        // A single network needs no name, so its problems are listed without one.
+        // The scenarios' problems are listed between the model's and its network's, which need no
+        // name for a single network.
         let report = error.report().to_string();
-        assert!(report.starts_with("The model has 2 problem(s):\n- The simulation period ends before it starts"));
+        assert!(report.starts_with("The model has 3 problem(s):\n- The simulation period ends before it starts"));
+        assert!(
+            report.contains(
+                "\n- The scenario group `A` has a size of zero, but a group must have at least one scenario.\n"
+            )
+        );
         assert!(
             report
                 .ends_with("\n- The edge `link1->missing` is invalid. There is no node named `missing` to connect to.")
@@ -1207,10 +1496,377 @@ mod tests {
             if p.is_file() && p.file_name().unwrap().to_str().unwrap().starts_with("scenario_domain") {
                 let data = read_to_string(&p).unwrap_or_else(|e| panic!("Failed to read file: {p:?}: {e}",));
 
-                let _value: ScenarioDomain =
+                let value: ScenarioDomain =
                     serde_json::from_str(&data).unwrap_or_else(|e| panic!("Failed to deserialize {p:?}: {e}",));
+
+                // Every example the documentation shows must be one validation accepts.
+                value
+                    .validate()
+                    .unwrap_or_else(|problems| panic!("Doc example {p:?} is not valid: {problems:?}"));
             }
         }
+    }
+
+    /// Deserialise a scenario domain, which every test below starts from.
+    fn scenarios(json: &str) -> ScenarioDomain {
+        serde_json::from_str(json).expect("Failed to deserialize the scenario domain")
+    }
+
+    /// The problems with a scenario domain, which must not be valid.
+    fn problems_of(json: &str) -> Vec<ScenarioProblem> {
+        scenarios(json)
+            .validate()
+            .expect_err("Expected the scenario domain to be invalid")
+    }
+
+    /// A group's labels must number its scenarios, and must be distinct.
+    #[test]
+    fn test_validate_scenarios_labels() {
+        assert_eq!(
+            problems_of(r#"{ "groups": [{ "name": "A", "size": 3, "labels": ["wet", "dry"] }] }"#),
+            vec![ScenarioProblem::IncorrectNumberOfLabels {
+                group: "A".to_string(),
+                found: 2,
+                expected: 3,
+            }]
+        );
+
+        assert_eq!(
+            problems_of(r#"{ "groups": [{ "name": "A", "size": 3, "labels": ["wet", "dry", "wet"] }] }"#),
+            vec![ScenarioProblem::DuplicateLabel {
+                group: "A".to_string(),
+                label: "wet".to_string(),
+                count: 2,
+            }]
+        );
+    }
+
+    /// A `Slice` subset must start before it ends, and must not reach past its group.
+    #[test]
+    fn test_validate_scenarios_slice_subset() {
+        let problems_of_slice = |start: usize, end: usize| {
+            problems_of(&format!(
+                r#"{{ "groups": [{{ "name": "A", "size": 5, "subset": {{ "type": "Slice", "start": {start}, "end": {end} }} }}] }}"#
+            ))
+        };
+
+        assert_eq!(
+            problems_of_slice(2, 2),
+            vec![ScenarioProblem::EmptySlice {
+                group: "A".to_string(),
+                start: 2,
+                end: 2,
+            }]
+        );
+
+        assert_eq!(
+            problems_of_slice(0, 6),
+            vec![ScenarioProblem::SliceOutOfRange {
+                group: "A".to_string(),
+                size: 5,
+                end: 6,
+            }]
+        );
+
+        // The two are checked apart, so one slice can break both.
+        assert_eq!(
+            problems_of_slice(7, 6),
+            vec![
+                ScenarioProblem::EmptySlice {
+                    group: "A".to_string(),
+                    start: 7,
+                    end: 6,
+                },
+                ScenarioProblem::SliceOutOfRange {
+                    group: "A".to_string(),
+                    size: 5,
+                    end: 6,
+                },
+            ]
+        );
+    }
+
+    /// An `Indices` subset must not be empty, and must name scenarios its group has, each once.
+    #[test]
+    fn test_validate_scenarios_indices_subset() {
+        assert_eq!(
+            problems_of(
+                r#"{ "groups": [{ "name": "A", "size": 3, "subset": { "type": "Indices", "indices": [] } }] }"#
+            ),
+            vec![ScenarioProblem::EmptySubset { group: "A".to_string() }]
+        );
+
+        // Each offending scenario is named once, however often the subset repeats it, and the
+        // repetition is reported separately.
+        assert_eq!(
+            problems_of(
+                r#"{ "groups": [{ "name": "A", "size": 3, "subset": { "type": "Indices", "indices": [1, 5, 5, 9] } }] }"#
+            ),
+            vec![
+                ScenarioProblem::SubsetIndexOutOfRange {
+                    group: "A".to_string(),
+                    size: 3,
+                    index: 5,
+                },
+                ScenarioProblem::SubsetIndexOutOfRange {
+                    group: "A".to_string(),
+                    size: 3,
+                    index: 9,
+                },
+                ScenarioProblem::DuplicateSubsetIndex {
+                    group: "A".to_string(),
+                    index: 5,
+                    count: 2,
+                },
+            ]
+        );
+    }
+
+    /// A `Labels` subset must name labels the group has, and needs the group to have labels at
+    /// all.
+    #[test]
+    fn test_validate_scenarios_labels_subset() {
+        assert_eq!(
+            problems_of(
+                r#"{ "groups": [{ "name": "A", "size": 2, "subset": { "type": "Labels", "labels": ["wet"] } }] }"#
+            ),
+            vec![ScenarioProblem::SubsetNeedsGroupLabels { group: "A".to_string() }]
+        );
+
+        assert_eq!(
+            problems_of(
+                r#"{ "groups": [{ "name": "A", "size": 2, "labels": ["wet", "dry"], "subset": { "type": "Labels", "labels": ["damp", "dry", "dry"] } }] }"#
+            ),
+            vec![
+                ScenarioProblem::SubsetLabelNotFound {
+                    group: "A".to_string(),
+                    label: "damp".to_string(),
+                },
+                ScenarioProblem::DuplicateSubsetLabel {
+                    group: "A".to_string(),
+                    label: "dry".to_string(),
+                    count: 2,
+                },
+            ]
+        );
+    }
+
+    /// Combinations cannot be given alongside a subset, and every group carrying one is named.
+    /// They also need groups to combine, and must not be an empty list.
+    #[test]
+    fn test_validate_scenarios_combinations_against_the_domain() {
+        assert_eq!(
+            problems_of(
+                r#"{
+                    "groups": [
+                        { "name": "A", "size": 3, "subset": { "type": "Slice", "start": 0, "end": 2 } },
+                        { "name": "B", "size": 2, "subset": { "type": "Indices", "indices": [1] } }
+                    ],
+                    "combinations": [[0, 0]]
+                }"#
+            ),
+            vec![
+                ScenarioProblem::CombinationsAndSubset { group: "A".to_string() },
+                ScenarioProblem::CombinationsAndSubset { group: "B".to_string() },
+            ]
+        );
+
+        assert_eq!(
+            problems_of(r#"{ "groups": [], "combinations": [[0]] }"#),
+            vec![ScenarioProblem::CombinationsWithoutGroups]
+        );
+
+        assert_eq!(
+            problems_of(r#"{ "groups": [{ "name": "A", "size": 2 }], "combinations": [] }"#),
+            vec![ScenarioProblem::EmptyCombinations]
+        );
+    }
+
+    /// Each combination must have one entry per group.
+    #[test]
+    fn test_validate_scenarios_combination_length() {
+        assert_eq!(
+            problems_of(
+                r#"{
+                    "groups": [{ "name": "A", "size": 2 }, { "name": "B", "size": 2 }],
+                    "combinations": [[0], [0, 1, 1]]
+                }"#
+            ),
+            vec![
+                ScenarioProblem::IncorrectCombinationLength {
+                    combination: 0,
+                    found: 1,
+                    expected: 2,
+                },
+                ScenarioProblem::IncorrectCombinationLength {
+                    combination: 1,
+                    found: 3,
+                    expected: 2,
+                },
+            ]
+        );
+    }
+
+    /// A combination's entries must name scenarios their group has, whether by index or by label.
+    #[test]
+    fn test_validate_scenarios_combination_entries() {
+        assert_eq!(
+            problems_of(
+                r#"{
+                    "groups": [{ "name": "A", "size": 2, "labels": ["wet", "dry"] }, { "name": "B", "size": 2 }],
+                    "combinations": [[5, 0], ["damp", 1], ["wet", "second"]]
+                }"#
+            ),
+            vec![
+                ScenarioProblem::CombinationIndexOutOfRange {
+                    combination: 0,
+                    group: "A".to_string(),
+                    size: 2,
+                    index: 5,
+                },
+                ScenarioProblem::CombinationLabelNotFound {
+                    combination: 1,
+                    group: "A".to_string(),
+                    label: "damp".to_string(),
+                },
+                ScenarioProblem::CombinationNeedsGroupLabels {
+                    combination: 2,
+                    group: "B".to_string(),
+                    label: "second".to_string(),
+                },
+            ]
+        );
+    }
+
+    /// Every problem is returned at once, in the documented order: duplicate group names, then
+    /// each group's own as the groups are defined, then the combinations'.
+    #[test]
+    fn test_validate_scenarios_reports_every_problem_in_order() {
+        assert_eq!(
+            problems_of(
+                r#"{
+                    "groups": [{ "name": "B", "size": 0 }, { "name": "A", "size": 2 }, { "name": "A", "size": 1 }],
+                    "combinations": [[0, 9, 0]]
+                }"#
+            ),
+            vec![
+                ScenarioProblem::DuplicateGroupName {
+                    name: "A".to_string(),
+                    count: 2,
+                },
+                ScenarioProblem::EmptyGroup { group: "B".to_string() },
+                ScenarioProblem::CombinationIndexOutOfRange {
+                    combination: 0,
+                    group: "B".to_string(),
+                    size: 0,
+                    index: 0,
+                },
+                ScenarioProblem::CombinationIndexOutOfRange {
+                    combination: 0,
+                    group: "A".to_string(),
+                    size: 2,
+                    index: 9,
+                },
+            ]
+        );
+    }
+
+    /// A model whose network names a scenario group is valid when the group is defined, and has a
+    /// dangling reference when it is not, or when the model has no `scenarios` at all.
+    #[test]
+    fn test_validate_model_checks_scenario_group_references() {
+        let model_referring_to_climate = |groups: Option<&str>| {
+            let mut schema: ModelSchema = serde_json::from_str(&model_str()).unwrap();
+            schema.scenarios = groups.map(scenarios);
+            schema.network.parameters.as_mut().unwrap().push(
+                serde_json::from_str(
+                    r#"{
+                        "meta": { "name": "inflow" },
+                        "type": "ConstantScenario",
+                        "scenario_group": "climate",
+                        "values": { "type": "Literal", "values": [1.0, 2.0] }
+                    }"#,
+                )
+                .unwrap(),
+            );
+            schema
+        };
+
+        model_referring_to_climate(Some(r#"{ "groups": [{ "name": "climate", "size": 2 }] }"#))
+            .validate()
+            .expect("A reference to a defined group is valid");
+
+        for groups in [Some(r#"{ "groups": [{ "name": "weather", "size": 2 }] }"#), None] {
+            let error = model_referring_to_climate(groups).validate().unwrap_err();
+
+            assert_eq!(
+                error.scenarios,
+                vec![ScenarioProblem::UnknownGroupReference {
+                    network: None,
+                    owner: "parameter `inflow`".to_string(),
+                    group: "climate".to_string(),
+                }]
+            );
+            assert_eq!(
+                error.report().to_string(),
+                "The model has 1 problem(s):\n\
+                 - The parameter `inflow` refers to the scenario group `climate`, which the model's scenarios do not define."
+            );
+        }
+    }
+
+    /// A multi-network model checks the one scenario domain its networks share, and names the
+    /// network holding a dangling reference. A network given by path is not read.
+    #[test]
+    fn test_validate_multi_network_model_scenario_problems() {
+        let schema: MultiNetworkModelSchema = serde_json::from_str(
+            r#"{
+                "metadata": { "title": "Two networks" },
+                "time": { "start": "2015-01-01", "end": "2015-12-31", "timestep": { "type": "Days", "days": 1 } },
+                "scenarios": { "groups": [{ "name": "climate", "size": 0 }] },
+                "networks": [
+                    {
+                        "name": "north",
+                        "network": {
+                            "nodes": [{ "meta": { "name": "supply" }, "type": "Input" }],
+                            "edges": [],
+                            "parameters": [{
+                                "meta": { "name": "inflow" },
+                                "type": "ConstantScenario",
+                                "scenario_group": "weather",
+                                "values": { "type": "Literal", "values": [1.0] }
+                            }]
+                        },
+                        "transfers": []
+                    },
+                    { "name": "south", "network": "south.json", "transfers": [] }
+                ]
+            }"#,
+        )
+        .unwrap();
+
+        let error = schema.validate().unwrap_err();
+
+        assert_eq!(
+            error.scenarios,
+            vec![
+                ScenarioProblem::EmptyGroup {
+                    group: "climate".to_string()
+                },
+                ScenarioProblem::UnknownGroupReference {
+                    network: Some("north".to_string()),
+                    owner: "parameter `inflow`".to_string(),
+                    group: "weather".to_string(),
+                },
+            ]
+        );
+
+        assert_eq!(
+            error.report().to_string(),
+            "The model has 2 problem(s):\n\
+             - The scenario group `climate` has a size of zero, but a group must have at least one scenario.\n\
+             - The parameter `inflow` in the network `north` refers to the scenario group `weather`, which the model's scenarios do not define."
+        );
     }
 }
 
