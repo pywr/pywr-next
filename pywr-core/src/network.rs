@@ -617,7 +617,7 @@ impl Network {
         Ok(recorder_internal_states)
     }
 
-    /// Check whether a solver `S` has the required features to run this network.
+    /// Check whether a solver config has the required features to run this network.
     pub fn check_solver_features<C>(&self, solver_config: &C) -> bool
     where
         C: SolverConfig,
@@ -627,7 +627,7 @@ impl Network {
         required_features.iter().all(|f| solver_config.features().contains(f))
     }
 
-    /// Check whether a solver `S` has the required features to run this network.
+    /// Check whether a multi-scenario solver config has the required features to run this network.
     pub fn check_multi_scenario_solver_features<C>(&self, solver_config: &C) -> bool
     where
         C: MultiStateSolverConfig,

@@ -396,8 +396,8 @@ pub fn run_all_solvers(
 ) {
     #[cfg(feature = "clp")]
     {
-        if !solvers_to_skip.contains(&"clp") {
-            let solver_config = ClpSolverSettings::default();
+        let solver_config = ClpSolverSettings::default();
+        if !solvers_to_skip.contains(&solver_config.name()) {
             check_features_and_run(
                 model,
                 &solver_config,
@@ -409,8 +409,8 @@ pub fn run_all_solvers(
 
     #[cfg(feature = "cbc")]
     {
-        if !solvers_to_skip.contains(&"cbc") {
-            let solver_config = CbcSolverSettings::default();
+        let solver_config = CbcSolverSettings::default();
+        if !solvers_to_skip.contains(&solver_config.name()) {
             check_features_and_run(
                 model,
                 &solver_config,
@@ -422,8 +422,8 @@ pub fn run_all_solvers(
 
     #[cfg(feature = "highs")]
     {
-        if !solvers_to_skip.contains(&"highs") {
-            let solver_config = HighsSolverSettings::default();
+        let solver_config = HighsSolverSettings::default();
+        if !solvers_to_skip.contains(&solver_config.name()) {
             check_features_and_run(
                 model,
                 &solver_config,
@@ -435,8 +435,8 @@ pub fn run_all_solvers(
 
     #[cfg(feature = "microlp")]
     {
-        if !solvers_to_skip.contains(&"microlp") {
-            let solver_config = crate::solvers::MicroLpSolverSettings::default();
+        let solver_config = crate::solvers::MicroLpSolverSettings::default();
+        if !solvers_to_skip.contains(&solver_config.name()) {
             check_features_and_run(
                 model,
                 &solver_config,
@@ -448,8 +448,8 @@ pub fn run_all_solvers(
 
     #[cfg(feature = "ipm-simd")]
     {
-        if !solvers_to_skip.contains(&"ipm-simd") {
-            let solver_config = SimdIpmSolverSettings::default();
+        let solver_config = SimdIpmSolverSettings::default();
+        if !solvers_to_skip.contains(&solver_config.name()) {
             check_features_and_run_multi(
                 model,
                 &solver_config,
@@ -461,8 +461,8 @@ pub fn run_all_solvers(
 
     #[cfg(feature = "ipm-ocl")]
     {
-        if !solvers_to_skip.contains(&"ipm-ocl") {
-            let solver_config = ClIpmF64Settings::default();
+        let solver_config = ClIpmF64Settings::default();
+        if !solvers_to_skip.contains(&solver_config.name()) {
             check_features_and_run_multi(
                 model,
                 &solver_config,
@@ -508,7 +508,7 @@ fn check_features_and_run<C>(
             solver_config.name()
         );
         model
-            .run::<C>(&Default::default())
+            .run(solver_config)
             .unwrap_or_else(|e| panic!("Failed to solve with {}: {}", solver_config.name(), e));
 
         // Verify any expected outputs

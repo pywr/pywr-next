@@ -322,7 +322,6 @@ impl SolverConfig for HighsSolverSettings {
             SolverFeatures::AggregatedNode,
             SolverFeatures::AggregatedNodeFactors,
             SolverFeatures::AggregatedNodeDynamicFactors,
-            SolverFeatures::VirtualStorage,
         ]
     }
 
