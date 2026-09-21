@@ -64,7 +64,7 @@ mod tests {
     use crate::ModelSchema;
     use crate::visit::VisitPaths;
     #[cfg(all(feature = "core", feature = "hdf5"))]
-    use pywr_core::solvers::{ClpSolver, ClpSolverSettings};
+    use pywr_core::solvers::ClpSolverSettings;
     use std::fs::read_to_string;
     use std::path::PathBuf;
     use std::str::FromStr;
@@ -105,7 +105,7 @@ mod tests {
         let builder = schema.create_model_builder(None, Some(temp_dir.path())).unwrap();
         let model = builder.build().unwrap();
 
-        model.run::<ClpSolver>(&ClpSolverSettings::default()).unwrap();
+        model.run(&ClpSolverSettings::default()).unwrap();
 
         // After model run there should be an output file.
         let expected_path = temp_dir.path().join("outputs.h5");

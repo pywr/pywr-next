@@ -15,6 +15,7 @@ pub use aggregated::{
 use pywr_core::metric::UnresolvedMetricF64;
 use schemars::JsonSchema;
 use std::path::{Path, PathBuf};
+use strum::IntoEnumIterator;
 use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumString, IntoStaticStr};
 pub use virtual_storage::{
     AnnualReset, RollingWindow, VirtualStorageNode, VirtualStorageNodeAttribute, VirtualStorageReset,
@@ -96,6 +97,16 @@ impl VirtualNode {
         }
     }
 
+    /// Returns the attributes that this node has.
+    pub fn attributes(&self) -> Vec<NodeAttribute> {
+        match self {
+            VirtualNode::Aggregated(_) => AggregatedNodeAttribute::iter().map(Into::into).collect(),
+            VirtualNode::AggregatedStorage(_) => AggregatedStorageNodeAttribute::iter().map(Into::into).collect(),
+            VirtualNode::VirtualStorage(_) => VirtualStorageNodeAttribute::iter().map(Into::into).collect(),
+            VirtualNode::Placeholder(_) => Vec::new(),
+        }
+    }
+
     /// Returns the default component for the node, if defined.
     pub fn default_component(&self) -> Option<NodeComponent> {
         match self {
@@ -117,6 +128,12 @@ impl VirtualNode {
             VirtualNode::VirtualStorage(n) => n.parameters.as_deref(),
             VirtualNode::Placeholder(_) => None,
         }
+    }
+
+    /// Get local parameter by name.
+    pub fn get_local_parameter(&self, name: &str) -> Option<&Parameter> {
+        self.local_parameters()
+            .and_then(|params| params.iter().find(|p| p.name() == name))
     }
 }
 
@@ -229,6 +246,53 @@ mod tests {
             let mut node: VirtualNode = node_type.into();
             node.meta_mut().name = "renamed".to_string();
             assert_eq!(node.name(), "renamed");
+        }
+    }
+
+    /// A virtual node should not list the same attribute twice.
+    #[test]
+    fn test_attributes_are_unique() {
+        for node_type in VirtualNodeType::iter() {
+            let node: VirtualNode = node_type.into();
+            let attributes = node.attributes();
+
+            for (i, attribute) in attributes.iter().enumerate() {
+                assert!(
+                    !attributes[i + 1..].contains(attribute),
+                    "{node_type} lists the attribute {attribute} more than once"
+                );
+            }
+        }
+    }
+
+    /// The attributes a virtual node lists should be exactly those its build accepts.
+    ///
+    /// This pins the schema-only list to [`VirtualNode::create_metric`], which is where an
+    /// unsupported attribute is refused, so that the two cannot drift apart.
+    #[cfg(feature = "core")]
+    #[test]
+    fn test_attributes_match_create_metric() {
+        use crate::nodes::NodeAttribute;
+
+        for node_type in VirtualNodeType::iter() {
+            let node: VirtualNode = node_type.into();
+            let attributes = node.attributes();
+
+            for attribute in NodeAttribute::iter() {
+                let result = node.create_metric(Some(attribute));
+
+                if attributes.contains(&attribute) {
+                    assert!(
+                        result.is_ok(),
+                        "{node_type} lists the attribute {attribute} but refuses it in a metric"
+                    );
+                } else {
+                    assert!(
+                        result.is_err(),
+                        "{node_type} does not list the attribute {attribute} but accepts it in a metric"
+                    );
+                }
+            }
         }
     }
 

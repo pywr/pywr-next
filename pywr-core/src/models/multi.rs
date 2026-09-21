@@ -8,7 +8,7 @@ use crate::network::{
 use crate::parameters::ParameterCollectionIdMismatchError;
 use crate::recorders::RecorderInternalState;
 use crate::scenario::ScenarioIndex;
-use crate::solvers::{MultiStateSolver, Solver, SolverSettings};
+use crate::solvers::{MultiStateSolver, MultiStateSolverConfig, Solver, SolverConfig};
 use crate::state::StateError;
 use crate::timestep::Timestep;
 use log::info;
@@ -313,13 +313,12 @@ impl MultiNetworkModel {
         self.networks.iter().position(|n| n.name == name)
     }
 
-    pub fn setup<S>(
+    pub fn setup<C>(
         &self,
-        settings: &S::Settings,
-    ) -> Result<MultiNetworkModelState<Vec<Box<S>>>, MultiNetworkModelSetupError>
+        solver_config: &C,
+    ) -> Result<MultiNetworkModelState<Vec<Box<C::Solver>>>, MultiNetworkModelSetupError>
     where
-        S: Solver,
-        <S as Solver>::Settings: SolverSettings,
+        C: SolverConfig,
     {
         let timesteps = self.domain.time.timesteps();
         let scenario_indices = self.domain.scenario.indices();
@@ -344,7 +343,7 @@ impl MultiNetworkModel {
             })?;
             let solver = entry
                 .network
-                .setup_solver::<S>(scenario_indices, &state, settings)
+                .setup_solver(scenario_indices, &state, solver_config)
                 .map_err(|source| MultiNetworkModelSetupError::SolverSetupError {
                     network: entry.name.clone(),
                     source: Box::new(source),
@@ -363,13 +362,12 @@ impl MultiNetworkModel {
         })
     }
 
-    pub fn setup_multi_scenario<S>(
+    pub fn setup_multi_scenario<C>(
         &self,
-        settings: &S::Settings,
-    ) -> Result<MultiNetworkModelState<Box<S>>, MultiNetworkModelSetupError>
+        solver_config: &C,
+    ) -> Result<MultiNetworkModelState<Box<C::Solver>>, MultiNetworkModelSetupError>
     where
-        S: MultiStateSolver,
-        <S as MultiStateSolver>::Settings: SolverSettings,
+        C: MultiStateSolverConfig,
     {
         let timesteps = self.domain.time.timesteps();
         let scenario_indices = self.domain.scenario.indices();
@@ -396,7 +394,7 @@ impl MultiNetworkModel {
 
             let solver = entry
                 .network
-                .setup_multi_scenario_solver::<S>(scenario_indices, settings)
+                .setup_multi_scenario_solver(scenario_indices, solver_config)
                 .map_err(|source| MultiNetworkModelSetupError::SolverSetupError {
                     network: entry.name.clone(),
                     source: Box::new(source),
@@ -689,15 +687,14 @@ impl MultiNetworkModel {
     /// Run the model through the given time-steps.
     ///
     /// This method will setup state and solvers, and then run the model through the time-steps.
-    pub fn run<S>(&self, settings: &S::Settings) -> Result<MultiNetworkModelResult, MultiNetworkModelRunError>
+    pub fn run<C>(&self, solver_config: &C) -> Result<MultiNetworkModelResult, MultiNetworkModelRunError>
     where
-        S: Solver,
-        <S as Solver>::Settings: SolverSettings,
+        C: SolverConfig,
     {
-        let mut state = self.setup::<S>(settings)?;
+        let mut state = self.setup(solver_config)?;
         let mut timings = MultiNetworkModelTimings::new_with_component_timings(&self.networks);
 
-        self.run_with_state::<S>(&mut state, settings, &mut timings)?;
+        self.run_with_state(&mut state, solver_config, &mut timings)?;
 
         let result = self.finalise(state, timings)?;
 
@@ -705,21 +702,20 @@ impl MultiNetworkModel {
     }
 
     /// Run the model with the provided states and solvers.
-    pub fn run_with_state<S>(
+    pub fn run_with_state<C>(
         &self,
-        state: &mut MultiNetworkModelState<Vec<Box<S>>>,
-        settings: &S::Settings,
+        state: &mut MultiNetworkModelState<Vec<Box<C::Solver>>>,
+        solver_config: &C,
         timings: &mut MultiNetworkModelTimings,
     ) -> Result<(), MultiNetworkModelRunError>
     where
-        S: Solver,
-        <S as Solver>::Settings: SolverSettings,
+        C: SolverConfig,
     {
         // Setup thread pool if running in parallel
-        let pool = if settings.parallel() {
+        let pool = if solver_config.parallel() {
             Some(
                 rayon::ThreadPoolBuilder::new()
-                    .num_threads(settings.threads())
+                    .num_threads(solver_config.threads())
                     .build()
                     .unwrap(),
             )
@@ -728,7 +724,7 @@ impl MultiNetworkModel {
         };
 
         loop {
-            match self.step::<S>(state, pool.as_ref(), timings) {
+            match self.step(state, pool.as_ref(), timings) {
                 Ok(_) => {}
                 Err(MultiNetworkModelStepError::EndOfTimesteps) => break,
                 Err(e) => return Err(MultiNetworkModelRunError::StepError(Box::new(e))),
@@ -745,18 +741,14 @@ impl MultiNetworkModel {
     /// Run the model through the given time-steps.
     ///
     /// This method will setup state and solvers, and then run the model through the time-steps.
-    pub fn run_multi_scenario<S>(
-        &self,
-        settings: &S::Settings,
-    ) -> Result<MultiNetworkModelResult, MultiNetworkModelRunError>
+    pub fn run_multi_scenario<C>(&self, solver_config: &C) -> Result<MultiNetworkModelResult, MultiNetworkModelRunError>
     where
-        S: MultiStateSolver,
-        <S as MultiStateSolver>::Settings: SolverSettings,
+        C: MultiStateSolverConfig,
     {
-        let mut state = self.setup_multi_scenario::<S>(settings)?;
+        let mut state = self.setup_multi_scenario(solver_config)?;
         let mut timings = MultiNetworkModelTimings::new_with_component_timings(&self.networks);
 
-        self.run_multi_scenario_with_state::<S>(&mut state, settings, &mut timings)?;
+        self.run_multi_scenario_with_state(&mut state, solver_config, &mut timings)?;
 
         let result = self.finalise_multi_scenario(state, timings)?;
 
@@ -764,15 +756,14 @@ impl MultiNetworkModel {
     }
 
     /// Run the model with the provided states and solvers.
-    pub fn run_multi_scenario_with_state<S>(
+    pub fn run_multi_scenario_with_state<C>(
         &self,
-        state: &mut MultiNetworkModelState<Box<S>>,
-        settings: &S::Settings,
+        state: &mut MultiNetworkModelState<Box<C::Solver>>,
+        settings: &C,
         timings: &mut MultiNetworkModelTimings,
     ) -> Result<(), MultiNetworkModelRunError>
     where
-        S: MultiStateSolver,
-        <S as MultiStateSolver>::Settings: SolverSettings,
+        C: MultiStateSolverConfig,
     {
         let num_threads = if settings.parallel() { settings.threads() } else { 1 };
         // Setup thread pool
@@ -782,7 +773,7 @@ impl MultiNetworkModel {
             .unwrap();
 
         loop {
-            match self.step_multi_scenario::<S>(state, &pool, timings) {
+            match self.step_multi_scenario(state, &pool, timings) {
                 Ok(_) => {}
                 Err(MultiNetworkModelStepError::EndOfTimesteps) => break,
                 Err(e) => return Err(MultiNetworkModelRunError::StepError(Box::new(e))),
@@ -1013,7 +1004,7 @@ mod tests {
     use crate::models::ModelDomainBuilder;
     use crate::network::NetworkBuilder;
     use crate::scenario::{ScenarioDomainBuilder, ScenarioGroupBuilder};
-    use crate::solvers::ClpSolver;
+    use crate::solvers::ClpSolverSettings;
     use crate::test_utils::{default_time_domain_builder, simple_network};
 
     /// Test basic [`MultiNetworkModel`] functionality by running two independent models.
@@ -1045,14 +1036,14 @@ mod tests {
         let multi_model = builder.build().unwrap();
 
         let mut state = multi_model
-            .setup::<ClpSolver>(&Default::default())
+            .setup(&ClpSolverSettings::default())
             .expect("Failed to setup multi1-model.");
 
         let mut timings = MultiNetworkModelTimings::new_with_component_timings(&multi_model.networks);
 
         multi_model
             .step(&mut state, None, &mut timings)
-            .expect("Failed to step multi1-model.")
+            .expect("Failed to step multi1-model.");
     }
 
     #[test]

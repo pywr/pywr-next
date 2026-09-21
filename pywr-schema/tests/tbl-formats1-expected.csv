@@ -3,6 +3,8 @@ time_start,time_end,simulation_id,label,metric_set,name,attribute,value
 2015-01-01T00:00:00,2015-01-02T00:00:00,0,0,table-values,scalar-row-row,A;Y,11.0
 2015-01-01T00:00:00,2015-01-02T00:00:00,0,0,table-values,scalar-col,B,2.0
 2015-01-01T00:00:00,2015-01-02T00:00:00,0,0,table-values,scalar-row-col,A;🐍,2.0
+2015-01-01T00:00:00,2015-01-02T00:00:00,0,0,table-values,scalar-row-row-row,B;Y;P,210.0
+2015-01-01T00:00:00,2015-01-02T00:00:00,0,0,table-values,scalar-col-col-col,B;X;P,3.0
 2015-01-01T00:00:00,2015-01-02T00:00:00,0,0,table-values,profile1,before,0.5
 2015-01-01T00:00:00,2015-01-02T00:00:00,0,0,table-values,profile2,before,0.6
 2015-01-01T00:00:00,2015-01-02T00:00:00,0,0,table-values,B-profile1,before,0.7
@@ -10,6 +12,8 @@ time_start,time_end,simulation_id,label,metric_set,name,attribute,value
 2015-01-02T00:00:00,2015-01-03T00:00:00,0,0,table-values,scalar-row-row,A;Y,11.0
 2015-01-02T00:00:00,2015-01-03T00:00:00,0,0,table-values,scalar-col,B,2.0
 2015-01-02T00:00:00,2015-01-03T00:00:00,0,0,table-values,scalar-row-col,A;🐍,2.0
+2015-01-02T00:00:00,2015-01-03T00:00:00,0,0,table-values,scalar-row-row-row,B;Y;P,210.0
+2015-01-02T00:00:00,2015-01-03T00:00:00,0,0,table-values,scalar-col-col-col,B;X;P,3.0
 2015-01-02T00:00:00,2015-01-03T00:00:00,0,0,table-values,profile1,before,0.5
 2015-01-02T00:00:00,2015-01-03T00:00:00,0,0,table-values,profile2,before,0.6
 2015-01-02T00:00:00,2015-01-03T00:00:00,0,0,table-values,B-profile1,before,0.7

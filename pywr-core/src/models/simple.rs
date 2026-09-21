@@ -6,7 +6,7 @@ use crate::network::{
 };
 use crate::parameters::ParameterCollectionIdMismatchError;
 use crate::recorders::RecorderInternalState;
-use crate::solvers::{MultiStateSolver, Solver, SolverFeatures, SolverSettings};
+use crate::solvers::{MultiStateSolver, MultiStateSolverConfig, Solver, SolverConfig, SolverFeatures};
 use crate::timestep::Timestep;
 use log::{debug, info};
 use rayon::ThreadPool;
@@ -167,25 +167,24 @@ impl Model {
     }
 
     /// Check whether a solver `S` has the required features to run this model.
-    pub fn check_solver_features<S>(&self) -> bool
+    pub fn check_solver_features<C>(&self, solver_config: &C) -> bool
     where
-        S: Solver,
+        C: SolverConfig,
     {
-        self.network.check_solver_features::<S>()
+        self.network.check_solver_features(solver_config)
     }
 
     /// Check whether a solver `S` has the required features to run this model.
-    pub fn check_multi_scenario_solver_features<S>(&self) -> bool
+    pub fn check_multi_scenario_solver_features<C>(&self, solver_config: &C) -> bool
     where
-        S: MultiStateSolver,
+        C: MultiStateSolverConfig,
     {
-        self.network.check_multi_scenario_solver_features::<S>()
+        self.network.check_multi_scenario_solver_features(solver_config)
     }
 
-    pub fn setup<S>(&self, settings: &S::Settings) -> Result<ModelState<Vec<Box<S>>>, ModelSetupError>
+    pub fn setup<C>(&self, solver_config: &C) -> Result<ModelState<Vec<Box<C::Solver>>>, ModelSetupError>
     where
-        S: Solver,
-        <S as Solver>::Settings: SolverSettings,
+        C: SolverConfig,
     {
         let timesteps = self.domain.time.timesteps();
         let scenario_indices = self.domain.scenario.indices();
@@ -201,7 +200,7 @@ impl Model {
             .map_err(|source| ModelSetupError::RecorderSetupError(Box::new(source)))?;
         let solvers = self
             .network
-            .setup_solver::<S>(scenario_indices, &state, settings)
+            .setup_solver(scenario_indices, &state, solver_config)
             .map_err(|source| ModelSetupError::SolverSetupError(Box::new(source)))?;
 
         Ok(ModelState {
@@ -212,10 +211,9 @@ impl Model {
         })
     }
 
-    pub fn setup_multi_scenario<S>(&self, settings: &S::Settings) -> Result<ModelState<Box<S>>, ModelSetupError>
+    pub fn setup_multi_scenario<C>(&self, solver_config: &C) -> Result<ModelState<Box<C::Solver>>, ModelSetupError>
     where
-        S: MultiStateSolver,
-        <S as MultiStateSolver>::Settings: SolverSettings,
+        C: MultiStateSolverConfig,
     {
         let timesteps = self.domain.time.timesteps();
         let scenario_indices = self.domain.scenario.indices();
@@ -230,7 +228,7 @@ impl Model {
             .map_err(|source| ModelSetupError::RecorderSetupError(Box::new(source)))?;
         let solvers = self
             .network
-            .setup_multi_scenario_solver::<S>(scenario_indices, settings)
+            .setup_multi_scenario_solver(scenario_indices, solver_config)
             .map_err(|source| ModelSetupError::SolverSetupError(Box::new(source)))?;
 
         Ok(ModelState {
@@ -362,7 +360,6 @@ impl Model {
     ) -> Result<ModelResult, ModelFinaliseError>
     where
         S: Solver,
-        <S as Solver>::Settings: SolverSettings,
     {
         let network_result = self
             .network
@@ -394,7 +391,6 @@ impl Model {
     ) -> Result<ModelResult, ModelFinaliseError>
     where
         S: MultiStateSolver,
-        <S as MultiStateSolver>::Settings: SolverSettings,
     {
         let network_result = self
             .network
@@ -422,16 +418,15 @@ impl Model {
     /// Run a model through the given time-steps.
     ///
     /// This method will setup state and solvers, and then run the model through the time-steps.
-    pub fn run<S>(&self, settings: &S::Settings) -> Result<ModelResult, ModelRunError>
+    pub fn run<C>(&self, solver_config: &C) -> Result<ModelResult, ModelRunError>
     where
-        S: Solver,
-        <S as Solver>::Settings: SolverSettings,
+        C: SolverConfig,
     {
-        let mut state = self.setup::<S>(settings)?;
+        let mut state = self.setup(solver_config)?;
 
         let mut timings = ModelTimings::new_with_component_timings(&self.network);
 
-        self.run_with_state::<S>(&mut state, settings, &mut timings)?;
+        self.run_with_state(&mut state, solver_config, &mut timings)?;
 
         let result = self.finalise(state, timings)?;
 
@@ -439,21 +434,20 @@ impl Model {
     }
 
     /// Run the model with the provided states and solvers.
-    pub fn run_with_state<S>(
+    pub fn run_with_state<C>(
         &self,
-        state: &mut ModelState<Vec<Box<S>>>,
-        settings: &S::Settings,
+        state: &mut ModelState<Vec<Box<C::Solver>>>,
+        solver_config: &C,
         timings: &mut ModelTimings,
     ) -> Result<(), ModelRunError>
     where
-        S: Solver,
-        <S as Solver>::Settings: SolverSettings,
+        C: SolverConfig,
     {
         // Setup thread pool if running in parallel
-        let pool = if settings.parallel() {
+        let pool = if solver_config.parallel() {
             Some(
                 rayon::ThreadPoolBuilder::new()
-                    .num_threads(settings.threads())
+                    .num_threads(solver_config.threads())
                     .build()
                     .unwrap(),
             )
@@ -462,7 +456,7 @@ impl Model {
         };
 
         loop {
-            match self.step::<S>(state, pool.as_ref(), &mut timings.network_timings) {
+            match self.step(state, pool.as_ref(), &mut timings.network_timings) {
                 Ok(_) => {}
                 Err(ModelStepError::EndOfTimesteps) => break,
                 Err(e) => return Err(ModelRunError::StepError(e)),
@@ -479,15 +473,14 @@ impl Model {
     /// Run a network through the given time-steps with [`MultiStateSolver`].
     ///
     /// This method will setup state and the solver, and then run the network through the time-steps.
-    pub fn run_multi_scenario<S>(&self, settings: &S::Settings) -> Result<ModelResult, ModelRunError>
+    pub fn run_multi_scenario<C>(&self, solver_config: &C) -> Result<ModelResult, ModelRunError>
     where
-        S: MultiStateSolver,
-        <S as MultiStateSolver>::Settings: SolverSettings,
+        C: MultiStateSolverConfig,
     {
         // Setup the network and create the initial state
-        let mut state = self.setup_multi_scenario(settings)?;
+        let mut state = self.setup_multi_scenario(solver_config)?;
         let mut timings = ModelTimings::new_with_component_timings(&self.network);
-        self.run_multi_scenario_with_state::<S>(&mut state, settings, &mut timings)?;
+        self.run_multi_scenario_with_state(&mut state, solver_config, &mut timings)?;
 
         let result = self.finalise_multi_scenario(state, timings)?;
 
@@ -495,17 +488,20 @@ impl Model {
     }
 
     /// Run the network with the provided states and [`MultiStateSolver`] solver.
-    pub fn run_multi_scenario_with_state<S>(
+    pub fn run_multi_scenario_with_state<C>(
         &self,
-        state: &mut ModelState<Box<S>>,
-        settings: &S::Settings,
+        state: &mut ModelState<Box<C::Solver>>,
+        solver_config: &C,
         timings: &mut ModelTimings,
     ) -> Result<(), ModelRunError>
     where
-        S: MultiStateSolver,
-        <S as MultiStateSolver>::Settings: SolverSettings,
+        C: MultiStateSolverConfig,
     {
-        let num_threads = if settings.parallel() { settings.threads() } else { 1 };
+        let num_threads = if solver_config.parallel() {
+            solver_config.threads()
+        } else {
+            1
+        };
 
         // Setup thread pool
         let pool = rayon::ThreadPoolBuilder::new()
@@ -514,7 +510,7 @@ impl Model {
             .unwrap();
 
         loop {
-            match self.step_multi_scenario::<S>(state, &pool, &mut timings.network_timings) {
+            match self.step_multi_scenario(state, &pool, &mut timings.network_timings) {
                 Ok(_) => {}
                 Err(ModelStepError::EndOfTimesteps) => break,
                 Err(e) => return Err(ModelRunError::StepError(e)),

@@ -3,7 +3,7 @@ mod settings;
 use super::builder::SolverBuilder;
 use crate::network::Network;
 use crate::solvers::builder::BuiltSolver;
-use crate::solvers::{Solver, SolverFeatures, SolverSetupError, SolverSolveError, SolverTimings};
+use crate::solvers::{Solver, SolverConfig, SolverFeatures, SolverSetupError, SolverSolveError, SolverTimings};
 use crate::state::{ConstParameterValues, State};
 use crate::timestep::Timestep;
 use coin_or_sys::clp::*;
@@ -370,14 +370,13 @@ impl ClpSolver {
     }
 }
 
-impl Solver for ClpSolver {
-    type Settings = ClpSolverSettings;
-
-    fn name() -> &'static str {
+impl SolverConfig for ClpSolverSettings {
+    type Solver = ClpSolver;
+    fn name(&self) -> &'static str {
         "clp"
     }
 
-    fn features() -> &'static [SolverFeatures] {
+    fn features(&self) -> &'static [SolverFeatures] {
         &[
             SolverFeatures::AggregatedNode,
             SolverFeatures::AggregatedNodeFactors,
@@ -385,19 +384,16 @@ impl Solver for ClpSolver {
             SolverFeatures::VirtualStorage,
         ]
     }
-
-    fn setup(
-        network: &Network,
-        values: &ConstParameterValues,
-        _settings: &Self::Settings,
-    ) -> Result<Box<Self>, SolverSetupError> {
+    fn setup(&self, network: &Network, values: &ConstParameterValues) -> Result<Box<Self::Solver>, SolverSetupError> {
         let builder = SolverBuilder::new(f64::MAX, -f64::MAX);
         let built = builder.create(network, values)?;
 
         let solver = ClpSolver::from_builder(built);
         Ok(Box::new(solver))
     }
+}
 
+impl Solver for ClpSolver {
     fn solve(
         &mut self,
         network: &Network,

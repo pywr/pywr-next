@@ -2,7 +2,7 @@ mod settings;
 
 use crate::network::Network;
 use crate::solvers::builder::{BuiltSolver, ColType, SolverBuilder};
-use crate::solvers::{Solver, SolverFeatures, SolverSetupError, SolverSolveError, SolverTimings};
+use crate::solvers::{Solver, SolverConfig, SolverFeatures, SolverSetupError, SolverSolveError, SolverTimings};
 use crate::state::{ConstParameterValues, State};
 use crate::timestep::Timestep;
 use highs_sys::{
@@ -308,29 +308,24 @@ pub struct HighsSolver {
     highs: Highs,
 }
 
-impl Solver for HighsSolver {
-    type Settings = HighsSolverSettings;
+impl SolverConfig for HighsSolverSettings {
+    type Solver = HighsSolver;
 
-    fn name() -> &'static str {
+    fn name(&self) -> &'static str {
         "highs"
     }
 
-    fn features() -> &'static [SolverFeatures] {
+    fn features(&self) -> &'static [SolverFeatures] {
         &[
             SolverFeatures::VirtualStorage,
             SolverFeatures::MutualExclusivity,
             SolverFeatures::AggregatedNode,
             SolverFeatures::AggregatedNodeFactors,
             SolverFeatures::AggregatedNodeDynamicFactors,
-            SolverFeatures::VirtualStorage,
         ]
     }
 
-    fn setup(
-        network: &Network,
-        values: &ConstParameterValues,
-        _settings: &Self::Settings,
-    ) -> Result<Box<Self>, SolverSetupError> {
+    fn setup(&self, network: &Network, values: &ConstParameterValues) -> Result<Box<Self::Solver>, SolverSetupError> {
         let builder: SolverBuilder<HighsInt> = SolverBuilder::new(f64::MAX, -f64::MAX);
         let built = builder.create(network, values)?;
 
@@ -357,11 +352,14 @@ impl Solver for HighsSolver {
             built.elements(),
         )?;
 
-        Ok(Box::new(Self {
+        Ok(Box::new(HighsSolver {
             builder: built,
             highs: highs_lp,
         }))
     }
+}
+
+impl Solver for HighsSolver {
     fn solve(
         &mut self,
         network: &Network,

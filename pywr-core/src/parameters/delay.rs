@@ -103,7 +103,7 @@ impl GeneralBeforeParameter<f64> for DelayParameter<MetricF64, f64> {
         Ok(value)
     }
 }
-impl GeneralAfterParameterHook<f64> for DelayParameter<MetricF64, f64> {
+impl GeneralAfterParameterHook for DelayParameter<MetricF64, f64> {
     fn after(
         &self,
         ctx: GeneralParameterContext<'_>,
@@ -178,7 +178,7 @@ impl GeneralBeforeParameter<u64> for DelayParameter<MetricU64, u64> {
         Ok(value)
     }
 }
-impl GeneralAfterParameterHook<u64> for DelayParameter<MetricU64, u64> {
+impl GeneralAfterParameterHook for DelayParameter<MetricU64, u64> {
     fn after(
         &self,
         ctx: GeneralParameterContext<'_>,
@@ -328,6 +328,7 @@ mod test {
     use crate::parameters::Array1ParameterBuilder;
     use crate::parameters::delay::DelayParameterBuilder;
     use crate::test_utils::{run_and_assert_parameter, run_and_assert_parameter_u64, simple_model};
+    use arrow::array::{Float64Array, UInt64Array};
     use ndarray::{Array1, Array2, Axis, concatenate, s};
 
     /// Basic functional test of the delay parameter.
@@ -337,7 +338,8 @@ mod test {
 
         // Create an artificial volume series to use for the delay test
         let volumes = Array1::linspace(1.0, 0.0, 21);
-        let volume = Array1ParameterBuilder::new("test-x".into(), volumes.clone());
+        let arrow_volumes = Float64Array::from(volumes.to_vec());
+        let volume = Array1ParameterBuilder::from_primitive_array("test-x".into(), arrow_volumes);
 
         model_builder.network_builder().parameters().f64(Box::new(volume));
 
@@ -375,7 +377,8 @@ mod test {
 
         // Create an artificial volume series to use for the delay test
         let volumes: Array1<u64> = Array1::from(Array1::linspace(1.0, 0.0, 21).map(|x| *x as u64));
-        let volume = Array1ParameterBuilder::new("test-x".into(), volumes.clone());
+        let arrow_volumes = UInt64Array::from(volumes.to_vec());
+        let volume = Array1ParameterBuilder::from_primitive_array("test-x".into(), arrow_volumes);
 
         model_builder.network_builder().parameters().u64(Box::new(volume));
 

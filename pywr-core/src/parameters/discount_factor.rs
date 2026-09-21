@@ -87,7 +87,7 @@ impl ParameterBuilder<f64> for DiscountFactorParameterBuilder {
 mod test {
     use crate::parameters::Array1ParameterBuilder;
     use crate::parameters::discount_factor::DiscountFactorParameterBuilder;
-    use crate::test_utils::{run_and_assert_parameter, simple_model};
+    use crate::test_utils::{arrow_linspace_f64, run_and_assert_parameter, simple_model};
     use ndarray::{Array1, Array2, Axis};
 
     /// Basic functional test of the delay parameter.
@@ -96,8 +96,8 @@ mod test {
         let mut model_builder = simple_model(1, None);
 
         // Create an artificial volume series to use for the delay test
-        let volumes = Array1::linspace(1.0, 0.0, 21);
-        let volume = Array1ParameterBuilder::new("test-x".into(), volumes.clone());
+        let volumes = arrow_linspace_f64(1.0, 0.0, 21);
+        let volume = Array1ParameterBuilder::from_primitive_array("test-x".into(), volumes);
 
         model_builder.network_builder().parameters().f64(Box::new(volume));
 

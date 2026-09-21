@@ -8,7 +8,9 @@ use crate::v1::{TryIntoV2, try_convert_parameter_attr};
 use crate::visit::{Reference, ReferenceMut, VisitReferences};
 use crate::{ComponentConversionError, TryFromV1};
 #[cfg(all(feature = "core", feature = "hdf5"))]
-use ndarray::s;
+use arrow::array::Float64Array;
+#[cfg(all(feature = "core", feature = "hdf5"))]
+use ndarray::Array2;
 #[cfg(all(feature = "core", feature = "hdf5"))]
 use pywr_core::parameters::ParameterName;
 use pywr_schema_macros::{PywrVisitMetrics, PywrVisitPaths, skip_serializing_none};
@@ -82,9 +84,11 @@ impl TablesArrayParameter {
 
         // Create an ArrayParameter using the loaded array.
         if let Some(scenario) = &self.scenario {
-            let mut builder = pywr_core::parameters::Array2ParameterBuilder::new(
+            // Convert to array of Float64Array for each column (scenario) in the 2D array.
+            let array = array2_to_vec_array(array);
+            let mut builder = pywr_core::parameters::Array2ParameterBuilder::from_primitive_arrays(
                 ParameterName::new(&self.meta.name, parent),
-                array,
+                &array,
                 scenario,
             );
 
@@ -94,9 +98,13 @@ impl TablesArrayParameter {
 
             network.parameters().f64(Box::new(builder));
         } else {
-            let array = array.slice_move(s![.., 0]);
-            let mut builder =
-                pywr_core::parameters::Array1ParameterBuilder::new(ParameterName::new(&self.meta.name, parent), array);
+            // Convert only the first column to a Float64Array for the 1D array parameter.
+            let array = Float64Array::from_iter(array.column(0).iter().copied());
+
+            let mut builder = pywr_core::parameters::Array1ParameterBuilder::from_primitive_array(
+                ParameterName::new(&self.meta.name, parent),
+                array,
+            );
             if let Some(to) = &self.timestep_offset {
                 builder.timestep_offset(*to);
             }
@@ -150,4 +158,13 @@ impl TryFromV1<TablesArrayParameterV1> for TablesArrayParameter {
             timestep_offset: None,
         })
     }
+}
+
+#[cfg(all(feature = "core", feature = "hdf5"))]
+fn array2_to_vec_array(array: Array2<f64>) -> Vec<Float64Array> {
+    array
+        .columns()
+        .into_iter()
+        .map(|col| Float64Array::from_iter(col.iter().copied()))
+        .collect()
 }

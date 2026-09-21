@@ -1169,7 +1169,7 @@ mod tests {
         let domain = default_domain();
         let model = ModelBuilder::new(domain, builder).build().unwrap();
 
-        run_all_solvers(&model, &["ipm-simd", "ipm-ocl"], &[], &[]);
+        run_all_solvers(&model, &["ipm-simd", "ipm-ocl-f64"], &[], &[]);
     }
 
     /// Test the factors forcing a simple ratio of flow that varies over time
@@ -1253,7 +1253,7 @@ mod tests {
         let domain = default_domain();
         let model = ModelBuilder::new(domain, builder).build().unwrap();
 
-        run_all_solvers(&model, &["cbc", "ipm-simd", "ipm-ocl"], &[], &[]);
+        run_all_solvers(&model, &["cbc", "ipm-simd", "ipm-ocl-f64"], &[], &[]);
     }
 
     /// Test mutual exclusive flows
@@ -1331,7 +1331,7 @@ mod tests {
         let domain = default_domain();
         let model = ModelBuilder::new(domain, builder).build().unwrap();
 
-        run_all_solvers(&model, &["clp", "ipm-simd", "ipm-ocl"], &[], &[]);
+        run_all_solvers(&model, &["clp", "ipm-simd", "ipm-ocl-f64"], &[], &[]);
     }
 
     /// Test double mutual exclusive flows
@@ -1440,6 +1440,6 @@ mod tests {
         let domain = default_domain();
         let model = ModelBuilder::new(domain, builder).build().unwrap();
 
-        run_all_solvers(&model, &["clp", "ipm-ocl", "ipm-simd"], &[], &[]);
+        run_all_solvers(&model, &["clp", "ipm-ocl-f64", "ipm-simd"], &[], &[]);
     }
 }
