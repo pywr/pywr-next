@@ -299,7 +299,9 @@ pub enum SchemaError {
     CoreParameterNotFound { name: String, key: Option<String> },
     #[error("Expected an index parameter, but found a regular parameter: {0}")]
     IndexParameterExpected(String),
-    #[error("Loading a local parameter reference (name: {0}) requires a parent name space.")]
+    #[error(
+        "Loading a local parameter reference (name: {0}) requires a either specifying a \"node\" or being used in a node context."
+    )]
     LocalParameterReferenceRequiresParent(String),
     #[error("network {0} not found")]
     NetworkNotFound(String),

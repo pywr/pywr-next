@@ -129,6 +129,12 @@ impl VirtualNode {
             VirtualNode::Placeholder(_) => None,
         }
     }
+
+    /// Get local parameter by name.
+    pub fn get_local_parameter(&self, name: &str) -> Option<&Parameter> {
+        self.local_parameters()
+            .and_then(|params| params.iter().find(|p| p.name() == name))
+    }
 }
 
 #[cfg(feature = "core")]
