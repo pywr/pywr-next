@@ -226,15 +226,7 @@ fn default_solver_setups() -> Vec<SolverSetup> {
 fn bench_system_size(c: &mut Criterion) {
     let solver_setups = default_solver_setups();
 
-    random_benchmark(
-        c,
-        "random-models-size",
-        &[5, 10, 20, 30, 40, 50],
-        &[2, 5],
-        &[1],
-        &solver_setups,
-        None,
-    )
+    random_benchmark(c, "random-models-size", &[10, 20, 50], &[5], &[1], &solver_setups, None)
 }
 
 /// Single thread small scenario benchmarks
