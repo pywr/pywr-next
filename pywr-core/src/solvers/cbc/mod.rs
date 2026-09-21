@@ -294,6 +294,19 @@ impl CbcSolver {
 impl SolverConfig for CbcSolverSettings {
     type Solver = CbcSolver;
 
+    fn name(&self) -> &'static str {
+        "cbc"
+    }
+
+    fn features(&self) -> &'static [SolverFeatures] {
+        &[
+            SolverFeatures::AggregatedNode,
+            SolverFeatures::VirtualStorage,
+            SolverFeatures::AggregatedNodeFactors,
+            SolverFeatures::MutualExclusivity,
+        ]
+    }
+
     fn setup(&self, network: &Network, values: &ConstParameterValues) -> Result<Box<Self::Solver>, SolverSetupError> {
         let builder = SolverBuilder::new(f64::MAX, -f64::MAX);
         let built = builder.create(network, values)?;
@@ -304,19 +317,6 @@ impl SolverConfig for CbcSolverSettings {
 }
 
 impl Solver for CbcSolver {
-    fn name() -> &'static str {
-        "cbc"
-    }
-
-    fn features() -> &'static [SolverFeatures] {
-        &[
-            SolverFeatures::AggregatedNode,
-            SolverFeatures::VirtualStorage,
-            SolverFeatures::AggregatedNodeFactors,
-            SolverFeatures::MutualExclusivity,
-        ]
-    }
-
     fn solve(
         &mut self,
         network: &Network,

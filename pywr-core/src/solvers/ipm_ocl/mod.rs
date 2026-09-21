@@ -597,6 +597,14 @@ pub struct ClIpmF32Solver {
 impl MultiStateSolverConfig for ClIpmF32Settings {
     type Solver = ClIpmF32Solver;
 
+    fn name(&self) -> &'static str {
+        "ipm-ocl-f32"
+    }
+
+    fn features(&self) -> &'static [SolverFeatures] {
+        &[]
+    }
+
     fn setup(&self, network: &Network, num_scenarios: usize) -> Result<Box<Self::Solver>, SolverSetupError> {
         let platform = ocl::Platform::default();
         let device = ocl::Device::first(platform).expect("Failed to get OpenCL device.");
@@ -653,14 +661,6 @@ impl MultiStateSolverConfig for ClIpmF32Settings {
 }
 
 impl MultiStateSolver for ClIpmF32Solver {
-    fn name() -> &'static str {
-        "ipm-ocl"
-    }
-
-    fn features() -> &'static [SolverFeatures] {
-        &[]
-    }
-
     fn solve(
         &mut self,
         network: &Network,
@@ -717,6 +717,14 @@ pub struct ClIpmF64Solver {
 
 impl MultiStateSolverConfig for ClIpmF64Settings {
     type Solver = ClIpmF64Solver;
+
+    fn name(&self) -> &'static str {
+        "ipm-ocl-f64"
+    }
+
+    fn features(&self) -> &'static [SolverFeatures] {
+        &[]
+    }
 
     fn setup(&self, network: &Network, num_scenarios: usize) -> Result<Box<Self::Solver>, SolverSetupError> {
         let platform = ocl::Platform::default();
@@ -778,14 +786,6 @@ impl MultiStateSolverConfig for ClIpmF64Settings {
 }
 
 impl MultiStateSolver for ClIpmF64Solver {
-    fn name() -> &'static str {
-        "ipm-ocl"
-    }
-
-    fn features() -> &'static [SolverFeatures] {
-        &[]
-    }
-
     fn solve(
         &mut self,
         network: &Network,

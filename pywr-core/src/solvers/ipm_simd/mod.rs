@@ -606,6 +606,14 @@ pub struct SimdIpmF64Solver {
 impl MultiStateSolverConfig for SimdIpmSolverSettings {
     type Solver = SimdIpmF64Solver;
 
+    fn name(&self) -> &'static str {
+        "ipm-simd"
+    }
+
+    fn features(&self) -> &'static [SolverFeatures] {
+        &[]
+    }
+
     fn setup(&self, network: &Network, num_scenarios: usize) -> Result<Box<Self::Solver>, SolverSetupError> {
         let mut built_solvers = Vec::new();
         let mut ipms = Vec::new();
@@ -641,14 +649,6 @@ impl MultiStateSolverConfig for SimdIpmSolverSettings {
 }
 
 impl MultiStateSolver for SimdIpmF64Solver {
-    fn name() -> &'static str {
-        "ipm-simd"
-    }
-
-    fn features() -> &'static [SolverFeatures] {
-        &[]
-    }
-
     fn solve(
         &mut self,
         network: &Network,

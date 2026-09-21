@@ -311,6 +311,20 @@ pub struct HighsSolver {
 impl SolverConfig for HighsSolverSettings {
     type Solver = HighsSolver;
 
+    fn name(&self) -> &'static str {
+        "highs"
+    }
+
+    fn features(&self) -> &'static [SolverFeatures] {
+        &[
+            SolverFeatures::VirtualStorage,
+            SolverFeatures::MutualExclusivity,
+            SolverFeatures::AggregatedNode,
+            SolverFeatures::AggregatedNodeFactors,
+            SolverFeatures::AggregatedNodeDynamicFactors,
+        ]
+    }
+
     fn setup(&self, network: &Network, values: &ConstParameterValues) -> Result<Box<Self::Solver>, SolverSetupError> {
         let builder: SolverBuilder<HighsInt> = SolverBuilder::new(f64::MAX, -f64::MAX);
         let built = builder.create(network, values)?;
@@ -346,21 +360,6 @@ impl SolverConfig for HighsSolverSettings {
 }
 
 impl Solver for HighsSolver {
-    fn name() -> &'static str {
-        "highs"
-    }
-
-    fn features() -> &'static [SolverFeatures] {
-        &[
-            SolverFeatures::VirtualStorage,
-            SolverFeatures::MutualExclusivity,
-            SolverFeatures::AggregatedNode,
-            SolverFeatures::AggregatedNodeFactors,
-            SolverFeatures::AggregatedNodeDynamicFactors,
-            SolverFeatures::VirtualStorage,
-        ]
-    }
-
     fn solve(
         &mut self,
         network: &Network,

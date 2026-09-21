@@ -265,9 +265,9 @@ pub enum Reference<'a> {
     Edge(&'a Edge),
     /// Resolved in the network's `parameters`.
     Parameter(&'a str),
-    /// Resolved in the owning node's or virtual node's own `parameters`, so the name is
-    /// meaningless without the [`Owner`].
-    LocalParameter(&'a str),
+    /// If `node` is None it resolved in the owning node's or virtual node's own `parameters`, so
+    /// the name is meaningless without the [`Owner`].
+    LocalParameter { node: Option<&'a str>, name: &'a str },
     /// Resolved in the network's `tables`.
     Table(&'a str),
     /// Resolved in the network's `time_series`.
@@ -285,7 +285,10 @@ pub enum ReferenceMut<'a> {
     VirtualNode(&'a mut String),
     Edge(&'a mut Edge),
     Parameter(&'a mut String),
-    LocalParameter(&'a mut String),
+    LocalParameter {
+        node: Option<&'a mut String>,
+        name: &'a mut String,
+    },
     Table(&'a mut String),
     TimeSeries(&'a mut String),
     MetricSet(&'a mut String),
@@ -330,7 +333,10 @@ impl VisitReferences for Metric {
             Metric::Table(table_ref) => table_ref.visit_references(visitor),
             Metric::TimeSeries(ts_ref) => ts_ref.visit_references(visitor),
             Metric::Parameter(p_ref) => visitor(Reference::Parameter(&p_ref.name)),
-            Metric::LocalParameter(p_ref) => visitor(Reference::LocalParameter(&p_ref.name)),
+            Metric::LocalParameter(p_ref) => visitor(Reference::LocalParameter {
+                node: p_ref.node.as_deref(),
+                name: &p_ref.name,
+            }),
             // An inter-network transfer resolves against the multi-network model, not this one.
             Metric::Literal { .. } | Metric::InterNetworkTransfer { .. } => {}
         }
@@ -344,7 +350,10 @@ impl VisitReferences for Metric {
             Metric::Table(table_ref) => table_ref.visit_references_mut(visitor),
             Metric::TimeSeries(ts_ref) => ts_ref.visit_references_mut(visitor),
             Metric::Parameter(p_ref) => visitor(ReferenceMut::Parameter(&mut p_ref.name)),
-            Metric::LocalParameter(p_ref) => visitor(ReferenceMut::LocalParameter(&mut p_ref.name)),
+            Metric::LocalParameter(p_ref) => visitor(ReferenceMut::LocalParameter {
+                node: p_ref.node.as_mut(),
+                name: &mut p_ref.name,
+            }),
             Metric::Literal { .. } | Metric::InterNetworkTransfer { .. } => {}
         }
     }
@@ -357,7 +366,10 @@ impl VisitReferences for IndexMetric {
             IndexMetric::Table(table_ref) => table_ref.visit_references(visitor),
             IndexMetric::TimeSeries(ts_ref) => ts_ref.visit_references(visitor),
             IndexMetric::Parameter(p_ref) => visitor(Reference::Parameter(&p_ref.name)),
-            IndexMetric::LocalParameter(p_ref) => visitor(Reference::LocalParameter(&p_ref.name)),
+            IndexMetric::LocalParameter(p_ref) => visitor(Reference::LocalParameter {
+                node: p_ref.node.as_deref(),
+                name: &p_ref.name,
+            }),
             IndexMetric::Constant { .. } | IndexMetric::InterNetworkTransfer { .. } => {}
         }
     }
@@ -368,7 +380,10 @@ impl VisitReferences for IndexMetric {
             IndexMetric::Table(table_ref) => table_ref.visit_references_mut(visitor),
             IndexMetric::TimeSeries(ts_ref) => ts_ref.visit_references_mut(visitor),
             IndexMetric::Parameter(p_ref) => visitor(ReferenceMut::Parameter(&mut p_ref.name)),
-            IndexMetric::LocalParameter(p_ref) => visitor(ReferenceMut::LocalParameter(&mut p_ref.name)),
+            IndexMetric::LocalParameter(p_ref) => visitor(ReferenceMut::LocalParameter {
+                node: p_ref.node.as_mut(),
+                name: &mut p_ref.name,
+            }),
             IndexMetric::Constant { .. } | IndexMetric::InterNetworkTransfer { .. } => {}
         }
     }
@@ -914,7 +929,13 @@ mod tests {
             Reference::VirtualNode(name) => format!("VirtualNode:{name}"),
             Reference::Edge(edge) => format!("Edge:{edge}"),
             Reference::Parameter(name) => format!("Parameter:{name}"),
-            Reference::LocalParameter(name) => format!("LocalParameter:{name}"),
+            Reference::LocalParameter { node, name } => {
+                if let Some(node) = node {
+                    format!("LocalParameter:{node}:{name}")
+                } else {
+                    format!("LocalParameter:{name}")
+                }
+            }
             Reference::Table(name) => format!("Table:{name}"),
             Reference::TimeSeries(name) => format!("TimeSeries:{name}"),
             Reference::MetricSet(name) => format!("MetricSet:{name}"),
@@ -929,7 +950,13 @@ mod tests {
             ReferenceMut::VirtualNode(name) => format!("VirtualNode:{name}"),
             ReferenceMut::Edge(edge) => format!("Edge:{edge}"),
             ReferenceMut::Parameter(name) => format!("Parameter:{name}"),
-            ReferenceMut::LocalParameter(name) => format!("LocalParameter:{name}"),
+            ReferenceMut::LocalParameter { node, name } => {
+                if let Some(node) = node {
+                    format!("LocalParameter:{node}:{name}")
+                } else {
+                    format!("LocalParameter:{name}")
+                }
+            }
             ReferenceMut::Table(name) => format!("Table:{name}"),
             ReferenceMut::TimeSeries(name) => format!("TimeSeries:{name}"),
             ReferenceMut::MetricSet(name) => format!("MetricSet:{name}"),
@@ -987,7 +1014,7 @@ mod tests {
                 ReferenceMut::Node(name)
                 | ReferenceMut::VirtualNode(name)
                 | ReferenceMut::Parameter(name)
-                | ReferenceMut::LocalParameter(name)
+                | ReferenceMut::LocalParameter { node: _, name }
                 | ReferenceMut::Table(name)
                 | ReferenceMut::TimeSeries(name)
                 | ReferenceMut::MetricSet(name)
@@ -1148,7 +1175,7 @@ mod tests {
         let mut network = NetworkSchema::from_str(NETWORK_WITH_SHARED_PARAMETER_NAME).unwrap();
 
         network.visit_owned_references_mut(&mut |owner, reference| {
-            if let (Owner::Node("n1"), ReferenceMut::LocalParameter(name)) = (owner, reference)
+            if let (Owner::Node("n1"), ReferenceMut::LocalParameter { node: _, name }) = (owner, reference)
                 && name == "shared"
             {
                 *name = "renamed".to_string();

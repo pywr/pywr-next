@@ -1,3 +1,4 @@
+use criterion::measurement::Measurement;
 /// Some simple benchmarks of random Pywr models.
 ///
 /// The test models here are made up of a number of simple systems. Each system is three
@@ -7,15 +8,17 @@
 /// Benchmarks test the performance the solvers with different sized models (numbers of
 /// systems and density of transfers between them), numbers of scenarios (which vary the
 /// input flows) and number of CPU threads.
-use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
-use pywr_core::models::ModelTimings;
+use criterion::{BatchSize, BenchmarkGroup, BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
+use pywr_core::models::{Model, ModelTimings};
 #[cfg(feature = "highs")]
 use pywr_core::solvers::HighsSolverSettings;
+#[cfg(any(feature = "ipm-simd", feature = "ipm-ocl"))]
+use pywr_core::solvers::{BuiltInMultiStateSolverConfig, MultiStateSolverConfig};
+use pywr_core::solvers::{BuiltInSolverConfig, ClpSolverSettings, ClpSolverSettingsBuilder, SolverConfig};
 #[cfg(feature = "cbc")]
 use pywr_core::solvers::{CbcSolverSettings, CbcSolverSettingsBuilder};
 #[cfg(feature = "ipm-ocl")]
-use pywr_core::solvers::{ClIpmF64Settings, ClIpmSolverSettings, ClIpmSolverSettingsBuilder};
-use pywr_core::solvers::{ClpSolverSettings, ClpSolverSettingsBuilder};
+use pywr_core::solvers::{ClIpmSolverSettings, ClIpmSolverSettingsBuilder};
 #[cfg(feature = "ipm-simd")]
 use pywr_core::solvers::{SimdIpmSolverSettings, SimdIpmSolverSettingsBuilder};
 use pywr_core::test_utils::make_random_model_builder;
@@ -23,6 +26,80 @@ use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 #[cfg(feature = "ipm-ocl")]
 use std::num::NonZeroUsize;
+
+struct ModelExperiment<'m> {
+    name: String,
+    parameter: String,
+    model: &'m Model,
+}
+
+impl<'m> ModelExperiment<'m> {
+    fn new(model: &'m Model, name: &str, parameter: &str) -> Self {
+        Self {
+            name: name.to_string(),
+            parameter: parameter.to_string(),
+            model,
+        }
+    }
+
+    /// Undertake a "run only" benchmark, where the model has already been setup and we just want to time the run.
+    fn benchmark_run_only<C, M>(&self, group: &mut BenchmarkGroup<M>, solver_config: &C)
+    where
+        C: SolverConfig,
+        M: Measurement,
+    {
+        group.bench_function(
+            BenchmarkId::new(format!("{}-run-only", self.name), &self.parameter),
+            |b| {
+                b.iter_batched(
+                    || {
+                        // Do the setup here outside of the time-step loop
+                        let state = self.model.setup(solver_config).expect("Failed to setup the model.");
+                        let timings = ModelTimings::new_with_component_timings(self.model.network());
+                        (state, solver_config, timings)
+                    },
+                    |(mut state, solver_config, mut timings)| {
+                        self.model
+                            .run_with_state(&mut state, solver_config, &mut timings)
+                            .expect("Failed to run the model.")
+                    },
+                    BatchSize::LargeInput,
+                )
+            },
+        );
+    }
+
+    /// Undertake a "run only" benchmark, where the model has already been setup and we just want to time the run.
+    #[cfg(any(feature = "ipm-simd", feature = "ipm-ocl"))]
+    fn benchmark_run_only_multi<C, M>(&self, group: &mut BenchmarkGroup<M>, solver_config: &C)
+    where
+        C: MultiStateSolverConfig,
+        M: Measurement,
+    {
+        group.bench_function(
+            BenchmarkId::new(format!("{}-run-only", self.name), &self.parameter),
+            |b| {
+                b.iter_batched(
+                    || {
+                        // Do the setup here outside of the time-step loop
+                        let state = self
+                            .model
+                            .setup_multi_scenario(solver_config)
+                            .expect("Failed to setup the model.");
+                        let timings = ModelTimings::new_with_component_timings(self.model.network());
+                        (state, solver_config, timings)
+                    },
+                    |(mut state, solver_config, mut timings)| {
+                        self.model
+                            .run_multi_scenario_with_state(&mut state, solver_config, &mut timings)
+                            .expect("Failed to run the model.")
+                    },
+                    BatchSize::LargeInput,
+                )
+            },
+        );
+    }
+}
 
 fn random_benchmark(
     c: &mut Criterion,
@@ -54,92 +131,25 @@ fn random_benchmark(
                 // This is the number of time-steps
                 group.throughput(Throughput::Elements((num_timesteps * n_sc) as u64));
 
-                for setup in solver_setups {
-                    match &setup.setting {
-                        SolverSetting::Clp(settings) => {
-                            let parameter_string = format!("clp * {n_sys} * {density} * {n_sc} * {}", setup.name);
-
-                            group.bench_with_input(
-                                BenchmarkId::new("random-model", parameter_string),
-                                &(n_sys, density, n_sc),
-                                |b, _n| {
-                                    // Do the setup here outside of the time-step loop
-                                    let mut state = model.setup(settings).expect("Failed to setup the model.");
-                                    let mut timings = ModelTimings::new_with_component_timings(model.network());
-
-                                    b.iter(|| model.run_with_state(&mut state, settings, &mut timings))
-                                },
-                            );
+                for solver_setup in solver_setups {
+                    let parameter_string = format!(
+                        "{} * {n_sys} * {density} * {n_sc}{}",
+                        solver_setup.config.name(),
+                        if solver_setup.label.is_empty() {
+                            String::new()
+                        } else {
+                            format!(" * {}", solver_setup.label)
                         }
-                        #[cfg(feature = "cbc")]
-                        SolverSetting::Cbc(settings) => {
-                            let parameter_string = format!("cbc * {n_sys} * {density} * {n_sc} * {}", setup.name);
+                    );
 
-                            group.bench_with_input(
-                                BenchmarkId::new("random-model", parameter_string),
-                                &(n_sys, density, n_sc),
-                                |b, _n| {
-                                    // Do the setup here outside of the time-step loop
-                                    let mut state = model.setup(settings).expect("Failed to setup the model.");
-                                    let mut timings = ModelTimings::new_with_component_timings(model.network());
-
-                                    b.iter(|| model.run_with_state(&mut state, settings, &mut timings))
-                                },
-                            );
+                    let experiment = ModelExperiment::new(&model, "random-model", &parameter_string);
+                    match &solver_setup.config {
+                        BenchmarkSolverConfig::PerScenario(config) => {
+                            experiment.benchmark_run_only(&mut group, config);
                         }
-                        #[cfg(feature = "highs")]
-                        SolverSetting::Highs(settings) => {
-                            let parameter_string = format!("highs * {n_sys} * {density} * {n_sc} * {}", setup.name);
-
-                            group.bench_with_input(
-                                BenchmarkId::new("random-model", parameter_string),
-                                &(n_sys, density, n_sc),
-                                |b, _n| {
-                                    let mut state = model.setup(settings).expect("Failed to setup the model.");
-                                    let mut timings = ModelTimings::new_with_component_timings(model.network());
-
-                                    b.iter(|| model.run_with_state(&mut state, settings, &mut timings))
-                                },
-                            );
-                        }
-                        #[cfg(feature = "ipm-simd")]
-                        SolverSetting::IpmSimdF64x4(settings) => {
-                            let parameter_string =
-                                format!("ipm-simd-f64x4 * {n_sys} * {density} * {n_sc} * {}", setup.name);
-
-                            group.bench_with_input(
-                                BenchmarkId::new("random-model", parameter_string),
-                                &(n_sys, density, n_sc),
-                                |b, _n| {
-                                    // Do the setup here outside of the time-step loop
-                                    let mut state = model
-                                        .setup_multi_scenario(settings)
-                                        .expect("Failed to setup the model.");
-                                    let mut timings = ModelTimings::new_with_component_timings(model.network());
-
-                                    b.iter(|| model.run_multi_scenario_with_state(&mut state, settings, &mut timings))
-                                },
-                            );
-                        }
-                        #[cfg(feature = "ipm-ocl")]
-                        SolverSetting::IpmOcl(settings) => {
-                            let parameter_string =
-                                format!("ipm-ocl-f64 * {n_sys} * {density} * {n_sc} * {}", setup.name);
-
-                            group.bench_with_input(
-                                BenchmarkId::new("random-model", parameter_string),
-                                &(n_sys, density, n_sc),
-                                |b, _n| {
-                                    // Do the setup here outside of the time-step loop
-                                    let mut state = model
-                                        .setup_multi_scenario(settings)
-                                        .expect("Failed to setup the model.");
-
-                                    let mut timings = ModelTimings::new_with_component_timings(model.network());
-
-                                    b.iter(|| model.run_multi_scenario_with_state(&mut state, settings, &mut timings))
-                                },
-                            );
+                        #[cfg(any(feature = "ipm-simd", feature = "ipm-ocl"))]
+                        BenchmarkSolverConfig::MultiScenario(config) => {
+                            experiment.benchmark_run_only_multi(&mut group, config);
                         }
                     }
                 }
@@ -150,48 +160,65 @@ fn random_benchmark(
     group.finish();
 }
 
-enum SolverSetting {
-    Clp(ClpSolverSettings),
-    #[cfg(feature = "cbc")]
-    Cbc(CbcSolverSettings),
-    #[cfg(feature = "highs")]
-    Highs(HighsSolverSettings),
-    #[cfg(feature = "ipm-simd")]
-    IpmSimdF64x4(SimdIpmSolverSettings),
-    #[cfg(feature = "ipm-ocl")]
-    IpmOcl(ClIpmF64Settings),
+enum BenchmarkSolverConfig {
+    PerScenario(BuiltInSolverConfig),
+    #[cfg(any(feature = "ipm-simd", feature = "ipm-ocl"))]
+    MultiScenario(BuiltInMultiStateSolverConfig),
+}
+
+impl BenchmarkSolverConfig {
+    fn name(&self) -> &str {
+        match self {
+            BenchmarkSolverConfig::PerScenario(config) => config.name(),
+            #[cfg(any(feature = "ipm-simd", feature = "ipm-ocl"))]
+            BenchmarkSolverConfig::MultiScenario(config) => config.name(),
+        }
+    }
+}
+
+impl From<BuiltInSolverConfig> for BenchmarkSolverConfig {
+    fn from(config: BuiltInSolverConfig) -> Self {
+        BenchmarkSolverConfig::PerScenario(config)
+    }
+}
+
+#[cfg(any(feature = "ipm-simd", feature = "ipm-ocl"))]
+impl From<BuiltInMultiStateSolverConfig> for BenchmarkSolverConfig {
+    fn from(config: BuiltInMultiStateSolverConfig) -> Self {
+        BenchmarkSolverConfig::MultiScenario(config)
+    }
 }
 
 struct SolverSetup {
-    setting: SolverSetting,
-    name: String,
+    config: BenchmarkSolverConfig,
+    label: String,
 }
 
 fn default_solver_setups() -> Vec<SolverSetup> {
     vec![
         #[cfg(feature = "highs")]
         SolverSetup {
-            setting: SolverSetting::Highs(HighsSolverSettings::default()),
-            name: "default".to_string(),
+            config: BuiltInSolverConfig::Highs(HighsSolverSettings::default()).into(),
+            label: "".to_string(),
         },
         SolverSetup {
-            setting: SolverSetting::Clp(ClpSolverSettings::default()),
-            name: "default".to_string(),
+            config: BuiltInSolverConfig::Clp(ClpSolverSettings::default()).into(),
+            label: "".to_string(),
         },
         #[cfg(feature = "cbc")]
         SolverSetup {
-            setting: SolverSetting::Cbc(CbcSolverSettings::default()),
-            name: "default".to_string(),
+            config: BuiltInSolverConfig::Cbc(CbcSolverSettings::default()).into(),
+            label: "".to_string(),
         },
         #[cfg(feature = "ipm-simd")]
         SolverSetup {
-            setting: SolverSetting::IpmSimdF64x4(SimdIpmSolverSettings::default()),
-            name: "default".to_string(),
+            config: BuiltInMultiStateSolverConfig::SimdIpm(SimdIpmSolverSettings::default()).into(),
+            label: "".to_string(),
         },
         #[cfg(feature = "ipm-ocl")]
         SolverSetup {
-            setting: SolverSetting::IpmOcl(ClIpmSolverSettings::default()),
-            name: "default".to_string(),
+            config: BuiltInMultiStateSolverConfig::ClIpmF64(ClIpmSolverSettings::default()).into(),
+            label: "".to_string(),
         },
     ]
 }
@@ -231,46 +258,50 @@ fn bench_threads(c: &mut Criterion) {
 
     for n_threads in [1, 2, 4, 8, 16] {
         solver_setups.push(SolverSetup {
-            setting: SolverSetting::Clp(
+            config: BuiltInSolverConfig::Clp(
                 ClpSolverSettingsBuilder::default()
                     .parallel()
                     .threads(n_threads)
                     .build(),
-            ),
-            name: format!("threads-{n_threads}",),
+            )
+            .into(),
+            label: format!("threads-{n_threads}",),
         });
 
         #[cfg(feature = "cbc")]
         solver_setups.push(SolverSetup {
-            setting: SolverSetting::Cbc(
+            config: BuiltInSolverConfig::Cbc(
                 CbcSolverSettingsBuilder::default()
                     .parallel()
                     .threads(n_threads)
                     .build(),
-            ),
-            name: format!("threads-{n_threads}",),
+            )
+            .into(),
+            label: format!("threads-{n_threads}",),
         });
 
         #[cfg(feature = "ipm-simd")]
         solver_setups.push(SolverSetup {
-            setting: SolverSetting::IpmSimdF64x4(
+            config: BuiltInMultiStateSolverConfig::SimdIpm(
                 SimdIpmSolverSettingsBuilder::default()
                     .parallel()
                     .threads(n_threads)
                     .build(),
-            ),
-            name: format!("threads-{n_threads}"),
+            )
+            .into(),
+            label: format!("threads-{n_threads}"),
         });
 
         #[cfg(feature = "ipm-ocl")]
         solver_setups.push(SolverSetup {
-            setting: SolverSetting::IpmOcl(
+            config: BuiltInMultiStateSolverConfig::ClIpmF64(
                 ClIpmSolverSettingsBuilder::default()
                     .parallel()
                     .threads(n_threads)
                     .build(),
-            ),
-            name: format!("threads-{n_threads}"),
+            )
+            .into(),
+            label: format!("threads-{n_threads}"),
         });
     }
 
@@ -295,25 +326,27 @@ fn bench_ipm_convergence(c: &mut Criterion) {
     for optimality in [1e-3, 1e-4, 1e-5, 1e-6, 1e-7, 1e-8] {
         #[cfg(feature = "ipm-simd")]
         solver_setups.push(SolverSetup {
-            setting: SolverSetting::IpmSimdF64x4(
+            config: BuiltInMultiStateSolverConfig::SimdIpm(
                 SimdIpmSolverSettingsBuilder::default()
                     .optimality(optimality)
                     .parallel()
                     .threads(N_THREADS)
                     .build(),
-            ),
-            name: format!("opt-tol-{optimality:e}"),
+            )
+            .into(),
+            label: format!("opt-tol-{optimality:e}"),
         });
         #[cfg(feature = "ipm-ocl")]
         solver_setups.push(SolverSetup {
-            setting: SolverSetting::IpmOcl(
+            config: BuiltInMultiStateSolverConfig::ClIpmF64(
                 ClIpmSolverSettingsBuilder::default()
                     .optimality(optimality)
                     .parallel()
                     .threads(N_THREADS)
                     .build(),
-            ),
-            name: format!("opt-tol-{optimality:e}"),
+            )
+            .into(),
+            label: format!("opt-tol-{optimality:e}"),
         });
     }
 
@@ -339,14 +372,15 @@ fn bench_ocl_chunks(c: &mut Criterion) {
 
     for num_chunks in num_chunks {
         solver_setups.push(SolverSetup {
-            setting: SolverSetting::IpmOcl(
+            config: BuiltInMultiStateSolverConfig::ClIpmF64(
                 ClIpmSolverSettingsBuilder::default()
                     .parallel()
                     .threads(N_THREADS)
                     .num_chunks(NonZeroUsize::new(num_chunks).unwrap())
                     .build(),
-            ),
-            name: format!("num-chunks-{num_chunks}"),
+            )
+            .into(),
+            label: format!("num-chunks-{num_chunks}"),
         });
     }
 
@@ -376,43 +410,47 @@ fn bench_hyper_scenarios(c: &mut Criterion) {
 
     let solver_setups = vec![
         SolverSetup {
-            setting: SolverSetting::Clp(
+            config: BuiltInSolverConfig::Clp(
                 ClpSolverSettingsBuilder::default()
                     .parallel()
                     .threads(N_THREADS)
                     .build(),
-            ),
-            name: "default".to_string(),
+            )
+            .into(),
+            label: "default".to_string(),
         },
         #[cfg(feature = "cbc")]
         SolverSetup {
-            setting: SolverSetting::Cbc(
+            config: BuiltInSolverConfig::Cbc(
                 CbcSolverSettingsBuilder::default()
                     .parallel()
                     .threads(N_THREADS)
                     .build(),
-            ),
-            name: "default".to_string(),
+            )
+            .into(),
+            label: "default".to_string(),
         },
         #[cfg(feature = "ipm-simd")]
         SolverSetup {
-            setting: SolverSetting::IpmSimdF64x4(
+            config: BuiltInMultiStateSolverConfig::SimdIpm(
                 SimdIpmSolverSettingsBuilder::default()
                     .parallel()
                     .threads(N_THREADS)
                     .build(),
-            ),
-            name: "default".to_string(),
+            )
+            .into(),
+            label: "default".to_string(),
         },
         #[cfg(feature = "ipm-ocl")]
         SolverSetup {
-            setting: SolverSetting::IpmOcl(
+            config: BuiltInMultiStateSolverConfig::ClIpmF64(
                 ClIpmSolverSettingsBuilder::default()
                     .parallel()
                     .threads(N_THREADS)
                     .build(),
-            ),
-            name: "default".to_string(),
+            )
+            .into(),
+            label: "default".to_string(),
         },
     ];
 
