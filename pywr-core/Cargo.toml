@@ -59,3 +59,4 @@ criterion = { workspace = true, features = ["html_reports"] }
 [[bench]]
 name = "random_models"
 harness = false
+required-features = ["clp"]
