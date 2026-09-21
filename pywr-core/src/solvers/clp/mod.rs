@@ -132,6 +132,22 @@ impl Display for ClpSecondaryStatus {
 
 pub type CoinBigIndex = c_int;
 
+const ROW_COLUMN_COUNTS_SAME: c_int = 1;
+const MATRIX_SAME: c_int = 2;
+const COLUMN_LOWER_SAME: c_int = 128;
+const COLUMN_UPPER_SAME: c_int = 256;
+const BASIS_SAME: c_int = 512;
+
+fn unchanged_flags(matrix_changed: bool) -> c_int {
+    let mut flags = ROW_COLUMN_COUNTS_SAME | COLUMN_LOWER_SAME | COLUMN_UPPER_SAME | BASIS_SAME;
+
+    if !matrix_changed {
+        flags |= MATRIX_SAME;
+    }
+
+    flags
+}
+
 struct ClpSimplex {
     ptr: *mut Clp_Simplex,
 }
@@ -255,9 +271,28 @@ impl ClpSimplex {
         }
     }
 
-    fn dual_solve(&mut self) -> Result<(), ClpSolveStatusError> {
+    fn set_unchanged_flags(&mut self, unchanged: c_int) {
         unsafe {
-            let _ret = Clp_dual(self.ptr, 0);
+            PywrClp_setUnchangedFlags(self.ptr, unchanged);
+        }
+    }
+
+    #[cfg(test)]
+    fn unchanged_flags(&self) -> c_int {
+        unsafe { PywrClp_whatsChanged(self.ptr) }
+    }
+
+    fn dual_solve(&mut self) -> Result<(), ClpSolveStatusError> {
+        const KEEP_WORK_AREAS: c_int = 1;
+        const REUSE_FACTORIZATION: c_int = 2;
+
+        // SKIP_UNCHANGED_INITIALIZATION is not currently used because it does not pass the test suite.
+        // const SKIP_UNCHANGED_INITIALIZATION: c_int = 4;
+
+        let options = KEEP_WORK_AREAS | REUSE_FACTORIZATION; // | SKIP_UNCHANGED_INITIALIZATION;
+
+        unsafe {
+            let _ret = PywrClp_dualWithOptions(self.ptr, 0, options);
             let primary = Clp_status(self.ptr);
             let secondary = Clp_secondaryStatus(self.ptr);
             to_clp_result(primary, secondary)
@@ -398,9 +433,13 @@ impl Solver for ClpSolver {
         self.clp_simplex.change_row_lower(self.builder.row_lower());
         self.clp_simplex.change_row_upper(self.builder.row_upper());
 
+        let mut matrix_changed = false;
         for (row, column, coefficient) in self.builder.coefficients_to_update() {
-            self.clp_simplex.modify_coefficient(*row, *column, *coefficient)
+            self.clp_simplex.modify_coefficient(*row, *column, *coefficient);
+            matrix_changed = true;
         }
+
+        self.clp_simplex.set_unchanged_flags(unchanged_flags(matrix_changed));
 
         timings.update_constraints += now.elapsed();
 
@@ -450,6 +489,28 @@ mod tests {
         let elements: Vec<c_double> = vec![1.0, 1.0];
 
         model.add_rows(&row_lower, &row_upper, &row_starts, &columns, &elements);
+    }
+
+    #[test]
+    fn unchanged_flags_include_matrix_when_no_coefficients_changed() {
+        let expected = ROW_COLUMN_COUNTS_SAME | MATRIX_SAME | COLUMN_LOWER_SAME | COLUMN_UPPER_SAME | BASIS_SAME;
+
+        let mut model = ClpSimplex::default();
+        model.set_unchanged_flags(unchanged_flags(false));
+
+        assert_eq!(unchanged_flags(false), expected);
+        assert_eq!(model.unchanged_flags(), expected);
+    }
+
+    #[test]
+    fn unchanged_flags_exclude_matrix_when_coefficients_changed() {
+        let expected = ROW_COLUMN_COUNTS_SAME | COLUMN_LOWER_SAME | COLUMN_UPPER_SAME | BASIS_SAME;
+
+        let mut model = ClpSimplex::default();
+        model.set_unchanged_flags(unchanged_flags(true));
+
+        assert_eq!(unchanged_flags(true), expected);
+        assert_eq!(model.unchanged_flags(), expected);
     }
 
     #[test]
