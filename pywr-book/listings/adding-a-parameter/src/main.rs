@@ -1,7 +1,11 @@
 #![allow(dead_code)]
 use pywr_core::metric::{MetricConsumerPhase, MetricF64, UnresolvedMetricF64};
 use pywr_core::network::ResolutionMaps;
-use pywr_core::parameters::{BuiltParameter, GeneralBeforeParameter, GeneralAfterParameter, GeneralCalculationError, GeneralParameter, GeneralParameterContext, GeneralParameterEntry, MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder, ParameterMeta, ParameterName, ParameterState};
+use pywr_core::parameters::{
+    BuiltParameter, GeneralAfterParameter, GeneralBeforeParameter, GeneralCalculationError, GeneralParameter,
+    GeneralParameterContext, GeneralParameterEntry, MaybeBuiltParameter, Parameter, ParameterBuildError,
+    ParameterBuilder, ParameterMeta, ParameterName, ParameterState,
+};
 use pywr_core::resolve_metric_f64;
 
 // ANCHOR: parameter
@@ -40,7 +44,6 @@ impl GeneralBeforeParameter<f64> for MaxParameter {
         Ok(x.max(self.threshold))
     }
 }
-
 
 impl GeneralAfterParameter<f64> for MaxParameter {
     fn after(
@@ -112,15 +115,9 @@ impl ParameterBuilder<f64> for MaxParameterBuilder {
         };
 
         let built = match self.phase {
-            MetricConsumerPhase::Before => {
-                BuiltParameter::General(GeneralParameterEntry::before(p))
-            },
-            MetricConsumerPhase::After => {
-                BuiltParameter::General(GeneralParameterEntry::after(p))
-            },
-            MetricConsumerPhase::Both => {
-                BuiltParameter::General(GeneralParameterEntry::both(p))
-            },
+            MetricConsumerPhase::Before => BuiltParameter::General(GeneralParameterEntry::before(p)),
+            MetricConsumerPhase::After => BuiltParameter::General(GeneralParameterEntry::after(p)),
+            MetricConsumerPhase::Both => BuiltParameter::General(GeneralParameterEntry::both(p)),
         };
 
         Ok(built.into())

@@ -35,23 +35,17 @@ impl Polynomial1DParameter {
     ) -> Result<(), SchemaError> {
         let metric = self.metric.load(network, args, None)?;
         let name = ParameterName::new(&self.meta.name, parent);
-        
+
         let mut builder = match self.phase {
-            ParameterPhase::Before => pywr_core::parameters::Polynomial1DParameterBuilder::before(
-                name,
-                metric,
-                self.coefficients.clone(),
-            ),
-            ParameterPhase::After => pywr_core::parameters::Polynomial1DParameterBuilder::after(
-                name,
-                metric,
-                self.coefficients.clone(),
-            ),
-            ParameterPhase::Both => pywr_core::parameters::Polynomial1DParameterBuilder::both(
-                name,
-                metric,
-                self.coefficients.clone(),
-            ),
+            ParameterPhase::Before => {
+                pywr_core::parameters::Polynomial1DParameterBuilder::before(name, metric, self.coefficients.clone())
+            }
+            ParameterPhase::After => {
+                pywr_core::parameters::Polynomial1DParameterBuilder::after(name, metric, self.coefficients.clone())
+            }
+            ParameterPhase::Both => {
+                pywr_core::parameters::Polynomial1DParameterBuilder::both(name, metric, self.coefficients.clone())
+            }
         };
 
         builder
