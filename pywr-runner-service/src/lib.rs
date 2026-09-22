@@ -259,12 +259,9 @@ where
 
             let running = engine.is_some();
 
-            // Poll while the engine has work; block while it is ready.
-            let receive_timeout = if running {
-                Some(self.config.update_interval)
-            } else {
-                self.config.idle_timeout
-            };
+            // Poll while the engine has work and while an unbounded-idle
+            // session is waiting, so interrupts are observed promptly.
+            let receive_timeout = self.config.receive_timeout(running);
 
             match reader.receive_frame(receive_timeout)? {
                 ReceiveOutcome::Frame(frame) => {
@@ -330,7 +327,7 @@ where
                     }
                 }
 
-                ReceiveOutcome::TimedOut if !running => {
+                ReceiveOutcome::TimedOut if !running && self.config.idle_timeout.is_some() => {
                     return Err(ServiceError::IdleTimeout);
                 }
 
@@ -446,6 +443,17 @@ pub struct RunnerServiceConfig {
     handshake_timeout: Duration,
     idle_timeout: Option<Duration>,
     update_interval: Duration,
+}
+
+impl RunnerServiceConfig {
+    /// Returns a bounded receive timeout so an unbounded-idle service can poll interrupts.
+    fn receive_timeout(&self, running: bool) -> Option<Duration> {
+        if running {
+            Some(self.update_interval)
+        } else {
+            Some(self.idle_timeout.unwrap_or(self.update_interval))
+        }
+    }
 }
 
 pub struct RunnerServiceConfigBuilder {
@@ -589,4 +597,31 @@ pub fn run_stdio_server(config: RunnerServiceConfig) -> Result<ServiceExit, Serv
     let exit = service.serve(StdioConnection::stdio())?;
     info!("runner stdio session exited: {exit:?}");
     Ok(exit)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unbounded_idle_sessions_poll_at_the_update_interval() {
+        let mut builder = RunnerServiceConfigBuilder::new();
+        builder.update_interval(Duration::from_millis(25));
+        let config = builder.build();
+
+        assert_eq!(config.receive_timeout(false), Some(Duration::from_millis(25)));
+        assert_eq!(config.receive_timeout(true), Some(Duration::from_millis(25)));
+    }
+
+    #[test]
+    fn configured_idle_timeout_remains_the_idle_receive_deadline() {
+        let mut builder = RunnerServiceConfigBuilder::new();
+        builder
+            .idle_timeout(Duration::from_secs(3))
+            .update_interval(Duration::from_millis(25));
+        let config = builder.build();
+
+        assert_eq!(config.receive_timeout(false), Some(Duration::from_secs(3)));
+        assert_eq!(config.receive_timeout(true), Some(Duration::from_millis(25)));
+    }
 }
