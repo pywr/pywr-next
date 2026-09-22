@@ -16,10 +16,11 @@ name = "pywr"
 crate-type = ["cdylib"]
 
 [features]
-default = ["clp", "cbc", "highs"]
-clp = ["pywr-core/clp", "pywr-schema/clp"]
-cbc = ["pywr-core/cbc", "pywr-schema/cbc"]
-highs = ["pywr-core/highs", "pywr-schema/highs"]
+default = ["clp", "cbc", "highs", "microlp"]
+clp = ["pywr-core/clp", "pywr-schema/clp", "pywr-runner-service/clp"]
+cbc = ["pywr-core/cbc", "pywr-schema/cbc", "pywr-runner-service/cbc"]
+highs = ["pywr-core/highs", "pywr-schema/highs", "pywr-runner-service/highs"]
+microlp = ["pywr-core/microlp", "pywr-schema/microlp", "pywr-runner-service/microlp"]
 ipm-ocl = ["pywr-core/ipm-ocl", "pywr-schema/ipm-ocl"]
 ipm-simd = ["pywr-core/ipm-simd", "pywr-schema/ipm-simd"]
 
