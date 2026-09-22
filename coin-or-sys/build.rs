@@ -223,6 +223,9 @@ fn compile_clp() {
     builder.file(format!("{CLP_OSI_SRC_PATH}/OsiClpSolverInterface.cpp",));
     builder.include(CLP_OSI_SRC_PATH);
 
+    builder.file("src/clp_extensions.cpp");
+    println!("cargo:rerun-if-changed=src/clp_extensions.cpp");
+
     builder.compile("Clp");
 }
 

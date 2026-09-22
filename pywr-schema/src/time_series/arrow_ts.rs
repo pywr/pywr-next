@@ -3,8 +3,9 @@ use crate::{Checksum, VisitPaths};
 use pywr_schema_macros::skip_serializing_none;
 use schemars::JsonSchema;
 use std::path::{Path, PathBuf};
+use strum_macros::{Display, EnumIter};
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Copy, JsonSchema)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Copy, JsonSchema, Display, EnumIter)]
 pub enum ArrowFormat {
     #[allow(clippy::upper_case_acronyms)] // These are valid acronyms and should be upper case.
     CSV,

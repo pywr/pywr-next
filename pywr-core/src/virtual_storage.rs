@@ -630,7 +630,7 @@ mod tests {
         let domain = default_domain();
         let model = ModelBuilder::new(domain, network_builder).build().unwrap();
         // Test all solvers
-        run_all_solvers(&model, &["ipm-ocl", "ipm-simd"], &[], &[]);
+        run_all_solvers(&model, &["ipm-ocl-f64", "ipm-simd"], &[], &[]);
     }
 
     #[test]
@@ -668,7 +668,7 @@ mod tests {
         let model = model_builder.build().unwrap();
 
         // Test all solvers
-        run_all_solvers(&model, &["ipm-ocl", "ipm-simd"], &[], &[]);
+        run_all_solvers(&model, &["ipm-ocl-f64", "ipm-simd"], &[], &[]);
     }
 
     #[test]
@@ -734,7 +734,7 @@ mod tests {
         let model = model_builder.build().unwrap();
 
         // Test all solvers
-        run_all_solvers(&model, &["ipm-ocl", "ipm-simd"], &[], &[]);
+        run_all_solvers(&model, &["ipm-ocl-f64", "ipm-simd"], &[], &[]);
     }
 
     #[test]
@@ -778,7 +778,7 @@ mod tests {
         let model = model_builder.build().unwrap();
 
         // Test all solvers
-        run_all_solvers(&model, &["ipm-ocl", "ipm-simd"], &[], &[]);
+        run_all_solvers(&model, &["ipm-ocl-f64", "ipm-simd"], &[], &[]);
     }
 
     #[test]
