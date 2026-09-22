@@ -165,6 +165,17 @@ where
                 arrow_stream_commits,
             },
 
+            (
+                RunnerState::Pausing {
+                    runtime,
+                    arrow_stream_commits,
+                },
+                EngineCommand::Cancel,
+            ) => RunnerState::Cancelling {
+                runtime,
+                arrow_stream_commits,
+            },
+
             (state, command) => {
                 let command = command.to_string();
                 self.state = state;
@@ -555,7 +566,12 @@ mod tests {
             &mut self,
             _runtime: &mut Self::Runtime,
         ) -> Result<BackendFinalisation, crate::backend::BackendError> {
-            unreachable!("test backend does not cancel")
+            Ok(BackendFinalisation {
+                summary: crate::event::RunSummary {
+                    outcome: crate::event::FinalOutcome::Cancelled,
+                    progress: progress(),
+                },
+            })
         }
     }
 
@@ -714,5 +730,35 @@ mod tests {
         assert!(matches!(engine.status(), EngineStatus::Ready));
         assert_eq!(flush_count.load(std::sync::atomic::Ordering::SeqCst), 1);
         assert_commit_precedes_ready(&engine.output.0);
+    }
+
+    #[test]
+    fn cancel_is_allowed_while_pausing() {
+        let flush_count = Arc::new(AtomicUsize::new(0));
+        let mut engine =
+            RunnerEngine::initialise(request(), RecorderBackend(flush_count.clone()), TestOutput::default())
+                .tick()
+                .unwrap();
+        engine.handle_command(EngineCommand::RunToEnd).unwrap();
+        let mut engine = engine.tick().unwrap();
+        assert!(matches!(engine.status(), EngineStatus::Running));
+
+        engine.handle_command(EngineCommand::Pause).unwrap();
+        assert!(matches!(engine.status(), EngineStatus::Pausing));
+        engine.handle_command(EngineCommand::Cancel).unwrap();
+
+        assert!(matches!(engine.status(), EngineStatus::Cancelling));
+        assert!(engine.needs_tick());
+        assert!(matches!(
+            engine.output.0.last(),
+            Some(EngineEvent::StateChanged {
+                status: EngineStatus::Cancelling
+            })
+        ));
+
+        let engine = engine.tick().unwrap();
+        assert!(matches!(engine.status(), EngineStatus::Cancelled));
+        assert!(engine.is_terminal());
+        assert_eq!(flush_count.load(std::sync::atomic::Ordering::SeqCst), 0);
     }
 }
