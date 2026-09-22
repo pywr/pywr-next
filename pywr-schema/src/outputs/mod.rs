@@ -4,10 +4,10 @@ mod hdf;
 mod memory;
 mod placeholder;
 
-pub use arrow_stream::ArrowStreamOutput;
 pub use self::csv::{CsvFormat, CsvMetricSet, CsvMetricSetType, CsvOutput};
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
+pub use arrow_stream::ArrowStreamOutput;
 pub use hdf::Hdf5Output;
 pub use memory::{MemoryAggregation, MemoryAggregationOrder, MemoryOutput};
 pub use placeholder::PlaceholderOutput;

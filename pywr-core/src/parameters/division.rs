@@ -1,6 +1,6 @@
 use super::{
-    BuiltParameter, GeneralBeforeParameter, GeneralAfterParameter, GeneralParameterContext, GeneralParameterEntry, MaybeBuiltParameter,
-    Parameter, ParameterBuildError, ParameterBuilder, ParameterName,
+    BuiltParameter, GeneralAfterParameter, GeneralBeforeParameter, GeneralParameterContext, GeneralParameterEntry,
+    MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder, ParameterName,
 };
 use crate::metric::{MetricConsumerPhase, MetricF64, UnresolvedMetricF64};
 use crate::network::ResolutionMaps;
@@ -113,7 +113,6 @@ impl ParameterBuilder<f64> for DivisionParameterBuilder {
         self: Box<Self>,
         resolution_maps: &ResolutionMaps,
     ) -> Result<MaybeBuiltParameter<f64>, ParameterBuildError> {
-
         let numerator = resolve_metric_f64!(self, self.numerator, resolution_maps, self.phase, "numerator");
         let denominator = resolve_metric_f64!(self, self.denominator, resolution_maps, self.phase, "denominator");
 
@@ -124,15 +123,9 @@ impl ParameterBuilder<f64> for DivisionParameterBuilder {
         };
 
         let built = match self.phase {
-            MetricConsumerPhase::Before => {
-                BuiltParameter::General(GeneralParameterEntry::before(p))
-            },
-            MetricConsumerPhase::After => {
-                BuiltParameter::General(GeneralParameterEntry::after(p))
-            },
-            MetricConsumerPhase::Both => {
-                BuiltParameter::General(GeneralParameterEntry::both(p))
-            }
+            MetricConsumerPhase::Before => BuiltParameter::General(GeneralParameterEntry::before(p)),
+            MetricConsumerPhase::After => BuiltParameter::General(GeneralParameterEntry::after(p)),
+            MetricConsumerPhase::Both => BuiltParameter::General(GeneralParameterEntry::both(p)),
         };
 
         Ok(built.into())

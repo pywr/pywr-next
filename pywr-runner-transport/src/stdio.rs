@@ -7,7 +7,7 @@
 use crate::framing::{FrameDecoder, MAX_FRAME_SIZE};
 use crate::{PeerIdentity, ReceiveOutcome, TransportConnection, TransportError, TransportReader, TransportWriter};
 use std::io::{self, Read, Write};
-use std::sync::mpsc::{channel, Receiver, RecvTimeoutError, Sender};
+use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender, channel};
 use std::time::Duration;
 
 const READ_CHUNK_SIZE: usize = 8192;
@@ -184,7 +184,7 @@ impl<W: Write> TransportWriter for StdioWriter<W> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::{mpsc, Arc, Mutex};
+    use std::sync::{Arc, Mutex, mpsc};
 
     const WAIT: Duration = Duration::from_secs(1);
 
