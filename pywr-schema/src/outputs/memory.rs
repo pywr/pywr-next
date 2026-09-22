@@ -1,6 +1,7 @@
 #[cfg(feature = "core")]
 use crate::SchemaError;
 use crate::agg_funcs::AggFunc;
+use crate::visit::{Reference, ReferenceMut, VisitReferences};
 #[cfg(feature = "core")]
 use pywr_core::recorders::MemoryRecorderBuilder;
 use pywr_schema_macros::{PywrVisitPaths, skip_serializing_none};
@@ -53,6 +54,17 @@ pub struct MemoryOutput {
     pub order: Option<MemoryAggregationOrder>,
 }
 
+/// Written out rather than derived: a derive would walk `metric_set` as a plain `String`.
+impl VisitReferences for MemoryOutput {
+    fn visit_references<F: FnMut(Reference<'_>)>(&self, visitor: &mut F) {
+        visitor(Reference::MetricSet(&self.metric_set));
+    }
+
+    fn visit_references_mut<F: FnMut(ReferenceMut<'_>)>(&mut self, visitor: &mut F) {
+        visitor(ReferenceMut::MetricSet(&mut self.metric_set));
+    }
+}
+
 #[cfg(feature = "core")]
 impl MemoryOutput {
     pub fn add_to_network(
@@ -79,7 +91,7 @@ mod tests {
     #[cfg(feature = "core")]
     use float_cmp::assert_approx_eq;
     #[cfg(feature = "core")]
-    use pywr_core::solvers::{ClpSolver, ClpSolverSettings};
+    use pywr_core::solvers::ClpSolverSettings;
     use std::fs::read_to_string;
     use std::str::FromStr;
     #[cfg(feature = "core")]
@@ -110,7 +122,7 @@ mod tests {
         let builder = schema.create_model_builder(None, Some(temp_dir.path())).unwrap();
         let model = builder.build().unwrap();
 
-        let result = model.run::<ClpSolver>(&ClpSolverSettings::default()).unwrap();
+        let result = model.run(&ClpSolverSettings::default()).unwrap();
 
         let result = result
             .network_result

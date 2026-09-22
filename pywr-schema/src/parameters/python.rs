@@ -7,7 +7,7 @@ use crate::parameters::{DynamicFloatValueType, ParameterMeta};
 use crate::py_utils::PythonSource;
 #[cfg(all(feature = "core", feature = "pyo3"))]
 use crate::py_utils::{try_load_optional_py_args, try_load_optional_py_kwargs};
-use crate::visit::{VisitMetrics, VisitNodeReferences, VisitPaths};
+use crate::visit::{Reference, ReferenceMut, VisitMetrics, VisitPaths, VisitReferences};
 #[cfg(all(feature = "core", feature = "pyo3"))]
 use pyo3::{
     Bound, Python,
@@ -157,15 +157,15 @@ impl VisitMetrics for PythonParameter {
     }
 }
 
-impl VisitNodeReferences for PythonParameter {
-    fn visit_node_references<F: FnMut(&str)>(&self, visitor: &mut F) {
-        self.metrics.visit_node_references(visitor);
-        self.indices.visit_node_references(visitor);
+impl VisitReferences for PythonParameter {
+    fn visit_references<F: FnMut(Reference<'_>)>(&self, visitor: &mut F) {
+        self.metrics.visit_references(visitor);
+        self.indices.visit_references(visitor);
     }
 
-    fn visit_node_references_mut<F: FnMut(&mut String)>(&mut self, visitor: &mut F) {
-        self.metrics.visit_node_references_mut(visitor);
-        self.indices.visit_node_references_mut(visitor);
+    fn visit_references_mut<F: FnMut(ReferenceMut<'_>)>(&mut self, visitor: &mut F) {
+        self.metrics.visit_references_mut(visitor);
+        self.indices.visit_references_mut(visitor);
     }
 }
 
@@ -231,7 +231,7 @@ impl PythonParameter {
         })?;
 
         let py_args = Python::attach(|py| try_load_optional_py_args(py, &self.args))?;
-        let py_kwargs = Python::attach(|py| try_load_optional_py_kwargs(py, &self.kwargs))?;
+        let py_kwargs = Python::attach(|py| try_load_optional_py_kwargs(py, self.kwargs.as_ref()))?;
 
         let metrics = match &self.metrics {
             Some(metrics) => metrics
@@ -306,7 +306,7 @@ mod tests {
     use crate::data_tables::LoadedTableCollection;
     use crate::network::{LoadArgs, NetworkSchema};
     use crate::parameters::python::PythonParameter;
-    use crate::timeseries::LoadedTimeseriesCollection;
+    use crate::time_series::LoadedTimeSeriesCollection;
     use pyo3::Python;
     use pywr_core::models::ModelDomain;
     use pywr_core::network::NetworkBuilder;
@@ -349,13 +349,13 @@ mod tests {
         let schema = NetworkSchema::default();
         let mut network = NetworkBuilder::default();
         let tables = LoadedTableCollection::from_schema(None, None).unwrap();
-        let ts = LoadedTimeseriesCollection::default();
+        let ts = LoadedTimeSeriesCollection::default();
 
         let args = LoadArgs {
             schema: &schema,
             data_path: None,
             tables: &tables,
-            timeseries: &ts,
+            time_series: &ts,
             domain: &domain,
             inter_network_transfers: &[],
         };
@@ -402,13 +402,13 @@ mod tests {
         let schema = NetworkSchema::default();
         let mut network = NetworkBuilder::default();
         let tables = LoadedTableCollection::from_schema(None, None).unwrap();
-        let ts = LoadedTimeseriesCollection::default();
+        let ts = LoadedTimeSeriesCollection::default();
 
         let args = LoadArgs {
             schema: &schema,
             data_path: None,
             tables: &tables,
-            timeseries: &ts,
+            time_series: &ts,
             domain: &domain,
             inter_network_transfers: &[],
         };

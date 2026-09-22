@@ -1,0 +1,145 @@
+{
+  "metadata": {
+    "title": "Local parameters on virtual nodes",
+    "description": "Local parameters defining the constraints of an aggregated node and a virtual storage node.",
+    "minimum_version": "0.1"
+  },
+  "time": {
+    "start": "2015-01-01",
+    "end": "2015-01-05",
+    "timestep": {
+      "type": "Days",
+      "days": 1
+    }
+  },
+  "network": {
+    "nodes": [
+      {
+        "meta": {
+          "name": "supply1"
+        },
+        "type": "Input",
+        "max_flow": {
+          "type": "Literal",
+          "value": 15.0
+        }
+      },
+      {
+        "meta": {
+          "name": "link1"
+        },
+        "type": "Link"
+      },
+      {
+        "meta": {
+          "name": "demand1"
+        },
+        "type": "Output",
+        "max_flow": {
+          "type": "Literal",
+          "value": 10.0
+        },
+        "cost": {
+          "type": "Literal",
+          "value": -10
+        }
+      }
+    ],
+    "virtual_nodes": [
+      {
+        "meta": {
+          "name": "daily-licence"
+        },
+        "type": "Aggregated",
+        "nodes": [
+          {
+            "name": "link1"
+          }
+        ],
+        "max_flow": {
+          "type": "LocalParameter",
+          "name": "max-flow"
+        },
+        "parameters": [
+          {
+            "meta": {
+              "name": "max-flow"
+            },
+            "type": "Constant",
+            "value": {
+              "type": "Literal",
+              "value": 8.0
+            }
+          }
+        ]
+      },
+      {
+        "meta": {
+          "name": "total-licence"
+        },
+        "type": "VirtualStorage",
+        "nodes": [
+          {
+            "name": "supply1"
+          }
+        ],
+        "max_volume": {
+          "type": "LocalParameter",
+          "name": "volume"
+        },
+        "initial_volume": {
+          "type": "Proportional",
+          "proportion": 1.0
+        },
+        "parameters": [
+          {
+            "meta": {
+              "name": "volume"
+            },
+            "type": "Constant",
+            "value": {
+              "type": "Literal",
+              "value": 30.0
+            }
+          }
+        ]
+      }
+    ],
+    "edges": [
+      {
+        "from_node": "supply1",
+        "to_node": "link1"
+      },
+      {
+        "from_node": "link1",
+        "to_node": "demand1"
+      }
+    ],
+    "metric_sets": [
+      {
+        "name": "nodes",
+        "metrics": [
+          {
+            "type": "Node",
+            "name": "demand1"
+          },
+          {
+            "type": "VirtualNode",
+            "name": "total-licence"
+          }
+        ]
+      }
+    ],
+    "outputs": [
+      {
+        "name": "node-outputs",
+        "type": "CSV",
+        "format": "Long",
+        "filename": "local-parameter3-expected.csv",
+        "metric_set": [
+          "nodes"
+        ]
+      }
+    ]
+  }
+}

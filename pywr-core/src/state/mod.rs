@@ -2,7 +2,7 @@ mod flow;
 mod storage;
 
 use crate::edge::Edge;
-use crate::metric::SimpleMetricF64Error;
+use crate::metric::{CalculationPhase, SimpleMetricF64Error};
 use crate::models::MultiNetworkTransferIndex;
 use crate::network::{EdgeIndex, Network, NodeIndex, VirtualStorageIndex};
 use crate::node::Node;
@@ -526,12 +526,12 @@ impl NetworkState {
     ///
     /// This final step ensures that derived states (e.g. virtual storage volume) are updated
     /// once all the flows have been updated.
-    fn update_derived_states(&mut self, model: &Network, timestep: &Timestep) -> Result<(), NetworkStateError> {
+    fn update_derived_states(&mut self, network: &Network, timestep: &Timestep) -> Result<(), NetworkStateError> {
         // Update virtual storage node states
         for (state, node) in self
             .virtual_storage_states
             .iter_mut()
-            .zip(model.virtual_storage_nodes().iter())
+            .zip(network.virtual_storage_nodes().iter())
         {
             // Only update if the node is active
             if node.is_active(timestep) {
@@ -540,7 +540,7 @@ impl NetworkState {
                     .map(|(idx, factor)| match self.node_states.get(*idx.deref()) {
                         None => Err(NetworkStateError::NodeIndexNotFound(*idx)),
                         Some(s) => {
-                            let node = model
+                            let node = network
                                 .nodes()
                                 .get(*idx.deref())
                                 .ok_or(NetworkStateError::NodeIndexNotFound(*idx))?;
@@ -793,9 +793,19 @@ pub struct State {
     parameters_general_after: ParameterValues,
 
     inter_network_values: Vec<f64>,
+    // The current phase of the calculation
+    current_phase: CalculationPhase,
 }
 
 impl State {
+    pub fn get_calculation_phase(&self) -> CalculationPhase {
+        self.current_phase
+    }
+
+    pub fn set_calculation_phase(&mut self, phase: CalculationPhase) {
+        self.current_phase = phase;
+    }
+
     /// Get a reference to the network state.
     pub fn get_network_state(&self) -> &NetworkState {
         &self.network
@@ -1143,8 +1153,8 @@ impl State {
     /// This final step ensures, once all the flows have been updated, that:
     ///   - Derived states (e.g. virtual storage volume) are updated
     ///   - Volumes are within bounds
-    pub fn complete(&mut self, model: &Network, timestep: &Timestep) -> Result<(), StateError> {
-        for node in model.nodes().iter() {
+    pub fn complete(&mut self, network: &Network, timestep: &Timestep) -> Result<(), StateError> {
+        for node in network.nodes().iter() {
             if let Node::Storage(storage) = node {
                 let node_index = node.index();
                 let min_volume = storage.get_min_volume(self)?;
@@ -1154,9 +1164,9 @@ impl State {
             }
         }
 
-        self.network.update_derived_states(model, timestep)?;
+        self.network.update_derived_states(network, timestep)?;
 
-        for node in model.virtual_storage_nodes().iter() {
+        for node in network.virtual_storage_nodes().iter() {
             let node_index = node.index();
             let min_volume = node.get_min_volume(self)?;
             let max_volume = node.get_max_volume(self)?;
@@ -1261,6 +1271,7 @@ impl StateBuilder {
             parameters_general_before,
             parameters_general_after,
             inter_network_values: vec![0.0; self.num_inter_network_values.unwrap_or(0)],
+            current_phase: CalculationPhase::Before,
         }
     }
 }

@@ -3,20 +3,28 @@ mod hdf;
 mod memory;
 mod placeholder;
 
-pub use self::csv::CsvOutput;
+pub use self::csv::{CsvFormat, CsvMetricSet, CsvMetricSetType, CsvOutput};
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
 pub use hdf::Hdf5Output;
-pub use memory::MemoryOutput;
+pub use memory::{MemoryAggregation, MemoryAggregationOrder, MemoryOutput};
 pub use placeholder::PlaceholderOutput;
-use pywr_schema_macros::PywrVisitPaths;
+use pywr_schema_macros::{PywrVisitPaths, PywrVisitReferences};
 use schemars::JsonSchema;
 #[cfg(feature = "core")]
 use std::path::Path;
 use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumString, IntoStaticStr};
 
 #[derive(
-    serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitPaths, Display, EnumDiscriminants,
+    serde::Deserialize,
+    serde::Serialize,
+    Debug,
+    Clone,
+    JsonSchema,
+    PywrVisitPaths,
+    PywrVisitReferences,
+    Display,
+    EnumDiscriminants,
 )]
 #[serde(tag = "type")]
 #[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]

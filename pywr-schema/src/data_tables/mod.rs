@@ -21,9 +21,12 @@ mod vec;
 use crate::ConversionError;
 use crate::digest::{Checksum, ChecksumError};
 use crate::parameters::TableIndex;
+use crate::visit::{Reference, ReferenceMut, VisitReferences};
+#[cfg(feature = "core")]
+use log::{debug, info};
 #[cfg(feature = "pyo3")]
 use pyo3::pyclass;
-use pywr_schema_macros::{PywrVisitAll, skip_serializing_none};
+use pywr_schema_macros::{PywrVisitAll, PywrVisitMetrics, PywrVisitPaths, skip_serializing_none};
 use pywr_v1_schema::parameters::TableDataRef as TableDataRefV1;
 #[cfg(feature = "core")]
 use scalar::LoadedScalarTable;
@@ -34,11 +37,9 @@ use std::path::{Path, PathBuf};
 use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumString, IntoStaticStr};
 use thiserror::Error;
 #[cfg(feature = "core")]
-use tracing::{debug, info};
-#[cfg(feature = "core")]
 use vec::LoadedVecTable;
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, Display, EnumIter)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitPaths, Display, EnumIter)]
 pub enum DataTableValueType {
     Scalar,
     Array,
@@ -51,7 +52,9 @@ pub struct TableMeta {
     pub comment: Option<String>,
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, Display, EnumDiscriminants)]
+#[derive(
+    serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitPaths, Display, EnumDiscriminants,
+)]
 #[serde(tag = "format")]
 #[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
 #[strum_discriminants(name(DataTableType))]
@@ -87,7 +90,9 @@ impl DataTable {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, Display, EnumDiscriminants)]
+#[derive(
+    serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitPaths, Display, EnumDiscriminants,
+)]
 #[serde(tag = "type", deny_unknown_fields)]
 #[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
 #[strum_discriminants(name(CsvDataTableLookupType))]
@@ -98,7 +103,7 @@ pub enum CsvDataTableLookup {
 }
 
 /// An external table of data that can be referenced
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitPaths)]
 pub struct CsvDataTable {
     pub meta: TableMeta,
     #[serde(rename = "type")]
@@ -145,7 +150,7 @@ impl CsvDataTable {
 }
 
 /// A placeholder for an external table of data that can be referenced
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitPaths)]
 pub struct PlaceholderTable {
     pub meta: TableMeta,
 }
@@ -290,7 +295,7 @@ impl LoadedTableCollection {
         if let Some(table_defs) = table_defs {
             for table_def in table_defs {
                 let name = table_def.name().to_string();
-                info!("Loading table: {}", &name);
+                info!("Loading table: {}", name);
                 let table = table_def
                     .load(data_path)
                     .map_err(|source| TableCollectionLoadError::TableError {
@@ -350,14 +355,27 @@ impl LoadedTableCollection {
     }
 }
 
+// `VisitReferences` is written out below: the derive would walk `table` as a plain `String`.
 #[skip_serializing_none]
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll, PartialEq)]
+#[derive(
+    serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitMetrics, PywrVisitPaths, PartialEq,
+)]
 #[serde(deny_unknown_fields)]
 #[cfg_attr(feature = "pyo3", pyclass(from_py_object))]
 pub struct TableDataRef {
     pub table: String,
     pub column: Option<TableIndex>,
     pub row: Option<TableIndex>,
+}
+
+impl VisitReferences for TableDataRef {
+    fn visit_references<F: FnMut(Reference<'_>)>(&self, visitor: &mut F) {
+        visitor(Reference::Table(&self.table));
+    }
+
+    fn visit_references_mut<F: FnMut(ReferenceMut<'_>)>(&mut self, visitor: &mut F) {
+        visitor(ReferenceMut::Table(&mut self.table));
+    }
 }
 
 #[cfg(feature = "core")]

@@ -1,28 +1,38 @@
 use crate::solvers::SolverSettings;
 use ipm_ocl::Tolerances;
+use std::marker::PhantomData;
 use std::num::NonZeroUsize;
+
+#[derive(PartialEq, Debug)]
+pub struct F32;
+#[derive(PartialEq, Debug)]
+pub struct F64;
 
 /// Settings for the OpenCL IPM solvers.
 ///
 /// Create new settings using [`ClIpmSolverSettingsBuilder`] or use the default implementation;
 #[derive(PartialEq, Debug)]
-pub struct ClIpmSolverSettings {
+pub struct ClIpmSolverSettings<P> {
     parallel: bool,
     threads: usize,
     num_chunks: NonZeroUsize,
     tolerances: Tolerances,
     max_iterations: NonZeroUsize,
     ignore_feature_requirements: bool,
+    precision: PhantomData<P>,
 }
 
+pub type ClIpmF32Settings = ClIpmSolverSettings<F32>;
+pub type ClIpmF64Settings = ClIpmSolverSettings<F64>;
+
 // Default implementation is a convenience that defers to the builder.
-impl Default for ClIpmSolverSettings {
+impl<P> Default for ClIpmSolverSettings<P> {
     fn default() -> Self {
         ClIpmSolverSettingsBuilder::default().build()
     }
 }
 
-impl SolverSettings for ClIpmSolverSettings {
+impl<P> SolverSettings for ClIpmSolverSettings<P> {
     fn parallel(&self) -> bool {
         self.parallel
     }
@@ -36,9 +46,9 @@ impl SolverSettings for ClIpmSolverSettings {
     }
 }
 
-impl ClIpmSolverSettings {
+impl<P> ClIpmSolverSettings<P> {
     /// Create a new builder for the settings
-    pub fn builder() -> ClIpmSolverSettingsBuilder {
+    pub fn builder() -> ClIpmSolverSettingsBuilder<P> {
         ClIpmSolverSettingsBuilder::default()
     }
 
@@ -74,16 +84,20 @@ impl ClIpmSolverSettings {
 /// let settings = builder.build();
 ///
 /// ```
-pub struct ClIpmSolverSettingsBuilder {
+pub struct ClIpmSolverSettingsBuilder<P> {
     parallel: bool,
     threads: usize,
     num_chunks: NonZeroUsize,
     tolerances: Tolerances,
     max_iterations: NonZeroUsize,
     ignore_feature_requirements: bool,
+    precision: PhantomData<P>,
 }
 
-impl Default for ClIpmSolverSettingsBuilder {
+pub type ClIpmF32SettingsBuilder = ClIpmSolverSettingsBuilder<F32>;
+pub type ClIpmF64SettingsBuilder = ClIpmSolverSettingsBuilder<F64>;
+
+impl<P> Default for ClIpmSolverSettingsBuilder<P> {
     fn default() -> Self {
         Self {
             parallel: false,
@@ -93,11 +107,12 @@ impl Default for ClIpmSolverSettingsBuilder {
             tolerances: Tolerances::default(),
             max_iterations: NonZeroUsize::new(200).unwrap(),
             ignore_feature_requirements: false,
+            precision: PhantomData,
         }
     }
 }
 
-impl ClIpmSolverSettingsBuilder {
+impl<P> ClIpmSolverSettingsBuilder<P> {
     pub fn num_chunks(mut self, num_chunks: NonZeroUsize) -> Self {
         self.num_chunks = num_chunks;
         self
@@ -139,7 +154,7 @@ impl ClIpmSolverSettingsBuilder {
     }
 
     /// Construct a [`ClIpmSolverSettings`] from the builder.
-    pub fn build(self) -> ClIpmSolverSettings {
+    pub fn build(self) -> ClIpmSolverSettings<P> {
         ClIpmSolverSettings {
             parallel: self.parallel,
             threads: self.threads,
@@ -147,27 +162,30 @@ impl ClIpmSolverSettingsBuilder {
             tolerances: self.tolerances,
             max_iterations: self.max_iterations,
             ignore_feature_requirements: self.ignore_feature_requirements,
+            precision: self.precision,
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{ClIpmSolverSettings, ClIpmSolverSettingsBuilder};
+    use super::{ClIpmF32Settings, ClIpmF32SettingsBuilder};
     use ipm_ocl::Tolerances;
+    use std::marker::PhantomData;
     use std::num::NonZeroUsize;
 
     #[test]
     fn builder_test() {
-        let settings = ClIpmSolverSettings {
+        let settings = ClIpmF32Settings {
             parallel: true,
             threads: 0,
             num_chunks: NonZeroUsize::new(4).unwrap(),
             max_iterations: NonZeroUsize::new(200).unwrap(),
             tolerances: Tolerances::default(),
             ignore_feature_requirements: false,
+            precision: PhantomData,
         };
-        let settings_from_builder = ClIpmSolverSettingsBuilder::default().parallel().build();
+        let settings_from_builder = ClIpmF32SettingsBuilder::default().parallel().build();
 
         assert_eq!(settings, settings_from_builder);
     }

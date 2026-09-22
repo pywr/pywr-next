@@ -494,6 +494,15 @@ where
                     NodeBounds::Volume(bounds) => (-bounds.available / dt, bounds.missing / dt),
                 };
 
+            if lb > ub {
+                return Err(SolverSolveError::NodeBoundsInfeasible {
+                    name: node.name().to_string(),
+                    sub_name: node.sub_name().map(|s| s.to_string()),
+                    lower_bound: lb,
+                    upper_bound: ub,
+                });
+            }
+
             match row.row_type {
                 NodeRowType::Continuous => {
                     // Regular node constraint
@@ -614,6 +623,15 @@ where
                 // Node is inactive, so set bounds to be unbounded
                 (self.builder.f64_neg_max, self.builder.f64_max)
             };
+
+            if lb > ub {
+                return Err(SolverSolveError::VirtualStorageBoundsInfeasible {
+                    name: node.name().to_string(),
+                    sub_name: node.sub_name().map(|s| s.to_string()),
+                    lower_bound: lb,
+                    upper_bound: ub,
+                });
+            }
 
             self.builder.apply_row_bounds(*row_id, lb, ub);
         }
@@ -849,6 +867,17 @@ where
                 Some(NodeBounds::Flow(bounds)) => Some(bounds),
                 _ => None,
             };
+
+            if let Some(bounds) = bounds {
+                if bounds.min_flow > bounds.max_flow {
+                    return Err(SolverSetupError::NodeBoundsInfeasible {
+                        name: node.name().to_string(),
+                        sub_name: node.sub_name().map(|s| s.to_string()),
+                        lower_bound: bounds.min_flow,
+                        upper_bound: bounds.max_flow,
+                    });
+                }
+            }
 
             // If there are binary variables associated with this node, then we need to add a row
             // that enforces each binary variable's constraints

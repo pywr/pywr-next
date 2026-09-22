@@ -11,14 +11,14 @@ use crate::nodes::NodeType;
 #[cfg(feature = "core")]
 use crate::nodes::VirtualNodeType;
 use crate::nodes::{NodeAttribute, NodeComponent};
-use crate::parameters::ParameterOrTimeseriesRef;
+use crate::parameters::ParameterOrTimeSeriesRef;
 #[cfg(feature = "core")]
 use crate::parameters::ParameterType;
 #[cfg(feature = "core")]
-use crate::timeseries::TimeseriesColumns;
-use crate::timeseries::TimeseriesReference;
+use crate::time_series::TimeSeriesColumns;
+use crate::time_series::TimeSeriesReference;
 use crate::v1::{ConversionData, TryFromV1, TryIntoV2};
-use crate::visit::VisitNodeReferences;
+use crate::visit::{Reference, ReferenceMut, VisitReferences};
 #[cfg(feature = "pyo3")]
 use pyo3::{PyResult, exceptions::PyRuntimeError, pyclass, pymethods};
 #[cfg(feature = "core")]
@@ -58,12 +58,12 @@ pub enum Metric {
     VirtualNode(VirtualNodeAttrReference),
     /// An attribute of an edge.
     Edge(EdgeReference),
-    /// A reference to a value from a timeseries.
-    Timeseries(TimeseriesReference),
+    /// A reference to a value from a time series.
+    TimeSeries(TimeSeriesReference),
     /// A reference to a global parameter.
     Parameter(ParameterReference),
     /// A reference to a local parameter.
-    LocalParameter(ParameterReference),
+    LocalParameter(LocalParameterReference),
     /// A reference to an inter-network transfer by name.
     InterNetworkTransfer { name: String },
 }
@@ -104,17 +104,9 @@ impl Metric {
             Self::Node(node_ref) => node_ref.load_f64(network, args),
             Self::VirtualNode(node_ref) => node_ref.load_f64(args),
             // Global parameter with no parent
-            Self::Parameter(parameter_ref) => Ok(parameter_ref.load_f64(None)),
+            Self::Parameter(parameter_ref) => Ok(parameter_ref.load_f64()),
             // Local parameter loaded from parent's namespace
-            Self::LocalParameter(parameter_ref) => {
-                if parent.is_none() {
-                    return Err(SchemaError::LocalParameterReferenceRequiresParent(
-                        parameter_ref.name.clone(),
-                    ));
-                }
-
-                Ok(parameter_ref.load_f64(parent))
-            }
+            Self::LocalParameter(parameter_ref) => parameter_ref.load_f64(parent),
             Self::Literal { value } => Ok((*value).into()),
             Self::Table(table_ref) => {
                 let value = args
@@ -126,17 +118,17 @@ impl Metric {
                     })?;
                 Ok(value.into())
             }
-            Self::Timeseries(ts_ref) => {
+            Self::TimeSeries(ts_ref) => {
                 let param_name = match &ts_ref.columns {
-                    Some(TimeseriesColumns::Scenario { name }) => {
-                        args.timeseries
+                    Some(TimeSeriesColumns::Scenario { name }) => {
+                        args.time_series
                             .load_df_f64(network, ts_ref.name.as_ref(), name.as_str())?
                     }
-                    Some(TimeseriesColumns::Column { name }) => {
-                        args.timeseries
+                    Some(TimeSeriesColumns::Column { name }) => {
+                        args.time_series
                             .load_column_f64(network, ts_ref.name.as_ref(), name.as_str())?
                     }
-                    None => args.timeseries.load_single_column_f64(network, ts_ref.name.as_ref())?,
+                    None => args.time_series.load_single_column_f64(network, ts_ref.name.as_ref())?,
                 };
                 Ok(UnresolvedMetricF64::new_parameter_before(param_name))
             }
@@ -153,10 +145,13 @@ impl Metric {
             Self::Node(node_ref) => Ok(node_ref.name.to_string()),
             Self::VirtualNode(node_ref) => Ok(node_ref.name.to_string()),
             Self::Parameter(parameter_ref) => Ok(parameter_ref.name.clone()),
-            Self::LocalParameter(parameter_ref) => Ok(parameter_ref.name.clone()),
+            Self::LocalParameter(parameter_ref) => match &parameter_ref.node {
+                Some(node) => Ok(format!("{}.{}", node, parameter_ref.name)),
+                None => Ok(parameter_ref.name.clone()),
+            },
             Self::Literal { .. } => Err(SchemaError::LiteralConstantOutputNotSupported),
             Self::Table(table_ref) => Ok(table_ref.table.clone()),
-            Self::Timeseries(ts_ref) => Ok(ts_ref.name.clone()),
+            Self::TimeSeries(ts_ref) => Ok(ts_ref.name.clone()),
             Self::InterNetworkTransfer { name } => Ok(name.clone()),
             Self::Edge(edge_ref) => Ok(edge_ref.edge.to_string()),
         }
@@ -170,7 +165,7 @@ impl Metric {
             Self::LocalParameter(p_ref) => p_ref.attribute(),
             Self::Literal { .. } => "value".to_string(),
             Self::Table(tbl_ref) => tbl_ref.key().join(";").to_string(),
-            Self::Timeseries(ts_ref) => ts_ref
+            Self::TimeSeries(ts_ref) => ts_ref
                 .column()
                 .map(|c| c.to_string())
                 .unwrap_or_else(|| "value".to_string()),
@@ -184,15 +179,15 @@ impl Metric {
     /// Return the subtype of the metric. This is the type of the metric that is being
     /// referenced. For example, if the metric is a node then the subtype is the type of the
     /// node.
-    fn sub_type(&self, args: &LoadArgs) -> Result<Option<String>, SchemaError> {
+    fn sub_type(&self, args: &LoadArgs, parent: Option<&str>) -> Result<Option<String>, SchemaError> {
         let sub_type = match self {
             Self::Node(node_ref) => Some(node_ref.node_type(args)?.to_string()),
             Self::VirtualNode(node_ref) => Some(node_ref.node_type(args)?.to_string()),
             Self::Parameter(parameter_ref) => Some(parameter_ref.parameter_type(args)?.to_string()),
-            Self::LocalParameter(parameter_ref) => Some(parameter_ref.parameter_type(args)?.to_string()),
+            Self::LocalParameter(parameter_ref) => Some(parameter_ref.parameter_type(args, parent)?.to_string()),
             Self::Literal { .. } => None,
             Self::Table(_) => None,
-            Self::Timeseries(_) => None,
+            Self::TimeSeries(_) => None,
             Self::InterNetworkTransfer { .. } => None,
             Self::Edge { .. } => None,
         };
@@ -209,7 +204,7 @@ impl Metric {
         let metric = self.load(network, args, parent)?;
 
         let ty = self.to_string();
-        let sub_type = self.sub_type(args)?;
+        let sub_type = self.sub_type(args, parent)?;
 
         Ok(UnresolvedOutputMetric::new(
             self.name()?.as_str(),
@@ -248,10 +243,10 @@ impl TryFromV1<ParameterValueV1> for Metric {
             }),
             ParameterValueV1::Table(tbl) => Self::Table(tbl.try_into()?),
             ParameterValueV1::Inline(param) => {
-                // Inline parameters are converted to either a parameter or a timeseries
+                // Inline parameters are converted to either a parameter or a time series
                 // The actual component is extracted into the conversion data leaving a reference
                 // to the component in the metric.
-                let definition: ParameterOrTimeseriesRef = (*param).try_into_v2(parent_node, conversion_data).map_err(
+                let definition: ParameterOrTimeSeriesRef = (*param).try_into_v2(parent_node, conversion_data).map_err(
                     |e: Box<ComponentConversionError>| match *e {
                         ComponentConversionError::Parameter { error, .. } => error,
                         ComponentConversionError::Node { error, .. } => error,
@@ -261,7 +256,7 @@ impl TryFromV1<ParameterValueV1> for Metric {
                     },
                 )?;
                 match definition {
-                    ParameterOrTimeseriesRef::Parameter(p) => {
+                    ParameterOrTimeSeriesRef::Parameter(p) => {
                         let reference = ParameterReference {
                             name: p.name().to_string(),
                             key: None,
@@ -271,7 +266,7 @@ impl TryFromV1<ParameterValueV1> for Metric {
 
                         Self::Parameter(reference)
                     }
-                    ParameterOrTimeseriesRef::Timeseries(t) => Self::Timeseries(t.ts_ref),
+                    ParameterOrTimeSeriesRef::TimeSeries(t) => Self::TimeSeries(t.ts_ref),
                 }
             }
         };
@@ -369,13 +364,13 @@ impl From<String> for NodeAttrReference {
     }
 }
 
-impl VisitNodeReferences for NodeAttrReference {
-    fn visit_node_references<F: FnMut(&str)>(&self, visitor: &mut F) {
-        visitor(&self.name);
+impl VisitReferences for NodeAttrReference {
+    fn visit_references<F: FnMut(Reference<'_>)>(&self, visitor: &mut F) {
+        visitor(Reference::Node(&self.name));
     }
 
-    fn visit_node_references_mut<F: FnMut(&mut String)>(&mut self, visitor: &mut F) {
-        visitor(&mut self.name);
+    fn visit_references_mut<F: FnMut(ReferenceMut<'_>)>(&mut self, visitor: &mut F) {
+        visitor(ReferenceMut::Node(&mut self.name));
     }
 }
 
@@ -469,13 +464,14 @@ impl From<String> for VirtualNodeAttrReference {
     }
 }
 
-impl VisitNodeReferences for VirtualNodeAttrReference {
-    fn visit_node_references<F: FnMut(&str)>(&self, visitor: &mut F) {
-        visitor(&self.name);
+/// A virtual node shares a name-space with a node but resolves in a separate list.
+impl VisitReferences for VirtualNodeAttrReference {
+    fn visit_references<F: FnMut(Reference<'_>)>(&self, visitor: &mut F) {
+        visitor(Reference::VirtualNode(&self.name));
     }
 
-    fn visit_node_references_mut<F: FnMut(&mut String)>(&mut self, visitor: &mut F) {
-        visitor(&mut self.name);
+    fn visit_references_mut<F: FnMut(ReferenceMut<'_>)>(&mut self, visitor: &mut F) {
+        visitor(ReferenceMut::VirtualNode(&mut self.name));
     }
 }
 
@@ -500,32 +496,37 @@ impl From<String> for NodeComponentReference {
     }
 }
 
-impl VisitNodeReferences for NodeComponentReference {
-    fn visit_node_references<F: FnMut(&str)>(&self, visitor: &mut F) {
-        visitor(&self.name);
+/// Held by the virtual nodes' node lists, so it names a *node* despite being reached through one.
+impl VisitReferences for NodeComponentReference {
+    fn visit_references<F: FnMut(Reference<'_>)>(&self, visitor: &mut F) {
+        visitor(Reference::Node(&self.name));
     }
 
-    fn visit_node_references_mut<F: FnMut(&mut String)>(&mut self, visitor: &mut F) {
-        visitor(&mut self.name);
+    fn visit_references_mut<F: FnMut(ReferenceMut<'_>)>(&mut self, visitor: &mut F) {
+        visitor(ReferenceMut::Node(&mut self.name));
     }
 }
 
 /// The type of value to return from a parameter.
-#[derive(Deserialize, Serialize, Clone, Copy, Debug, Display, JsonSchema, PartialEq, EnumDiscriminants, Default)]
+#[derive(
+    Deserialize, Serialize, Clone, Copy, Debug, Display, JsonSchema, PartialEq, EnumDiscriminants, EnumIter, Default,
+)]
 pub enum ParameterReturnValue {
     #[default]
     Before,
     After,
     AfterOrElseInitial,
+    Both,
 }
 
 #[cfg(feature = "core")]
-impl From<ParameterReturnValue> for pywr_core::parameters::ParameterReturnValue {
+impl From<ParameterReturnValue> for pywr_core::parameters::UnresolvedParameterReturnValue {
     fn from(v: ParameterReturnValue) -> Self {
         match v {
             ParameterReturnValue::Before => Self::Before,
             ParameterReturnValue::After => Self::After,
             ParameterReturnValue::AfterOrElseInitial => Self::AfterOrElseInitial,
+            ParameterReturnValue::Both => Self::Both,
         }
     }
 }
@@ -543,13 +544,12 @@ pub struct ParameterReference {
     pub return_value: Option<ParameterReturnValue>,
 }
 
+#[cfg(feature = "core")]
 impl ParameterReference {
     /// Load a parameter reference into a [`MetricF64`] by attempting to retrieve the parameter
-    /// from the `network`. If `parent` is the optional parameter name space from which to load
-    /// the parameter.
-    #[cfg(feature = "core")]
-    pub fn load_f64(&self, parent: Option<&str>) -> UnresolvedMetricF64 {
-        let name = ParameterName::new(&self.name, parent);
+    /// from the `network`.
+    pub fn load_f64(&self) -> UnresolvedMetricF64 {
+        let name = ParameterName::new(&self.name, None);
         // Determine the return value to use
         let return_value = self.return_value.unwrap_or_default().into();
 
@@ -567,11 +567,9 @@ impl ParameterReference {
     }
 
     /// Load a parameter reference into a [`MetricUsize`] by attempting to retrieve the parameter
-    /// from the `network`. If `parent` is the optional parameter name space from which to load
-    /// the parameter.
-    #[cfg(feature = "core")]
-    pub fn load_u64(&self, parent: Option<&str>) -> UnresolvedMetricU64 {
-        let name = ParameterName::new(&self.name, parent);
+    /// from the `network`.
+    pub fn load_u64(&self) -> UnresolvedMetricU64 {
+        let name = ParameterName::new(&self.name, None);
         // Determine the return value to use
         let return_value = self.return_value.unwrap_or_default().into();
 
@@ -587,7 +585,7 @@ impl ParameterReference {
             None => UnresolvedMetricU64::ParameterValue { name, return_value },
         }
     }
-    #[cfg(feature = "core")]
+
     pub fn parameter_type(&self, args: &LoadArgs) -> Result<ParameterType, SchemaError> {
         let parameter =
             args.schema
@@ -600,7 +598,6 @@ impl ParameterReference {
         Ok(parameter.parameter_type())
     }
 
-    #[cfg(feature = "core")]
     fn attribute(&self) -> String {
         match &self.key {
             Some(key) => key.clone(),
@@ -644,6 +641,173 @@ impl ParameterReferenceBuilder {
     }
 }
 
+#[skip_serializing_none]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PartialEq)]
+#[serde(deny_unknown_fields)]
+#[cfg_attr(feature = "pyo3", pyclass(from_py_object))]
+pub struct LocalParameterReference {
+    /// The node that contains the parameter.
+    ///
+    /// This is used to resolve the parameter name in the correct namespace. If not
+    /// provided, then the local parameter will be resolved from the local namespace of the parent node.
+    pub node: Option<String>,
+    /// The name of the parameter
+    pub name: String,
+    /// The key of the parameter. If this is `None` then the default value is used.
+    pub key: Option<String>,
+    /// Which method's return value to use. If this is `None` then the default is used.
+    pub return_value: Option<ParameterReturnValue>,
+}
+
+#[cfg(feature = "core")]
+impl LocalParameterReference {
+    /// Return the parent node name for this local parameter reference. If the `node` field is set,
+    /// it will be used. Otherwise, the `parent` argument will be used. If neither is provided, an error will be returned.
+    fn parent<'a>(&'a self, parent: Option<&'a str>) -> Result<&'a str, SchemaError> {
+        match &self.node {
+            Some(p) => Ok(p.as_str()),
+            None => match parent {
+                Some(node) => Ok(node),
+                None => Err(SchemaError::LocalParameterReferenceRequiresParent(self.name.clone())),
+            },
+        }
+    }
+
+    /// Load a local parameter reference into a [`MetricF64`] by attempting to retrieve the parameter
+    /// from the `network`. If the `node` field is set, it will be used as the parent node name for
+    /// resolving the parameter. Otherwise, the `parent` argument will be used. If neither is
+    /// provided, an error will be returned.
+    pub fn load_f64(&self, parent: Option<&str>) -> Result<UnresolvedMetricF64, SchemaError> {
+        let parent = self.parent(parent)?;
+
+        let name = ParameterName::new(&self.name, Some(parent));
+        // Determine the return value to use
+        let return_value = self.return_value.unwrap_or_default().into();
+
+        let m = match &self.key {
+            Some(key) => {
+                // Key given; this should be a multi-valued parameter
+                UnresolvedMetricF64::MultiParameterValue {
+                    name,
+                    key: key.to_string(),
+                    return_value,
+                }
+            }
+            None => UnresolvedMetricF64::ParameterValue { name, return_value },
+        };
+        Ok(m)
+    }
+
+    /// Load a local parameter reference into a [`MetricUsize`] by attempting to retrieve the parameter
+    /// from the `network`. If the `node` field is set, it will be used as the parent node name for
+    /// resolving the parameter. Otherwise, the `parent` argument will be used. If neither is
+    /// provided, an error will be returned.
+    pub fn load_u64(&self, parent: Option<&str>) -> Result<UnresolvedMetricU64, SchemaError> {
+        let parent = self.parent(parent)?;
+        let name = ParameterName::new(&self.name, Some(parent));
+        // Determine the return value to use
+        let return_value = self.return_value.unwrap_or_default().into();
+
+        let m = match &self.key {
+            Some(key) => {
+                // Key given; this should be a multi-valued parameter
+                UnresolvedMetricU64::MultiParameterValue {
+                    name,
+                    key: key.to_string(),
+                    return_value,
+                }
+            }
+            None => UnresolvedMetricU64::ParameterValue { name, return_value },
+        };
+        Ok(m)
+    }
+    pub fn parameter_type(&self, args: &LoadArgs, parent: Option<&str>) -> Result<ParameterType, SchemaError> {
+        let parent = self.parent(parent)?;
+
+        // First try a regular network node, then a virtual node if that fails. This is because
+        // local parameters can be defined on both types of nodes.
+        let parameter = match args.schema.get_node_by_name(parent) {
+            Some(node) => node
+                .get_local_parameter(&self.name)
+                .ok_or_else(|| SchemaError::ParameterNotFound {
+                    name: self.name.clone(),
+                    key: self.key.clone(),
+                })?,
+            // If the parent is not a regular node, try a virtual node
+            None => match args.schema.get_virtual_node_by_name(parent) {
+                Some(vnode) => vnode
+                    .get_local_parameter(&self.name)
+                    .ok_or_else(|| SchemaError::ParameterNotFound {
+                        name: self.name.clone(),
+                        key: self.key.clone(),
+                    })?,
+                None => {
+                    return Err(SchemaError::NodeNotFound {
+                        name: parent.to_string(),
+                    });
+                }
+            },
+        };
+
+        Ok(parameter.parameter_type())
+    }
+
+    fn attribute(&self) -> String {
+        match &self.key {
+            Some(key) => key.clone(),
+            None => self.return_value.unwrap_or_default().to_string().to_lowercase(),
+        }
+    }
+}
+
+/// A builder for creating a [`LocalParameterReference`].
+pub struct LocalParameterReferenceBuilder {
+    node: Option<String>,
+    name: String,
+    key: Option<String>,
+    return_value: Option<ParameterReturnValue>,
+}
+
+impl LocalParameterReferenceBuilder {
+    pub fn new(name: &str) -> Self {
+        Self {
+            node: None,
+            name: name.to_string(),
+            key: None,
+            return_value: None,
+        }
+    }
+
+    pub fn node(&mut self, node: &str) -> &mut Self {
+        self.node = Some(node.to_string());
+        self
+    }
+
+    pub fn name(&mut self, name: &str) -> &mut Self {
+        self.name = name.to_string();
+        self
+    }
+
+    pub fn key(&mut self, key: &str) -> &mut Self {
+        self.key = Some(key.to_string());
+        self
+    }
+
+    pub fn return_value(&mut self, return_value: ParameterReturnValue) -> &mut Self {
+        self.return_value = Some(return_value);
+        self
+    }
+
+    pub fn build(self) -> LocalParameterReference {
+        LocalParameterReference {
+            node: self.node,
+            name: self.name,
+            key: self.key,
+            return_value: self.return_value,
+        }
+    }
+}
+
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PartialEq)]
 #[serde(deny_unknown_fields)]
 #[cfg_attr(feature = "pyo3", pyclass(from_py_object))]
@@ -652,13 +816,17 @@ pub struct EdgeReference {
     pub edge: Edge,
 }
 
-impl VisitNodeReferences for EdgeReference {
-    fn visit_node_references<F: FnMut(&str)>(&self, visitor: &mut F) {
-        self.edge.visit_node_references(visitor);
+/// Naming an edge also names its two endpoints, so both are visited: deleting an edge matches
+/// [`Reference::Edge`] alone, while renaming a node reaches the endpoints as [`Reference::Node`].
+impl VisitReferences for EdgeReference {
+    fn visit_references<F: FnMut(Reference<'_>)>(&self, visitor: &mut F) {
+        visitor(Reference::Edge(&self.edge));
+        self.edge.visit_references(visitor);
     }
 
-    fn visit_node_references_mut<F: FnMut(&mut String)>(&mut self, visitor: &mut F) {
-        self.edge.visit_node_references_mut(visitor);
+    fn visit_references_mut<F: FnMut(ReferenceMut<'_>)>(&mut self, visitor: &mut F) {
+        visitor(ReferenceMut::Edge(&mut self.edge));
+        self.edge.visit_references_mut(visitor);
     }
 }
 
@@ -685,9 +853,9 @@ pub enum IndexMetric {
     Table(TableDataRef),
     /// An attribute of a node.
     Node(NodeAttrReference),
-    Timeseries(TimeseriesReference),
+    TimeSeries(TimeSeriesReference),
     Parameter(ParameterReference),
-    LocalParameter(ParameterReference),
+    LocalParameter(LocalParameterReference),
     InterNetworkTransfer {
         name: String,
     },
@@ -716,17 +884,9 @@ impl IndexMetric {
         match self {
             Self::Node(node_ref) => node_ref.load_u64(args),
             // Global parameter with no parent
-            Self::Parameter(parameter_ref) => Ok(parameter_ref.load_u64(None)),
+            Self::Parameter(parameter_ref) => Ok(parameter_ref.load_u64()),
             // Local parameter loaded from parent's namespace
-            Self::LocalParameter(parameter_ref) => {
-                if parent.is_none() {
-                    return Err(SchemaError::LocalParameterReferenceRequiresParent(
-                        parameter_ref.name.clone(),
-                    ));
-                }
-
-                Ok(parameter_ref.load_u64(parent))
-            }
+            Self::LocalParameter(parameter_ref) => parameter_ref.load_u64(parent),
             Self::Constant { value } => Ok((*value).into()),
             Self::Table(table_ref) => {
                 let value = args
@@ -738,18 +898,18 @@ impl IndexMetric {
                     })?;
                 Ok(value.into())
             }
-            Self::Timeseries(ts_ref) => {
+            Self::TimeSeries(ts_ref) => {
                 let param_name = match &ts_ref.columns {
-                    Some(TimeseriesColumns::Scenario { name }) => {
-                        args.timeseries
+                    Some(TimeSeriesColumns::Scenario { name }) => {
+                        args.time_series
                             .load_df_usize(network, ts_ref.name.as_ref(), name.as_str())?
                     }
-                    Some(TimeseriesColumns::Column { name }) => {
-                        args.timeseries
+                    Some(TimeSeriesColumns::Column { name }) => {
+                        args.time_series
                             .load_column_usize(network, ts_ref.name.as_ref(), name.as_str())?
                     }
                     None => args
-                        .timeseries
+                        .time_series
                         .load_single_column_usize(network, ts_ref.name.as_ref())?,
                 };
                 Ok(UnresolvedMetricU64::new_parameter_before(param_name))
@@ -788,10 +948,10 @@ impl TryFromV1<ParameterValueV1> for IndexMetric {
             }),
             ParameterValueV1::Table(tbl) => Self::Table(tbl.try_into()?),
             ParameterValueV1::Inline(param) => {
-                // Inline parameters are converted to either a parameter or a timeseries
+                // Inline parameters are converted to either a parameter or a time series
                 // The actual component is extracted into the conversion data leaving a reference
                 // to the component in the metric.
-                let definition: ParameterOrTimeseriesRef = (*param).try_into_v2(parent_node, conversion_data).map_err(
+                let definition: ParameterOrTimeSeriesRef = (*param).try_into_v2(parent_node, conversion_data).map_err(
                     |e: Box<ComponentConversionError>| match *e {
                         ComponentConversionError::Parameter { error, .. } => error,
                         ComponentConversionError::Node { error, .. } => error,
@@ -801,7 +961,7 @@ impl TryFromV1<ParameterValueV1> for IndexMetric {
                     },
                 )?;
                 match definition {
-                    ParameterOrTimeseriesRef::Parameter(p) => {
+                    ParameterOrTimeSeriesRef::Parameter(p) => {
                         let reference = ParameterReference {
                             name: p.name().to_string(),
                             key: None,
@@ -811,7 +971,7 @@ impl TryFromV1<ParameterValueV1> for IndexMetric {
 
                         Self::Parameter(reference)
                     }
-                    ParameterOrTimeseriesRef::Timeseries(t) => Self::Timeseries(t.ts_ref),
+                    ParameterOrTimeSeriesRef::TimeSeries(t) => Self::TimeSeries(t.ts_ref),
                 }
             }
         };

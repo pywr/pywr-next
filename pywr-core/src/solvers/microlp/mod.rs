@@ -2,7 +2,7 @@ mod settings;
 use super::builder::{ColType, SolverBuilder};
 use crate::network::Network;
 use crate::solvers::builder::BuiltSolver;
-use crate::solvers::{Solver, SolverFeatures, SolverSetupError, SolverSolveError, SolverTimings};
+use crate::solvers::{Solver, SolverConfig, SolverFeatures, SolverSetupError, SolverSolveError, SolverTimings};
 use crate::state::{ConstParameterValues, State};
 use crate::timestep::Timestep;
 use microlp::{ComparisonOp, OptimizationDirection, Problem};
@@ -80,14 +80,14 @@ impl MicroLpSolver {
     }
 }
 
-impl Solver for MicroLpSolver {
-    type Settings = MicroLpSolverSettings;
+impl SolverConfig for MicroLpSolverSettings {
+    type Solver = MicroLpSolver;
 
-    fn name() -> &'static str {
+    fn name(&self) -> &'static str {
         "microlp"
     }
 
-    fn features() -> &'static [SolverFeatures] {
+    fn features(&self) -> &'static [SolverFeatures] {
         &[
             SolverFeatures::VirtualStorage,
             SolverFeatures::MutualExclusivity,
@@ -98,26 +98,24 @@ impl Solver for MicroLpSolver {
         ]
     }
 
-    fn setup(
-        model: &Network,
-        values: &ConstParameterValues,
-        _settings: &Self::Settings,
-    ) -> Result<Box<Self>, SolverSetupError> {
+    fn setup(&self, network: &Network, values: &ConstParameterValues) -> Result<Box<Self::Solver>, SolverSetupError> {
         let builder = SolverBuilder::new(f64::INFINITY, f64::NEG_INFINITY);
-        let built = builder.create(model, values)?;
+        let built = builder.create(network, values)?;
 
         let solver = MicroLpSolver { builder: built };
         Ok(Box::new(solver))
     }
+}
 
+impl Solver for MicroLpSolver {
     fn solve(
         &mut self,
-        model: &Network,
+        network: &Network,
         timestep: &Timestep,
         state: &mut State,
     ) -> Result<SolverTimings, SolverSolveError> {
         let mut timings = SolverTimings::default();
-        self.builder.update(model, timestep, state, &mut timings)?;
+        self.builder.update(network, timestep, state, &mut timings)?;
 
         self.builder.apply_updated_coefficients();
 
@@ -146,12 +144,12 @@ impl Solver for MicroLpSolver {
         network_state.reset();
 
         let start_save_solution = Instant::now();
-        for edge in model.edges().iter() {
+        for edge in network.edges().iter() {
             let col = self.builder.col_for_edge(&edge.index());
             let flow = solution[col];
             network_state.add_flow(edge, timestep, flow)?;
         }
-        state.complete(model, timestep)?;
+        state.complete(network, timestep)?;
         timings.save_solution += start_save_solution.elapsed();
 
         Ok(timings)

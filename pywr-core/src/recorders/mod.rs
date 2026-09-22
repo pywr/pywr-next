@@ -24,6 +24,7 @@ pub use csv::{CsvLongFmtOutput, CsvLongFmtOutputBuilder, CsvLongFmtRecord, CsvWi
 use float_cmp::{ApproxEq, F64Margin, approx_eq};
 #[cfg(feature = "hdf5")]
 pub use hdf::{HDF5Recorder, HDF5RecorderBuilder};
+use jiff::civil::DateTime;
 pub use memory::{Aggregation, AggregationError, AggregationOrder, MemoryRecorder, MemoryRecorderBuilder};
 pub use metric_set::{
     MetricSet, MetricSetBuilder, MetricSetBuilderError, MetricSetSaveError, MetricSetState, OutputMetric,
@@ -31,7 +32,6 @@ pub use metric_set::{
 };
 use ndarray::Array2;
 use ndarray::prelude::*;
-use polars::prelude::PolarsError;
 use std::any::Any;
 use std::fmt::Debug;
 use thiserror::Error;
@@ -105,31 +105,11 @@ pub enum RecorderAggregationError {
     },
 }
 
-#[cfg(feature = "pyo3")]
-impl From<RecorderAggregationError> for pyo3::PyErr {
-    fn from(err: RecorderAggregationError) -> Self {
-        pyo3::exceptions::PyRuntimeError::new_err(err.to_string())
-    }
-}
-
 /// Errors returned by recorder aggregation.
 #[derive(Error, Debug)]
 pub enum RecorderDataFrameError {
     #[error("Recorder can not be converted to a dataframe")]
     RecorderCannotBeConvertedToDataFrame,
-    #[error("Error creating dataframe for recorder `{name}`: {source}")]
-    PolarsError {
-        name: String,
-        #[source]
-        source: PolarsError,
-    },
-}
-
-#[cfg(feature = "pyo3")]
-impl From<RecorderDataFrameError> for pyo3::PyErr {
-    fn from(err: RecorderDataFrameError) -> Self {
-        pyo3::exceptions::PyRuntimeError::new_err(err.to_string())
-    }
 }
 
 pub trait RecorderInternalState: Any {}
@@ -161,6 +141,75 @@ fn downcast_internal_state<T: 'static>(internal_state: Option<Box<dyn RecorderIn
     }
 }
 
+pub struct LongFmtRecord {
+    pub time_start: DateTime,
+    pub time_end: DateTime,
+    pub simulation_id: usize,
+    pub label: String,
+    pub metric_set: String,
+    pub name: String,
+    pub attribute: String,
+    pub value: f64,
+}
+
+/// Arrow record for long format data.
+pub struct LongFmtArrowRecord {
+    pub time_start: i64,
+    pub time_end: i64,
+    pub simulation_id: u64,
+    pub label: String,
+    pub metric_set: String,
+    pub name: String,
+    pub attribute: String,
+    pub value: f64,
+}
+
+impl LongFmtArrowRecord {
+    /// Get the Arrow schema for long format data.
+    pub fn schema() -> arrow::datatypes::Schema {
+        arrow::datatypes::Schema::new(vec![
+            arrow::datatypes::Field::new(
+                "time_start",
+                arrow::datatypes::DataType::Timestamp(arrow::datatypes::TimeUnit::Millisecond, None),
+                false,
+            ),
+            arrow::datatypes::Field::new(
+                "time_end",
+                arrow::datatypes::DataType::Timestamp(arrow::datatypes::TimeUnit::Millisecond, None),
+                false,
+            ),
+            arrow::datatypes::Field::new("simulation_id", arrow::datatypes::DataType::UInt64, false),
+            arrow::datatypes::Field::new("label", arrow::datatypes::DataType::Utf8, false),
+            arrow::datatypes::Field::new("metric_set", arrow::datatypes::DataType::Utf8, false),
+            arrow::datatypes::Field::new("name", arrow::datatypes::DataType::Utf8, false),
+            arrow::datatypes::Field::new("attribute", arrow::datatypes::DataType::Utf8, false),
+            arrow::datatypes::Field::new("value", arrow::datatypes::DataType::Float64, false),
+        ])
+    }
+}
+
+impl TryFrom<LongFmtRecord> for LongFmtArrowRecord {
+    type Error = jiff::Error;
+    fn try_from(record: LongFmtRecord) -> Result<Self, Self::Error> {
+        Ok(Self {
+            time_start: jiff_datetime_to_arrow_timestamp_ms(&record.time_start)?,
+            time_end: jiff_datetime_to_arrow_timestamp_ms(&record.time_end)?,
+            simulation_id: record.simulation_id as u64,
+            label: record.label,
+            metric_set: record.metric_set,
+            name: record.name,
+            attribute: record.attribute,
+            value: record.value,
+        })
+    }
+}
+
+fn jiff_datetime_to_arrow_timestamp_ms(dt: &DateTime) -> Result<i64, jiff::Error> {
+    let zoned = dt.to_zoned(jiff::tz::TimeZone::UTC)?;
+    let ts = zoned.timestamp();
+    Ok(ts.as_millisecond())
+}
+
 /// Result of finalising a recorder.
 ///
 /// This should be used to store any final results of the recorder, e.g. aggregated values or
@@ -171,8 +220,8 @@ pub trait RecorderFinalResult: Any + Send + Sync {
         Err(RecorderAggregationError::RecorderDoesNotSupportAggregation)
     }
 
-    fn to_dataframe(&self) -> Result<polars::prelude::DataFrame, RecorderDataFrameError> {
-        Err(RecorderDataFrameError::RecorderCannotBeConvertedToDataFrame)
+    fn iter_long_fmt_records(&self) -> Box<dyn Iterator<Item = LongFmtRecord> + '_> {
+        Box::new(std::iter::empty())
     }
 }
 
@@ -184,7 +233,7 @@ pub trait Recorder: Send + Sync + Debug {
     fn setup(
         &self,
         _domain: &ModelDomain,
-        _model: &Network,
+        _network: &Network,
     ) -> Result<Option<Box<dyn RecorderInternalState>>, RecorderSetupError> {
         Ok(None)
     }
@@ -194,7 +243,7 @@ pub trait Recorder: Send + Sync + Debug {
         &self,
         _timestep: &Timestep,
         _scenario_indices: &[ScenarioIndex],
-        _model: &Network,
+        _network: &Network,
         _state: &[State],
         _metric_set_states: &[Vec<MetricSetState>],
         _internal_state: &mut Option<Box<dyn RecorderInternalState>>,
@@ -253,7 +302,7 @@ impl Recorder for Array2Recorder {
     fn setup(
         &self,
         domain: &ModelDomain,
-        _model: &Network,
+        _network: &Network,
     ) -> Result<Option<Box<dyn RecorderInternalState>>, RecorderSetupError> {
         let array: Array2<f64> = Array::zeros((domain.time().len(), domain.scenarios().len()));
 
@@ -265,7 +314,7 @@ impl Recorder for Array2Recorder {
         &self,
         timestep: &Timestep,
         scenario_indices: &[ScenarioIndex],
-        model: &Network,
+        network: &Network,
         state: &[State],
         _metric_set_states: &[Vec<MetricSetState>],
         internal_state: &mut Option<Box<dyn RecorderInternalState>>,
@@ -275,7 +324,7 @@ impl Recorder for Array2Recorder {
 
         // This panics if out-of-bounds
         for scenario_index in scenario_indices {
-            let value = self.metric.get_value(model, &state[scenario_index.simulation_id()])?;
+            let value = self.metric.get_value(network, &state[scenario_index.simulation_id()])?;
             array[[timestep.index, scenario_index.simulation_id()]] = value
         }
 
@@ -338,7 +387,7 @@ impl Recorder for AssertionF64Recorder {
         &self,
         timestep: &Timestep,
         scenario_indices: &[ScenarioIndex],
-        model: &Network,
+        network: &Network,
         state: &[State],
         _metric_set_states: &[Vec<MetricSetState>],
         _internal_state: &mut Option<Box<dyn RecorderInternalState>>,
@@ -354,7 +403,7 @@ impl Recorder for AssertionF64Recorder {
                 None => panic!("Simulation produced results out of range."),
             };
 
-            let actual_value = self.metric.get_value(model, &state[scenario_index.simulation_id()])?;
+            let actual_value = self.metric.get_value(network, &state[scenario_index.simulation_id()])?;
 
             if !actual_value.approx_eq(
                 expected_value,
@@ -456,7 +505,7 @@ impl Recorder for AssertionU64Recorder {
         &self,
         timestep: &Timestep,
         scenario_indices: &[ScenarioIndex],
-        model: &Network,
+        network: &Network,
         state: &[State],
         _metric_set_states: &[Vec<MetricSetState>],
         _internal_state: &mut Option<Box<dyn RecorderInternalState>>,
@@ -472,7 +521,7 @@ impl Recorder for AssertionU64Recorder {
                 None => panic!("Simulation produced results out of range."),
             };
 
-            let actual_value = self.metric.get_value(model, &state[scenario_index.simulation_id()])?;
+            let actual_value = self.metric.get_value(network, &state[scenario_index.simulation_id()])?;
 
             if actual_value != expected_value {
                 panic!(
@@ -567,7 +616,7 @@ where
         &self,
         timestep: &Timestep,
         scenario_indices: &[ScenarioIndex],
-        model: &Network,
+        network: &Network,
         state: &[State],
         _metric_set_states: &[Vec<MetricSetState>],
         _internal_state: &mut Option<Box<dyn RecorderInternalState>>,
@@ -576,7 +625,7 @@ where
 
         for scenario_index in scenario_indices {
             let expected_value = (self.expected_func)(timestep, scenario_index);
-            let actual_value = self.metric.get_value(model, &state[scenario_index.simulation_id()])?;
+            let actual_value = self.metric.get_value(network, &state[scenario_index.simulation_id()])?;
 
             if !approx_eq!(
                 f64,

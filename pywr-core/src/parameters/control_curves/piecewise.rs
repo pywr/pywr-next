@@ -203,7 +203,7 @@ mod test {
     use crate::metric::UnresolvedMetricF64;
     use crate::parameters::PiecewiseInterpolatedParameterBuilder;
     use crate::parameters::array::Array1ParameterBuilder;
-    use crate::test_utils::{run_and_assert_parameter, simple_model};
+    use crate::test_utils::{arrow_linspace_f64, run_and_assert_parameter, simple_model};
     use ndarray::{Array1, Array2, Axis};
 
     #[test]
@@ -236,7 +236,8 @@ mod test {
         let mut model_builder = simple_model(1, None);
 
         // Create an artificial volume series to use for the interpolation test
-        let volume = Array1ParameterBuilder::new("test-x".into(), Array1::linspace(1.0, 0.0, 21));
+
+        let volume = Array1ParameterBuilder::from_primitive_array("test-x".into(), arrow_linspace_f64(1.0, 0.0, 21));
         model_builder.network_builder().parameters().f64(Box::new(volume));
 
         let mut parameter = PiecewiseInterpolatedParameterBuilder::before(

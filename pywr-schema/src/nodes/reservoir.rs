@@ -11,9 +11,10 @@ use crate::{node_attribute_subset_enum, node_component_subset_enum};
 use pywr_core::{agg_funcs::AggFuncF64, metric::UnresolvedMetricF64, node::UnresolvedNode, parameters::ParameterName};
 use pywr_schema_macros::{PywrVisitAll, skip_serializing_none};
 use schemars::JsonSchema;
+use strum_macros::{Display, EnumIter};
 
 /// The type of spill node.
-#[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema, PywrVisitAll)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema, PywrVisitAll, Display, EnumIter)]
 pub enum SpillNodeType {
     /// The spill node is created as output node.
     OutputNode,
@@ -584,7 +585,7 @@ impl ReservoirNode {
                     .collect::<Vec<_>>();
 
                 let interpolated_area_parameter_name = ParameterName::new(name, Some(self.meta().name.as_str()));
-                let interpolated_area_parameter = pywr_core::parameters::InterpolatedParameterBuilder::new(
+                let interpolated_area_parameter = pywr_core::parameters::InterpolatedParameterBuilder::before(
                     interpolated_area_parameter_name.clone(),
                     current_storage,
                     points,
@@ -596,7 +597,7 @@ impl ReservoirNode {
             }
             BathymetryType::Polynomial(coeffs) => {
                 let poly_area_parameter_name = ParameterName::new(name, Some(self.meta().name.as_str()));
-                let poly_area_parameter = pywr_core::parameters::Polynomial1DParameterBuilder::new(
+                let poly_area_parameter = pywr_core::parameters::Polynomial1DParameterBuilder::before(
                     poly_area_parameter_name.clone(),
                     current_storage,
                     coeffs.clone(),

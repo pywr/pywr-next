@@ -3,14 +3,19 @@ mod settings;
 use crate::network::{EdgeIndex, Network};
 use crate::node::{Node, NodeBounds, NodeType};
 use crate::solvers::col_edge_map::{ColumnEdgeMap, ColumnEdgeMapBuilder};
-use crate::solvers::{MultiStateSolver, SolverFeatures, SolverSetupError, SolverSolveError, SolverTimings};
+use crate::solvers::{
+    MultiStateSolver, MultiStateSolverConfig, SolverFeatures, SolverSetupError, SolverSolveError, SolverTimings,
+};
 use crate::state::State;
 use crate::timestep::Timestep;
 use ipm_ocl::{GetClProgram, PathFollowingDirectClSolver};
 use rayon::iter::IndexedParallelIterator;
 use rayon::iter::ParallelIterator;
 use rayon::prelude::ParallelSliceMut;
-pub use settings::{ClIpmSolverSettings, ClIpmSolverSettingsBuilder};
+pub use settings::{
+    ClIpmF32Settings, ClIpmF32SettingsBuilder, ClIpmF64Settings, ClIpmF64SettingsBuilder, ClIpmSolverSettings,
+    ClIpmSolverSettingsBuilder,
+};
 use std::collections::BTreeMap;
 use std::f64;
 use std::num::NonZeroUsize;
@@ -589,22 +594,18 @@ pub struct ClIpmF32Solver {
     queue: ocl::Queue,
 }
 
-impl MultiStateSolver for ClIpmF32Solver {
-    type Settings = ClIpmSolverSettings;
+impl MultiStateSolverConfig for ClIpmF32Settings {
+    type Solver = ClIpmF32Solver;
 
-    fn name() -> &'static str {
-        "ipm-ocl"
+    fn name(&self) -> &'static str {
+        "ipm-ocl-f32"
     }
 
-    fn features() -> &'static [SolverFeatures] {
+    fn features(&self) -> &'static [SolverFeatures] {
         &[]
     }
 
-    fn setup(
-        network: &Network,
-        num_scenarios: usize,
-        settings: &Self::Settings,
-    ) -> Result<Box<Self>, SolverSetupError> {
+    fn setup(&self, network: &Network, num_scenarios: usize) -> Result<Box<Self::Solver>, SolverSetupError> {
         let platform = ocl::Platform::default();
         let device = ocl::Device::first(platform).expect("Failed to get OpenCL device.");
         let context = ocl::Context::builder()
@@ -614,13 +615,13 @@ impl MultiStateSolver for ClIpmF32Solver {
             .expect("Failed to create OpenCL context.");
 
         let program =
-            f32::get_cl_program(&context, &device, &settings.tolerances()).expect("Failed to create OpenCL program.");
+            f32::get_cl_program(&context, &device, &self.tolerances()).expect("Failed to create OpenCL program.");
         let queue = ocl::Queue::new(&context, device, None).expect("Failed to create OpenCL queue.");
 
         let mut built_solvers = Vec::new();
         let mut ipms = Vec::new();
 
-        let num_chunks = settings.num_chunks();
+        let num_chunks = self.num_chunks();
         let chunk_size = NonZeroUsize::new(num_scenarios / num_chunks).unwrap();
 
         for chunk_scenarios in (0..num_scenarios).collect::<Vec<_>>().chunks(chunk_size.get()) {
@@ -649,15 +650,17 @@ impl MultiStateSolver for ClIpmF32Solver {
             ipms.push(ipm)
         }
 
-        Ok(Box::new(Self {
+        Ok(Box::new(Self::Solver {
             built: built_solvers,
             ipm: ipms,
             chunk_size,
-            max_iterations: settings.max_iterations(),
+            max_iterations: self.max_iterations(),
             queue,
         }))
     }
+}
 
+impl MultiStateSolver for ClIpmF32Solver {
     fn solve(
         &mut self,
         network: &Network,
@@ -712,22 +715,18 @@ pub struct ClIpmF64Solver {
     queues: Vec<ocl::Queue>,
 }
 
-impl MultiStateSolver for ClIpmF64Solver {
-    type Settings = ClIpmSolverSettings;
+impl MultiStateSolverConfig for ClIpmF64Settings {
+    type Solver = ClIpmF64Solver;
 
-    fn name() -> &'static str {
-        "ipm-ocl"
+    fn name(&self) -> &'static str {
+        "ipm-ocl-f64"
     }
 
-    fn features() -> &'static [SolverFeatures] {
+    fn features(&self) -> &'static [SolverFeatures] {
         &[]
     }
 
-    fn setup(
-        network: &Network,
-        num_scenarios: usize,
-        settings: &Self::Settings,
-    ) -> Result<Box<Self>, SolverSetupError> {
+    fn setup(&self, network: &Network, num_scenarios: usize) -> Result<Box<Self::Solver>, SolverSetupError> {
         let platform = ocl::Platform::default();
         let device = ocl::Device::first(platform).expect("Failed to get OpenCL device.");
         let context = ocl::Context::builder()
@@ -737,13 +736,13 @@ impl MultiStateSolver for ClIpmF64Solver {
             .expect("Failed to create OpenCL context.");
 
         let program =
-            f64::get_cl_program(&context, &device, &settings.tolerances()).expect("Failed to create OpenCL program.");
+            f64::get_cl_program(&context, &device, &self.tolerances()).expect("Failed to create OpenCL program.");
 
         let mut built_solvers = Vec::new();
         let mut ipms = Vec::new();
         let mut queues = Vec::new();
 
-        let num_chunks = settings.num_chunks();
+        let num_chunks = self.num_chunks();
         let chunk_size = NonZeroUsize::new(num_scenarios / num_chunks).unwrap_or(NonZeroUsize::MIN);
 
         for chunk_scenarios in (0..num_scenarios).collect::<Vec<_>>().chunks(chunk_size.get()) {
@@ -776,15 +775,17 @@ impl MultiStateSolver for ClIpmF64Solver {
             queues.push(queue);
         }
 
-        Ok(Box::new(Self {
+        Ok(Box::new(Self::Solver {
             built: built_solvers,
             ipm: ipms,
             chunk_size,
-            max_iterations: settings.max_iterations(),
+            max_iterations: self.max_iterations(),
             queues,
         }))
     }
+}
 
+impl MultiStateSolver for ClIpmF64Solver {
     fn solve(
         &mut self,
         network: &Network,

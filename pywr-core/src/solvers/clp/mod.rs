@@ -3,13 +3,11 @@ mod settings;
 use super::builder::SolverBuilder;
 use crate::network::Network;
 use crate::solvers::builder::BuiltSolver;
-use crate::solvers::{Solver, SolverFeatures, SolverSetupError, SolverSolveError, SolverTimings};
+use crate::solvers::{Solver, SolverConfig, SolverFeatures, SolverSetupError, SolverSolveError, SolverTimings};
 use crate::state::{ConstParameterValues, State};
 use crate::timestep::Timestep;
 use coin_or_sys::clp::*;
 use libc::{c_double, c_int};
-#[cfg(feature = "pyo3")]
-pub use settings::build_clp_settings_py;
 pub use settings::{ClpSolverSettings, ClpSolverSettingsBuilder};
 use std::ffi::CString;
 use std::fmt::Display;
@@ -134,6 +132,22 @@ impl Display for ClpSecondaryStatus {
 
 pub type CoinBigIndex = c_int;
 
+const ROW_COLUMN_COUNTS_SAME: c_int = 1;
+const MATRIX_SAME: c_int = 2;
+const COLUMN_LOWER_SAME: c_int = 128;
+const COLUMN_UPPER_SAME: c_int = 256;
+const BASIS_SAME: c_int = 512;
+
+fn unchanged_flags(matrix_changed: bool) -> c_int {
+    let mut flags = ROW_COLUMN_COUNTS_SAME | COLUMN_LOWER_SAME | COLUMN_UPPER_SAME | BASIS_SAME;
+
+    if !matrix_changed {
+        flags |= MATRIX_SAME;
+    }
+
+    flags
+}
+
 struct ClpSimplex {
     ptr: *mut Clp_Simplex,
 }
@@ -257,9 +271,28 @@ impl ClpSimplex {
         }
     }
 
-    fn dual_solve(&mut self) -> Result<(), ClpSolveStatusError> {
+    fn set_unchanged_flags(&mut self, unchanged: c_int) {
         unsafe {
-            let _ret = Clp_dual(self.ptr, 0);
+            PywrClp_setUnchangedFlags(self.ptr, unchanged);
+        }
+    }
+
+    #[cfg(test)]
+    fn unchanged_flags(&self) -> c_int {
+        unsafe { PywrClp_whatsChanged(self.ptr) }
+    }
+
+    fn dual_solve(&mut self) -> Result<(), ClpSolveStatusError> {
+        const KEEP_WORK_AREAS: c_int = 1;
+        const REUSE_FACTORIZATION: c_int = 2;
+
+        // SKIP_UNCHANGED_INITIALIZATION is not currently used because it does not pass the test suite.
+        // const SKIP_UNCHANGED_INITIALIZATION: c_int = 4;
+
+        let options = KEEP_WORK_AREAS | REUSE_FACTORIZATION; // | SKIP_UNCHANGED_INITIALIZATION;
+
+        unsafe {
+            let _ret = PywrClp_dualWithOptions(self.ptr, 0, options);
             let primary = Clp_status(self.ptr);
             let secondary = Clp_secondaryStatus(self.ptr);
             to_clp_result(primary, secondary)
@@ -358,14 +391,13 @@ impl ClpSolver {
     }
 }
 
-impl Solver for ClpSolver {
-    type Settings = ClpSolverSettings;
-
-    fn name() -> &'static str {
+impl SolverConfig for ClpSolverSettings {
+    type Solver = ClpSolver;
+    fn name(&self) -> &'static str {
         "clp"
     }
 
-    fn features() -> &'static [SolverFeatures] {
+    fn features(&self) -> &'static [SolverFeatures] {
         &[
             SolverFeatures::AggregatedNode,
             SolverFeatures::AggregatedNodeFactors,
@@ -373,27 +405,24 @@ impl Solver for ClpSolver {
             SolverFeatures::VirtualStorage,
         ]
     }
-
-    fn setup(
-        model: &Network,
-        values: &ConstParameterValues,
-        _settings: &Self::Settings,
-    ) -> Result<Box<Self>, SolverSetupError> {
+    fn setup(&self, network: &Network, values: &ConstParameterValues) -> Result<Box<Self::Solver>, SolverSetupError> {
         let builder = SolverBuilder::new(f64::MAX, -f64::MAX);
-        let built = builder.create(model, values)?;
+        let built = builder.create(network, values)?;
 
         let solver = ClpSolver::from_builder(built);
         Ok(Box::new(solver))
     }
+}
 
+impl Solver for ClpSolver {
     fn solve(
         &mut self,
-        model: &Network,
+        network: &Network,
         timestep: &Timestep,
         state: &mut State,
     ) -> Result<SolverTimings, SolverSolveError> {
         let mut timings = SolverTimings::default();
-        self.builder.update(model, timestep, state, &mut timings)?;
+        self.builder.update(network, timestep, state, &mut timings)?;
 
         let now = Instant::now();
         self.clp_simplex
@@ -404,9 +433,13 @@ impl Solver for ClpSolver {
         self.clp_simplex.change_row_lower(self.builder.row_lower());
         self.clp_simplex.change_row_upper(self.builder.row_upper());
 
+        let mut matrix_changed = false;
         for (row, column, coefficient) in self.builder.coefficients_to_update() {
-            self.clp_simplex.modify_coefficient(*row, *column, *coefficient)
+            self.clp_simplex.modify_coefficient(*row, *column, *coefficient);
+            matrix_changed = true;
         }
+
+        self.clp_simplex.set_unchanged_flags(unchanged_flags(matrix_changed));
 
         timings.update_constraints += now.elapsed();
 
@@ -422,12 +455,12 @@ impl Solver for ClpSolver {
         network_state.reset();
 
         let start_save_solution = Instant::now();
-        for edge in model.edges().iter() {
+        for edge in network.edges().iter() {
             let col = self.builder.col_for_edge(&edge.index()) as usize;
             let flow = solution[col];
             network_state.add_flow(edge, timestep, flow)?;
         }
-        state.complete(model, timestep)?;
+        state.complete(network, timestep)?;
         timings.save_solution += start_save_solution.elapsed();
 
         Ok(timings)
@@ -456,6 +489,28 @@ mod tests {
         let elements: Vec<c_double> = vec![1.0, 1.0];
 
         model.add_rows(&row_lower, &row_upper, &row_starts, &columns, &elements);
+    }
+
+    #[test]
+    fn unchanged_flags_include_matrix_when_no_coefficients_changed() {
+        let expected = ROW_COLUMN_COUNTS_SAME | MATRIX_SAME | COLUMN_LOWER_SAME | COLUMN_UPPER_SAME | BASIS_SAME;
+
+        let mut model = ClpSimplex::default();
+        model.set_unchanged_flags(unchanged_flags(false));
+
+        assert_eq!(unchanged_flags(false), expected);
+        assert_eq!(model.unchanged_flags(), expected);
+    }
+
+    #[test]
+    fn unchanged_flags_exclude_matrix_when_coefficients_changed() {
+        let expected = ROW_COLUMN_COUNTS_SAME | COLUMN_LOWER_SAME | COLUMN_UPPER_SAME | BASIS_SAME;
+
+        let mut model = ClpSimplex::default();
+        model.set_unchanged_flags(unchanged_flags(true));
+
+        assert_eq!(unchanged_flags(true), expected);
+        assert_eq!(model.unchanged_flags(), expected);
     }
 
     #[test]

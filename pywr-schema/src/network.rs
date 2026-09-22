@@ -1,23 +1,26 @@
 use super::edge::Edge;
 use super::nodes::{Node, NodeOrVirtualNode, VirtualNode};
-use super::parameters::{Parameter, ParameterOrTimeseriesRef};
+use super::parameters::{Parameter, ParameterOrTimeSeriesRef};
 use crate::ConversionError;
 use crate::data_tables::DataTable;
 #[cfg(feature = "core")]
 use crate::data_tables::{LoadedTableCollection, TableCollectionLoadError};
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
-use crate::error::{ComponentConversionError, DuplicateNodeName, ValidationError};
+use crate::error::{
+    ComponentConversionError, DuplicateNodeName, EdgeProblem, EdgeValidationError, NetworkProblem,
+    NetworkValidationError,
+};
 use crate::metric::Metric;
 use crate::metric_sets::MetricSet;
 #[cfg(feature = "core")]
 use crate::model::MultiNetworkTransfer;
 use crate::outputs::Output;
-use crate::timeseries::Timeseries;
+use crate::time_series::TimeSeries;
 #[cfg(feature = "core")]
-use crate::timeseries::{LoadTimeseriesError, LoadedTimeseriesCollection};
+use crate::time_series::{LoadedTimeSeriesCollection, LoadedTimeSeriesCollectionError};
 use crate::v1::{ConversionData, TryIntoV2};
-use crate::visit::{VisitMetrics, VisitNodeReferences, VisitPaths};
+use crate::visit::{Owner, Reference, ReferenceMut, VisitMetrics, VisitPaths, VisitReferences};
 #[cfg(all(feature = "core", feature = "pyo3"))]
 use pyo3::PyErr;
 #[cfg(feature = "pyo3")]
@@ -49,7 +52,7 @@ pub enum NetworkSchemaBuildError {
     #[error("Network schema validation failed: {source}")]
     Validation {
         #[source]
-        source: ValidationError,
+        source: NetworkValidationError,
     },
     #[error("Circular node reference(s) found.")]
     CircularNodeReference,
@@ -113,8 +116,9 @@ pub enum NetworkSchemaBuildError {
     },
     #[error("{0}")]
     TableLoadError(#[from] TableCollectionLoadError),
+    #[cfg(feature = "core")]
     #[error("{0}")]
-    LoadTimeseriesError(#[from] LoadTimeseriesError),
+    LoadedTimeSeriesCollectionError(#[from] LoadedTimeSeriesCollectionError),
 }
 
 #[cfg(all(feature = "core", feature = "pyo3"))]
@@ -129,7 +133,7 @@ impl TryFrom<NetworkSchemaBuildError> for PyErr {
             NetworkSchemaBuildError::AddLocalParameterError { source, .. } => (*source).try_into(),
             NetworkSchemaBuildError::AddMetricSetError { source, .. } => (*source).try_into(),
             NetworkSchemaBuildError::AddOutputError { source, .. } => (*source).try_into(),
-            NetworkSchemaBuildError::LoadTimeseriesError(e) => e.try_into(),
+            NetworkSchemaBuildError::LoadedTimeSeriesCollectionError(e) => e.try_into(),
             _ => Err(()),
         }
     }
@@ -146,8 +150,8 @@ pub enum NetworkMergeError {
     DuplicateEdge { from_node: String, to_node: String },
     #[error("Duplicate table name found when merging networks: {0}")]
     DuplicateTableName(String),
-    #[error("Duplicate timeseries name found when merging networks: {0}")]
-    DuplicateTimeseriesName(String),
+    #[error("Duplicate time series name found when merging networks: {0}")]
+    DuplicateTimeSeriesName(String),
     #[error("Duplicate output name found when merging networks: {0}")]
     DuplicateOutputName(String),
     #[error("Duplicate metric found when merging metric sets with name `{0}`")]
@@ -160,7 +164,7 @@ pub struct LoadArgs<'a> {
     pub schema: &'a NetworkSchema,
     pub domain: &'a ModelDomain,
     pub tables: &'a LoadedTableCollection,
-    pub timeseries: &'a LoadedTimeseriesCollection,
+    pub time_series: &'a LoadedTimeSeriesCollection,
     pub data_path: Option<&'a Path>,
     pub inter_network_transfers: &'a [MultiNetworkTransfer],
 }
@@ -175,7 +179,7 @@ pub struct NetworkSchema {
     pub virtual_nodes: Option<Vec<VirtualNode>>,
     pub parameters: Option<Vec<Parameter>>,
     pub tables: Option<Vec<DataTable>>,
-    pub timeseries: Option<Vec<Timeseries>>,
+    pub time_series: Option<Vec<TimeSeries>>,
     pub metric_sets: Option<Vec<MetricSet>>,
     pub outputs: Option<Vec<Output>>,
 }
@@ -194,12 +198,24 @@ impl VisitPaths for NetworkSchema {
             node.visit_paths(visitor);
         }
 
+        for virtual_node in self.virtual_nodes.as_deref().into_iter().flatten() {
+            virtual_node.visit_paths(visitor);
+        }
+
         for parameter in self.parameters.as_deref().into_iter().flatten() {
             parameter.visit_paths(visitor);
         }
 
-        for timeseries in self.timeseries.as_deref().into_iter().flatten() {
-            timeseries.visit_paths(visitor);
+        for table in self.tables.as_deref().into_iter().flatten() {
+            table.visit_paths(visitor);
+        }
+
+        for time_series in self.time_series.as_deref().into_iter().flatten() {
+            time_series.visit_paths(visitor);
+        }
+
+        for metric_set in self.metric_sets.as_deref().into_iter().flatten() {
+            metric_set.visit_paths(visitor);
         }
 
         for outputs in self.outputs.as_deref().into_iter().flatten() {
@@ -211,12 +227,24 @@ impl VisitPaths for NetworkSchema {
             node.visit_paths_mut(visitor);
         }
 
+        for virtual_node in self.virtual_nodes.as_deref_mut().into_iter().flatten() {
+            virtual_node.visit_paths_mut(visitor);
+        }
+
         for parameter in self.parameters.as_deref_mut().into_iter().flatten() {
             parameter.visit_paths_mut(visitor);
         }
 
-        for timeseries in self.timeseries.as_deref_mut().into_iter().flatten() {
-            timeseries.visit_paths_mut(visitor);
+        for table in self.tables.as_deref_mut().into_iter().flatten() {
+            table.visit_paths_mut(visitor);
+        }
+
+        for time_series in self.time_series.as_deref_mut().into_iter().flatten() {
+            time_series.visit_paths_mut(visitor);
+        }
+
+        for metric_set in self.metric_sets.as_deref_mut().into_iter().flatten() {
+            metric_set.visit_paths_mut(visitor);
         }
 
         for outputs in self.outputs.as_deref_mut().into_iter().flatten() {
@@ -275,53 +303,147 @@ impl VisitMetrics for NetworkSchema {
     }
 }
 
-impl VisitNodeReferences for NetworkSchema {
-    fn visit_node_references<F: FnMut(&str)>(&self, visitor: &mut F) {
+impl VisitReferences for NetworkSchema {
+    fn visit_references<F: FnMut(Reference<'_>)>(&self, visitor: &mut F) {
         for node in &self.nodes {
-            node.visit_node_references(visitor);
+            node.visit_references(visitor);
         }
 
         for edge in &self.edges {
-            edge.visit_node_references(visitor);
+            edge.visit_references(visitor);
         }
 
         for virtual_node in self.virtual_nodes.as_deref().into_iter().flatten() {
-            virtual_node.visit_node_references(visitor);
+            virtual_node.visit_references(visitor);
         }
 
         for parameter in self.parameters.as_deref().into_iter().flatten() {
-            parameter.visit_node_references(visitor);
+            parameter.visit_references(visitor);
         }
 
         for metric_set in self.metric_sets.as_deref().into_iter().flatten() {
-            metric_set.metrics.visit_node_references(visitor);
+            metric_set.visit_references(visitor);
+        }
+
+        for output in self.outputs.as_deref().into_iter().flatten() {
+            output.visit_references(visitor);
         }
     }
 
-    fn visit_node_references_mut<F: FnMut(&mut String)>(&mut self, visitor: &mut F) {
+    fn visit_references_mut<F: FnMut(ReferenceMut<'_>)>(&mut self, visitor: &mut F) {
         for node in self.nodes.iter_mut() {
-            node.visit_node_references_mut(visitor);
+            node.visit_references_mut(visitor);
         }
 
         for edge in self.edges.iter_mut() {
-            edge.visit_node_references_mut(visitor);
+            edge.visit_references_mut(visitor);
         }
 
         for virtual_node in self.virtual_nodes.as_deref_mut().into_iter().flatten() {
-            virtual_node.visit_node_references_mut(visitor);
+            virtual_node.visit_references_mut(visitor);
         }
 
         for parameter in self.parameters.as_deref_mut().into_iter().flatten() {
-            parameter.visit_node_references_mut(visitor);
+            parameter.visit_references_mut(visitor);
         }
 
         for metric_set in self.metric_sets.as_deref_mut().into_iter().flatten() {
-            metric_set.metrics.visit_node_references_mut(visitor);
+            metric_set.visit_references_mut(visitor);
+        }
+
+        for output in self.outputs.as_deref_mut().into_iter().flatten() {
+            output.visit_references_mut(visitor);
         }
     }
 }
 
+/// The names used by more than one of `items`, with how many use each, sorted by name.
+fn duplicate_names<T>(items: Option<&[T]>, name_of: impl Fn(&T) -> &str) -> Vec<(String, usize)> {
+    let mut counts: HashMap<&str, usize> = HashMap::new();
+
+    for item in items.into_iter().flatten() {
+        *counts.entry(name_of(item)).or_default() += 1;
+    }
+
+    let mut duplicates: Vec<(String, usize)> = counts
+        .into_iter()
+        .filter(|(_, count)| *count > 1)
+        .map(|(name, count)| (name.to_string(), count))
+        .collect();
+
+    // The hash map's order is random.
+    duplicates.sort();
+
+    duplicates
+}
+
 impl NetworkSchema {
+    /// Visit every reference together with the top-level component holding it.
+    pub fn visit_owned_references<F: FnMut(Owner<'_>, Reference<'_>)>(&self, visitor: &mut F) {
+        for node in &self.nodes {
+            let owner = Owner::Node(node.name());
+            node.visit_references(&mut |reference| visitor(owner, reference));
+        }
+
+        for edge in &self.edges {
+            let owner = Owner::Edge(edge);
+            edge.visit_references(&mut |reference| visitor(owner, reference));
+        }
+
+        for virtual_node in self.virtual_nodes.as_deref().into_iter().flatten() {
+            let owner = Owner::VirtualNode(virtual_node.name());
+            virtual_node.visit_references(&mut |reference| visitor(owner, reference));
+        }
+
+        for parameter in self.parameters.as_deref().into_iter().flatten() {
+            let owner = Owner::Parameter(parameter.name());
+            parameter.visit_references(&mut |reference| visitor(owner, reference));
+        }
+
+        for metric_set in self.metric_sets.as_deref().into_iter().flatten() {
+            let owner = Owner::MetricSet(&metric_set.name);
+            metric_set.visit_references(&mut |reference| visitor(owner, reference));
+        }
+
+        for output in self.outputs.as_deref().into_iter().flatten() {
+            let owner = Owner::Output(output.name());
+            output.visit_references(&mut |reference| visitor(owner, reference));
+        }
+    }
+
+    /// As [`NetworkSchema::visit_owned_references`], but able to rewrite each reference.
+    pub fn visit_owned_references_mut<F: FnMut(Owner<'_>, ReferenceMut<'_>)>(&mut self, visitor: &mut F) {
+        for node in self.nodes.iter_mut() {
+            let owner_name = node.name().to_string();
+            node.visit_references_mut(&mut |reference| visitor(Owner::Node(&owner_name), reference));
+        }
+
+        for edge in self.edges.iter_mut() {
+            let owner_edge = edge.clone();
+            edge.visit_references_mut(&mut |reference| visitor(Owner::Edge(&owner_edge), reference));
+        }
+
+        for virtual_node in self.virtual_nodes.as_deref_mut().into_iter().flatten() {
+            let owner_name = virtual_node.name().to_string();
+            virtual_node.visit_references_mut(&mut |reference| visitor(Owner::VirtualNode(&owner_name), reference));
+        }
+
+        for parameter in self.parameters.as_deref_mut().into_iter().flatten() {
+            let owner_name = parameter.name().to_string();
+            parameter.visit_references_mut(&mut |reference| visitor(Owner::Parameter(&owner_name), reference));
+        }
+
+        for metric_set in self.metric_sets.as_deref_mut().into_iter().flatten() {
+            let owner_name = metric_set.name.clone();
+            metric_set.visit_references_mut(&mut |reference| visitor(Owner::MetricSet(&owner_name), reference));
+        }
+
+        for output in self.outputs.as_deref_mut().into_iter().flatten() {
+            let owner_name = output.name().to_string();
+            output.visit_references_mut(&mut |reference| visitor(Owner::Output(&owner_name), reference));
+        }
+    }
+
     pub fn from_path<P: AsRef<Path>>(path: P) -> Result<Self, NetworkSchemaReadError> {
         let data = std::fs::read_to_string(&path).map_err(|error| NetworkSchemaReadError::IO {
             path: path.as_ref().to_path_buf(),
@@ -339,15 +461,15 @@ impl NetworkSchema {
     /// that the conversion has been successful.
     pub fn from_v1(v1: pywr_v1_schema::PywrNetwork) -> (Self, Vec<ComponentConversionError>) {
         let mut errors = Vec::new();
-        // We will use this to store any timeseries or parameters that are extracted from the v1 nodes
+        // We will use this to store any time series or parameters that are extracted from the v1 nodes
         let mut conversion_data = ConversionData::default();
 
         let mut nodes = Vec::with_capacity(v1.nodes.as_ref().map(|n| n.len()).unwrap_or_default());
         let mut virtual_nodes = Vec::with_capacity(v1.nodes.as_ref().map(|n| n.len()).unwrap_or_default());
         let mut parameters = Vec::new();
-        let mut timeseries = Vec::new();
+        let mut time_series = Vec::new();
 
-        // Extract nodes and any timeseries data from the v1 nodes
+        // Extract nodes and any time series data from the v1 nodes
         if let Some(v1_nodes) = v1.nodes {
             // First find any virtual nodes so these can be used to determine metric conversion types
             for node in v1_nodes.iter() {
@@ -405,35 +527,36 @@ impl NetworkSchema {
             None => Vec::new(),
         };
 
-        // Collect any parameters that have been replaced by timeseries
+        // Collect any parameters that have been replaced by time series
         // These references will be referred to by ParameterReferences elsewhere in the schema
-        // We will update these references to TimeseriesReferences later
-        let mut timeseries_refs = Vec::new();
+        // We will update these references to TimeSeriesReferences later
+        let mut time_series_refs = Vec::new();
         if let Some(params) = v1.parameters {
             // Reset the unnamed count for global parameters
             conversion_data.reset_count();
             for p in params {
-                let result: Result<ParameterOrTimeseriesRef, _> = p.try_into_v2(None, &mut conversion_data);
+                let result: Result<ParameterOrTimeSeriesRef, _> = p.try_into_v2(None, &mut conversion_data);
                 match result {
                     Ok(p_or_t) => match p_or_t {
-                        ParameterOrTimeseriesRef::Parameter(p) => parameters.push(*p),
-                        ParameterOrTimeseriesRef::Timeseries(t) => timeseries_refs.push(t),
+                        ParameterOrTimeSeriesRef::Parameter(p) => parameters.push(*p),
+                        ParameterOrTimeSeriesRef::TimeSeries(t) => time_series_refs.push(t),
                     },
                     Err(e) => errors.push(*e),
                 }
             }
         }
 
-        // Finally add any extracted timeseries data to the timeseries list
-        timeseries.extend(conversion_data.timeseries);
+        // Finally add any extracted time series data to the time series list
+        time_series.extend(conversion_data.time_series);
         parameters.extend(conversion_data.parameters);
 
-        // Closure to update a parameter ref with a timeseries ref when names match.
+        // Closure to update a parameter ref with a time series ref when names match.
         // We match on the original parameter name because the parameter name may have been changed
         let update_to_ts_ref = &mut |m: &mut Metric| {
             if let Metric::Parameter(p) = m {
-                if let Some(converted_ts_ref) = timeseries_refs.iter().find(|ts| ts.original_parameter_name == p.name) {
-                    *m = Metric::Timeseries(converted_ts_ref.ts_ref.clone());
+                if let Some(converted_ts_ref) = time_series_refs.iter().find(|ts| ts.original_parameter_name == p.name)
+                {
+                    *m = Metric::TimeSeries(converted_ts_ref.ts_ref.clone());
                 }
             }
         };
@@ -461,7 +584,11 @@ impl NetworkSchema {
             None
         };
         let parameters = if !parameters.is_empty() { Some(parameters) } else { None };
-        let timeseries = if !timeseries.is_empty() { Some(timeseries) } else { None };
+        let time_series = if !time_series.is_empty() {
+            Some(time_series)
+        } else {
+            None
+        };
 
         (
             Self {
@@ -470,7 +597,7 @@ impl NetworkSchema {
                 virtual_nodes,
                 parameters,
                 tables,
-                timeseries,
+                time_series,
                 metric_sets,
                 outputs,
             },
@@ -569,22 +696,22 @@ impl NetworkSchema {
         self.get_table_by_name(name).is_some()
     }
 
-    pub fn get_timeseries_by_name(&self, name: &str) -> Option<&Timeseries> {
-        match &self.timeseries {
-            Some(timeseries) => timeseries.iter().find(|t| t.name() == name),
+    pub fn get_time_series_by_name(&self, name: &str) -> Option<&TimeSeries> {
+        match &self.time_series {
+            Some(time_series) => time_series.iter().find(|t| t.name() == name),
             None => None,
         }
     }
 
-    pub fn get_timeseries_by_name_mut(&mut self, name: &str) -> Option<&mut Timeseries> {
-        match &mut self.timeseries {
-            Some(timeseries) => timeseries.iter_mut().find(|t| t.name() == name),
+    pub fn get_time_series_by_name_mut(&mut self, name: &str) -> Option<&mut TimeSeries> {
+        match &mut self.time_series {
+            Some(time_series) => time_series.iter_mut().find(|t| t.name() == name),
             None => None,
         }
     }
 
-    pub fn timeseries_exists(&self, name: &str) -> bool {
-        self.get_timeseries_by_name(name).is_some()
+    pub fn time_series_exists(&self, name: &str) -> bool {
+        self.get_time_series_by_name(name).is_some()
     }
 
     pub fn get_metric_set_by_name(&self, name: &str) -> Option<&MetricSet> {
@@ -623,12 +750,93 @@ impl NetworkSchema {
         self.get_output_by_name(name).is_some()
     }
 
-    /// Validate the network schema.
+    /// Validate an edge against the network
     ///
-    /// This checks that the schema is unambiguous, not that it can be built; use
-    /// [`NetworkSchema::add_to_network`] for the latter. See [`ValidationError`] for the
-    /// problems that are detected.
-    pub fn validate(&self) -> Result<(), ValidationError> {
+    /// The following conditions are checked, with the first problem found being
+    /// returned:
+    ///
+    /// - Both ends name an entry of `nodes`; a virtual node is not an edge end.
+    /// - The two ends are different nodes.
+    /// - Each slot is one that the node at that end has.
+    /// - The `from_node` can provide flow, and the `to_node` can receive it.
+    ///
+    /// All but the second are checks `pywr-core` makes only while building. The second is a
+    /// schema-level rule: a composite node such as a `Reservoir` is one node here, so
+    /// `Reservoir[Spill] -> Reservoir` is a loop, whereas `pywr-core` sees the flattened network,
+    /// where the storage and spill are separate nodes.
+    ///
+    /// An end whose name is used by more than one node resolves to the first of them.
+    pub fn validate_edge(&self, edge: &Edge) -> Result<(), EdgeProblem> {
+        let from_node = self.get_node_by_name(&edge.from_node).ok_or_else(|| {
+            match self.get_virtual_node_by_name(&edge.from_node) {
+                Some(virtual_node) => EdgeProblem::VirtualFromNode {
+                    name: edge.from_node.clone(),
+                    node_type: virtual_node.node_type(),
+                },
+                None => EdgeProblem::UnknownFromNode(edge.from_node.clone()),
+            }
+        })?;
+
+        let to_node =
+            self.get_node_by_name(&edge.to_node)
+                .ok_or_else(|| match self.get_virtual_node_by_name(&edge.to_node) {
+                    Some(virtual_node) => EdgeProblem::VirtualToNode {
+                        name: edge.to_node.clone(),
+                        node_type: virtual_node.node_type(),
+                    },
+                    None => EdgeProblem::UnknownToNode(edge.to_node.clone()),
+                })?;
+
+        if edge.from_node == edge.to_node {
+            return Err(EdgeProblem::SelfEdge(edge.from_node.clone()));
+        }
+
+        if let Some(slot) = &edge.from_slot {
+            from_node
+                .validate_output_slot(Some(slot))
+                .map_err(|_| EdgeProblem::UnknownFromSlot {
+                    name: from_node.name().to_string(),
+                    node_type: from_node.node_type(),
+                    slot: slot.clone(),
+                    valid: from_node.iter_output_slots().map(|slots| slots.collect()),
+                })?;
+        }
+
+        if let Some(slot) = &edge.to_slot {
+            to_node
+                .validate_input_slot(Some(slot))
+                .map_err(|_| EdgeProblem::UnknownToSlot {
+                    name: to_node.name().to_string(),
+                    node_type: to_node.node_type(),
+                    slot: slot.clone(),
+                    valid: to_node.iter_input_slots().map(|slots| slots.collect()),
+                })?;
+        }
+
+        if !from_node.provides_outflow() {
+            return Err(EdgeProblem::NoOutflow {
+                name: from_node.name().to_string(),
+                node_type: from_node.node_type(),
+            });
+        }
+
+        if !to_node.accepts_inflow() {
+            return Err(EdgeProblem::NoInflow {
+                name: to_node.name().to_string(),
+                node_type: to_node.node_type(),
+            });
+        }
+
+        Ok(())
+    }
+
+    /// Validate the network schema and report every problem.
+    ///
+    /// This checks that the schema is unambiguous and that its edges could be made, not that the
+    /// whole model can be built; use [`NetworkSchema::add_to_network`] for the latter. See
+    /// [`NetworkProblem`] for the problems that are detected, and
+    /// [`NetworkSchema::validate_edge`] for the edge rules in particular.
+    pub fn validate(&self) -> Result<(), NetworkValidationError> {
         // Count the occurrences of each name in each of the two lists.
         let mut counts: HashMap<&str, (usize, usize)> = HashMap::with_capacity(self.nodes.len());
 
@@ -650,12 +858,50 @@ impl NetworkSchema {
             })
             .collect();
 
-        if duplicates.is_empty() {
+        let invalid_edges: Vec<EdgeValidationError> = self
+            .edges
+            .iter()
+            .filter_map(|edge| {
+                self.validate_edge(edge).err().map(|problem| EdgeValidationError {
+                    edge: edge.clone(),
+                    problem,
+                })
+            })
+            .collect();
+
+        // The duplicates come out of the hash map in a random order.
+        duplicates.sort_by(|a, b| a.name.cmp(&b.name));
+
+        let problems: Vec<NetworkProblem> = duplicates
+            .into_iter()
+            .map(NetworkProblem::DuplicateNodeName)
+            .chain(
+                duplicate_names(self.parameters.as_deref(), Parameter::name)
+                    .into_iter()
+                    .map(|(name, count)| NetworkProblem::DuplicateParameterName { name, count }),
+            )
+            .chain(
+                duplicate_names(self.tables.as_deref(), DataTable::name)
+                    .into_iter()
+                    .map(|(name, count)| NetworkProblem::DuplicateTableName { name, count }),
+            )
+            .chain(
+                duplicate_names(self.time_series.as_deref(), TimeSeries::name)
+                    .into_iter()
+                    .map(|(name, count)| NetworkProblem::DuplicateTimeSeriesName { name, count }),
+            )
+            .chain(
+                duplicate_names(self.metric_sets.as_deref(), |metric_set| metric_set.name.as_str())
+                    .into_iter()
+                    .map(|(name, count)| NetworkProblem::DuplicateMetricSetName { name, count }),
+            )
+            .chain(invalid_edges.into_iter().map(NetworkProblem::InvalidEdge))
+            .collect();
+
+        if problems.is_empty() {
             Ok(())
         } else {
-            // Sort for a deterministic error message.
-            duplicates.sort_by(|a, b| a.name.cmp(&b.name));
-            Err(ValidationError::DuplicateNodeNames(duplicates))
+            Err(NetworkValidationError { name: None, problems })
         }
     }
 
@@ -667,19 +913,19 @@ impl NetworkSchema {
         data_path: Option<&Path>,
         output_path: Option<&Path>,
         inter_network_transfers: &[MultiNetworkTransfer],
-    ) -> Result<(LoadedTableCollection, LoadedTimeseriesCollection), NetworkSchemaBuildError> {
+    ) -> Result<(LoadedTableCollection, LoadedTimeSeriesCollection), NetworkSchemaBuildError> {
         // Reject an invalid schema before doing any work to build it.
         self.validate()
             .map_err(|source| NetworkSchemaBuildError::Validation { source })?;
 
         let tables = LoadedTableCollection::from_schema(self.tables.as_deref(), data_path)?;
-        let timeseries = LoadedTimeseriesCollection::from_schema(self.timeseries.as_deref(), domain, data_path)?;
+        let time_series = LoadedTimeSeriesCollection::from_schema(self.time_series.as_deref(), data_path)?;
 
         let args = LoadArgs {
             schema: self,
             domain,
             tables: &tables,
-            timeseries: &timeseries,
+            time_series: &time_series,
             data_path,
             inter_network_transfers,
         };
@@ -713,18 +959,23 @@ impl NetworkSchema {
                 })?;
         }
 
-        // Add all the parameters from the nodes
-        for node in &self.nodes {
-            if let Some(local_parameters) = node.local_parameters() {
-                for parameter in local_parameters {
-                    parameter
-                        .add_to_network(network_builder, &args, Some(node.name()))
-                        .map_err(|source| NetworkSchemaBuildError::AddLocalParameterError {
-                            parent: node.name().to_string(),
-                            name: parameter.name().to_string(),
-                            source: Box::new(source),
-                        })?;
-                }
+        // Add all the local parameters from the nodes and the virtual nodes.
+        let node_parameters = self.nodes.iter().map(|node| (node.name(), node.local_parameters()));
+        let virtual_node_parameters = self
+            .virtual_nodes
+            .iter()
+            .flatten()
+            .map(|node| (node.name(), node.local_parameters()));
+
+        for (parent, local_parameters) in node_parameters.chain(virtual_node_parameters) {
+            for parameter in local_parameters.into_iter().flatten() {
+                parameter
+                    .add_to_network(network_builder, &args, Some(parent))
+                    .map_err(|source| NetworkSchemaBuildError::AddLocalParameterError {
+                        parent: parent.to_string(),
+                        name: parameter.name().to_string(),
+                        source: Box::new(source),
+                    })?;
             }
         }
         // Add any global parameters
@@ -763,7 +1014,7 @@ impl NetworkSchema {
             }
         }
 
-        Ok((tables, timeseries))
+        Ok((tables, time_series))
     }
 
     /// Merge another [`NetworkSchema`] into this one.
@@ -871,19 +1122,19 @@ impl NetworkSchema {
             }
         }
 
-        // Merge timeseries
-        if let Some(other_timeseries) = other.timeseries {
-            for ts in other_timeseries {
-                match self.get_timeseries_by_name_mut(ts.name()) {
+        // Merge time series
+        if let Some(other_time_series) = other.time_series {
+            for ts in other_time_series {
+                match self.get_time_series_by_name_mut(ts.name()) {
                     Some(existing_ts) => {
                         if existing_ts.is_placeholder() {
                             *existing_ts = ts;
                         } else {
-                            return Err(NetworkMergeError::DuplicateTimeseriesName(ts.name().to_string()));
+                            return Err(NetworkMergeError::DuplicateTimeSeriesName(ts.name().to_string()));
                         }
                     }
                     None => {
-                        self.timeseries.get_or_insert_default().push(ts);
+                        self.time_series.get_or_insert_default().push(ts);
                     }
                 }
             }
@@ -954,58 +1205,52 @@ pub enum NetworkSchemaRef {
 #[cfg(test)]
 mod tests {
     use super::{NetworkMergeError, NetworkSchema};
-    use crate::error::{DuplicateNodeName, ValidationError};
+    use crate::error::{DuplicateNodeName, EdgeProblem, EdgeValidationError, NetworkProblem};
+    use crate::nodes::{NodeSlot, NodeType, VirtualNodeType};
+    use crate::visit::VisitPaths;
+    use std::path::PathBuf;
     use std::str::FromStr;
 
-    /// Return the duplicates reported by [`NetworkSchema::validate`], or panic if it succeeded.
-    fn expect_duplicates(network: &NetworkSchema) -> Vec<DuplicateNodeName> {
+    /// Return the problems reported by [`NetworkSchema::validate`], or panic if it succeeded.
+    fn expect_problems(network: &NetworkSchema) -> Vec<NetworkProblem> {
         match network.validate() {
-            Err(ValidationError::DuplicateNodeNames(duplicates)) => duplicates,
+            Err(error) => {
+                assert_eq!(error.name, None, "A network validated on its own has no name");
+                assert!(!error.problems.is_empty(), "An error must hold at least one problem");
+                error.problems
+            }
             Ok(()) => panic!("Expected validation to fail, but it succeeded"),
         }
+    }
+
+    /// Return the duplicates reported by [`NetworkSchema::validate`], or panic if it reported
+    /// anything else.
+    fn expect_duplicates(network: &NetworkSchema) -> Vec<DuplicateNodeName> {
+        expect_problems(network)
+            .into_iter()
+            .map(|problem| match problem {
+                NetworkProblem::DuplicateNodeName(duplicate) => duplicate,
+                other => panic!("Expected only duplicate node names, but got: {other:?}"),
+            })
+            .collect()
+    }
+
+    /// Return the invalid edges reported by [`NetworkSchema::validate`] as `(edge, problem)`
+    /// pairs, or panic if it reported anything else.
+    fn expect_invalid_edges(network: &NetworkSchema) -> Vec<(String, EdgeProblem)> {
+        expect_problems(network)
+            .into_iter()
+            .map(|problem| match problem {
+                NetworkProblem::InvalidEdge(e) => (e.edge.to_string(), e.problem),
+                other => panic!("Expected only invalid edges, but got: {other:?}"),
+            })
+            .collect()
     }
 
     fn parse_network(data: &str) -> NetworkSchema {
         NetworkSchema::from_str(data).expect("Failed to parse test network JSON")
     }
 
-    /// A network where a node and a virtual node are both called `licence`.
-    const NETWORK_WITH_SHARED_NODE_AND_VIRTUAL_NODE_NAME: &str = r#"
-    {
-        "nodes": [
-            { "meta": { "name": "licence" }, "type": "Input" },
-            { "meta": { "name": "demand1" }, "type": "Output" }
-        ],
-        "virtual_nodes": [
-            {
-                "meta": { "name": "licence" },
-                "type": "Aggregated",
-                "nodes": [{ "name": "demand1" }]
-            }
-        ],
-        "edges": [
-            { "from_node": "licence", "to_node": "demand1" }
-        ]
-    }
-    "#;
-
-    /// Nodes and virtual nodes are a single name-space, so a name shared between the two lists
-    /// is a duplicate.
-    #[test]
-    fn test_validate_rejects_name_shared_with_virtual_node() {
-        let network = parse_network(NETWORK_WITH_SHARED_NODE_AND_VIRTUAL_NODE_NAME);
-
-        assert_eq!(
-            expect_duplicates(&network),
-            vec![DuplicateNodeName {
-                name: "licence".to_string(),
-                nodes: 1,
-                virtual_nodes: 1,
-            }]
-        );
-    }
-
-    /// A network with two separately duplicated names, plus a unique one.
     const NETWORK_WITH_SEVERAL_DUPLICATES: &str = r#"
     {
         "nodes": [
@@ -1025,7 +1270,8 @@ mod tests {
     }
     "#;
 
-    /// Every duplicate is reported, not just the first one found.
+    /// Every duplicate is reported, not just the first one found. Nodes and virtual nodes are a
+    /// single name-space, so a name shared between the two lists is a duplicate too.
     #[test]
     fn test_validate_reports_all_duplicates() {
         let network = parse_network(NETWORK_WITH_SEVERAL_DUPLICATES);
@@ -1045,6 +1291,417 @@ mod tests {
                 },
             ]
         );
+    }
+
+    /// A network with an edge for every [`EdgeProblem`] that does not need a virtual node, and
+    /// into both node types that cannot receive flow.
+    const NETWORK_WITH_INVALID_EDGES: &str = r#"
+    {
+        "nodes": [
+            { "meta": { "name": "supply" }, "type": "Input" },
+            { "meta": { "name": "catchment" }, "type": "Catchment" },
+            { "meta": { "name": "link" }, "type": "Link" },
+            { "meta": { "name": "demand" }, "type": "Output" }
+        ],
+        "edges": [
+            { "from_node": "link", "to_node": "supply" },
+            { "from_node": "link", "to_node": "missing" },
+            { "from_node": "absent", "to_node": "link" },
+            { "from_node": "demand", "to_node": "link" },
+            { "from_node": "link", "from_slot": { "type": "Spill" }, "to_node": "demand" },
+            { "from_node": "link", "to_node": "link" },
+            { "from_node": "link", "to_node": "demand", "to_slot": { "type": "Storage" } },
+            { "from_node": "link", "to_node": "catchment" }
+        ]
+    }
+    "#;
+
+    /// Every invalid edge is reported, in the order the edges are listed.
+    #[test]
+    fn test_validate_reports_all_invalid_edges() {
+        let network = parse_network(NETWORK_WITH_INVALID_EDGES);
+
+        assert_eq!(
+            expect_invalid_edges(&network),
+            vec![
+                (
+                    "link->supply".to_string(),
+                    EdgeProblem::NoInflow {
+                        name: "supply".to_string(),
+                        node_type: NodeType::Input,
+                    }
+                ),
+                (
+                    "link->missing".to_string(),
+                    EdgeProblem::UnknownToNode("missing".to_string())
+                ),
+                (
+                    "absent->link".to_string(),
+                    EdgeProblem::UnknownFromNode("absent".to_string())
+                ),
+                (
+                    "demand->link".to_string(),
+                    EdgeProblem::NoOutflow {
+                        name: "demand".to_string(),
+                        node_type: NodeType::Output,
+                    }
+                ),
+                (
+                    "link[Spill]->demand".to_string(),
+                    EdgeProblem::UnknownFromSlot {
+                        name: "link".to_string(),
+                        node_type: NodeType::Link,
+                        slot: NodeSlot::Spill,
+                        valid: None,
+                    }
+                ),
+                ("link->link".to_string(), EdgeProblem::SelfEdge("link".to_string())),
+                (
+                    "link->demand[Storage]".to_string(),
+                    EdgeProblem::UnknownToSlot {
+                        name: "demand".to_string(),
+                        node_type: NodeType::Output,
+                        slot: NodeSlot::Storage,
+                        valid: None,
+                    }
+                ),
+                (
+                    "link->catchment".to_string(),
+                    EdgeProblem::NoInflow {
+                        name: "catchment".to_string(),
+                        node_type: NodeType::Catchment,
+                    }
+                ),
+            ]
+        );
+    }
+
+    /// Edges connect only entries of `nodes`. A virtual node at either end is reported as the
+    /// virtual node it is, rather than as a name the network does not define.
+    #[test]
+    fn test_validate_rejects_virtual_node_as_edge_end() {
+        let network = parse_network(
+            r#"
+            {
+                "nodes": [
+                    { "meta": { "name": "supply" }, "type": "Input" },
+                    { "meta": { "name": "demand" }, "type": "Output" }
+                ],
+                "virtual_nodes": [
+                    {
+                        "meta": { "name": "licence" },
+                        "type": "Aggregated",
+                        "nodes": [{ "name": "demand" }]
+                    }
+                ],
+                "edges": [
+                    { "from_node": "supply", "to_node": "demand" },
+                    { "from_node": "licence", "to_node": "demand" },
+                    { "from_node": "supply", "to_node": "licence" }
+                ]
+            }
+            "#,
+        );
+
+        assert_eq!(
+            expect_invalid_edges(&network),
+            vec![
+                (
+                    "licence->demand".to_string(),
+                    EdgeProblem::VirtualFromNode {
+                        name: "licence".to_string(),
+                        node_type: VirtualNodeType::Aggregated,
+                    }
+                ),
+                (
+                    "supply->licence".to_string(),
+                    EdgeProblem::VirtualToNode {
+                        name: "licence".to_string(),
+                        node_type: VirtualNodeType::Aggregated,
+                    }
+                ),
+            ]
+        );
+    }
+
+    /// A node cannot connect to itself even through a slot, although the flattened network that
+    /// `pywr-core` builds would accept the edge.
+    #[test]
+    fn test_validate_rejects_self_edge_through_a_slot() {
+        let network = parse_network(
+            r#"
+            {
+                "nodes": [
+                    {
+                        "meta": { "name": "reservoir" },
+                        "type": "Reservoir",
+                        "max_volume": { "type": "Literal", "value": 100.0 },
+                        "initial_volume": { "type": "Proportional", "proportion": 1.0 },
+                        "spill": "LinkNode"
+                    }
+                ],
+                "edges": [
+                    { "from_node": "reservoir", "from_slot": { "type": "Spill" }, "to_node": "reservoir" }
+                ]
+            }
+            "#,
+        );
+
+        assert_eq!(
+            expect_invalid_edges(&network),
+            vec![(
+                "reservoir[Spill]->reservoir".to_string(),
+                EdgeProblem::SelfEdge("reservoir".to_string())
+            )]
+        );
+    }
+
+    /// A slot is checked against the node's own configuration, not just its type: a `Reservoir`
+    /// only has a `Spill` output slot when its spill is a link node.
+    #[test]
+    fn test_validate_checks_slot_against_node_configuration() {
+        let network = parse_network(
+            r#"
+            {
+                "nodes": [
+                    {
+                        "meta": { "name": "with-spill" },
+                        "type": "Reservoir",
+                        "max_volume": { "type": "Literal", "value": 100.0 },
+                        "initial_volume": { "type": "Proportional", "proportion": 1.0 },
+                        "spill": "LinkNode"
+                    },
+                    {
+                        "meta": { "name": "without-spill" },
+                        "type": "Reservoir",
+                        "max_volume": { "type": "Literal", "value": 100.0 },
+                        "initial_volume": { "type": "Proportional", "proportion": 1.0 }
+                    },
+                    { "meta": { "name": "river" }, "type": "River" }
+                ],
+                "edges": [
+                    { "from_node": "with-spill", "from_slot": { "type": "Spill" }, "to_node": "river" },
+                    { "from_node": "without-spill", "from_slot": { "type": "Spill" }, "to_node": "river" }
+                ]
+            }
+            "#,
+        );
+
+        assert_eq!(
+            expect_invalid_edges(&network),
+            vec![(
+                "without-spill[Spill]->river".to_string(),
+                EdgeProblem::UnknownFromSlot {
+                    name: "without-spill".to_string(),
+                    node_type: NodeType::Reservoir,
+                    slot: NodeSlot::Spill,
+                    valid: Some(vec![NodeSlot::Storage]),
+                }
+            )]
+        );
+    }
+
+    /// A slot problem names the slots the node does have, so that a mistyped slot can be
+    /// corrected without reading the node's definition; a node with no slots of that kind says so.
+    #[test]
+    fn test_invalid_slot_problem_lists_the_slots_the_node_has() {
+        let network = parse_network(
+            r#"
+            {
+                "nodes": [
+                    {
+                        "meta": { "name": "split" },
+                        "type": "RiverSplitWithGauge",
+                        "splits": [
+                            { "factor": { "type": "Literal", "value": 0.5 } },
+                            { "factor": { "type": "Literal", "value": 0.5 }, "slot_name": "to-supply" }
+                        ]
+                    },
+                    { "meta": { "name": "river" }, "type": "Link" },
+                    { "meta": { "name": "demand" }, "type": "Output" }
+                ],
+                "edges": [
+                    { "from_node": "split", "from_slot": { "type": "Split", "position": 5 }, "to_node": "river" },
+                    { "from_node": "river", "from_slot": { "type": "Spill" }, "to_node": "demand" }
+                ]
+            }
+            "#,
+        );
+
+        let messages: Vec<String> = expect_invalid_edges(&network)
+            .iter()
+            .map(|(_, problem)| problem.to_string())
+            .collect();
+
+        assert_eq!(
+            messages,
+            vec![
+                "The `RiverSplitWithGauge` node `split` has no output slot `Split[5]`. Its output slots are: `River`, `Split[0]`, `User[to-supply]`.",
+                "The `Link` node `river` has no output slot `Spill`. Nodes of this type have no output slots.",
+            ]
+        );
+    }
+
+    /// A duplicated name does not stop the edges being checked: both problems are reported, the
+    /// duplicate first.
+    #[test]
+    fn test_validate_reports_duplicate_names_and_edges_together() {
+        let network = parse_network(
+            r#"
+            {
+                "nodes": [
+                    { "meta": { "name": "link" }, "type": "Link" },
+                    { "meta": { "name": "link" }, "type": "Link" }
+                ],
+                "edges": [
+                    { "from_node": "link", "to_node": "missing" }
+                ]
+            }
+            "#,
+        );
+
+        let problems = expect_problems(&network);
+
+        assert_eq!(
+            problems,
+            vec![
+                NetworkProblem::DuplicateNodeName(DuplicateNodeName {
+                    name: "link".to_string(),
+                    nodes: 2,
+                    virtual_nodes: 0,
+                }),
+                NetworkProblem::InvalidEdge(EdgeValidationError {
+                    edge: network.edges[0].clone(),
+                    problem: EdgeProblem::UnknownToNode("missing".to_string()),
+                }),
+            ]
+        );
+
+        assert_eq!(
+            network.validate().unwrap_err().report().to_string(),
+            "The network has 2 problem(s):\n\
+             - The name `link` is used by 2 node(s) and 0 virtual node(s), but each name must be unique.\n\
+             - The edge `link->missing` is invalid. There is no node named `missing` to connect to."
+        );
+    }
+
+    /// Every list is checked, and every duplicate is reported in the documented order. A
+    /// placeholder entry counts like any other, and a name shared across lists is not a duplicate.
+    #[test]
+    fn test_validate_reports_duplicate_names_in_every_list() {
+        let network = parse_network(
+            r#"
+            {
+                "nodes": [
+                    { "meta": { "name": "link" }, "type": "Link" },
+                    { "meta": { "name": "link" }, "type": "Link" },
+                    { "meta": { "name": "shared" }, "type": "Link" }
+                ],
+                "edges": [
+                    { "from_node": "link", "to_node": "missing" }
+                ],
+                "parameters": [
+                    { "meta": { "name": "p2" }, "type": "Constant", "value": { "type": "Literal", "value": 1.0 } },
+                    { "meta": { "name": "p1" }, "type": "Constant", "value": { "type": "Literal", "value": 1.0 } },
+                    { "meta": { "name": "p2" }, "type": "Placeholder" },
+                    { "meta": { "name": "p1" }, "type": "Constant", "value": { "type": "Literal", "value": 2.0 } },
+                    { "meta": { "name": "p2" }, "type": "Constant", "value": { "type": "Literal", "value": 3.0 } },
+                    { "meta": { "name": "shared" }, "type": "Constant", "value": { "type": "Literal", "value": 1.0 } }
+                ],
+                "tables": [
+                    { "meta": { "name": "tbl" }, "format": "Placeholder" },
+                    { "meta": { "name": "tbl" }, "type": "Scalar", "format": "CSV", "lookup": { "type": "Row", "cols": 1 }, "url": "tbl.csv" },
+                    { "meta": { "name": "shared" }, "format": "Placeholder" }
+                ],
+                "time_series": [
+                    { "meta": { "name": "ts" }, "type": "Polars", "time_col": "date", "path": "ts.csv" },
+                    { "meta": { "name": "ts" }, "type": "Placeholder" },
+                    { "meta": { "name": "shared" }, "type": "Placeholder" }
+                ],
+                "metric_sets": [
+                    { "name": "ms", "filters": { "all_nodes": true } },
+                    { "name": "ms", "filters": { "all_virtual_nodes": true } },
+                    { "name": "shared", "filters": { "all_nodes": true } }
+                ]
+            }
+            "#,
+        );
+
+        let problems = expect_problems(&network);
+
+        assert_eq!(
+            problems,
+            vec![
+                NetworkProblem::DuplicateNodeName(DuplicateNodeName {
+                    name: "link".to_string(),
+                    nodes: 2,
+                    virtual_nodes: 0,
+                }),
+                NetworkProblem::DuplicateParameterName {
+                    name: "p1".to_string(),
+                    count: 2,
+                },
+                NetworkProblem::DuplicateParameterName {
+                    name: "p2".to_string(),
+                    count: 3,
+                },
+                NetworkProblem::DuplicateTableName {
+                    name: "tbl".to_string(),
+                    count: 2,
+                },
+                NetworkProblem::DuplicateTimeSeriesName {
+                    name: "ts".to_string(),
+                    count: 2,
+                },
+                NetworkProblem::DuplicateMetricSetName {
+                    name: "ms".to_string(),
+                    count: 2,
+                },
+                NetworkProblem::InvalidEdge(EdgeValidationError {
+                    edge: network.edges[0].clone(),
+                    problem: EdgeProblem::UnknownToNode("missing".to_string()),
+                }),
+            ]
+        );
+
+        assert_eq!(
+            network.validate().unwrap_err().report().to_string(),
+            "The network has 7 problem(s):\n\
+             - The name `link` is used by 2 node(s) and 0 virtual node(s), but each name must be unique.\n\
+             - The name `p1` is used by 2 parameters, but each name must be unique.\n\
+             - The name `p2` is used by 3 parameters, but each name must be unique.\n\
+             - The name `tbl` is used by 2 tables, but each name must be unique.\n\
+             - The name `ts` is used by 2 time series, but each name must be unique.\n\
+             - The name `ms` is used by 2 metric sets, but each name must be unique.\n\
+             - The edge `link->missing` is invalid. There is no node named `missing` to connect to."
+        );
+    }
+
+    /// However many problems there are, `Display` stays a single line, while the report lists
+    /// every one of them.
+    #[test]
+    fn test_validate_display_summarises_and_report_lists_every_problem() {
+        let count = 13;
+        let edges = (0..count)
+            .map(|i| format!(r#"{{ "from_node": "link", "to_node": "missing-{i:02}" }}"#))
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        let network = parse_network(&format!(
+            r#"{{ "nodes": [{{ "meta": {{ "name": "link" }}, "type": "Link" }}], "edges": [{edges}] }}"#
+        ));
+
+        let error = network.validate().unwrap_err();
+
+        assert_eq!(error.to_string(), "The network has 13 problem(s).");
+
+        // The summary, then one line per problem, down to the last edge listed.
+        let report = error.report().to_string();
+        let lines: Vec<&str> = report.lines().collect();
+
+        assert_eq!(lines.len(), 1 + count);
+        assert_eq!(lines[0], "The network has 13 problem(s):");
+        assert!(lines[count].contains("`missing-12`"));
     }
 
     #[test]
@@ -1380,13 +2037,13 @@ mod tests {
     }
 
     #[test]
-    fn test_merge_replaces_placeholder_timeseries() {
+    fn test_merge_replaces_placeholder_time_series() {
         let mut base = parse_network(
             r#"
             {
                 "nodes": [],
                 "edges": [],
-                "timeseries": [
+                "time_series": [
                     { "type": "Placeholder", "meta": { "name": "ts-shared" } }
                 ]
             }
@@ -1398,30 +2055,30 @@ mod tests {
             {
                 "nodes": [],
                 "edges": [],
-                "timeseries": [
-                    { "type": "Polars", "meta": { "name": "ts-shared" }, "url": "timeseries.csv" }
+                "time_series": [
+                    { "type": "Polars", "meta": { "name": "ts-shared" }, "path": "time-series.csv" }
                 ]
             }
             "#,
         );
 
-        base.merge(other).expect("Merge should replace placeholder timeseries");
+        base.merge(other).expect("Merge should replace placeholder time series");
 
         let merged = base
-            .get_timeseries_by_name("ts-shared")
-            .expect("Timeseries should exist after merge");
+            .get_time_series_by_name("ts-shared")
+            .expect("TimeSeries should exist after merge");
         assert!(!merged.is_placeholder());
     }
 
     #[test]
-    fn test_merge_rejects_duplicate_timeseries_name() {
+    fn test_merge_rejects_duplicate_time_series_name() {
         let mut base = parse_network(
             r#"
             {
                 "nodes": [],
                 "edges": [],
-                "timeseries": [
-                    { "type": "Polars", "meta": { "name": "ts-shared" }, "url": "timeseries.csv" }
+                "time_series": [
+                    { "type": "Polars", "meta": { "name": "ts-shared" }, "path": "time-series.csv" }
                 ]
             }
             "#,
@@ -1432,8 +2089,8 @@ mod tests {
             {
                 "nodes": [],
                 "edges": [],
-                "timeseries": [
-                    { "type": "Polars", "meta": { "name": "ts-shared" }, "url": "other.csv" }
+                "time_series": [
+                    { "type": "Polars", "meta": { "name": "ts-shared" }, "path": "other.csv" }
                 ]
             }
             "#,
@@ -1441,8 +2098,8 @@ mod tests {
 
         let err = base
             .merge(other)
-            .expect_err("Merge should reject duplicate timeseries names");
-        assert!(matches!(err, NetworkMergeError::DuplicateTimeseriesName(name) if name == "ts-shared"));
+            .expect_err("Merge should reject duplicate time series names");
+        assert!(matches!(err, NetworkMergeError::DuplicateTimeSeriesName(name) if name == "ts-shared"));
     }
 
     #[test]
@@ -1509,5 +2166,139 @@ mod tests {
             .merge(other)
             .expect_err("Merge should reject duplicate output names");
         assert!(matches!(err, NetworkMergeError::DuplicateOutputName(name) if name == "out-shared"));
+    }
+
+    /// A network holding a path in every list that can hold one, each named for its location so
+    /// that a missed one is identifiable. The metric set's aggregator nests a second one in `child`.
+    const NETWORK_WITH_PATHS: &str = r#"
+    {
+        "nodes": [
+            {
+                "meta": { "name": "supply" },
+                "type": "Input",
+                "parameters": [
+                    {
+                        "meta": { "name": "supply-local" },
+                        "type": "Python",
+                        "source": { "type": "Path", "path": "node-local-parameter.py" },
+                        "object": { "type": "Class", "class": "FloatParameter" }
+                    }
+                ]
+            },
+            { "meta": { "name": "demand" }, "type": "Output" }
+        ],
+        "edges": [
+            { "from_node": "supply", "to_node": "demand" }
+        ],
+        "virtual_nodes": [
+            {
+                "meta": { "name": "licence" },
+                "type": "Aggregated",
+                "nodes": [{ "name": "supply" }],
+                "parameters": [
+                    {
+                        "meta": { "name": "licence-local" },
+                        "type": "Python",
+                        "source": { "type": "Path", "path": "virtual-node-local-parameter.py" },
+                        "object": { "type": "Class", "class": "FloatParameter" }
+                    }
+                ]
+            }
+        ],
+        "parameters": [
+            {
+                "meta": { "name": "global" },
+                "type": "Python",
+                "source": { "type": "Path", "path": "global-parameter.py" },
+                "object": { "type": "Class", "class": "FloatParameter" }
+            }
+        ],
+        "tables": [
+            {
+                "meta": { "name": "t1" },
+                "type": "Scalar",
+                "format": "CSV",
+                "lookup": { "type": "Row", "cols": 1 },
+                "url": "table.csv"
+            },
+            {
+                "meta": { "name": "t2" },
+                "format": "Placeholder"
+            }
+        ],
+        "time_series": [
+            { "type": "Polars", "meta": { "name": "ts1" }, "path": "timeseries.csv" }
+        ],
+        "metric_sets": [
+            {
+                "name": "ms1",
+                "metrics": [{ "type": "Node", "name": "demand" }],
+                "aggregator": {
+                    "func": {
+                        "type": "Python",
+                        "source": { "type": "Path", "path": "aggregation.py" },
+                        "object": "agg"
+                    },
+                    "child": {
+                        "func": {
+                            "type": "Python",
+                            "source": { "type": "Path", "path": "child-aggregation.py" },
+                            "object": "child_agg"
+                        }
+                    }
+                }
+            }
+        ],
+        "outputs": [
+            { "name": "csv-out", "type": "CSV", "format": "Long", "filename": "output.csv", "metric_set": "ms1" }
+        ]
+    }
+    "#;
+
+    /// Every path in [`NETWORK_WITH_PATHS`], sorted. The placeholder table holds none.
+    const EXPECTED_PATHS: [&str; 8] = [
+        "aggregation.py",
+        "child-aggregation.py",
+        "global-parameter.py",
+        "node-local-parameter.py",
+        "output.csv",
+        "table.csv",
+        "timeseries.csv",
+        "virtual-node-local-parameter.py",
+    ];
+
+    /// Collect every visited path, sorted, so the assertions do not depend on the walk order.
+    fn collect_paths(network: &NetworkSchema) -> Vec<String> {
+        let mut paths: Vec<String> = Vec::new();
+        network.visit_paths(&mut |path| paths.push(path.to_string_lossy().into_owned()));
+        paths.sort();
+        paths
+    }
+
+    /// Every list that can hold a path should be reached by the visitor.
+    #[test]
+    fn test_visit_paths_reaches_every_path() {
+        let network = parse_network(NETWORK_WITH_PATHS);
+
+        assert_eq!(collect_paths(&network), EXPECTED_PATHS);
+    }
+
+    /// The mutable visitor should hand out borrows into the schema, so that a path it rewrites
+    /// is replaced in the network itself.
+    #[test]
+    fn test_visit_paths_mut_rewrites_every_path() {
+        const NEW_PATH: &str = "rebased/on/another/directory";
+
+        let mut network = parse_network(NETWORK_WITH_PATHS);
+
+        let mut count = 0;
+        network.visit_paths_mut(&mut |path| {
+            *path = PathBuf::from(NEW_PATH);
+            count += 1;
+        });
+        assert_eq!(count, EXPECTED_PATHS.len());
+
+        // Any path left un-rewritten is one the mutable visitor failed to reach.
+        assert_eq!(collect_paths(&network), [NEW_PATH; EXPECTED_PATHS.len()]);
     }
 }
