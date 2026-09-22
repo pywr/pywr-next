@@ -40,6 +40,9 @@ pub trait RunnerBackend {
         target: &RunTarget,
     ) -> Result<BackendStep, BackendError>;
 
+    /// Flush recorder output without finalising the model so execution can resume.
+    fn flush_recorders(&mut self, runtime: &mut Self::Runtime) -> Result<(), BackendError>;
+
     fn finalise(&mut self, runtime: &mut Self::Runtime) -> Result<BackendFinalisation, BackendError>;
 
     fn cancel(&mut self, runtime: &mut Self::Runtime) -> Result<BackendFinalisation, BackendError>;
@@ -276,18 +279,14 @@ impl RunnerBackend for PywrBackend {
 
         match result {
             Ok(_) => {
-                // A one-step command returns to Ready immediately. Ensure a
-                // batch-one Arrow recorder has flushed (and sent its commit)
-                // before that transition can be published.
-                if matches!(target, RunTarget::Step) {
-                    let model_state = runtime
-                        .model_state
-                        .as_mut()
-                        .ok_or(BackendError::ModelStateNotInitialised)?;
-                    runtime.model.flush_recorders(&mut model_state.model_state)?;
-                }
                 let current_progress = runtime.current_progress();
                 let target_reached = target_reached(&current_progress, target);
+
+                // Flush before every Ready transition so all completed output,
+                // including a partial Arrow batch, has sent its commit.
+                if target_reached {
+                    self.flush_recorders(runtime)?;
+                }
 
                 Ok(BackendStep {
                     outcome: BackendStepOutcome::Advanced,
@@ -306,6 +305,15 @@ impl RunnerBackend for PywrBackend {
 
             Err(error) => Err(error.into()),
         }
+    }
+
+    fn flush_recorders(&mut self, runtime: &mut Self::Runtime) -> Result<(), BackendError> {
+        let model_state = runtime
+            .model_state
+            .as_mut()
+            .ok_or(BackendError::ModelStateNotInitialised)?;
+        runtime.model.flush_recorders(&mut model_state.model_state)?;
+        Ok(())
     }
 
     fn finalise(&mut self, runtime: &mut Self::Runtime) -> Result<BackendFinalisation, BackendError> {

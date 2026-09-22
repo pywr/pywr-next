@@ -451,6 +451,7 @@ impl Recorder for ArrowStreamOutput {
     fn flush(&self, internal_state: &mut Option<Box<dyn RecorderInternalState>>) -> Result<(), RecorderSaveError> {
         let internal = downcast_internal_state_mut::<Internal>(internal_state);
         Self::check_worker(internal)?;
+        self.queue_pending(internal, true)?;
         let (response_sender, response_receiver) = mpsc::channel();
         internal
             .sender

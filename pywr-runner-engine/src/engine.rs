@@ -307,14 +307,28 @@ where
                 }
             }
             RunnerState::Pausing {
-                runtime,
+                mut runtime,
                 arrow_stream_commits,
             } => {
-                // Transition to ready state
-                RunnerState::Ready {
-                    runtime,
-                    arrow_stream_commits,
-                    reason: ReadyReason::Paused,
+                let flush_result = capture_logs(self.log_level, self.log_sender.clone(), || {
+                    self.backend.flush_recorders(&mut runtime)
+                });
+
+                emit_captured_logs!();
+
+                match flush_result {
+                    Ok(()) => {
+                        Self::emit_arrow_stream_commits(&mut self.output, &arrow_stream_commits)
+                            .map_err(TickError::OutputSinkError)?;
+
+                        // Transition to ready state only after recorder commits are available.
+                        RunnerState::Ready {
+                            runtime,
+                            arrow_stream_commits,
+                            reason: ReadyReason::Paused,
+                        }
+                    }
+                    Err(error) => Self::failed_state(&mut self.output, error.to_string())?,
                 }
             }
             RunnerState::Cancelling {
@@ -388,6 +402,7 @@ mod tests {
     use crate::backend::{BackendFinalisation, BackendStep, Initialised};
     use crate::command::{ModelDocument, ResultOptions, SolverConfiguration};
     use std::sync::mpsc::Receiver;
+    use std::sync::{Arc, atomic::AtomicUsize};
 
     #[derive(Default)]
     struct TestOutput(Vec<EngineEvent>);
@@ -446,6 +461,10 @@ mod tests {
             })
         }
 
+        fn flush_recorders(&mut self, _runtime: &mut Self::Runtime) -> Result<(), crate::backend::BackendError> {
+            Ok(())
+        }
+
         fn finalise(
             &mut self,
             _runtime: &mut Self::Runtime,
@@ -458,6 +477,75 @@ mod tests {
             _runtime: &mut Self::Runtime,
         ) -> Result<BackendFinalisation, crate::backend::BackendError> {
             Err(crate::backend::BackendError::AlreadyFinalised)
+        }
+    }
+
+    struct RecorderBackend(Arc<AtomicUsize>);
+
+    struct RecorderRuntime {
+        commit_sender: mpsc::Sender<pywr_core::recorders::ArrowStreamCommit>,
+    }
+
+    impl RunnerBackend for RecorderBackend {
+        type Runtime = RecorderRuntime;
+
+        fn initialise(
+            &mut self,
+            _request: InitialiseRequest,
+        ) -> Result<Initialised<Self::Runtime>, crate::backend::BackendError> {
+            let (commit_sender, commit_receiver) = mpsc::channel();
+            Ok(Initialised {
+                runtime: RecorderRuntime { commit_sender },
+                progress: progress(),
+                arrow_stream: None,
+                arrow_stream_commits: Some(commit_receiver),
+            })
+        }
+
+        fn step(
+            &mut self,
+            runtime: &mut Self::Runtime,
+            commits: Option<Receiver<pywr_core::recorders::ArrowStreamCommit>>,
+            target: &RunTarget,
+        ) -> Result<BackendStep, crate::backend::BackendError> {
+            let target_reached = !matches!(target, RunTarget::ToEnd);
+            if target_reached {
+                self.flush_recorders(runtime)?;
+            }
+
+            Ok(BackendStep {
+                outcome: BackendStepOutcome::Advanced,
+                progress: progress(),
+                arrow_stream_commits: commits,
+                target_reached,
+            })
+        }
+
+        fn flush_recorders(&mut self, runtime: &mut Self::Runtime) -> Result<(), crate::backend::BackendError> {
+            let flush_count = self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+            runtime
+                .commit_sender
+                .send(pywr_core::recorders::ArrowStreamCommit {
+                    batch_index: (flush_count - 1) as u64,
+                    row_count: 1,
+                    byte_offset: flush_count as u64,
+                })
+                .unwrap();
+            Ok(())
+        }
+
+        fn finalise(
+            &mut self,
+            _runtime: &mut Self::Runtime,
+        ) -> Result<BackendFinalisation, crate::backend::BackendError> {
+            unreachable!("test backend does not finalise")
+        }
+
+        fn cancel(
+            &mut self,
+            _runtime: &mut Self::Runtime,
+        ) -> Result<BackendFinalisation, crate::backend::BackendError> {
+            unreachable!("test backend does not cancel")
         }
     }
 
@@ -495,6 +583,25 @@ mod tests {
             engine.output.0.last(),
             Some(EngineEvent::Failed { error }) if error == "Backend already finalised"
         ));
+    }
+
+    fn assert_commit_precedes_ready(events: &[EngineEvent]) {
+        let commit = events
+            .iter()
+            .position(|event| matches!(event, EngineEvent::ArrowStreamCommitted { .. }))
+            .expect("recorder commit event");
+        let ready = events
+            .iter()
+            .position(|event| {
+                matches!(
+                    event,
+                    EngineEvent::StateChanged {
+                        status: EngineStatus::Ready
+                    }
+                )
+            })
+            .expect("ready state event");
+        assert!(commit < ready, "recorder commit must be emitted before Ready");
     }
 
     #[test]
@@ -552,5 +659,47 @@ mod tests {
         engine.handle_command(EngineCommand::Step).unwrap();
         assert!(matches!(engine.status(), EngineStatus::Running));
         assert_failed(engine.tick().unwrap());
+    }
+
+    #[test]
+    fn run_until_flushes_recorder_commits_before_ready() {
+        let flush_count = Arc::new(AtomicUsize::new(0));
+        let mut engine =
+            RunnerEngine::initialise(request(), RecorderBackend(flush_count.clone()), TestOutput::default())
+                .tick()
+                .unwrap();
+        engine.output.0.clear();
+
+        engine
+            .handle_command(EngineCommand::RunUntil {
+                datetime: "2024-01-01T00:00".parse().unwrap(),
+            })
+            .unwrap();
+        engine.output.0.clear();
+        let engine = engine.tick().unwrap();
+
+        assert!(matches!(engine.status(), EngineStatus::Ready));
+        assert_eq!(flush_count.load(std::sync::atomic::Ordering::SeqCst), 1);
+        assert_commit_precedes_ready(&engine.output.0);
+    }
+
+    #[test]
+    fn pause_flushes_recorder_commits_before_ready() {
+        let flush_count = Arc::new(AtomicUsize::new(0));
+        let mut engine =
+            RunnerEngine::initialise(request(), RecorderBackend(flush_count.clone()), TestOutput::default())
+                .tick()
+                .unwrap();
+        engine.handle_command(EngineCommand::RunToEnd).unwrap();
+        let mut engine = engine.tick().unwrap();
+        assert!(matches!(engine.status(), EngineStatus::Running));
+
+        engine.handle_command(EngineCommand::Pause).unwrap();
+        engine.output.0.clear();
+        let engine = engine.tick().unwrap();
+
+        assert!(matches!(engine.status(), EngineStatus::Ready));
+        assert_eq!(flush_count.load(std::sync::atomic::Ordering::SeqCst), 1);
+        assert_commit_precedes_ready(&engine.output.0);
     }
 }
