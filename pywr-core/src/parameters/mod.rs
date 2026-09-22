@@ -890,13 +890,8 @@ pub enum ParameterBuildError {
         scenarios: usize,
         group: String,
     },
-    #[error("Error subsetting array with dimensions {array_shape:?} with subset {subset:?}: {source}")]
-    ArraySubSetError {
-        array_shape: Vec<usize>,
-        subset: Vec<usize>,
-        #[source]
-        source: arrow::error::ArrowError,
-    },
+    #[error("Error subsetting array with {array_cols} columns with subset {subset:?}.")]
+    ArraySubSetError { array_cols: usize, subset: Vec<usize> },
     #[error("Error casting array from {from:?} to {to:?}: {source}")]
     ArrayCastError {
         from: DataType,
