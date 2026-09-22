@@ -149,10 +149,6 @@ enum Commands {
 }
 
 fn init_logger(debug: bool) {
-    if pywr_runner_service::install_log_router() {
-        return;
-    }
-
     let mut builder = env_logger::Builder::new();
 
     builder.format_timestamp_micros().format_level(true);
@@ -184,7 +180,10 @@ fn main() -> Result<()> {
             output,
             stop_on_error,
             network_only,
-        } => convert(input, output, *stop_on_error, *network_only)?,
+        } => {
+            init_logger(cli.debug);
+            convert(input, output, *stop_on_error, *network_only)?
+        }
         Commands::Run {
             model,
             solver,
@@ -192,29 +191,43 @@ fn main() -> Result<()> {
             output_path,
             threads,
             ignore_feature_requirements,
-        } => run(
-            model,
-            solver,
-            data_path.as_deref(),
-            output_path.as_deref(),
-            *threads,
-            *ignore_feature_requirements,
-        ),
+        } => {
+            init_logger(cli.debug);
+            run(
+                model,
+                solver,
+                data_path.as_deref(),
+                output_path.as_deref(),
+                *threads,
+                *ignore_feature_requirements,
+            )
+        }
         Commands::RunMulti {
             model,
             solver,
             data_path,
             output_path,
             threads: _,
-        } => run_multi(model, solver, data_path.as_deref(), output_path.as_deref()),
+        } => {
+            init_logger(cli.debug);
+            run_multi(model, solver, data_path.as_deref(), output_path.as_deref())
+        }
         Commands::RunRandom {
             num_systems,
             density,
             num_scenarios,
             solver,
-        } => run_random(*num_systems, *density, *num_scenarios, solver),
-        Commands::ExportSchema { out } => export_schema(out)?,
+        } => {
+            init_logger(cli.debug);
+            run_random(*num_systems, *density, *num_scenarios, solver)
+        }
+        Commands::ExportSchema { out } => {
+            init_logger(cli.debug);
+            export_schema(out)?
+        }
         Commands::RunServer { mode, socket_name } => {
+            // Install the log router to forward logs to the runner service.
+            pywr_runner_service::install_log_router();
             run_server(*mode, socket_name)?;
         }
     }
