@@ -30,6 +30,7 @@ node_component_subset_enum! {
     }
 }
 
+#[derive(PartialEq)]
 pub enum AbstractionOutputNodeSlot {
     River,
     Abstraction,
@@ -94,13 +95,28 @@ pub struct AbstractionNode {
 impl AbstractionNode {
     const DEFAULT_ATTRIBUTE: AbstractionNodeAttribute = AbstractionNodeAttribute::Abstraction;
     const DEFAULT_COMPONENT: AbstractionNodeComponent = AbstractionNodeComponent::Abstraction;
+    const DEFAULT_OUTPUT_SLOT: AbstractionOutputNodeSlot = AbstractionOutputNodeSlot::River;
 
-    pub fn iter_output_slots(&self) -> impl Iterator<Item = NodeSlot> + '_ {
-        [
-            AbstractionOutputNodeSlot::River.into(),
-            AbstractionOutputNodeSlot::Abstraction.into(),
-        ]
-        .into_iter()
+    pub fn iter_output_slots(&self) -> impl Iterator<Item = AbstractionOutputNodeSlot> + '_ {
+        [AbstractionOutputNodeSlot::River, AbstractionOutputNodeSlot::Abstraction].into_iter()
+    }
+
+    /// Validate the output slot and return the corresponding `ReservoirOutputNodeSlot`.
+    pub fn output_slot(&self, slot: Option<&NodeSlot>) -> Result<AbstractionOutputNodeSlot, SchemaError> {
+        let slot = match slot {
+            Some(s) => {
+                let slot = s.clone().try_into()?;
+                // Check if the slot is valid for this node
+                if !self.iter_output_slots().any(|s| s == slot) {
+                    return Err(SchemaError::OutputNodeSlotNotSupported { slot: s.clone() });
+                }
+
+                slot
+            }
+            None => Self::DEFAULT_OUTPUT_SLOT,
+        };
+
+        Ok(slot)
     }
 
     pub fn default_attribute(&self) -> AbstractionNodeAttribute {
@@ -114,7 +130,6 @@ impl AbstractionNode {
 
 #[cfg(feature = "core")]
 impl AbstractionNode {
-    const DEFAULT_OUTPUT_SLOT: AbstractionOutputNodeSlot = AbstractionOutputNodeSlot::River;
     fn mrf_sub_name(&self) -> UnresolvedNode {
         UnresolvedNode::new(&self.meta.name, Some("mrf"))
     }

@@ -4,11 +4,12 @@ use crate::error::SchemaError;
 use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::network::LoadArgs;
-use crate::parameters::{ConstantFloatVec, ConstantValue, ConversionData, ParameterMeta};
+use crate::parameters::{ConstantFloatVec, ConstantValue, ConversionData, ParameterMeta, ParameterPhase};
 use crate::v1::{TryFromV1, TryIntoV2, try_convert_parameter_attr, try_convert_values};
+use crate::visit::{Reference, ReferenceMut, VisitReferences};
 #[cfg(feature = "core")]
 use pywr_core::parameters::ParameterName;
-use pywr_schema_macros::{PywrVisitAll, skip_serializing_none};
+use pywr_schema_macros::{PywrVisitAll, PywrVisitMetrics, PywrVisitPaths, skip_serializing_none};
 use pywr_v1_schema::parameters::{
     ConstantParameter as ConstantParameterV1, ConstantScenarioParameter as ConstantScenarioParameterV1,
     DivisionParameter as DivisionParameterV1, MaxParameter as MaxParameterV1, MinParameter as MinParameterV1,
@@ -219,7 +220,7 @@ impl TryFromV1<ConstantParameterV1> for ConstantParameter {
 ///
 /// A parameter that provides a constant value for each scenario in a scenario group.
 #[skip_serializing_none]
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitMetrics, PywrVisitPaths)]
 #[serde(deny_unknown_fields)]
 pub struct ConstantScenarioParameter {
     pub meta: ParameterMeta,
@@ -229,6 +230,18 @@ pub struct ConstantScenarioParameter {
     pub values: ConstantFloatVec,
     /// The name of the scenario group
     pub scenario_group: String,
+}
+
+impl VisitReferences for ConstantScenarioParameter {
+    fn visit_references<F: FnMut(Reference<'_>)>(&self, visitor: &mut F) {
+        self.values.visit_references(visitor);
+        visitor(Reference::ScenarioGroup(&self.scenario_group));
+    }
+
+    fn visit_references_mut<F: FnMut(ReferenceMut<'_>)>(&mut self, visitor: &mut F) {
+        self.values.visit_references_mut(visitor);
+        visitor(ReferenceMut::ScenarioGroup(&mut self.scenario_group));
+    }
 }
 
 #[cfg(feature = "core")]
@@ -277,6 +290,7 @@ impl TryFromV1<ConstantScenarioParameterV1> for ConstantScenarioParameter {
 #[serde(deny_unknown_fields)]
 pub struct MaxParameter {
     pub meta: ParameterMeta,
+    pub phase: ParameterPhase,
     pub parameter: Metric,
     pub threshold: Option<f64>,
 }
@@ -291,12 +305,13 @@ impl MaxParameter {
     ) -> Result<(), SchemaError> {
         let idx = self.parameter.load(network, args, None)?;
         let threshold = self.threshold.unwrap_or(0.0);
+        let name = ParameterName::new(&self.meta.name, parent);
 
-        let p = pywr_core::parameters::MaxParameterBuilder::new(
-            ParameterName::new(&self.meta.name, parent),
-            idx,
-            threshold,
-        );
+        let p = match self.phase {
+            ParameterPhase::Before => pywr_core::parameters::MaxParameterBuilder::before(name, idx, threshold),
+            ParameterPhase::After => pywr_core::parameters::MaxParameterBuilder::after(name, idx, threshold),
+            ParameterPhase::Both => pywr_core::parameters::MaxParameterBuilder::both(name, idx, threshold),
+        };
 
         network.parameters().f64(Box::new(p));
 
@@ -321,6 +336,7 @@ impl TryFromV1<MaxParameterV1> for MaxParameter {
             meta,
             parameter,
             threshold: v1.threshold,
+            phase: ParameterPhase::Before,
         };
         Ok(p)
     }
@@ -342,6 +358,7 @@ impl TryFromV1<MaxParameterV1> for MaxParameter {
 #[serde(deny_unknown_fields)]
 pub struct DivisionParameter {
     pub meta: ParameterMeta,
+    pub phase: ParameterPhase,
     pub numerator: Metric,
     pub denominator: Metric,
 }
@@ -357,9 +374,15 @@ impl DivisionParameter {
         let n = self.numerator.load(network, args, None)?;
         let d = self.denominator.load(network, args, None)?;
 
-        let p = pywr_core::parameters::DivisionParameterBuilder::new(ParameterName::new(&self.meta.name, parent), n, d);
+        let name = ParameterName::new(&self.meta.name, parent);
 
-        network.parameters().f64(Box::new(p));
+        let builder = match self.phase {
+            ParameterPhase::Before => pywr_core::parameters::DivisionParameterBuilder::before(name, n, d),
+            ParameterPhase::After => pywr_core::parameters::DivisionParameterBuilder::after(name, n, d),
+            ParameterPhase::Both => pywr_core::parameters::DivisionParameterBuilder::both(name, n, d),
+        };
+
+        network.parameters().f64(Box::new(builder));
         Ok(())
     }
 }
@@ -383,6 +406,7 @@ impl TryFromV1<DivisionParameterV1> for DivisionParameter {
             meta,
             numerator,
             denominator,
+            phase: ParameterPhase::Before,
         };
         Ok(p)
     }
@@ -405,6 +429,7 @@ impl TryFromV1<DivisionParameterV1> for DivisionParameter {
 #[serde(deny_unknown_fields)]
 pub struct MinParameter {
     pub meta: ParameterMeta,
+    pub phase: ParameterPhase,
     pub parameter: Metric,
     pub threshold: Option<f64>,
 }
@@ -419,12 +444,13 @@ impl MinParameter {
     ) -> Result<(), SchemaError> {
         let metric = self.parameter.load(network, args, None)?;
         let threshold = self.threshold.unwrap_or(0.0);
+        let name = ParameterName::new(&self.meta.name, parent);
 
-        let p = pywr_core::parameters::MinParameterBuilder::new(
-            ParameterName::new(&self.meta.name, parent),
-            metric,
-            threshold,
-        );
+        let p = match self.phase {
+            ParameterPhase::Before => pywr_core::parameters::MinParameterBuilder::before(name, metric, threshold),
+            ParameterPhase::After => pywr_core::parameters::MinParameterBuilder::after(name, metric, threshold),
+            ParameterPhase::Both => pywr_core::parameters::MinParameterBuilder::both(name, metric, threshold),
+        };
 
         network.parameters().f64(Box::new(p));
         Ok(())
@@ -448,6 +474,7 @@ impl TryFromV1<MinParameterV1> for MinParameter {
             meta,
             parameter,
             threshold: v1.threshold,
+            phase: ParameterPhase::Before,
         };
         Ok(p)
     }
@@ -457,6 +484,7 @@ impl TryFromV1<MinParameterV1> for MinParameter {
 #[serde(deny_unknown_fields)]
 pub struct NegativeParameter {
     pub meta: ParameterMeta,
+    pub phase: ParameterPhase,
     pub parameter: Metric,
 }
 
@@ -469,9 +497,13 @@ impl NegativeParameter {
         parent: Option<&str>,
     ) -> Result<(), SchemaError> {
         let metric = self.parameter.load(network, args, None)?;
+        let name = ParameterName::new(&self.meta.name, parent);
 
-        let p =
-            pywr_core::parameters::NegativeParameterBuilder::new(ParameterName::new(&self.meta.name, parent), metric);
+        let p = match self.phase {
+            ParameterPhase::Before => pywr_core::parameters::NegativeParameterBuilder::before(name, metric),
+            ParameterPhase::After => pywr_core::parameters::NegativeParameterBuilder::after(name, metric),
+            ParameterPhase::Both => pywr_core::parameters::NegativeParameterBuilder::both(name, metric),
+        };
 
         network.parameters().f64(Box::new(p));
 
@@ -492,7 +524,7 @@ impl TryFromV1<NegativeParameterV1> for NegativeParameter {
         let parameter =
             try_convert_parameter_attr(&meta.name, "parameter", v1.parameter, parent_node, conversion_data)?;
 
-        let p = Self { meta, parameter };
+        let p = Self { meta, parameter, phase: ParameterPhase::Before };
         Ok(p)
     }
 }
@@ -516,6 +548,7 @@ impl TryFromV1<NegativeParameterV1> for NegativeParameter {
 #[serde(deny_unknown_fields)]
 pub struct NegativeMaxParameter {
     pub meta: ParameterMeta,
+    pub phase: ParameterPhase,
     pub metric: Metric,
     pub threshold: Option<f64>,
 }
@@ -530,12 +563,13 @@ impl NegativeMaxParameter {
     ) -> Result<(), SchemaError> {
         let metric = self.metric.load(network, args, None)?;
         let threshold = self.threshold.unwrap_or(0.0);
+        let name = ParameterName::new(&self.meta.name, parent);
 
-        let p = pywr_core::parameters::NegativeMaxParameterBuilder::new(
-            ParameterName::new(&self.meta.name, parent),
-            metric,
-            threshold,
-        );
+        let p = match self.phase {
+            ParameterPhase::Before => pywr_core::parameters::NegativeMaxParameterBuilder::before(name, metric, threshold),
+            ParameterPhase::After => pywr_core::parameters::NegativeMaxParameterBuilder::after(name, metric, threshold),
+            ParameterPhase::Both => pywr_core::parameters::NegativeMaxParameterBuilder::both(name, metric, threshold),
+        };
 
         network.parameters().f64(Box::new(p));
 
@@ -560,6 +594,7 @@ impl TryFromV1<NegativeMaxParameterV1> for NegativeMaxParameter {
             meta,
             metric: parameter,
             threshold: v1.threshold,
+            phase: ParameterPhase::Before,
         };
         Ok(p)
     }
@@ -584,6 +619,7 @@ impl TryFromV1<NegativeMaxParameterV1> for NegativeMaxParameter {
 #[serde(deny_unknown_fields)]
 pub struct NegativeMinParameter {
     pub meta: ParameterMeta,
+    pub phase: ParameterPhase,
     pub metric: Metric,
     pub threshold: Option<f64>,
 }
@@ -598,12 +634,13 @@ impl NegativeMinParameter {
     ) -> Result<(), SchemaError> {
         let metric = self.metric.load(network, args, None)?;
         let threshold = self.threshold.unwrap_or(0.0);
+        let name = ParameterName::new(&self.meta.name, parent);
 
-        let p = pywr_core::parameters::NegativeMinParameterBuilder::new(
-            ParameterName::new(&self.meta.name, parent),
-            metric,
-            threshold,
-        );
+        let p = match self.phase {
+            ParameterPhase::Before => pywr_core::parameters::NegativeMinParameterBuilder::before(name, metric, threshold),
+            ParameterPhase::After => pywr_core::parameters::NegativeMinParameterBuilder::after(name, metric, threshold),
+            ParameterPhase::Both => pywr_core::parameters::NegativeMinParameterBuilder::both(name, metric, threshold),
+        };
 
         network.parameters().f64(Box::new(p));
 
@@ -627,6 +664,7 @@ impl TryFromV1<NegativeMinParameterV1> for NegativeMinParameter {
             meta,
             metric: parameter,
             threshold: v1.threshold,
+            phase: ParameterPhase::Before,
         };
         Ok(p)
     }

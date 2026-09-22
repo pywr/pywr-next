@@ -1,0 +1,108 @@
+{
+  "metadata": {
+    "title": "Simple storage time series"
+  },
+  "time": {
+    "start": "2021-01-01",
+    "end": "2021-12-31",
+    "timestep": {
+      "type": "Days",
+      "days": 1
+    }
+  },
+  "network": {
+    "nodes": [
+      {
+        "meta": {
+          "name": "input1"
+        },
+        "type": "Input",
+        "max_flow": {
+          "type": "Literal",
+          "value": 9.0
+        }
+      },
+      {
+        "meta": {
+          "name": "storage1"
+        },
+        "type": "Storage",
+        "cost": {
+          "type": "Literal",
+          "value": -1.0
+        },
+        "initial_volume": {
+          "type": "Absolute",
+          "volume": 500.0
+        },
+        "max_volume": {
+          "type": "Literal",
+          "value": 1000.0
+        }
+      },
+      {
+        "meta": {
+          "name": "output1"
+        },
+        "type": "Output",
+        "cost": {
+          "type": "Literal",
+          "value": -10.0
+        },
+        "max_flow": {
+          "type": "Parameter",
+          "name": "demand"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "from_node": "input1",
+        "to_node": "storage1"
+      },
+      {
+        "from_node": "storage1",
+        "to_node": "output1"
+      }
+    ],
+    "parameters": [
+      {
+        "meta": {
+          "name": "demand"
+        },
+        "type": "Constant",
+        "value": {
+          "type": "Literal",
+          "value": 10.0
+        }
+      }
+    ],
+    "metric_sets": [
+      {
+        "name": "nodes",
+        "metrics": [
+          {
+            "type": "Node",
+            "name": "input1"
+          },
+          {
+            "type": "Node",
+            "name": "storage1"
+          },
+          {
+            "type": "Node",
+            "name": "output1"
+          }
+        ]
+      }
+    ],
+    "outputs": [
+      {
+        "name": "outputs",
+        "type": "HDF5",
+        "filename": "outputs.h5",
+        "metric_set": "nodes"
+      }
+    ]
+  }
+}

@@ -3,6 +3,7 @@
     "name": "my-negative-min"
   },
   "type": "NegativeMin",
+  "phase": "Before",
   "metric": {
     "type": "Parameter",
     "name": "my-monthly-profile"

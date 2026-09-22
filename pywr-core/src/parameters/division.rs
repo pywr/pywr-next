@@ -1,5 +1,5 @@
 use super::{
-    BuiltParameter, GeneralBeforeParameter, GeneralParameterContext, GeneralParameterEntry, MaybeBuiltParameter,
+    BuiltParameter, GeneralBeforeParameter, GeneralAfterParameter, GeneralParameterContext, GeneralParameterEntry, MaybeBuiltParameter,
     Parameter, ParameterBuildError, ParameterBuilder, ParameterName,
 };
 use crate::metric::{MetricConsumerPhase, MetricF64, UnresolvedMetricF64};
@@ -46,19 +46,60 @@ impl GeneralBeforeParameter<f64> for DivisionParameter {
     }
 }
 
+impl GeneralAfterParameter<f64> for DivisionParameter {
+    fn after(
+        &self,
+        ctx: GeneralParameterContext<'_>,
+        _internal_state: &mut Option<Box<dyn ParameterState>>,
+    ) -> Result<f64, GeneralCalculationError> {
+        let denominator = self.denominator.get_value(ctx.network, ctx.state)?;
+
+        if denominator == 0.0 {
+            return Err(GeneralCalculationError::DivisionByZeroError);
+        }
+
+        let numerator = self.numerator.get_value(ctx.network, ctx.state)?;
+        Ok(numerator / denominator)
+    }
+}
+
+/// Builder for creating a [`DivisionParameter`].
 #[derive(Debug)]
 pub struct DivisionParameterBuilder {
     meta: ParameterMeta,
     numerator: UnresolvedMetricF64,
     denominator: UnresolvedMetricF64,
+    phase: MetricConsumerPhase,
 }
 
 impl DivisionParameterBuilder {
-    pub fn new(name: ParameterName, numerator: UnresolvedMetricF64, denominator: UnresolvedMetricF64) -> Self {
+    /// Create a new builder for [`DivisionParameter`] that is evaluated in the "before" phase.
+    pub fn before(name: ParameterName, numerator: UnresolvedMetricF64, denominator: UnresolvedMetricF64) -> Self {
         Self {
             meta: ParameterMeta::new(name),
             numerator,
             denominator,
+            phase: MetricConsumerPhase::Before,
+        }
+    }
+
+    /// Create a new builder for [`DivisionParameter`] that is evaluated in the "after" phase.
+    pub fn after(name: ParameterName, numerator: UnresolvedMetricF64, denominator: UnresolvedMetricF64) -> Self {
+        Self {
+            meta: ParameterMeta::new(name),
+            numerator,
+            denominator,
+            phase: MetricConsumerPhase::After,
+        }
+    }
+
+    /// Create a new builder for [`DivisionParameter`] that is evaluated in both "before" and "after" phases.
+    pub fn both(name: ParameterName, numerator: UnresolvedMetricF64, denominator: UnresolvedMetricF64) -> Self {
+        Self {
+            meta: ParameterMeta::new(name),
+            numerator,
+            denominator,
+            phase: MetricConsumerPhase::Both,
         }
     }
 }
@@ -72,10 +113,9 @@ impl ParameterBuilder<f64> for DivisionParameterBuilder {
         self: Box<Self>,
         resolution_maps: &ResolutionMaps,
     ) -> Result<MaybeBuiltParameter<f64>, ParameterBuildError> {
-        // Phase is hardcoded to "before" for this parameter, as it only implements the `GeneralBeforeParameter` trait.
-        let phase = MetricConsumerPhase::Before;
-        let numerator = resolve_metric_f64!(self, self.numerator, resolution_maps, phase, "numerator");
-        let denominator = resolve_metric_f64!(self, self.denominator, resolution_maps, phase, "denominator");
+
+        let numerator = resolve_metric_f64!(self, self.numerator, resolution_maps, self.phase, "numerator");
+        let denominator = resolve_metric_f64!(self, self.denominator, resolution_maps, self.phase, "denominator");
 
         let p = DivisionParameter {
             meta: self.meta,
@@ -83,6 +123,18 @@ impl ParameterBuilder<f64> for DivisionParameterBuilder {
             denominator,
         };
 
-        Ok(BuiltParameter::General(GeneralParameterEntry::before(p)).into())
+        let built = match self.phase {
+            MetricConsumerPhase::Before => {
+                BuiltParameter::General(GeneralParameterEntry::before(p))
+            },
+            MetricConsumerPhase::After => {
+                BuiltParameter::General(GeneralParameterEntry::after(p))
+            },
+            MetricConsumerPhase::Both => {
+                BuiltParameter::General(GeneralParameterEntry::both(p))
+            }
+        };
+
+        Ok(built.into())
     }
 }

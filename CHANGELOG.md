@@ -2,6 +2,79 @@
 
 All notable changes to this project since v2.0.0-beta will be documented in this file.
 
+## [2.0.0-beta7] - 2026-09-15
+
+### 🚀 Features
+
+- Support metrics providing a value aligned to the current phase. (#766)
+- Refactor and improve Python extension (#785)
+- Add simple row bounds sense check. (#787)
+- *(schema)* Validate the time domain in ModelSchema::validate (#798)
+- Add phases to InterpolatedParameter, OffsetParameter, Polynomial1DParameter and VectorParameter (#777)
+- *(core)* Write PYWR_VERSION and PYWR_VERSION_STR attrs to H5 outputs (#800)
+- *(schema)* Replace VisitNodeReferences with an owner-aware VisitReferences (#796)
+
+### 🐛 Bug Fixes
+
+- Fix application of bypass_cost in RiverGauge node. (#786)
+- *(schema)* Build local parameters defined on virtual nodes (#797)
+
+### 🚜 Refactor
+
+- Use log and env_logger crates instead of tracing. (#789)
+- Improve variable names for Network references. (#790)
+- Refactor ScenarioDomainBuilder (#792)
+
+### 📚 Documentation
+
+- Improve license notifications. (#774)
+
+### ⚙️ Miscellaneous Tasks
+
+- Fix useless format lint in CSV recorder.
+- Use Cargo resolver version 3. (#788)
+- Tidy-up dependencies. (#791)
+
+## [2.0.0-beta6] - 2026-08-25
+
+### ⚙️ Miscellaneous Tasks
+
+- Fix wheel path for PyPI publish action. (#772)
+
+## [2.0.0-beta5] - 2026-08-25
+
+### 🚀 Features
+
+- Use builder patterns in pywr-core.
+- Initial separation of parameter calc traits.
+- Make SimpleParameters only computed once per time-step.
+- Convert scenario_combinations to v2 schema.
+- Move to jiff datetime library.
+- *(schema)* Enforce unique node names within a network (#751)
+- Allow specifying calculation phase in some parameters. (#745)
+- *(schema)* Add mutable metadata accessors and node construction from NodeType (#760)
+- *(schema)* Add a visitor for node references in a schema (#759)
+- Add phase option to division parameter (#763)
+- Implement merge for NetworkSchema. (#762)
+- Slot validation API (#758)
+- Add phase option to DifferenceParameter (#757)
+- Add phase options to max & min parameters (#765)
+
+### 🐛 Bug Fixes
+
+- *(schema)* Visit virtual nodes when visiting network metrics (#750)
+
+### 🚜 Refactor
+
+- *(core)* Add a context type to GeneralParameter<T>
+- *(core)* Add a context type to SimpleParameter<T>
+
+### ⚙️ Miscellaneous Tasks
+
+- Lints, dependencies and warnings for Rust v1.97 (#719)
+- Use the official PyPI GHA for publishing wheels. (#718)
+- Remove unused proc-macro2 dependency in pywr-schema-macros (#742)
+
 ## [2.0.0-beta4] - 2026-07-09
 
 ### 🚀 Features

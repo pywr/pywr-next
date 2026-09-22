@@ -250,7 +250,7 @@ pub fn normal_eqn_step(
 
     // println!("Theta: {:?}", theta);
     // Set theta to zero for lanes that have completed (status == True)
-    theta = status.blend(f64x4::splat(0.0), theta);
+    theta = status.select(f64x4::splat(0.0), theta);
 
     vector_update(x, dx, f64x4::splat(1.0), theta);
     vector_update(z, dz, f64x4::splat(1.0), theta);

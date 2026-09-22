@@ -3,15 +3,15 @@ mod settings;
 use crate::network::{EdgeIndex, Network};
 use crate::node::{Node, NodeBounds, NodeType};
 use crate::solvers::col_edge_map::{ColumnEdgeMap, ColumnEdgeMapBuilder};
-use crate::solvers::{MultiStateSolver, SolverFeatures, SolverSetupError, SolverSolveError, SolverTimings};
+use crate::solvers::{
+    MultiStateSolver, MultiStateSolverConfig, SolverFeatures, SolverSetupError, SolverSolveError, SolverTimings,
+};
 use crate::state::State;
 use crate::timestep::Timestep;
 use ipm_simd::{PathFollowingDirectSimdSolver, Tolerances};
 use rayon::iter::IndexedParallelIterator;
 use rayon::iter::ParallelIterator;
 use rayon::prelude::ParallelSliceMut;
-#[cfg(feature = "pyo3")]
-pub use settings::build_ipm_simd_settings_py;
 pub use settings::{SimdIpmSolverSettings, SimdIpmSolverSettingsBuilder};
 use std::collections::BTreeMap;
 use std::num::NonZeroUsize;
@@ -603,22 +603,18 @@ pub struct SimdIpmF64Solver {
     max_iterations: NonZeroUsize,
 }
 
-impl MultiStateSolver for SimdIpmF64Solver {
-    type Settings = SimdIpmSolverSettings;
+impl MultiStateSolverConfig for SimdIpmSolverSettings {
+    type Solver = SimdIpmF64Solver;
 
-    fn name() -> &'static str {
+    fn name(&self) -> &'static str {
         "ipm-simd"
     }
 
-    fn features() -> &'static [SolverFeatures] {
+    fn features(&self) -> &'static [SolverFeatures] {
         &[]
     }
 
-    fn setup(
-        network: &Network,
-        num_scenarios: usize,
-        settings: &Self::Settings,
-    ) -> Result<Box<Self>, SolverSetupError> {
+    fn setup(&self, network: &Network, num_scenarios: usize) -> Result<Box<Self::Solver>, SolverSetupError> {
         let mut built_solvers = Vec::new();
         let mut ipms = Vec::new();
 
@@ -643,14 +639,16 @@ impl MultiStateSolver for SimdIpmF64Solver {
             ipms.push(ipm)
         }
 
-        Ok(Box::new(Self {
+        Ok(Box::new(Self::Solver {
             built: built_solvers,
             ipm: ipms,
-            tolerances: settings.tolerances(),
-            max_iterations: settings.max_iterations(),
+            tolerances: self.tolerances(),
+            max_iterations: self.max_iterations(),
         }))
     }
+}
 
+impl MultiStateSolver for SimdIpmF64Solver {
     fn solve(
         &mut self,
         network: &Network,

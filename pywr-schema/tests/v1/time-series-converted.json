@@ -1,0 +1,143 @@
+{
+  "metadata": {
+    "title": "Simple time series"
+  },
+  "time": {
+    "start": "2021-01-01T00:00:00",
+    "end": "2021-01-31T00:00:00",
+    "timestep": {
+      "type": "Days",
+      "days": 1
+    }
+  },
+  "network": {
+    "nodes": [
+      {
+        "type": "Input",
+        "max_flow": {
+          "type": "TimeSeries",
+          "name": "inflow",
+          "columns": {
+            "type": "Column",
+            "name": "inflow1"
+          }
+        },
+        "meta": {
+          "name": "input1"
+        }
+      },
+      {
+        "type": "Input",
+        "max_flow": {
+          "type": "Parameter",
+          "name": "factored_flow"
+        },
+        "meta": {
+          "name": "input2"
+        }
+      },
+      {
+        "type": "Input",
+        "max_flow": {
+          "type": "TimeSeries",
+          "name": "inflow-tbl",
+          "columns": {
+            "type": "Column",
+            "name": "inflow1"
+          }
+        },
+        "meta": {
+          "name": "input3"
+        }
+      },
+      {
+        "type": "Link",
+        "meta": {
+          "name": "link1"
+        }
+      },
+      {
+        "type": "Output",
+        "max_flow": {
+          "type": "Parameter",
+          "name": "demand"
+        },
+        "meta": {
+          "name": "output1"
+        },
+        "cost": {
+          "type": "Literal",
+          "value": -10.0
+        }
+      }
+    ],
+    "edges": [
+      {
+        "from_node": "input1",
+        "to_node": "link1"
+      },
+      {
+        "from_node": "input2",
+        "to_node": "link1"
+      },
+      {
+        "from_node": "input3",
+        "to_node": "link1"
+      },
+      {
+        "from_node": "link1",
+        "to_node": "output1"
+      }
+    ],
+    "parameters": [
+      {
+        "type": "Constant",
+        "meta": {
+          "name": "demand"
+        },
+        "value": {
+          "type": "Literal",
+          "value": 100.0
+        }
+      },
+      {
+        "type": "Aggregated",
+        "meta": {
+          "name": "factored_flow"
+        },
+        "agg_func": {
+          "type": "Product"
+        },
+        "phase": "Before",
+        "metrics": [
+          {
+            "type": "TimeSeries",
+            "name": "inflow",
+            "columns": {
+              "type": "Column",
+              "name": "inflow1"
+            }
+          },
+          {
+            "type": "Literal",
+            "value": 0.5
+          }
+        ]
+      }
+    ],
+    "time_series": [
+      {
+        "meta": {
+          "name": "inflow"
+        },
+        "type": "Pandas",
+        "path": "inflow.csv",
+        "kwargs": {
+          "dayfirst": true,
+          "index_col": 0,
+          "parse_dates": true
+        }
+      }
+    ]
+  }
+}

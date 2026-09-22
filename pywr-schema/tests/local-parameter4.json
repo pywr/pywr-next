@@ -1,0 +1,303 @@
+{
+  "metadata": {
+    "title": "Local parameter with Storage node.",
+    "description": "Examples of using local parameters to define local drought levels and then combined to an overall drought level.",
+    "minimum_version": "0.1"
+  },
+  "time": {
+    "start": "2015-01-01",
+    "end": "2015-01-31",
+    "timestep": {
+      "type": "Days",
+      "days": 1
+    }
+  },
+  "network": {
+    "nodes": [
+      {
+        "meta": {
+          "name": "catchment1"
+        },
+        "type": "Catchment",
+        "flow": {
+          "type": "Literal",
+          "value": 5
+        }
+      },
+      {
+        "meta": {
+          "name": "river1"
+        },
+        "type": "River"
+      },
+      {
+        "meta": {
+          "name": "term1"
+        },
+        "type": "Output"
+      },
+      {
+        "meta": {
+          "name": "storage1"
+        },
+        "type": "Storage",
+        "initial_volume": {
+          "type": "Proportional",
+          "proportion": 1.0
+        },
+        "max_volume": {
+          "type": "Literal",
+          "value": 100.0
+        },
+        "cost": {
+          "type": "Literal",
+          "value": -1.0
+        },
+        "parameters": [
+          {
+            "meta": {
+              "name": "level1"
+            },
+            "type": "Constant",
+            "value": {
+              "type": "Literal",
+              "value": 0.8
+            }
+          },
+          {
+            "meta": {
+              "name": "level2"
+            },
+            "type": "Constant",
+            "value": {
+              "type": "Literal",
+              "value": 0.2
+            }
+          },
+          {
+            "meta": {
+              "name": "drought level"
+            },
+            "type": "ControlCurveIndex",
+            "storage_metric": {
+              "type": "Node",
+              "name": "storage1",
+              "attribute": "ProportionalVolume"
+            },
+            "control_curves": [
+              {
+                "type": "LocalParameter",
+                "name": "level1"
+              },
+              {
+                "type": "LocalParameter",
+                "name": "level2"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "meta": {
+          "name": "demand1"
+        },
+        "type": "Output",
+        "max_flow": {
+          "type": "Literal",
+          "value": 10.0
+        },
+        "cost": {
+          "type": "Literal",
+          "value": -10.0
+        }
+      },
+      {
+        "meta": {
+          "name": "catchment2"
+        },
+        "type": "Catchment",
+        "flow": {
+          "type": "Literal",
+          "value": 5
+        }
+      },
+      {
+        "meta": {
+          "name": "river2"
+        },
+        "type": "River"
+      },
+      {
+        "meta": {
+          "name": "term2"
+        },
+        "type": "Output"
+      },
+      {
+        "meta": {
+          "name": "storage2"
+        },
+        "type": "Storage",
+        "initial_volume": {
+          "type": "Proportional",
+          "proportion": 1.0
+        },
+        "max_volume": {
+          "type": "Literal",
+          "value": 100.0
+        },
+        "cost": {
+          "type": "Literal",
+          "value": -1.0
+        },
+        "parameters": [
+          {
+            "meta": {
+              "name": "level1"
+            },
+            "type": "Constant",
+            "value": {
+              "type": "Literal",
+              "value": 0.7
+            }
+          },
+          {
+            "meta": {
+              "name": "level2"
+            },
+            "type": "Constant",
+            "value": {
+              "type": "Literal",
+              "value": 0.5
+            }
+          },
+          {
+            "meta": {
+              "name": "drought level"
+            },
+            "type": "ControlCurveIndex",
+            "storage_metric": {
+              "type": "Node",
+              "name": "storage2",
+              "attribute": "ProportionalVolume"
+            },
+            "control_curves": [
+              {
+                "type": "LocalParameter",
+                "name": "level1"
+              },
+              {
+                "type": "LocalParameter",
+                "name": "level2"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "meta": {
+          "name": "demand2"
+        },
+        "type": "Output",
+        "max_flow": {
+          "type": "Literal",
+          "value": 10.0
+        },
+        "cost": {
+          "type": "Literal",
+          "value": -10.0
+        }
+      }
+    ],
+    "edges": [
+      {
+        "from_node": "catchment1",
+        "to_node": "river1"
+      },
+      {
+        "from_node": "river1",
+        "to_node": "term1"
+      },
+      {
+        "from_node": "river1",
+        "to_node": "storage1"
+      },
+      {
+        "from_node": "storage1",
+        "to_node": "demand1"
+      },
+      {
+        "from_node": "catchment2",
+        "to_node": "river2"
+      },
+      {
+        "from_node": "river2",
+        "to_node": "term2"
+      },
+      {
+        "from_node": "river2",
+        "to_node": "storage2"
+      },
+      {
+        "from_node": "storage2",
+        "to_node": "demand2"
+      }
+    ],
+    "parameters": [
+      {
+        "meta": {
+          "name": "drought level"
+        },
+        "type": "AggregatedIndex",
+        "phase": "Before",
+        "agg_func": {
+          "type": "Max"
+        },
+        "metrics": [
+          {
+            "type": "LocalParameter",
+            "node": "storage1",
+            "name": "drought level"
+          },
+          {
+            "type": "LocalParameter",
+            "node": "storage2",
+            "name": "drought level"
+          }
+        ]
+      }
+    ],
+    "metric_sets": [
+      {
+        "name": "drought levels",
+        "metrics": [
+          {
+            "type": "Parameter",
+            "name": "drought level"
+          },
+          {
+            "type": "LocalParameter",
+            "node": "storage1",
+            "name": "drought level"
+          },
+          {
+            "type": "LocalParameter",
+            "node": "storage2",
+            "name": "drought level"
+          }
+        ]
+      }
+    ],
+    "outputs": [
+      {
+        "name": "drought levels-outputs",
+        "type": "CSV",
+        "format": "Long",
+        "filename": "local-parameter4-expected.csv",
+        "metric_set": [
+          "drought levels"
+        ]
+      }
+    ]
+  }
+}

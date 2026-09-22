@@ -10,7 +10,8 @@
 [![Forks][forks-shield]][forks-url]
 [![Stargazers][stars-shield]][stars-url]
 [![Issues][issues-shield]][issues-url]
-[![MIT License][license-shield]][license-url]
+[![MIT License][license-shield]][license-mit-url]
+[![Apache License](https://img.shields.io/badge/License-Apache--2.0-green?style=for-the-badge)][license-apache-url]
 [![LinkedIn][linkedin-shield]][linkedin-url]
 
 
@@ -75,9 +76,9 @@
 ## About The Project
 
 Pywr-1.x is a Python library which utilises Cython for performance. Over time this has resulted in a "core"
-set of data structures and objects that are written in Cython to gain maximum performance. Cython has the nice
-benefit of making it easy to extend that core functionality using regular Python. However, the border between what
-is Python and what is Cython is a bit blurred and not well designed in certain places.
+set of data structures and objects that are written in Cython to gain maximum performance. Cython has the nice benefit
+of making it easy to extend that core functionality using regular Python. However, the border between what is Python and
+what is Cython is a bit blurred and not well designed in certain places.
 
 One option for the future development of Pywr (e.g. Pywr-2.x) would be a more explicit separation between the compute
 "core" and higher level functionality. Rust is a candidate for writing that core largely independent of Python, and
@@ -117,17 +118,17 @@ See instructions in the [Pywr book](https://pywr.github.io/pywr-next/getting_sta
 
 #### Compiling from source
 
-This repository contains a version of Clp using Git submodules. In order to build those submodules
-must be initialised first.
+This repository contains a version of Clp using Git submodules. In order to build those submodules must be initialised
+first.
 
 ```bash
 git submodule init
 git submodule update
 ```
 
-Rust is required for installation of the Python extension. To create a Python development installation
-requires first compiling the Rust library and then the Python extension. The following example uses
-a virtual environment to install the Python dependencies, compile the Pywr extension and run the Pywr Python CLI.
+Rust is required for installation of the Python extension. To create a Python development installation requires first
+compiling the Rust library and then the Python extension. The following example uses a virtual environment to install
+the Python dependencies, compile the Pywr extension and run the Pywr Python CLI.
 
 ```bash
 python -m venv .venv # create a new virtual environment
@@ -148,8 +149,8 @@ python -m pywr  # run the Pywr Python CLI
 
 ### Rust CLI
 
-A basic command line interface is included such that you can use this version of Pywr without Python.
-This CLI is in the `pywr-cli` crate.
+A basic command line interface is included such that you can use this version of Pywr without Python. This CLI is in the
+`pywr-cli` crate.
 
 To see the CLI commands available run the following:
 
@@ -165,8 +166,7 @@ cargo run -p pywr-cli -- run tests/models/simple1.json
 
 ### Python CLI
 
-If the Python extension has been compiled using the above instructions a model can be run using the basic Python
-CLI.
+If the Python extension has been compiled using the above instructions a model can be run using the basic Python CLI.
 
 ```bash
 python -m pywr run tests/models/simple1.json
@@ -174,16 +174,15 @@ python -m pywr run tests/models/simple1.json
 
 ## Porting a Pywr v1.x model to v2.x
 
-This version of Pywr is not backward compatible with Pywr v1.x. One of the major reasons for this version is the
-lack of a strong schema in the Pywr v1.x JSON files. Pywr v2.x uses an updated JSON schema that is defined in this
-repository. Therefore, v1.x JSON files must be converted to the v2.x JSON schema. This conversion can be undertaken
-manually, but there is also a work-in-progress conversion tool. The conversion tool uses a v1.x schema defined in
+This version of Pywr is not backward compatible with Pywr v1.x. One of the major reasons for this version is the lack of
+a strong schema in the Pywr v1.x JSON files. Pywr v2.x uses an updated JSON schema that is defined in this repository.
+Therefore, v1.x JSON files must be converted to the v2.x JSON schema. This conversion can be undertaken manually, but
+there is also a work-in-progress conversion tool. The conversion tool uses a v1.x schema defined in
 the [pywr-schema](https://github.com/pywr/pywr-schema) project.
 
-**Please note that conversion from Pywr v1.x to v2.x is experimental and not all features of Pywr are implemented
-in `pywr-schema` or have been implemented in Pywr v2.x yet. Due to the changes between these versions it is very
-likely an automatic conversion will not completely convert your model, and it _WILL_ require manual testing and
-checking.**
+**Please note that conversion from Pywr v1.x to v2.x is experimental and not all features of Pywr are implemented in
+`pywr-schema` or have been implemented in Pywr v2.x yet. Due to the changes between these versions it is very likely an
+automatic conversion will not completely convert your model, and it _WILL_ require manual testing and checking.**
 
 ```bash
 cargo run --no-default-features -- convert /path/to/my/v1.x/model.json
@@ -218,8 +217,8 @@ Feature flags:
 
 ### Pywr-schema
 
-A Rust library for validating Pywr JSON files against a schema, and then building a model from the schema
-using `pywr-core`.
+A Rust library for validating Pywr JSON files against a schema, and then building a model from the schema using
+`pywr-core`.
 
 Feature flags:
 
@@ -266,8 +265,7 @@ Contributions are what make the open source community such an amazing place to l
 contributions you make are **greatly appreciated**.
 
 If you have a suggestion that would make this better, please fork the repo and create a pull request. You can also
-simply open an issue with the tag "enhancement".
-Don't forget to give the project a star! Thanks again!
+simply open an issue with the tag "enhancement". Don't forget to give the project a star! Thanks again!
 
 1. Fork the Project
 2. Create your Feature Branch (`git checkout -b feature/AmazingFeature`)
@@ -319,7 +317,9 @@ Project Link: [https://github.com/pywr/pywr-next](https://github.com/pywr/pywr-n
 
 [license-shield]: https://img.shields.io/github/license/pywr/pywr-next.svg?style=for-the-badge
 
-[license-url]: https://github.com/pywr/pywr-next/blob/main/LICENSE
+[license-mit-url]: https://github.com/pywr/pywr-next/blob/main/LICENSE-MIT
+
+[license-apache-url]: https://github.com/pywr/pywr-next/blob/main/LICENSE-APACHE
 
 [linkedin-shield]: https://img.shields.io/badge/-LinkedIn-black.svg?style=for-the-badge&logo=linkedin&colorB=555
 

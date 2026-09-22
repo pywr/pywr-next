@@ -15,6 +15,15 @@ mod cbc;
 mod clp;
 
 #[cfg(any(
+    feature = "clp",
+    feature = "cbc",
+    feature = "highs",
+    feature = "microlp",
+    feature = "ipm-ocl",
+    feature = "ipm-simd"
+))]
+mod built_in;
+#[cfg(any(
     feature = "cbc",
     feature = "clp",
     feature = "highs",
@@ -33,22 +42,21 @@ mod ipm_simd;
 mod microlp;
 
 #[cfg(feature = "ipm-ocl")]
-pub use self::ipm_ocl::{ClIpmF32Solver, ClIpmF64Solver, ClIpmSolverSettings, ClIpmSolverSettingsBuilder};
-#[cfg(all(feature = "ipm-simd", feature = "pyo3"))]
-pub use self::ipm_simd::build_ipm_simd_settings_py;
+pub use self::ipm_ocl::{
+    ClIpmF32Settings, ClIpmF32SettingsBuilder, ClIpmF32Solver, ClIpmF64Settings, ClIpmF64SettingsBuilder,
+    ClIpmF64Solver, ClIpmSolverSettings, ClIpmSolverSettingsBuilder,
+};
 #[cfg(feature = "ipm-simd")]
 pub use self::ipm_simd::{SimdIpmF64Solver, SimdIpmSolverSettings, SimdIpmSolverSettingsBuilder};
 use crate::NodeIndex;
-#[cfg(all(feature = "cbc", feature = "pyo3"))]
-pub use cbc::build_cbc_settings_py;
+#[cfg(any(feature = "ipm-simd", feature = "ipm-ocl"))]
+pub use built_in::{BuiltInMultiStateSolver, BuiltInMultiStateSolverConfig};
+#[cfg(any(feature = "clp", feature = "cbc", feature = "highs", feature = "microlp"))]
+pub use built_in::{BuiltInSolver, BuiltInSolverConfig};
 #[cfg(feature = "cbc")]
 pub use cbc::{CbcError, CbcSolver, CbcSolverSettings, CbcSolverSettingsBuilder};
-#[cfg(all(feature = "clp", feature = "pyo3"))]
-pub use clp::build_clp_settings_py;
 #[cfg(feature = "clp")]
 pub use clp::{ClpSolveStatusError, ClpSolver, ClpSolverSettings, ClpSolverSettingsBuilder};
-#[cfg(all(feature = "highs", feature = "pyo3"))]
-pub use highs::build_highs_settings_py;
 #[cfg(feature = "highs")]
 pub use highs::{HighsSolver, HighsSolverSettings, HighsSolverSettingsBuilder};
 #[cfg(feature = "microlp")]
@@ -119,9 +127,26 @@ pub enum SolverSetupError {
     NoEdgesDefined,
     #[error("Node index not found: {0}")]
     NodeIndexNotFound(NodeIndex),
+    #[error("Node bounds [{lower_bound}, {upper_bound}] are infeasible for node `{name}` and sub-name `{}`", .sub_name.as_deref().unwrap_or("None"))]
+    NodeBoundsInfeasible {
+        name: String,
+        sub_name: Option<String>,
+        lower_bound: f64,
+        upper_bound: f64,
+    },
     #[cfg(feature = "highs")]
     #[error("Highs error: {0}")]
     HighsError(#[from] highs::HighsStatusError),
+}
+
+pub trait SolverConfig: SolverSettings {
+    type Solver: Solver;
+
+    fn name(&self) -> &'static str;
+    /// An array of features that this solver provides.
+    fn features(&self) -> &'static [SolverFeatures];
+
+    fn setup(&self, network: &Network, values: &ConstParameterValues) -> Result<Box<Self::Solver>, SolverSetupError>;
 }
 
 /// Errors that can occur during solver solve.
@@ -162,6 +187,20 @@ pub enum SolverSolveError {
     NetworkStateError(#[from] crate::state::NetworkStateError),
     #[error("State error: {0}")]
     StateError(#[from] crate::state::StateError),
+    #[error("Node bounds [{lower_bound}, {upper_bound}] are infeasible for node `{name}` and sub-name `{}`", .sub_name.as_deref().unwrap_or("None"))]
+    NodeBoundsInfeasible {
+        name: String,
+        sub_name: Option<String>,
+        lower_bound: f64,
+        upper_bound: f64,
+    },
+    #[error("Virtual storage bounds [{lower_bound}, {upper_bound}] are infeasible for node `{name}` and sub-name `{}`", .sub_name.as_deref().unwrap_or("None"))]
+    VirtualStorageBoundsInfeasible {
+        name: String,
+        sub_name: Option<String>,
+        lower_bound: f64,
+        upper_bound: f64,
+    },
     #[cfg(feature = "clp")]
     #[error("Clp error: {0}")]
     ClpSolveError(#[from] ClpSolveStatusError),
@@ -177,34 +216,28 @@ pub enum SolverSolveError {
 }
 
 pub trait Solver: Send {
-    type Settings;
-
-    fn name() -> &'static str;
-    /// An array of features that this solver provides.
-    fn features() -> &'static [SolverFeatures];
-    fn setup(
-        model: &Network,
-        values: &ConstParameterValues,
-        settings: &Self::Settings,
-    ) -> Result<Box<Self>, SolverSetupError>;
     fn solve(
         &mut self,
-        model: &Network,
+        network: &Network,
         timestep: &Timestep,
         state: &mut State,
     ) -> Result<SolverTimings, SolverSolveError>;
 }
 
-pub trait MultiStateSolver: Send {
-    type Settings;
+pub trait MultiStateSolverConfig: SolverSettings {
+    type Solver: MultiStateSolver;
 
-    fn name() -> &'static str;
+    fn name(&self) -> &'static str;
     /// An array of features that this solver provides.
-    fn features() -> &'static [SolverFeatures];
-    fn setup(model: &Network, num_scenarios: usize, settings: &Self::Settings) -> Result<Box<Self>, SolverSetupError>;
+    fn features(&self) -> &'static [SolverFeatures];
+
+    fn setup(&self, network: &Network, num_scenarios: usize) -> Result<Box<Self::Solver>, SolverSetupError>;
+}
+
+pub trait MultiStateSolver: Send {
     fn solve(
         &mut self,
-        model: &Network,
+        network: &Network,
         timestep: &Timestep,
         states: &mut [State],
     ) -> Result<SolverTimings, SolverSolveError>;

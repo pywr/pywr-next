@@ -55,15 +55,15 @@ mod water_treatment_works;
 // `virtual` is a reserved keyword in Rust, so we use `virtual_nodes` as the module name
 mod virtual_nodes;
 
-use crate::error::{ComponentConversionError, ConversionError};
+use crate::error::{ComponentConversionError, ConversionError, SchemaError};
 use crate::metric::Metric;
+#[cfg(feature = "core")]
+use crate::network::LoadArgs;
 use crate::network::NetworkSchema;
 use crate::parameters::Parameter;
 use crate::v1::{ConversionData, TryFromV1, TryIntoV2};
-use crate::visit::{VisitMetrics, VisitNodeReferences, VisitPaths};
-#[cfg(feature = "core")]
-use crate::{error::SchemaError, network::LoadArgs};
-pub use abstraction::AbstractionNode;
+use crate::visit::{Reference, ReferenceMut, VisitMetrics, VisitPaths, VisitReferences};
+pub use abstraction::{AbstractionNode, AbstractionNodeAttribute, AbstractionNodeComponent};
 pub use attributes::NodeAttribute;
 pub use components::NodeComponent;
 pub use core::{
@@ -97,6 +97,7 @@ use schemars::JsonSchema;
 pub use slots::NodeSlot;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use strum::IntoEnumIterator;
 use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumString, IntoStaticStr};
 pub use turbine::{TargetType, TurbineNode, TurbineNodeAttribute, TurbineNodeComponent};
 pub use virtual_nodes::{
@@ -277,6 +278,9 @@ impl Node {
         self.into()
     }
 
+    pub fn is_placeholder(&self) -> bool {
+        matches!(self, Self::Placeholder(_))
+    }
     pub fn meta(&self) -> &NodeMeta {
         match self {
             Node::Input(n) => &n.meta,
@@ -322,6 +326,61 @@ impl Node {
         }
     }
 
+    /// Returns true if this node can be the `to_node` of an edge.
+    ///
+    /// [`Node::Input`] and [`Node::Catchment`] are built as a `pywr-core` input node, which
+    /// rejects any incoming edge with `NodeBuilderError::UnexpectedIncomingEdges`. Every other
+    /// node type can receive flow — including [`Node::Delay`] and a routing [`Node::River`],
+    /// which are built from a core input *and* output node but wire their inflow to the output.
+    pub fn accepts_inflow(&self) -> bool {
+        match self {
+            Node::Input(_) | Node::Catchment(_) => false,
+            Node::Link(_)
+            | Node::Output(_)
+            | Node::Storage(_)
+            | Node::RiverGauge(_)
+            | Node::LossLink(_)
+            | Node::Delay(_)
+            | Node::PiecewiseLink(_)
+            | Node::PiecewiseStorage(_)
+            | Node::River(_)
+            | Node::RiverSplitWithGauge(_)
+            | Node::WaterTreatmentWorks(_)
+            | Node::Turbine(_)
+            | Node::Reservoir(_)
+            | Node::Placeholder(_)
+            | Node::Abstraction(_) => true,
+        }
+    }
+
+    /// Returns true if this node can be the `from_node` of an edge.
+    ///
+    /// [`Node::Output`] is built as a `pywr-core` output node, which rejects any outgoing edge
+    /// with `NodeBuilderError::UnexpectedOutgoingEdges`. Every other node type either is, or
+    /// expands to, a node that can provide flow — including [`Node::Delay`] and a routing
+    /// [`Node::River`], which take their outflow from a core input node.
+    pub fn provides_outflow(&self) -> bool {
+        match self {
+            Node::Output(_) => false,
+            Node::Input(_)
+            | Node::Link(_)
+            | Node::Storage(_)
+            | Node::Catchment(_)
+            | Node::RiverGauge(_)
+            | Node::LossLink(_)
+            | Node::Delay(_)
+            | Node::PiecewiseLink(_)
+            | Node::PiecewiseStorage(_)
+            | Node::River(_)
+            | Node::RiverSplitWithGauge(_)
+            | Node::WaterTreatmentWorks(_)
+            | Node::Turbine(_)
+            | Node::Reservoir(_)
+            | Node::Placeholder(_)
+            | Node::Abstraction(_) => true,
+        }
+    }
+
     /// Get any input (or "to") slots that this node has.
     pub fn iter_input_slots(&self) -> Option<Box<dyn Iterator<Item = NodeSlot> + '_>> {
         match self {
@@ -345,6 +404,38 @@ impl Node {
         }
     }
 
+    /// Validate the provided input slot converting it into a [`NodeSlot`] if a default is available.
+    ///
+    /// [`None`] is returned if the node does not support slots and the provided slot is [`None`].
+    /// If the node does support slots, then the provided slot is validated and returned as a [`NodeSlot`].
+    /// If the provided slot is [`None`] and the node has a default slot, then the default slot is returned.
+    ///
+    /// [`Node::Placeholder`] nodes will accept any slot and return it as a [`NodeSlot`].
+    pub fn validate_input_slot(&self, slot: Option<&NodeSlot>) -> Result<Option<NodeSlot>, SchemaError> {
+        match self {
+            Node::Input(_)
+            | Node::Link(_)
+            | Node::Output(_)
+            | Node::Storage(_)
+            | Node::Catchment(_)
+            | Node::RiverGauge(_)
+            | Node::LossLink(_)
+            | Node::Delay(_)
+            | Node::PiecewiseLink(_)
+            | Node::PiecewiseStorage(_)
+            | Node::River(_)
+            | Node::RiverSplitWithGauge(_)
+            | Node::WaterTreatmentWorks(_)
+            | Node::Turbine(_)
+            | Node::Reservoir(_)
+            | Node::Abstraction(_) => match slot {
+                Some(s) => Err(SchemaError::InputNodeSlotNotSupported { slot: s.clone() }),
+                None => Ok(None),
+            },
+            Node::Placeholder(_) => Ok(slot.cloned()),
+        }
+    }
+
     /// Get any output (or "from") slots that this node has.
     pub fn iter_output_slots(&self) -> Option<Box<dyn Iterator<Item = NodeSlot> + '_>> {
         match self {
@@ -359,12 +450,44 @@ impl Node {
             Node::PiecewiseLink(_) => None,
             Node::PiecewiseStorage(_) => None,
             Node::River(_) => None,
-            Node::RiverSplitWithGauge(n) => Some(Box::new(n.iter_output_slots())),
+            Node::RiverSplitWithGauge(n) => Some(Box::new(n.iter_output_slots().map(|s| s.into()))),
             Node::WaterTreatmentWorks(_) => None,
             Node::Turbine(_) => None,
-            Node::Reservoir(n) => Some(Box::new(n.iter_output_slots())),
+            Node::Reservoir(n) => Some(Box::new(n.iter_output_slots().map(|s| s.into()))),
             Node::Placeholder(_) => None,
-            Node::Abstraction(n) => Some(Box::new(n.iter_output_slots())),
+            Node::Abstraction(n) => Some(Box::new(n.iter_output_slots().map(|s| s.into()))),
+        }
+    }
+
+    /// Validate the provided output slot converting it into a [`NodeSlot`] if a default is available.
+    ///
+    /// [`None`] is returned if the node does not support slots and the provided slot is [`None`].
+    /// If the node does support slots, then the provided slot is validated and returned as a [`NodeSlot`].
+    /// If the provided slot is [`None`] and the node has a default slot, then the default slot is returned.
+    ///
+    /// [`Node::Placeholder`] nodes will accept any slot and return it as a [`NodeSlot`].
+    pub fn validate_output_slot(&self, slot: Option<&NodeSlot>) -> Result<Option<NodeSlot>, SchemaError> {
+        match self {
+            Node::Input(_)
+            | Node::Link(_)
+            | Node::Output(_)
+            | Node::Storage(_)
+            | Node::Catchment(_)
+            | Node::RiverGauge(_)
+            | Node::LossLink(_)
+            | Node::Delay(_)
+            | Node::PiecewiseLink(_)
+            | Node::PiecewiseStorage(_)
+            | Node::River(_)
+            | Node::WaterTreatmentWorks(_)
+            | Node::Turbine(_) => match slot {
+                Some(s) => Err(SchemaError::OutputNodeSlotNotSupported { slot: s.clone() }),
+                None => Ok(None),
+            },
+            Node::Placeholder(_) => Ok(slot.cloned()),
+            Node::RiverSplitWithGauge(n) => n.output_slot(slot).map(|s| Some(s.into())),
+            Node::Reservoir(n) => n.output_slot(slot).map(|s| Some(s.into())),
+            Node::Abstraction(n) => n.output_slot(slot).map(|s| Some(s.into())),
         }
     }
 
@@ -390,6 +513,29 @@ impl Node {
         }
     }
 
+    /// Returns the attributes that this node has.
+    pub fn attributes(&self) -> Vec<NodeAttribute> {
+        match self {
+            Node::Input(_) => InputNodeAttribute::iter().map(Into::into).collect(),
+            Node::Link(_) => LinkNodeAttribute::iter().map(Into::into).collect(),
+            Node::Output(_) => OutputNodeAttribute::iter().map(Into::into).collect(),
+            Node::Storage(_) => StorageNodeAttribute::iter().map(Into::into).collect(),
+            Node::Catchment(_) => CatchmentNodeAttribute::iter().map(Into::into).collect(),
+            Node::RiverGauge(_) => RiverGaugeNodeAttribute::iter().map(Into::into).collect(),
+            Node::LossLink(_) => LossLinkNodeAttribute::iter().map(Into::into).collect(),
+            Node::River(_) => RiverNodeAttribute::iter().map(Into::into).collect(),
+            Node::RiverSplitWithGauge(_) => RiverSplitWithGaugeNodeAttribute::iter().map(Into::into).collect(),
+            Node::WaterTreatmentWorks(_) => WaterTreatmentWorksNodeAttribute::iter().map(Into::into).collect(),
+            Node::PiecewiseLink(_) => PiecewiseLinkNodeAttribute::iter().map(Into::into).collect(),
+            Node::PiecewiseStorage(_) => PiecewiseStorageNodeAttribute::iter().map(Into::into).collect(),
+            Node::Delay(_) => DelayNodeAttribute::iter().map(Into::into).collect(),
+            Node::Turbine(_) => TurbineNodeAttribute::iter().map(Into::into).collect(),
+            Node::Reservoir(_) => ReservoirNodeAttribute::iter().map(Into::into).collect(),
+            Node::Placeholder(_) => Vec::new(),
+            Node::Abstraction(_) => AbstractionNodeAttribute::iter().map(Into::into).collect(),
+        }
+    }
+
     /// Returns the default component for the node, if defined.
     pub fn default_component(&self) -> Option<NodeComponent> {
         match self {
@@ -410,6 +556,29 @@ impl Node {
             Node::Reservoir(n) => Some(n.default_component().into()),
             Node::Placeholder(_) => None,
             Node::Abstraction(n) => Some(n.default_component().into()),
+        }
+    }
+
+    /// Returns the components that this node has.
+    pub fn components(&self) -> Vec<NodeComponent> {
+        match self {
+            Node::Input(_) => InputNodeComponent::iter().map(Into::into).collect(),
+            Node::Link(_) => LinkNodeComponent::iter().map(Into::into).collect(),
+            Node::Output(_) => OutputNodeComponent::iter().map(Into::into).collect(),
+            Node::Catchment(_) => CatchmentNodeComponent::iter().map(Into::into).collect(),
+            Node::Storage(_) => Vec::new(),
+            Node::RiverGauge(_) => RiverGaugeNodeComponent::iter().map(Into::into).collect(),
+            Node::LossLink(_) => LossLinkNodeComponent::iter().map(Into::into).collect(),
+            Node::Delay(_) => DelayNodeComponent::iter().map(Into::into).collect(),
+            Node::PiecewiseLink(_) => PiecewiseLinkNodeComponent::iter().map(Into::into).collect(),
+            Node::PiecewiseStorage(_) => Vec::new(),
+            Node::River(_) => RiverNodeComponent::iter().map(Into::into).collect(),
+            Node::RiverSplitWithGauge(_) => RiverSplitWithGaugeNodeComponent::iter().map(Into::into).collect(),
+            Node::WaterTreatmentWorks(_) => WaterTreatmentWorksNodeComponent::iter().map(Into::into).collect(),
+            Node::Turbine(_) => TurbineNodeComponent::iter().map(Into::into).collect(),
+            Node::Reservoir(_) => ReservoirNodeComponent::iter().map(Into::into).collect(),
+            Node::Placeholder(_) => Vec::new(),
+            Node::Abstraction(_) => AbstractionNodeComponent::iter().map(Into::into).collect(),
         }
     }
 
@@ -437,6 +606,12 @@ impl Node {
             Node::Placeholder(_) => None,
             Node::Abstraction(n) => n.parameters.as_deref(),
         }
+    }
+
+    /// Get local parameter by name.
+    pub fn get_local_parameter(&self, name: &str) -> Option<&Parameter> {
+        self.local_parameters()
+            .and_then(|params| params.iter().find(|p| p.name() == name))
     }
 }
 
@@ -811,48 +986,48 @@ impl VisitPaths for Node {
     }
 }
 
-impl VisitNodeReferences for Node {
-    fn visit_node_references<F: FnMut(&str)>(&self, visitor: &mut F) {
+impl VisitReferences for Node {
+    fn visit_references<F: FnMut(Reference<'_>)>(&self, visitor: &mut F) {
         match self {
-            Node::Input(n) => n.visit_node_references(visitor),
-            Node::Link(n) => n.visit_node_references(visitor),
-            Node::Output(n) => n.visit_node_references(visitor),
-            Node::Storage(n) => n.visit_node_references(visitor),
-            Node::Catchment(n) => n.visit_node_references(visitor),
-            Node::RiverGauge(n) => n.visit_node_references(visitor),
-            Node::LossLink(n) => n.visit_node_references(visitor),
-            Node::River(n) => n.visit_node_references(visitor),
-            Node::RiverSplitWithGauge(n) => n.visit_node_references(visitor),
-            Node::WaterTreatmentWorks(n) => n.visit_node_references(visitor),
-            Node::PiecewiseLink(n) => n.visit_node_references(visitor),
-            Node::PiecewiseStorage(n) => n.visit_node_references(visitor),
-            Node::Delay(n) => n.visit_node_references(visitor),
-            Node::Turbine(n) => n.visit_node_references(visitor),
-            Node::Reservoir(n) => n.visit_node_references(visitor),
-            Node::Placeholder(n) => n.visit_node_references(visitor),
-            Node::Abstraction(n) => n.visit_node_references(visitor),
+            Node::Input(n) => n.visit_references(visitor),
+            Node::Link(n) => n.visit_references(visitor),
+            Node::Output(n) => n.visit_references(visitor),
+            Node::Storage(n) => n.visit_references(visitor),
+            Node::Catchment(n) => n.visit_references(visitor),
+            Node::RiverGauge(n) => n.visit_references(visitor),
+            Node::LossLink(n) => n.visit_references(visitor),
+            Node::River(n) => n.visit_references(visitor),
+            Node::RiverSplitWithGauge(n) => n.visit_references(visitor),
+            Node::WaterTreatmentWorks(n) => n.visit_references(visitor),
+            Node::PiecewiseLink(n) => n.visit_references(visitor),
+            Node::PiecewiseStorage(n) => n.visit_references(visitor),
+            Node::Delay(n) => n.visit_references(visitor),
+            Node::Turbine(n) => n.visit_references(visitor),
+            Node::Reservoir(n) => n.visit_references(visitor),
+            Node::Placeholder(n) => n.visit_references(visitor),
+            Node::Abstraction(n) => n.visit_references(visitor),
         }
     }
 
-    fn visit_node_references_mut<F: FnMut(&mut String)>(&mut self, visitor: &mut F) {
+    fn visit_references_mut<F: FnMut(ReferenceMut<'_>)>(&mut self, visitor: &mut F) {
         match self {
-            Node::Input(n) => n.visit_node_references_mut(visitor),
-            Node::Link(n) => n.visit_node_references_mut(visitor),
-            Node::Output(n) => n.visit_node_references_mut(visitor),
-            Node::Storage(n) => n.visit_node_references_mut(visitor),
-            Node::Catchment(n) => n.visit_node_references_mut(visitor),
-            Node::RiverGauge(n) => n.visit_node_references_mut(visitor),
-            Node::LossLink(n) => n.visit_node_references_mut(visitor),
-            Node::River(n) => n.visit_node_references_mut(visitor),
-            Node::RiverSplitWithGauge(n) => n.visit_node_references_mut(visitor),
-            Node::WaterTreatmentWorks(n) => n.visit_node_references_mut(visitor),
-            Node::PiecewiseLink(n) => n.visit_node_references_mut(visitor),
-            Node::PiecewiseStorage(n) => n.visit_node_references_mut(visitor),
-            Node::Delay(n) => n.visit_node_references_mut(visitor),
-            Node::Turbine(n) => n.visit_node_references_mut(visitor),
-            Node::Reservoir(n) => n.visit_node_references_mut(visitor),
-            Node::Placeholder(n) => n.visit_node_references_mut(visitor),
-            Node::Abstraction(n) => n.visit_node_references_mut(visitor),
+            Node::Input(n) => n.visit_references_mut(visitor),
+            Node::Link(n) => n.visit_references_mut(visitor),
+            Node::Output(n) => n.visit_references_mut(visitor),
+            Node::Storage(n) => n.visit_references_mut(visitor),
+            Node::Catchment(n) => n.visit_references_mut(visitor),
+            Node::RiverGauge(n) => n.visit_references_mut(visitor),
+            Node::LossLink(n) => n.visit_references_mut(visitor),
+            Node::River(n) => n.visit_references_mut(visitor),
+            Node::RiverSplitWithGauge(n) => n.visit_references_mut(visitor),
+            Node::WaterTreatmentWorks(n) => n.visit_references_mut(visitor),
+            Node::PiecewiseLink(n) => n.visit_references_mut(visitor),
+            Node::PiecewiseStorage(n) => n.visit_references_mut(visitor),
+            Node::Delay(n) => n.visit_references_mut(visitor),
+            Node::Turbine(n) => n.visit_references_mut(visitor),
+            Node::Reservoir(n) => n.visit_references_mut(visitor),
+            Node::Placeholder(n) => n.visit_references_mut(visitor),
+            Node::Abstraction(n) => n.visit_references_mut(visitor),
         }
     }
 }
@@ -886,6 +1061,122 @@ mod tests {
         }
     }
 
+    /// A node should not list the same attribute twice.
+    #[test]
+    fn test_attributes_are_unique() {
+        for node_type in NodeType::iter() {
+            let node: Node = node_type.into();
+            let attributes = node.attributes();
+
+            for (i, attribute) in attributes.iter().enumerate() {
+                assert!(
+                    !attributes[i + 1..].contains(attribute),
+                    "{node_type} lists the attribute {attribute} more than once"
+                );
+            }
+        }
+    }
+
+    /// The attributes a node lists should be exactly those its build accepts.
+    ///
+    /// This pins the schema-only list to [`Node::create_metric`], which is where an unsupported
+    /// attribute is refused, so that the two cannot drift apart.
+    #[cfg(feature = "core")]
+    #[test]
+    fn test_attributes_match_create_metric() {
+        use crate::nodes::NodeAttribute;
+        use pywr_core::network::NetworkBuilder;
+
+        for node_type in NodeType::iter() {
+            let node: Node = node_type.into();
+            let attributes = node.attributes();
+
+            for attribute in NodeAttribute::iter() {
+                let mut builder = NetworkBuilder::default();
+                let result = node.create_metric(&mut builder, Some(attribute));
+
+                if attributes.contains(&attribute) {
+                    assert!(
+                        result.is_ok(),
+                        "{node_type} lists the attribute {attribute} but refuses it in a metric"
+                    );
+                } else {
+                    assert!(
+                        result.is_err(),
+                        "{node_type} does not list the attribute {attribute} but accepts it in a metric"
+                    );
+                }
+            }
+        }
+    }
+
+    /// A node's default component, where it has one, should be among its components.
+    #[test]
+    fn test_default_component_is_a_component() {
+        for node_type in NodeType::iter() {
+            let node: Node = node_type.into();
+            let components = node.components();
+
+            match node.default_component() {
+                Some(default) => assert!(
+                    components.contains(&default),
+                    "{node_type}'s default component {default} is not in its components"
+                ),
+                None => assert!(
+                    components.is_empty(),
+                    "{node_type} has components but no default component"
+                ),
+            }
+        }
+    }
+
+    /// A node should not list the same component twice.
+    #[test]
+    fn test_components_are_unique() {
+        for node_type in NodeType::iter() {
+            let node: Node = node_type.into();
+            let components = node.components();
+
+            for (i, component) in components.iter().enumerate() {
+                assert!(
+                    !components[i + 1..].contains(component),
+                    "{node_type} lists the component {component} more than once"
+                );
+            }
+        }
+    }
+
+    /// The components a node lists should be exactly those its build accepts.
+    ///
+    /// This pins the schema-only list to [`Node::nodes_for_flow_constraints`], which is
+    /// where an unsupported component is refused, so that the two cannot drift apart.
+    #[cfg(feature = "core")]
+    #[test]
+    fn test_components_match_flow_constraints() {
+        use crate::nodes::NodeComponent;
+
+        for node_type in NodeType::iter() {
+            let node: Node = node_type.into();
+            let components = node.components();
+
+            for component in NodeComponent::iter() {
+                let result = node.nodes_for_flow_constraints(Some(component));
+
+                if components.contains(&component) {
+                    assert!(
+                        result.is_ok(),
+                        "{node_type} lists the component {component} but refuses it in a flow constraint"
+                    );
+                } else {
+                    assert!(
+                        result.is_err(),
+                        "{node_type} does not list the component {component} but accepts it in a flow constraint"
+                    );
+                }
+            }
+        }
+    }
+
     #[test]
     fn test_ts_inline() {
         let node_data = r#"
@@ -894,7 +1185,7 @@ mod tests {
             "type": "Input",
             "max_flow": {
                 "type": "dataframe",
-                "url" : "timeseries1.csv",
+                "url" : "time-series1.csv",
                 "parse_dates": true,
                 "dayfirst": true,
                 "index_col": 0,
@@ -922,14 +1213,14 @@ mod tests {
         let expected_name = String::from("catchment1-p0");
 
         match input_node.max_flow {
-            Some(Metric::Timeseries(ts)) => {
+            Some(Metric::TimeSeries(ts)) => {
                 assert_eq!(ts.name(), &expected_name)
             }
-            _ => panic!("Expected Timeseries"),
+            _ => panic!("Expected TimeSeries"),
         };
 
-        assert_eq!(conversion_data.timeseries.len(), 1);
-        assert_eq!(conversion_data.timeseries[0].name(), &expected_name);
+        assert_eq!(conversion_data.time_series.len(), 1);
+        assert_eq!(conversion_data.time_series[0].name(), &expected_name);
     }
 
     #[test]
@@ -948,7 +1239,7 @@ mod tests {
                     },
                     {
                         "type": "dataframe",
-                        "url" : "timeseries1.csv",
+                        "url" : "time-series1.csv",
                         "parse_dates": true,
                         "dayfirst": true,
                         "index_col": 0,
@@ -960,7 +1251,7 @@ mod tests {
                     },
                     {
                         "type": "dataframe",
-                        "url" : "timeseries2.csv",
+                        "url" : "time-series2.csv",
                         "parse_dates": true,
                         "dayfirst": true,
                         "index_col": 0,
@@ -991,14 +1282,14 @@ mod tests {
 
         match input_node.max_flow {
             Some(Metric::Parameter(parameter_ref)) => assert_eq!(&parameter_ref.name, "catchment1-p0"),
-            _ => panic!("Expected Timeseries"),
+            _ => panic!("Expected TimeSeries"),
         };
 
         assert_eq!(conversion_data.parameters.len(), 3);
 
-        assert_eq!(conversion_data.timeseries.len(), 2);
-        assert_eq!(conversion_data.timeseries[0].name(), expected_name1);
-        assert_eq!(conversion_data.timeseries[1].name(), expected_name2);
+        assert_eq!(conversion_data.time_series.len(), 2);
+        assert_eq!(conversion_data.time_series[0].name(), expected_name1);
+        assert_eq!(conversion_data.time_series[1].name(), expected_name2);
     }
 
     #[test]

@@ -123,8 +123,8 @@ impl Recorder for CsvWideFmtOutput {
             // Repeat the names, sub-names and attributes for every scenario
             header_name.extend(names.clone());
             header_attribute.extend(attributes.clone());
-            header_scenario.extend(vec![format!("{}", scenario_index.simulation_id()); names.len()]);
-            header_label.extend(vec![format!("{}", scenario_index.label()); names.len()]);
+            header_scenario.extend(vec![scenario_index.simulation_id().to_string(); names.len()]);
+            header_label.extend(vec![scenario_index.label(); names.len()]);
         }
 
         writer.write_record(header_name).map_err(|source| CsvError::CSVError {

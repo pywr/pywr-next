@@ -1,0 +1,19 @@
+{
+  "meta": {
+    "name": "my-difference1"
+  },
+  "type": "Difference",
+  "phase": "Before",
+  "a": {
+    "type": "Parameter",
+    "name": "my-monthly-profile"
+  },
+  "b": {
+    "type": "Literal",
+    "value": 0.3
+  },
+  "min": {
+    "type": "Literal",
+    "value": 0.0
+  }
+}

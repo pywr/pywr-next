@@ -3,19 +3,16 @@ use crate::models::ModelDomain;
 use crate::network::{MetricSetIndex, Network, ResolutionMaps};
 use crate::recorders::aggregator::PeriodValue;
 use crate::recorders::{
-    MetricSetState, Recorder, RecorderAggregationError, RecorderBuilder, RecorderBuilderError, RecorderDataFrameError,
+    LongFmtRecord, MetricSetState, Recorder, RecorderAggregationError, RecorderBuilder, RecorderBuilderError,
     RecorderFinalResult, RecorderFinaliseError, RecorderInternalState, RecorderMeta, RecorderSaveError,
     RecorderSetupError, downcast_internal_state, downcast_internal_state_mut,
 };
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
 use crate::timestep::Timestep;
-use jiff::civil::DateTime;
-use polars::df;
-use polars::frame::DataFrame;
+use log::warn;
 use std::ops::Deref;
 use thiserror::Error;
-use tracing::warn;
 
 #[derive(Error, Debug)]
 pub enum AggregationError {
@@ -146,17 +143,6 @@ impl InternalState {
     }
 }
 
-struct LongFmtRecord {
-    time_start: DateTime,
-    time_end: DateTime,
-    simulation_id: usize,
-    label: String,
-    metric_set: String,
-    name: String,
-    attribute: String,
-    value: f64,
-}
-
 /// Final results for the memory recorder.
 ///
 /// This is a 3D array, where the first dimension is the scenario, the second dimension is the time,
@@ -261,23 +247,8 @@ impl RecorderFinalResult for MemoryRecorderResult {
         })
     }
 
-    fn to_dataframe(&self) -> Result<DataFrame, RecorderDataFrameError> {
-        let records: Vec<LongFmtRecord> = self.iter_long_fmt_records().collect();
-
-        df!(
-            "time_start" => records.iter().map(|r| r.time_start.to_string()).collect::<Vec<_>>(),
-            "time_end" => records.iter().map(|r| r.time_end.to_string()).collect::<Vec<_>>(),
-            "simulation_id" => records.iter().map(|r| r.simulation_id as u32).collect::<Vec<_>>(),
-            "label" => records.iter().map(|r| r.label.as_str()).collect::<Vec<_>>(),
-            "metric_set" => records.iter().map(|r| r.metric_set.as_str()).collect::<Vec<_>>(),
-            "name" => records.iter().map(|r| r.name.as_str()).collect::<Vec<_>>(),
-            "attribute" => records.iter().map(|r| r.attribute.as_str()).collect::<Vec<_>>(),
-            "value" => records.iter().map(|r| r.value).collect::<Vec<_>>(),
-        )
-        .map_err(|source| RecorderDataFrameError::PolarsError {
-            name: self.meta.name.clone(),
-            source,
-        })
+    fn iter_long_fmt_records(&self) -> Box<dyn Iterator<Item = LongFmtRecord> + '_> {
+        Box::new(self.iter_long_fmt_records())
     }
 }
 
@@ -323,7 +294,7 @@ impl Recorder for MemoryRecorder {
         &self,
         _timestep: &Timestep,
         _scenario_indices: &[ScenarioIndex],
-        _model: &Network,
+        _network: &Network,
         _state: &[State],
         metric_set_states: &[Vec<MetricSetState>],
         internal_state: &mut Option<Box<dyn RecorderInternalState>>,
@@ -448,8 +419,7 @@ mod tests {
     #[test]
     fn test_aggregation_orders() {
         let mut scenario_builder = ScenarioDomainBuilder::default();
-        let scenario_group = ScenarioGroupBuilder::new("test-scenario", 2).build().unwrap();
-        scenario_builder = scenario_builder.with_group(scenario_group).unwrap();
+        scenario_builder.with_group(ScenarioGroupBuilder::new("test-scenario", 2));
 
         let mut domain_builder = ModelDomainBuilder::new(default_time_domain_builder());
         domain_builder.scenario(scenario_builder);

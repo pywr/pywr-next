@@ -3,6 +3,7 @@
     "name": "my-negative-max"
   },
   "type": "NegativeMax",
+  "phase": "Before",
   "metric": {
     "type": "Parameter",
     "name": "my-monthly-profile"
