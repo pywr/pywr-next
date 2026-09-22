@@ -81,6 +81,7 @@ pub enum ServiceExit {
     ClientDisconnected,
     RunCompleted,
     RunCancelled,
+    RunFailed,
     HandshakeRejected,
 }
 
@@ -356,8 +357,7 @@ where
                         terminal_exit = Some(ServiceExit::RunCancelled);
                     }
                     EngineEvent::Failed { .. } => {
-                        // Add RunFailed if failure should have a distinct exit.
-                        terminal_exit = Some(ServiceExit::RunCompleted);
+                        terminal_exit = Some(ServiceExit::RunFailed);
                     }
                     EngineEvent::Progress { progress } => {
                         current_progress = Some(progress.clone().try_into()?);
@@ -562,6 +562,9 @@ pub fn run_local_socket_server(socket_name: &str, config: RunnerServiceConfig) -
                 }
                 ServiceExit::RunCancelled => {
                     info!("runner session exited: run cancelled");
+                }
+                ServiceExit::RunFailed => {
+                    info!("runner session exited: run failed");
                 }
                 ServiceExit::HandshakeRejected => {
                     info!("runner session exited: handshake rejected");

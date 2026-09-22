@@ -35,7 +35,6 @@ pub enum RunnerState<R> {
     Cancelled(RunSummary),
     Failed {
         error: String,
-        summary: RunSummary,
     },
 }
 

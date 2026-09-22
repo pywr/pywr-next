@@ -31,7 +31,6 @@ pub enum EngineEvent {
     },
     Failed {
         error: String,
-        summary: RunSummary,
     },
 }
 

@@ -1,4 +1,4 @@
-use crate::backend::{BackendError, BackendStepOutcome, RunnerBackend};
+use crate::backend::{BackendStepOutcome, RunnerBackend};
 use crate::command::{EngineCommand, EngineCommandKind, InitialiseRequest};
 use crate::event::{EngineEvent, EngineStatus, LogLevel, LogRecord};
 use crate::logging::capture_logs;
@@ -26,8 +26,6 @@ pub enum CommandError {
 
 #[derive(Debug, Error)]
 pub enum TickError {
-    #[error("Backend error: {0}")]
-    BackendError(#[from] BackendError),
     #[error("Output sink error: {0}")]
     OutputSinkError(#[from] OutputError),
 }
@@ -192,21 +190,25 @@ where
                 let result = capture_logs(self.log_level, self.log_sender.clone(), || {
                     self.backend.initialise(init_request)
                 });
-                let initialised = result?;
 
                 emit_captured_logs!();
 
-                self.output
-                    .emit(EngineEvent::Initialised {
-                        progress: initialised.progress,
-                        arrow_stream: initialised.arrow_stream,
-                    })
-                    .map_err(TickError::OutputSinkError)?;
+                match result {
+                    Ok(initialised) => {
+                        self.output
+                            .emit(EngineEvent::Initialised {
+                                progress: initialised.progress,
+                                arrow_stream: initialised.arrow_stream,
+                            })
+                            .map_err(TickError::OutputSinkError)?;
 
-                RunnerState::Ready {
-                    runtime: initialised.runtime,
-                    arrow_stream_commits: initialised.arrow_stream_commits,
-                    reason: ReadyReason::Initialised,
+                        RunnerState::Ready {
+                            runtime: initialised.runtime,
+                            arrow_stream_commits: initialised.arrow_stream_commits,
+                            reason: ReadyReason::Initialised,
+                        }
+                    }
+                    Err(error) => Self::failed_state(&mut self.output, error.to_string())?,
                 }
             }
             RunnerState::Ready {
@@ -271,7 +273,7 @@ where
                             }
                         }
                     }
-                    Err(error) => Err(TickError::BackendError(error))?,
+                    Err(error) => Self::failed_state(&mut self.output, error.to_string())?,
                 }
             }
             RunnerState::Finalising {
@@ -296,7 +298,7 @@ where
 
                         RunnerState::Completed(finalisation.summary)
                     }
-                    Err(error) => Err(TickError::BackendError(error))?,
+                    Err(error) => Self::failed_state(&mut self.output, error.to_string())?,
                 }
             }
             RunnerState::Pausing {
@@ -333,12 +335,12 @@ where
 
                         RunnerState::Cancelled(finalisation.summary)
                     }
-                    Err(error) => Err(TickError::BackendError(error))?,
+                    Err(error) => Self::failed_state(&mut self.output, error.to_string())?,
                 }
             }
             RunnerState::Completed(summary) => RunnerState::Completed(summary),
             RunnerState::Cancelled(summary) => RunnerState::Cancelled(summary),
-            RunnerState::Failed { summary, error } => RunnerState::Failed { summary, error },
+            RunnerState::Failed { error } => RunnerState::Failed { error },
         };
 
         // Send a state change event if the state has changed and is not terminal
@@ -367,5 +369,168 @@ where
             }
         }
         Ok(())
+    }
+
+    fn failed_state(output: &mut O, error: String) -> Result<RunnerState<B::Runtime>, OutputError> {
+        output.emit(EngineEvent::Failed { error: error.clone() })?;
+        Ok(RunnerState::Failed { error })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::backend::{BackendFinalisation, BackendStep, Initialised};
+    use crate::command::{ModelDocument, ResultOptions, SolverConfiguration};
+    use std::sync::mpsc::Receiver;
+
+    #[derive(Default)]
+    struct TestOutput(Vec<EngineEvent>);
+
+    impl OutputSink for TestOutput {
+        fn emit(&mut self, event: EngineEvent) -> Result<(), OutputError> {
+            self.0.push(event);
+            Ok(())
+        }
+    }
+
+    #[derive(Clone, Copy)]
+    enum FailurePoint {
+        Initialise,
+        Step,
+        Finalise,
+        Cancel,
+    }
+
+    struct FailingBackend(FailurePoint);
+
+    impl RunnerBackend for FailingBackend {
+        type Runtime = ();
+
+        fn initialise(
+            &mut self,
+            _request: InitialiseRequest,
+        ) -> Result<Initialised<Self::Runtime>, crate::backend::BackendError> {
+            if matches!(self.0, FailurePoint::Initialise) {
+                return Err(crate::backend::BackendError::AlreadyFinalised);
+            }
+
+            Ok(Initialised {
+                runtime: (),
+                progress: progress(),
+                arrow_stream: None,
+                arrow_stream_commits: None,
+            })
+        }
+
+        fn step(
+            &mut self,
+            _runtime: &mut Self::Runtime,
+            commits: Option<Receiver<pywr_core::recorders::ArrowStreamCommit>>,
+            _target: &RunTarget,
+        ) -> Result<BackendStep, crate::backend::BackendError> {
+            if matches!(self.0, FailurePoint::Step) {
+                return Err(crate::backend::BackendError::AlreadyFinalised);
+            }
+
+            Ok(BackendStep {
+                outcome: BackendStepOutcome::EndOfTimesteps,
+                progress: progress(),
+                arrow_stream_commits: commits,
+                target_reached: true,
+            })
+        }
+
+        fn finalise(
+            &mut self,
+            _runtime: &mut Self::Runtime,
+        ) -> Result<BackendFinalisation, crate::backend::BackendError> {
+            Err(crate::backend::BackendError::AlreadyFinalised)
+        }
+
+        fn cancel(
+            &mut self,
+            _runtime: &mut Self::Runtime,
+        ) -> Result<BackendFinalisation, crate::backend::BackendError> {
+            Err(crate::backend::BackendError::AlreadyFinalised)
+        }
+    }
+
+    fn request() -> InitialiseRequest {
+        InitialiseRequest {
+            run_name: "test".into(),
+            model: ModelDocument::Json(serde_json::Value::Null),
+            data_path: None,
+            output_path: None,
+            log_level: None,
+            solver: SolverConfiguration {},
+            result_options: ResultOptions {
+                all_nodes_metric_set: None,
+                all_edges_metric_set: None,
+                clear_existing_outputs: false,
+                arrow_stream: None,
+            },
+        }
+    }
+
+    fn progress() -> crate::event::RunProgress {
+        crate::event::RunProgress {
+            completed_timesteps: 0,
+            total_timesteps: 1,
+            last_completed_date: None,
+            next_date: None,
+        }
+    }
+
+    fn assert_failed(engine: RunnerEngine<FailingBackend, TestOutput>) {
+        assert!(matches!(engine.status(), EngineStatus::Failed));
+        assert!(engine.is_terminal());
+        assert!(!engine.needs_tick());
+        assert!(matches!(
+            engine.output.0.last(),
+            Some(EngineEvent::Failed { error }) if error == "Backend already finalised"
+        ));
+    }
+
+    #[test]
+    fn backend_errors_transition_to_failed_and_emit_an_event() {
+        assert_failed(
+            RunnerEngine::initialise(
+                request(),
+                FailingBackend(FailurePoint::Initialise),
+                TestOutput::default(),
+            )
+            .tick()
+            .unwrap(),
+        );
+
+        let engine = RunnerEngine::initialise(request(), FailingBackend(FailurePoint::Step), TestOutput::default())
+            .tick()
+            .unwrap()
+            .handle_command(EngineCommand::Step)
+            .unwrap()
+            .tick()
+            .unwrap();
+        assert_failed(engine);
+
+        let engine = RunnerEngine::initialise(request(), FailingBackend(FailurePoint::Finalise), TestOutput::default())
+            .tick()
+            .unwrap()
+            .handle_command(EngineCommand::RunToEnd)
+            .unwrap()
+            .tick()
+            .unwrap()
+            .tick()
+            .unwrap();
+        assert_failed(engine);
+
+        let engine = RunnerEngine::initialise(request(), FailingBackend(FailurePoint::Cancel), TestOutput::default())
+            .tick()
+            .unwrap()
+            .handle_command(EngineCommand::Cancel)
+            .unwrap()
+            .tick()
+            .unwrap();
+        assert_failed(engine);
     }
 }
