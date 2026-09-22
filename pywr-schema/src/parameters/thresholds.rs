@@ -161,11 +161,11 @@ impl ThresholdParameter {
                 ),
                 ParameterPhase::After => pywr_core::parameters::IndexedArrayParameterBuilder::after(
                     ParameterName::new(&self.meta.name, parent),
-                    UnresolvedMetricU64::new_parameter_before(name),
+                    UnresolvedMetricU64::new_parameter_after(name),
                 ),
                 ParameterPhase::Both => pywr_core::parameters::IndexedArrayParameterBuilder::both(
                     ParameterName::new(&self.meta.name, parent),
-                    UnresolvedMetricU64::new_parameter_before(name),
+                    UnresolvedMetricU64::new_parameter_both(name),
                 ),
             };
 
@@ -409,11 +409,11 @@ impl MultiThresholdParameter {
                 ),
                 ParameterPhase::After => pywr_core::parameters::IndexedArrayParameterBuilder::after(
                     ParameterName::new(&self.meta.name, parent),
-                    UnresolvedMetricU64::new_parameter_before(name),
+                    UnresolvedMetricU64::new_parameter_after(name),
                 ),
                 ParameterPhase::Both => pywr_core::parameters::IndexedArrayParameterBuilder::both(
                     ParameterName::new(&self.meta.name, parent),
-                    UnresolvedMetricU64::new_parameter_before(name),
+                    UnresolvedMetricU64::new_parameter_both(name),
                 ),
             };
 

@@ -834,6 +834,7 @@ mod tests {
             {
                 "meta": { "name": "index-holder" },
                 "type": "IndexedArray",
+                "phase": "Before",
                 "metrics": [
                     { "type": "Edge", "edge": { "from_node": "metric-edge-from", "to_node": "metric-edge-to" } }
                 ],
