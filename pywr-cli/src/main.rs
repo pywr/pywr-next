@@ -172,7 +172,6 @@ fn init_logger(debug: bool) {
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
-    init_logger(cli.debug);
 
     match &cli.command {
         Commands::Convert {
