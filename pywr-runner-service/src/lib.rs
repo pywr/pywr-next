@@ -77,16 +77,16 @@ impl ProtocolRegistry for DefaultProtocolRegistry {
 }
 
 fn supported_capabilities() -> Vec<String> {
-    let mut capabilities = Vec::new();
-    #[cfg(feature = "clp")]
-    capabilities.push(v1::Solver::Clp.capability().to_owned());
-    #[cfg(feature = "cbc")]
-    capabilities.push(v1::Solver::Cbc.capability().to_owned());
-    #[cfg(feature = "highs")]
-    capabilities.push(v1::Solver::Highs.capability().to_owned());
-    #[cfg(feature = "microlp")]
-    capabilities.push(v1::Solver::Microlp.capability().to_owned());
-    capabilities
+    vec![
+        #[cfg(feature = "clp")]
+        v1::Solver::Clp.capability().to_owned(),
+        #[cfg(feature = "cbc")]
+        v1::Solver::Cbc.capability().to_owned(),
+        #[cfg(feature = "highs")]
+        v1::Solver::Highs.capability().to_owned(),
+        #[cfg(feature = "microlp")]
+        v1::Solver::Microlp.capability().to_owned(),
+    ]
 }
 
 pub struct NegotiatedProtocol {
