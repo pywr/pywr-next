@@ -256,6 +256,10 @@ where
                 return Ok(ServiceExit::ClientShutdown);
             }
 
+            // Snapshot completion before draining output so a terminal event always
+            // takes precedence over an unavailable worker.
+            let engine_finished = engine.as_ref().is_some_and(EngineWorker::is_finished);
+
             let running = engine.is_some();
 
             // Poll while the engine has work and while an unbounded-idle
@@ -321,7 +325,10 @@ where
 
                             let command: EngineCommand = command.try_into()?;
 
-                            current.send(command)?;
+                            // The worker may finish after the completion snapshot above.
+                            // In that case, drain its terminal event on the next loop pass
+                            // rather than reporting a communication failure to the client.
+                            let _ = current.send(command);
                         }
                     }
                 }
@@ -406,7 +413,7 @@ where
                 return Ok(exit);
             }
 
-            if engine.as_ref().is_some_and(EngineWorker::is_finished) {
+            if engine_finished {
                 engine.take().expect("finished engine worker must exist").join()?;
                 return Err(ServiceError::EngineUnavailable);
             }
