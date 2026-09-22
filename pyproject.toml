@@ -28,7 +28,7 @@ hdf = ["h5py", "tables"]
 [dependency-groups]
 dev = [
     "pytest>=9.1.1",
-    "ruff>=0.16.7",
+    "ruff>=0.16.8",
     "maturin>=1.15.0,<2.0",
 ]
 docs = [
