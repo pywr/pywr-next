@@ -108,6 +108,7 @@ pub struct RunFailure {
 #[derive(Debug, Clone, Copy)]
 pub enum RunFailureStage {
     Initialisation,
+    Panic,
     SchemaConversion,
     ModelBuild,
     SolverSetup,
@@ -121,6 +122,7 @@ impl From<RunFailure> for v1::RunnerError {
         Self {
             stage: match value.stage {
                 RunFailureStage::Initialisation => v1::RunnerStage::Initialisation,
+                RunFailureStage::Panic => v1::RunnerStage::Panic,
                 RunFailureStage::SchemaConversion => v1::RunnerStage::SchemaConversion,
                 RunFailureStage::ModelBuild => v1::RunnerStage::ModelBuild,
                 RunFailureStage::SolverSetup => v1::RunnerStage::SolverSetup,
@@ -353,5 +355,24 @@ mod tests {
         assert_eq!(error.summary, "failed to flush recorder output");
         assert_eq!(error.causes, ["disk is full"]);
         assert_eq!(error.timestep, Some("2024-01-02T00:00".parse().unwrap()));
+    }
+
+    #[test]
+    fn failed_event_preserves_panic_stage() {
+        let message: v1::ServerMessage = EngineEvent::Failed {
+            error: RunFailure {
+                stage: RunFailureStage::Panic,
+                summary: "Backend panicked: test panic".into(),
+                causes: Vec::new(),
+                timestep: None,
+            },
+        }
+        .try_into()
+        .unwrap();
+
+        let v1::ServerMessage::Failed { error } = message else {
+            panic!("expected failed server message");
+        };
+        assert!(matches!(error.stage, v1::RunnerStage::Panic));
     }
 }

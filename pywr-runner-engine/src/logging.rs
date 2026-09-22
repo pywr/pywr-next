@@ -47,6 +47,16 @@ impl Log for RunnerLogger {
 
 static LOG_ROUTER: OnceLock<MultiLogger> = OnceLock::new();
 
+struct CaptureReset(Option<(LogLevel, Sender<LogRecord>)>);
+
+impl Drop for CaptureReset {
+    fn drop(&mut self) {
+        CAPTURE.with(|capture| {
+            capture.replace(self.0.take());
+        });
+    }
+}
+
 /// A logger that forwards each record to every enabled child logger.
 pub struct MultiLogger {
     loggers: Vec<Box<dyn Log>>,
@@ -92,9 +102,8 @@ pub fn install_log_router_with(logger: Box<dyn Log>) -> Result<(), log::SetLogge
 pub(crate) fn capture_logs<T>(level: LogLevel, sender: Sender<LogRecord>, action: impl FnOnce() -> T) -> T {
     CAPTURE.with(|capture| {
         let previous = capture.replace(Some((level, sender)));
-        let result = action();
-        capture.replace(previous);
-        result
+        let _reset = CaptureReset(previous);
+        action()
     })
 }
 

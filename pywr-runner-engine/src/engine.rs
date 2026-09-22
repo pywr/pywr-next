@@ -1,9 +1,10 @@
-use crate::backend::{BackendOperation, BackendStepOutcome, RunnerBackend};
+use crate::backend::{BackendError, BackendOperation, BackendStepOutcome, RunnerBackend};
 use crate::command::{EngineCommand, InitialiseRequest};
 use crate::event::{EngineEvent, EngineStatus, LogLevel, LogRecord, RunFailure, RunFailureStage};
 use crate::logging::capture_logs;
 use crate::state::{ReadyReason, RunTarget, RunnerState};
 use std::sync::mpsc::{self, Receiver};
+use std::{panic, panic::AssertUnwindSafe};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -208,8 +209,10 @@ where
 
         let next_state = match self.state {
             RunnerState::Initialising(init_request) => {
-                let result = capture_logs(self.log_level, self.log_sender.clone(), || {
-                    self.backend.initialise(init_request)
+                let result = Self::catch_backend_panic(|| {
+                    capture_logs(self.log_level, self.log_sender.clone(), || {
+                        self.backend.initialise(init_request)
+                    })
                 });
 
                 emit_captured_logs!();
@@ -249,8 +252,10 @@ where
                 arrow_stream_commits,
                 target,
             } => {
-                let step_result = capture_logs(self.log_level, self.log_sender.clone(), || {
-                    self.backend.step(&mut runtime, arrow_stream_commits, &target)
+                let step_result = Self::catch_backend_panic(|| {
+                    capture_logs(self.log_level, self.log_sender.clone(), || {
+                        self.backend.step(&mut runtime, arrow_stream_commits, &target)
+                    })
                 });
 
                 emit_captured_logs!();
@@ -301,8 +306,10 @@ where
                 mut runtime,
                 arrow_stream_commits,
             } => {
-                let finalisation_result = capture_logs(self.log_level, self.log_sender.clone(), || {
-                    self.backend.finalise(&mut runtime)
+                let finalisation_result = Self::catch_backend_panic(|| {
+                    capture_logs(self.log_level, self.log_sender.clone(), || {
+                        self.backend.finalise(&mut runtime)
+                    })
                 });
 
                 emit_captured_logs!();
@@ -326,8 +333,10 @@ where
                 mut runtime,
                 arrow_stream_commits,
             } => {
-                let flush_result = capture_logs(self.log_level, self.log_sender.clone(), || {
-                    self.backend.flush_recorders(&mut runtime)
+                let flush_result = Self::catch_backend_panic(|| {
+                    capture_logs(self.log_level, self.log_sender.clone(), || {
+                        self.backend.flush_recorders(&mut runtime)
+                    })
                 });
 
                 emit_captured_logs!();
@@ -352,8 +361,10 @@ where
                 arrow_stream_commits,
             } => {
                 // Transition to cancelled state
-                let cancel_result = capture_logs(self.log_level, self.log_sender.clone(), || {
-                    self.backend.cancel(&mut runtime)
+                let cancel_result = Self::catch_backend_panic(|| {
+                    capture_logs(self.log_level, self.log_sender.clone(), || {
+                        self.backend.cancel(&mut runtime)
+                    })
                 });
 
                 emit_captured_logs!();
@@ -406,6 +417,13 @@ where
         Ok(())
     }
 
+    /// A panic can leave the backend runtime inconsistent, so callers must transition to
+    /// `Failed` and drop that runtime rather than attempting to resume it.
+    fn catch_backend_panic<T>(operation: impl FnOnce() -> Result<T, BackendError>) -> Result<T, BackendError> {
+        panic::catch_unwind(AssertUnwindSafe(operation))
+            .unwrap_or_else(|payload| Err(BackendError::from_panic_payload(payload)))
+    }
+
     fn failed_state(
         output: &mut O,
         error: crate::backend::BackendError,
@@ -444,6 +462,94 @@ mod tests {
     }
 
     struct FailingBackend(FailurePoint);
+
+    #[derive(Clone, Copy)]
+    enum PanicPoint {
+        Initialise,
+        Step,
+        FlushRecorders,
+        Finalise,
+        Cancel,
+    }
+
+    struct PanickingBackend(PanicPoint);
+
+    impl RunnerBackend for PanickingBackend {
+        type Runtime = ();
+
+        fn initialise(
+            &mut self,
+            _request: InitialiseRequest,
+        ) -> Result<Initialised<Self::Runtime>, crate::backend::BackendError> {
+            if matches!(self.0, PanicPoint::Initialise) {
+                panic!("initialise panic");
+            }
+            Ok(Initialised {
+                runtime: (),
+                progress: progress(),
+                arrow_stream: None,
+                arrow_stream_commits: None,
+            })
+        }
+
+        fn step(
+            &mut self,
+            _runtime: &mut Self::Runtime,
+            commits: Option<Receiver<pywr_core::recorders::ArrowStreamCommit>>,
+            target: &RunTarget,
+        ) -> Result<BackendStep, crate::backend::BackendError> {
+            if matches!(self.0, PanicPoint::Step) {
+                panic!("step panic");
+            }
+            Ok(BackendStep {
+                outcome: if matches!(self.0, PanicPoint::Finalise) {
+                    BackendStepOutcome::EndOfTimesteps
+                } else {
+                    BackendStepOutcome::Advanced
+                },
+                progress: progress(),
+                arrow_stream_commits: commits,
+                target_reached: !matches!(target, RunTarget::ToEnd),
+            })
+        }
+
+        fn flush_recorders(&mut self, _runtime: &mut Self::Runtime) -> Result<(), crate::backend::BackendError> {
+            if matches!(self.0, PanicPoint::FlushRecorders) {
+                panic!("flush panic");
+            }
+            Ok(())
+        }
+
+        fn finalise(
+            &mut self,
+            _runtime: &mut Self::Runtime,
+        ) -> Result<BackendFinalisation, crate::backend::BackendError> {
+            if matches!(self.0, PanicPoint::Finalise) {
+                panic!("finalise panic");
+            }
+            Ok(BackendFinalisation {
+                summary: crate::event::RunSummary {
+                    outcome: crate::event::FinalOutcome::Completed,
+                    progress: progress(),
+                },
+            })
+        }
+
+        fn cancel(
+            &mut self,
+            _runtime: &mut Self::Runtime,
+        ) -> Result<BackendFinalisation, crate::backend::BackendError> {
+            if matches!(self.0, PanicPoint::Cancel) {
+                panic!("cancel panic");
+            }
+            Ok(BackendFinalisation {
+                summary: crate::event::RunSummary {
+                    outcome: crate::event::FinalOutcome::Cancelled,
+                    progress: progress(),
+                },
+            })
+        }
+    }
 
     impl RunnerBackend for FailingBackend {
         type Runtime = ();
@@ -613,6 +719,18 @@ mod tests {
         ));
     }
 
+    fn assert_panicked(engine: RunnerEngine<PanickingBackend, TestOutput>, message: &str) {
+        assert!(matches!(engine.status(), EngineStatus::Failed));
+        assert!(engine.is_terminal());
+        assert!(!engine.needs_tick());
+        assert!(matches!(
+            engine.output.0.last(),
+            Some(EngineEvent::Failed { error })
+                if matches!(error.stage, RunFailureStage::Panic)
+                    && error.summary == format!("Backend panicked: {message}")
+        ));
+    }
+
     fn assert_commit_precedes_ready(events: &[EngineEvent]) {
         let commit = events
             .iter()
@@ -667,6 +785,53 @@ mod tests {
         engine.handle_command(EngineCommand::Cancel).unwrap();
         let engine = engine.tick().unwrap();
         assert_failed(engine, RunFailureStage::Finalisation);
+    }
+
+    #[test]
+    fn backend_panics_transition_to_failed_and_emit_an_event() {
+        assert_panicked(
+            RunnerEngine::initialise(
+                request(),
+                PanickingBackend(PanicPoint::Initialise),
+                TestOutput::default(),
+            )
+            .tick()
+            .unwrap(),
+            "initialise panic",
+        );
+
+        let mut engine = RunnerEngine::initialise(request(), PanickingBackend(PanicPoint::Step), TestOutput::default())
+            .tick()
+            .unwrap();
+        engine.handle_command(EngineCommand::Step).unwrap();
+        assert_panicked(engine.tick().unwrap(), "step panic");
+
+        let mut engine = RunnerEngine::initialise(
+            request(),
+            PanickingBackend(PanicPoint::FlushRecorders),
+            TestOutput::default(),
+        )
+        .tick()
+        .unwrap();
+        engine.handle_command(EngineCommand::RunToEnd).unwrap();
+        let mut engine = engine.tick().unwrap();
+        engine.handle_command(EngineCommand::Pause).unwrap();
+        assert_panicked(engine.tick().unwrap(), "flush panic");
+
+        let mut engine =
+            RunnerEngine::initialise(request(), PanickingBackend(PanicPoint::Finalise), TestOutput::default())
+                .tick()
+                .unwrap();
+        engine.handle_command(EngineCommand::RunToEnd).unwrap();
+        let engine = engine.tick().unwrap();
+        assert_panicked(engine.tick().unwrap(), "finalise panic");
+
+        let mut engine =
+            RunnerEngine::initialise(request(), PanickingBackend(PanicPoint::Cancel), TestOutput::default())
+                .tick()
+                .unwrap();
+        engine.handle_command(EngineCommand::Cancel).unwrap();
+        assert_panicked(engine.tick().unwrap(), "cancel panic");
     }
 
     #[test]

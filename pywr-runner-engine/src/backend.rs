@@ -5,6 +5,7 @@ use pywr_core::models::{Model, ModelFinaliseError, ModelState, ModelStepError, M
 use pywr_core::recorders::{ArrowStreamCommit, ArrowStreamOutputBuilder};
 use pywr_core::solvers::{ClpSolver, ClpSolverSettings};
 use pywr_schema::NetworkSchema;
+use std::any::Any;
 use std::sync::mpsc::{self, Receiver};
 use thiserror::Error;
 
@@ -26,6 +27,8 @@ pub enum BackendError {
     ModelStepError(#[from] ModelStepError),
     #[error("Model finalisation error: {0}")]
     ModelFinalisationError(#[from] ModelFinaliseError),
+    #[error("Backend panicked: {0}")]
+    Panic(String),
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -38,8 +41,21 @@ pub(crate) enum BackendOperation {
 }
 
 impl BackendError {
+    pub(crate) fn from_panic_payload(payload: Box<dyn Any + Send>) -> Self {
+        let message = if let Some(message) = payload.downcast_ref::<String>() {
+            message.clone()
+        } else if let Some(message) = payload.downcast_ref::<&'static str>() {
+            (*message).to_owned()
+        } else {
+            "non-string panic payload".to_owned()
+        };
+
+        Self::Panic(message)
+    }
+
     pub(crate) fn into_run_failure(self, operation: BackendOperation) -> RunFailure {
         let stage = match (&self, operation) {
+            (Self::Panic(_), _) => RunFailureStage::Panic,
             (Self::ModelSchemaDeserialisationError(_), _) => RunFailureStage::SchemaConversion,
             (Self::ModelBuilderCreationError(_) | Self::ModelBuildError(_), _) => RunFailureStage::ModelBuild,
             (Self::ModelSetupError(pywr_core::models::ModelSetupError::SolverSetupError(_)), _) => {
