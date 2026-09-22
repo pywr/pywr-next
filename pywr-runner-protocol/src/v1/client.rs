@@ -43,8 +43,30 @@ pub struct InitialiseRequest {
     pub result_options: ResultOptions,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum Solver {
+    Clp,
+    Cbc,
+    Highs,
+    Microlp,
+}
+
+impl Solver {
+    pub const fn capability(self) -> &'static str {
+        match self {
+            Self::Clp => "solver:clp",
+            Self::Cbc => "solver:cbc",
+            Self::Highs => "solver:highs",
+            Self::Microlp => "solver:microlp",
+        }
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize)]
-pub struct SolverConfiguration {}
+pub struct SolverConfiguration {
+    pub solver: Solver,
+}
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ResultOptions {
     pub all_nodes_metric_set: Option<AddNodesMetricSet>,
@@ -79,11 +101,20 @@ pub struct ArrowStreamOptions {
 
 #[cfg(test)]
 mod tests {
-    use super::ArrowStreamOptions;
+    use super::{ArrowStreamOptions, Solver, SolverConfiguration};
 
     #[test]
     fn arrow_stream_options_reject_zero_batch_size() {
         let options = r#"{"name":"results","filename":"results.arrow","metric_set":"nodes","batch_size":0}"#;
         assert!(serde_json::from_str::<ArrowStreamOptions>(options).is_err());
+    }
+
+    #[test]
+    fn solver_configuration_round_trips() {
+        let config = SolverConfiguration { solver: Solver::Highs };
+        let value = serde_json::to_value(&config).unwrap();
+        assert_eq!(value, serde_json::json!({ "solver": "highs" }));
+        let decoded: SolverConfiguration = serde_json::from_value(value).unwrap();
+        assert_eq!(decoded.solver, Solver::Highs);
     }
 }

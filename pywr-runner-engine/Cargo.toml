@@ -11,11 +11,18 @@ license.workspace = true
 keywords.workspace = true
 categories.workspace = true
 
+[features]
+default = ["clp"]
+clp = ["pywr-core/clp", "pywr-schema/core", "pywr-schema/clp"]
+cbc = ["pywr-core/cbc", "pywr-schema/core", "pywr-schema/cbc"]
+highs = ["pywr-core/highs", "pywr-schema/core", "pywr-schema/highs"]
+microlp = ["pywr-core/microlp", "pywr-schema/core", "pywr-schema/microlp"]
+
 [dependencies]
 jiff = { workspace = true }
 log = { workspace = true }
-pywr-core = { path = "../pywr-core", features = ["clp"] }
-pywr-schema = { path = "../pywr-schema", features = ["clp"] }
+pywr-core = { path = "../pywr-core", default-features = false }
+pywr-schema = { path = "../pywr-schema", default-features = false }
 pywr-runner-protocol = { path = "../pywr-runner-protocol" }
 serde_json = { workspace = true }
 strum = { workspace = true }

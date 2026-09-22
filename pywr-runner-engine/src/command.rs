@@ -98,15 +98,31 @@ impl TryFrom<v1::ModelDocument> for ModelDocument {
         Ok(doc)
     }
 }
-#[derive(Debug)]
-pub struct SolverConfiguration {}
+#[derive(Debug, Clone, Copy)]
+pub struct SolverConfiguration {
+    pub solver: Solver,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum Solver {
+    Clp,
+    Cbc,
+    Highs,
+    Microlp,
+}
 
 #[allow(clippy::infallible_try_from)]
 impl TryFrom<v1::SolverConfiguration> for SolverConfiguration {
     type Error = Infallible;
 
-    fn try_from(_config: v1::SolverConfiguration) -> Result<Self, Self::Error> {
-        Ok(SolverConfiguration {})
+    fn try_from(config: v1::SolverConfiguration) -> Result<Self, Self::Error> {
+        let solver = match config.solver {
+            v1::Solver::Clp => Solver::Clp,
+            v1::Solver::Cbc => Solver::Cbc,
+            v1::Solver::Highs => Solver::Highs,
+            v1::Solver::Microlp => Solver::Microlp,
+        };
+        Ok(SolverConfiguration { solver })
     }
 }
 #[derive(Debug)]

@@ -55,18 +55,38 @@ impl ProtocolRegistry for DefaultProtocolRegistry {
                 supported: vec![ProtocolVersion { major: 1, minor: 0 }],
             })?;
 
-        if !hello.required_capabilities.is_empty() {
+        let capabilities = supported_capabilities();
+        let missing_capabilities: Vec<String> = hello
+            .required_capabilities
+            .iter()
+            .filter(|capability| !capabilities.contains(capability))
+            .cloned()
+            .collect();
+        if !missing_capabilities.is_empty() {
             return Err(HandshakeRejection::MissingCapabilities {
-                capabilities: hello.required_capabilities.clone(),
+                capabilities: missing_capabilities,
             });
         }
 
         Ok(NegotiatedProtocol {
             version,
-            capabilities: Vec::new(),
+            capabilities,
             codec: Box::new(JsonV1Codec),
         })
     }
+}
+
+fn supported_capabilities() -> Vec<String> {
+    let mut capabilities = Vec::new();
+    #[cfg(feature = "clp")]
+    capabilities.push(v1::Solver::Clp.capability().to_owned());
+    #[cfg(feature = "cbc")]
+    capabilities.push(v1::Solver::Cbc.capability().to_owned());
+    #[cfg(feature = "highs")]
+    capabilities.push(v1::Solver::Highs.capability().to_owned());
+    #[cfg(feature = "microlp")]
+    capabilities.push(v1::Solver::Microlp.capability().to_owned());
+    capabilities
 }
 
 pub struct NegotiatedProtocol {
@@ -608,6 +628,60 @@ pub fn run_stdio_server(config: RunnerServiceConfig) -> Result<ServiceExit, Serv
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(feature = "clp")]
+    fn enabled_test_solver() -> v1::Solver {
+        v1::Solver::Clp
+    }
+
+    #[cfg(all(not(feature = "clp"), feature = "cbc"))]
+    fn enabled_test_solver() -> v1::Solver {
+        v1::Solver::Cbc
+    }
+
+    #[cfg(all(not(feature = "clp"), not(feature = "cbc"), feature = "highs"))]
+    fn enabled_test_solver() -> v1::Solver {
+        v1::Solver::Highs
+    }
+
+    #[cfg(all(
+        not(feature = "clp"),
+        not(feature = "cbc"),
+        not(feature = "highs"),
+        feature = "microlp"
+    ))]
+    fn enabled_test_solver() -> v1::Solver {
+        v1::Solver::Microlp
+    }
+
+    #[test]
+    fn negotiation_advertises_and_accepts_enabled_solver_capability() {
+        let solver = enabled_test_solver();
+        let hello = ClientHello {
+            supported_versions: vec![ProtocolVersion { major: 1, minor: 0 }],
+            required_capabilities: vec![solver.capability().to_owned()],
+            authentication: None,
+        };
+
+        let negotiated = DefaultProtocolRegistry.negotiate(&hello).unwrap();
+        assert!(negotiated.capabilities.contains(&solver.capability().to_owned()));
+    }
+
+    #[cfg(not(feature = "microlp"))]
+    #[test]
+    fn negotiation_rejects_unavailable_solver_capability() {
+        let hello = ClientHello {
+            supported_versions: vec![ProtocolVersion { major: 1, minor: 0 }],
+            required_capabilities: vec![v1::Solver::Microlp.capability().to_owned()],
+            authentication: None,
+        };
+
+        assert!(matches!(
+            DefaultProtocolRegistry.negotiate(&hello),
+            Err(HandshakeRejection::MissingCapabilities { capabilities })
+                if capabilities == vec![v1::Solver::Microlp.capability().to_owned()]
+        ));
+    }
 
     #[test]
     fn unbounded_idle_sessions_poll_at_the_update_interval() {

@@ -11,10 +11,17 @@ license.workspace = true
 keywords.workspace = true
 categories.workspace = true
 
+[features]
+default = ["clp"]
+clp = ["pywr-runner-engine/clp"]
+cbc = ["pywr-runner-engine/cbc"]
+highs = ["pywr-runner-engine/highs"]
+microlp = ["pywr-runner-engine/microlp"]
+
 [dependencies]
 log = { workspace = true }
 pywr-runner-protocol = { path = "../pywr-runner-protocol" }
-pywr-runner-engine = { path = "../pywr-runner-engine" }
+pywr-runner-engine = { path = "../pywr-runner-engine", default-features = false }
 pywr-runner-transport = { path = "../pywr-runner-transport" }
 serde_json = { workspace = true }
 thiserror = { workspace = true }

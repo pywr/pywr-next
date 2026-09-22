@@ -1,9 +1,17 @@
-use crate::command::{InitialiseRequest, ModelDocument, ResultOptions};
+use crate::command::{InitialiseRequest, ModelDocument, ResultOptions, Solver};
 use crate::event::{ArrowStreamDescriptor, FinalOutcome, RunFailure, RunFailureStage, RunProgress, RunSummary};
 use crate::state::RunTarget;
 use pywr_core::models::{Model, ModelFinaliseError, ModelState, ModelStepError, ModelTimings};
 use pywr_core::recorders::{ArrowStreamCommit, ArrowStreamOutputBuilder};
-use pywr_core::solvers::{ClpSolver, ClpSolverSettings};
+#[cfg(feature = "cbc")]
+use pywr_core::solvers::CbcSolverSettings;
+#[cfg(feature = "clp")]
+use pywr_core::solvers::ClpSolverSettings;
+#[cfg(feature = "highs")]
+use pywr_core::solvers::HighsSolverSettings;
+#[cfg(feature = "microlp")]
+use pywr_core::solvers::MicroLpSolverSettings;
+use pywr_core::solvers::{BuiltInSolver, BuiltInSolverConfig};
 use pywr_schema::NetworkSchema;
 use std::any::Any;
 use std::sync::mpsc::{self, Receiver};
@@ -23,6 +31,8 @@ pub enum BackendError {
     AlreadyFinalised,
     #[error("Model state not initialised")]
     ModelStateNotInitialised,
+    #[error("Requested solver is not enabled in this runner: {0:?}")]
+    SolverUnavailable(Solver),
     #[error("Model step error: {0}")]
     ModelStepError(#[from] ModelStepError),
     #[error("Model finalisation error: {0}")]
@@ -227,7 +237,7 @@ fn apply_arrow_stream_recorder_to_model_builder(
 
 struct PywrState {
     #[allow(clippy::vec_box)] // TODO there's some refinement here with the solver traits that could be improved.
-    model_state: ModelState<Vec<Box<ClpSolver>>>,
+    model_state: ModelState<Vec<Box<BuiltInSolver>>>,
     timings: ModelTimings,
 }
 
@@ -308,9 +318,50 @@ impl RunnerBackend for PywrBackend {
 
         let model = model_builder.build()?;
 
-        // Initialise the model state
-        let settings = ClpSolverSettings::default();
-        let model_state = model.setup(&settings)?;
+        // Initialise the model state using the requested built-in solver.
+        let solver_config = match request.solver.solver {
+            Solver::Clp => {
+                #[cfg(feature = "clp")]
+                {
+                    BuiltInSolverConfig::Clp(ClpSolverSettings::default())
+                }
+                #[cfg(not(feature = "clp"))]
+                {
+                    return Err(BackendError::SolverUnavailable(Solver::Clp));
+                }
+            }
+            Solver::Cbc => {
+                #[cfg(feature = "cbc")]
+                {
+                    BuiltInSolverConfig::Cbc(CbcSolverSettings::default())
+                }
+                #[cfg(not(feature = "cbc"))]
+                {
+                    return Err(BackendError::SolverUnavailable(Solver::Cbc));
+                }
+            }
+            Solver::Highs => {
+                #[cfg(feature = "highs")]
+                {
+                    BuiltInSolverConfig::Highs(HighsSolverSettings::default())
+                }
+                #[cfg(not(feature = "highs"))]
+                {
+                    return Err(BackendError::SolverUnavailable(Solver::Highs));
+                }
+            }
+            Solver::Microlp => {
+                #[cfg(feature = "microlp")]
+                {
+                    BuiltInSolverConfig::MicroLp(MicroLpSolverSettings::default())
+                }
+                #[cfg(not(feature = "microlp"))]
+                {
+                    return Err(BackendError::SolverUnavailable(Solver::Microlp));
+                }
+            }
+        };
+        let model_state = model.setup(&solver_config)?;
 
         let timings = ModelTimings::new_without_component_timings();
 

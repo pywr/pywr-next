@@ -439,7 +439,7 @@ where
 mod tests {
     use super::*;
     use crate::backend::{BackendFinalisation, BackendStep, Initialised};
-    use crate::command::{ModelDocument, ResultOptions, SolverConfiguration};
+    use crate::command::{ModelDocument, ResultOptions, Solver, SolverConfiguration};
     use std::sync::mpsc::Receiver;
     use std::sync::{Arc, atomic::AtomicUsize};
 
@@ -688,7 +688,7 @@ mod tests {
             data_path: None,
             output_path: None,
             log_level: None,
-            solver: SolverConfiguration {},
+            solver: SolverConfiguration { solver: Solver::Clp },
             result_options: ResultOptions {
                 all_nodes_metric_set: None,
                 all_edges_metric_set: None,
