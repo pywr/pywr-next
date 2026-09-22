@@ -18,7 +18,7 @@ use std::thread::JoinHandle;
 use std::time::Duration;
 use thiserror::Error;
 
-pub use pywr_runner_engine::install_log_router;
+pub use pywr_runner_engine::install_log_router_with;
 
 static INTERRUPT_HANDLER: OnceLock<Box<dyn Fn() -> bool + 'static + Send + Sync>> = OnceLock::new();
 
@@ -205,7 +205,6 @@ where
         use pywr_runner_engine::{EngineCommand, EngineEvent, RunnerEngine};
         use pywr_runner_protocol::{BootstrapClientMessage, BootstrapServerMessage, ServerHello, SessionId};
 
-        install_log_router();
         let (mut reader, mut writer) = connection.split()?;
 
         // Bootstrap handshake.

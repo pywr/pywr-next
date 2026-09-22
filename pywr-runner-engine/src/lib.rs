@@ -9,4 +9,4 @@ pub use backend::{PywrBackend, RunnerBackend};
 pub use command::{EngineCommand, EngineCommandKind, InitialiseRequest};
 pub use engine::{CommandError, OutputError, OutputSink, RunnerEngine, TickError};
 pub use event::{EngineEvent, EngineEventKind, EngineStatus};
-pub use logging::install_log_router;
+pub use logging::{MultiLogger, install_log_router_with};
