@@ -40,6 +40,16 @@ impl OutputMetric {
     pub fn sub_type(&self) -> Option<&str> {
         self.sub_type.as_deref()
     }
+
+    /// Get a fully qualified name for the metric that includes the type and subtype (if any) and
+    /// attribute.
+    pub fn fully_qualified_name(&self) -> String {
+        if let Some(sub_type) = &self.sub_type {
+            format!("{}.{}.{}.{}", self.ty, sub_type, self.name, self.attribute)
+        } else {
+            format!("{}.{}.{}", self.ty, self.name, self.attribute)
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]

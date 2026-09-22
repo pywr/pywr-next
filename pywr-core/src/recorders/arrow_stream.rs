@@ -193,7 +193,7 @@ fn make_schema(metric_set_name: &str, metrics: impl Iterator<Item = OutputMetric
     let mut used_names = HashMap::<String, usize>::new();
 
     for metric in metrics {
-        let base_name = metric.name().to_string();
+        let base_name = format!("{}.{}", metric_set_name, metric.fully_qualified_name());
         let count = used_names.entry(base_name.clone()).or_default();
         let column_name = if *count == 0 {
             base_name
