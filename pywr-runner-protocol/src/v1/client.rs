@@ -9,7 +9,7 @@ use strum_macros::EnumDiscriminants;
 #[serde(tag = "type", content = "payload", rename_all = "snake_case")]
 #[strum_discriminants(name(ClientCommandKind))]
 pub enum ClientCommand {
-    Initialise { request: InitialiseRequest },
+    Initialise { request: Box<InitialiseRequest> },
     Step,
     RunUntil { datetime: DateTime },
     RunToEnd,

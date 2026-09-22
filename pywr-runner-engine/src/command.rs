@@ -10,7 +10,7 @@ use std::path::PathBuf;
 #[strum_discriminants(name(EngineCommandKind))]
 #[strum(serialize_all = "kebab-case")]
 pub enum EngineCommand {
-    Initialize { request: InitialiseRequest },
+    Initialize { request: Box<InitialiseRequest> },
     Step,
     RunUntil { datetime: DateTime },
     RunToEnd,
@@ -37,7 +37,7 @@ impl TryFrom<v1::ClientCommand> for EngineCommand {
             v1::ClientCommand::RunToEnd => EngineCommand::RunToEnd,
             v1::ClientCommand::Pause => EngineCommand::Pause,
             v1::ClientCommand::Initialise { request } => EngineCommand::Initialize {
-                request: request.try_into()?,
+                request: Box::new((*request).try_into()?),
             },
             v1::ClientCommand::Cancel => EngineCommand::Cancel,
 

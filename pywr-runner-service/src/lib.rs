@@ -278,7 +278,7 @@ where
                             let run_id = envelope.run_id.unwrap_or_default();
                             session.run_id = Some(run_id);
 
-                            let request = request.try_into()?;
+                            let request = (*request).try_into()?;
 
                             let backend = backend.take().ok_or_else(|| {
                                 ServiceError::ProtocolViolation("the backend has already been assigned to a run".into())
