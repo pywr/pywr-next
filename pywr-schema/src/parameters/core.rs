@@ -524,7 +524,11 @@ impl TryFromV1<NegativeParameterV1> for NegativeParameter {
         let parameter =
             try_convert_parameter_attr(&meta.name, "parameter", v1.parameter, parent_node, conversion_data)?;
 
-        let p = Self { meta, parameter, phase: ParameterPhase::Before };
+        let p = Self {
+            meta,
+            parameter,
+            phase: ParameterPhase::Before,
+        };
         Ok(p)
     }
 }
@@ -566,7 +570,9 @@ impl NegativeMaxParameter {
         let name = ParameterName::new(&self.meta.name, parent);
 
         let p = match self.phase {
-            ParameterPhase::Before => pywr_core::parameters::NegativeMaxParameterBuilder::before(name, metric, threshold),
+            ParameterPhase::Before => {
+                pywr_core::parameters::NegativeMaxParameterBuilder::before(name, metric, threshold)
+            }
             ParameterPhase::After => pywr_core::parameters::NegativeMaxParameterBuilder::after(name, metric, threshold),
             ParameterPhase::Both => pywr_core::parameters::NegativeMaxParameterBuilder::both(name, metric, threshold),
         };
@@ -637,7 +643,9 @@ impl NegativeMinParameter {
         let name = ParameterName::new(&self.meta.name, parent);
 
         let p = match self.phase {
-            ParameterPhase::Before => pywr_core::parameters::NegativeMinParameterBuilder::before(name, metric, threshold),
+            ParameterPhase::Before => {
+                pywr_core::parameters::NegativeMinParameterBuilder::before(name, metric, threshold)
+            }
             ParameterPhase::After => pywr_core::parameters::NegativeMinParameterBuilder::after(name, metric, threshold),
             ParameterPhase::Both => pywr_core::parameters::NegativeMinParameterBuilder::both(name, metric, threshold),
         };

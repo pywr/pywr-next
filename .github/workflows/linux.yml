@@ -27,6 +27,8 @@ jobs:
           python-version-file: "pyproject.toml"
       - name: Install Intel OpenCL
         run: sudo apt-get install -y intel-opencl-icd ocl-icd-opencl-dev
+      - name: Cargo format
+        run: cargo fmt --all -- --check
       - name: Run Clippy
         run: cargo clippy --all-targets --all-features --all
       - name: Install latest mdbook
