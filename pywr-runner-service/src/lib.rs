@@ -372,7 +372,7 @@ where
                         continue;
                     }
                     EngineEvent::StateChanged { .. } => {}
-                    EngineEvent::Log { log_record } => {}
+                    EngineEvent::Log { .. } => {}
                 }
 
                 let message: v1::ServerMessage = event.try_into()?;
