@@ -1,8 +1,10 @@
+mod arrow_stream;
 mod csv;
 mod hdf;
 mod memory;
 mod placeholder;
 
+pub use arrow_stream::ArrowStreamOutput;
 pub use self::csv::{CsvFormat, CsvMetricSet, CsvMetricSetType, CsvOutput};
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
@@ -30,6 +32,7 @@ use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumString, IntoStaticS
 #[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
 #[strum_discriminants(name(OutputType))]
 pub enum Output {
+    ArrowStream(ArrowStreamOutput),
     CSV(CsvOutput),
     HDF5(Hdf5Output),
     Memory(Box<MemoryOutput>),
@@ -39,6 +42,7 @@ pub enum Output {
 impl Output {
     pub fn name(&self) -> &str {
         match self {
+            Self::ArrowStream(o) => &o.name,
             Self::CSV(o) => &o.name,
             Self::HDF5(o) => &o.name,
             Self::Memory(o) => &o.name,
@@ -59,6 +63,7 @@ impl Output {
         output_path: Option<&Path>,
     ) -> Result<(), SchemaError> {
         match self {
+            Self::ArrowStream(o) => o.add_to_network(network, output_path),
             Self::CSV(o) => o.add_to_network(network, output_path),
             Self::HDF5(o) => o.add_to_network(network, output_path),
             Self::Memory(o) => o.add_to_network(network, data_path),

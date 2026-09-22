@@ -1,4 +1,5 @@
 mod aggregator;
+mod arrow_stream;
 mod csv;
 
 #[cfg(feature = "hdf5")]
@@ -20,6 +21,10 @@ use crate::scenario::ScenarioIndex;
 use crate::state::State;
 use crate::timestep::Timestep;
 pub use aggregator::{AggregationFrequency, Aggregator, PeriodValue};
+pub use arrow_stream::{
+    ArrowStreamCommit, ArrowStreamError, ArrowStreamOutput, ArrowStreamOutputBuilder, MetricColumnExtension,
+    MetricColumnMetadata,
+};
 pub use csv::{CsvLongFmtOutput, CsvLongFmtOutputBuilder, CsvLongFmtRecord, CsvWideFmtOutput, CsvWideFmtOutputBuilder};
 use float_cmp::{ApproxEq, F64Margin, approx_eq};
 #[cfg(feature = "hdf5")]
@@ -55,6 +60,8 @@ impl RecorderMeta {
 /// Errors returned by recorder setup.
 #[derive(Error, Debug)]
 pub enum RecorderSetupError {
+    #[error("Arrow stream error: {0}")]
+    ArrowStreamError(#[from] ArrowStreamError),
     #[error("CSV error: {0}")]
     CSVError(#[from] CsvError),
     #[cfg(feature = "hdf5")]
@@ -67,6 +74,8 @@ pub enum RecorderSetupError {
 /// Errors returned by recorder saving.
 #[derive(Error, Debug)]
 pub enum RecorderSaveError {
+    #[error("Arrow stream error: {0}")]
+    ArrowStreamError(#[from] ArrowStreamError),
     #[error("F64 metric error: {0}")]
     MetricF64Error(#[from] MetricF64Error),
     #[error("U64 metric error: {0}")]
@@ -83,6 +92,8 @@ pub enum RecorderSaveError {
 /// Errors returned by recorder saving.
 #[derive(Error, Debug)]
 pub enum RecorderFinaliseError {
+    #[error("Arrow stream error: {0}")]
+    ArrowStreamError(#[from] ArrowStreamError),
     #[error("Metric set index `{index}` not found")]
     MetricSetIndexNotFound { index: MetricSetIndex },
     #[error("CSV error: {0}")]
