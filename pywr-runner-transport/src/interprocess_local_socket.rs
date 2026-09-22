@@ -412,9 +412,13 @@ impl TransportWriter for InterprocessLocalSocketWriter {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::ErrorKind;
     use std::sync::atomic::AtomicUsize;
+    use std::time::Instant;
 
     const WAIT: Duration = Duration::from_secs(5);
+    const CONNECT_WAIT: Duration = Duration::from_secs(1);
+    const ACCEPT_POLL_INTERVAL: Duration = Duration::from_millis(10);
 
     fn unique_socket_name() -> String {
         static COUNTER: AtomicUsize = AtomicUsize::new(0);
@@ -428,6 +432,26 @@ mod tests {
 
     type SplitConnection = (InterprocessLocalSocketReader, InterprocessLocalSocketWriter);
 
+    /// Poll the nonblocking listener like a local-socket server would.
+    fn accept_connection(listener: &InterprocessLocalSocketListener) -> InterprocessLocalSocketConnection {
+        let deadline = Instant::now() + CONNECT_WAIT;
+
+        loop {
+            assert!(
+                Instant::now() < deadline,
+                "timed out waiting {CONNECT_WAIT:?} for a client connection"
+            );
+
+            match listener.accept() {
+                Ok(connection) => return connection,
+                Err(TransportError::Io(error)) if error.kind() == ErrorKind::WouldBlock => {
+                    std::thread::sleep(ACCEPT_POLL_INTERVAL);
+                }
+                Err(error) => panic!("accept: {error}"),
+            }
+        }
+    }
+
     /// Bind a listener and connect a client to it, returning the split server and client ends.
     fn connected_pair() -> (SplitConnection, SplitConnection) {
         let name = unique_socket_name();
@@ -436,7 +460,7 @@ mod tests {
         let client =
             std::thread::spawn(move || InterprocessLocalSocketConnection::connect_namespaced(&name).expect("connect"));
 
-        let server = listener.accept().expect("accept");
+        let server = accept_connection(&listener);
         let client = client.join().expect("client thread");
 
         (
