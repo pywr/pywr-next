@@ -1,5 +1,5 @@
 use crate::command::{InitialiseRequest, ModelDocument, ResultOptions};
-use crate::event::{ArrowStreamDescriptor, FinalOutcome, RunProgress, RunSummary};
+use crate::event::{ArrowStreamDescriptor, FinalOutcome, RunFailure, RunFailureStage, RunProgress, RunSummary};
 use crate::state::RunTarget;
 use pywr_core::models::{Model, ModelFinaliseError, ModelState, ModelStepError, ModelTimings};
 use pywr_core::recorders::{ArrowStreamCommit, ArrowStreamOutputBuilder};
@@ -26,6 +26,60 @@ pub enum BackendError {
     ModelStepError(#[from] ModelStepError),
     #[error("Model finalisation error: {0}")]
     ModelFinalisationError(#[from] ModelFinaliseError),
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum BackendOperation {
+    Initialise,
+    Step,
+    FlushRecorders,
+    Finalise,
+    Cancel,
+}
+
+impl BackendError {
+    pub(crate) fn into_run_failure(self, operation: BackendOperation) -> RunFailure {
+        let stage = match (&self, operation) {
+            (Self::ModelSchemaDeserialisationError(_), _) => RunFailureStage::SchemaConversion,
+            (Self::ModelBuilderCreationError(_) | Self::ModelBuildError(_), _) => RunFailureStage::ModelBuild,
+            (Self::ModelSetupError(pywr_core::models::ModelSetupError::SolverSetupError(_)), _) => {
+                RunFailureStage::SolverSetup
+            }
+            (Self::ModelSetupError(pywr_core::models::ModelSetupError::RecorderSetupError(_)), _) => {
+                RunFailureStage::Recorder
+            }
+            (
+                Self::ModelStepError(
+                    ModelStepError::RecorderSaveError { .. } | ModelStepError::RecorderFlushError { .. },
+                ),
+                _,
+            ) => RunFailureStage::Recorder,
+            (_, BackendOperation::Initialise) => RunFailureStage::Initialisation,
+            (_, BackendOperation::Step) => RunFailureStage::Timestep,
+            (_, BackendOperation::FlushRecorders) => RunFailureStage::Recorder,
+            (_, BackendOperation::Finalise | BackendOperation::Cancel) => RunFailureStage::Finalisation,
+        };
+        let timestep = match &self {
+            Self::ModelStepError(
+                ModelStepError::NetworkStepError { timestep, .. } | ModelStepError::RecorderSaveError { timestep, .. },
+            ) => Some(timestep.date),
+            _ => None,
+        };
+        let summary = self.to_string();
+        let mut causes = Vec::new();
+        let mut source = std::error::Error::source(&self);
+        while let Some(error) = source {
+            causes.push(error.to_string());
+            source = error.source();
+        }
+
+        RunFailure {
+            stage,
+            summary,
+            causes,
+            timestep,
+        }
+    }
 }
 
 pub trait RunnerBackend {

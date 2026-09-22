@@ -1,6 +1,6 @@
-use crate::backend::{BackendStepOutcome, RunnerBackend};
+use crate::backend::{BackendOperation, BackendStepOutcome, RunnerBackend};
 use crate::command::{EngineCommand, InitialiseRequest};
-use crate::event::{EngineEvent, EngineStatus, LogLevel, LogRecord};
+use crate::event::{EngineEvent, EngineStatus, LogLevel, LogRecord, RunFailure, RunFailureStage};
 use crate::logging::capture_logs;
 use crate::state::{ReadyReason, RunTarget, RunnerState};
 use std::sync::mpsc::{self, Receiver};
@@ -71,7 +71,12 @@ where
         let state = std::mem::replace(
             &mut self.state,
             RunnerState::Failed {
-                error: "command handling state placeholder".into(),
+                error: RunFailure {
+                    stage: RunFailureStage::Initialisation,
+                    summary: "command handling state placeholder".into(),
+                    causes: Vec::new(),
+                    timestep: None,
+                },
             },
         );
 
@@ -213,7 +218,7 @@ where
                             reason: ReadyReason::Initialised,
                         }
                     }
-                    Err(error) => Self::failed_state(&mut self.output, error.to_string())?,
+                    Err(error) => Self::failed_state(&mut self.output, error, BackendOperation::Initialise)?,
                 }
             }
             RunnerState::Ready {
@@ -278,7 +283,7 @@ where
                             }
                         }
                     }
-                    Err(error) => Self::failed_state(&mut self.output, error.to_string())?,
+                    Err(error) => Self::failed_state(&mut self.output, error, BackendOperation::Step)?,
                 }
             }
             RunnerState::Finalising {
@@ -303,7 +308,7 @@ where
 
                         RunnerState::Completed(finalisation.summary)
                     }
-                    Err(error) => Self::failed_state(&mut self.output, error.to_string())?,
+                    Err(error) => Self::failed_state(&mut self.output, error, BackendOperation::Finalise)?,
                 }
             }
             RunnerState::Pausing {
@@ -328,7 +333,7 @@ where
                             reason: ReadyReason::Paused,
                         }
                     }
-                    Err(error) => Self::failed_state(&mut self.output, error.to_string())?,
+                    Err(error) => Self::failed_state(&mut self.output, error, BackendOperation::FlushRecorders)?,
                 }
             }
             RunnerState::Cancelling {
@@ -354,7 +359,7 @@ where
 
                         RunnerState::Cancelled(finalisation.summary)
                     }
-                    Err(error) => Self::failed_state(&mut self.output, error.to_string())?,
+                    Err(error) => Self::failed_state(&mut self.output, error, BackendOperation::Cancel)?,
                 }
             }
             RunnerState::Completed(summary) => RunnerState::Completed(summary),
@@ -390,7 +395,12 @@ where
         Ok(())
     }
 
-    fn failed_state(output: &mut O, error: String) -> Result<RunnerState<B::Runtime>, OutputError> {
+    fn failed_state(
+        output: &mut O,
+        error: crate::backend::BackendError,
+        operation: BackendOperation,
+    ) -> Result<RunnerState<B::Runtime>, OutputError> {
+        let error = error.into_run_failure(operation);
         output.emit(EngineEvent::Failed { error: error.clone() })?;
         Ok(RunnerState::Failed { error })
     }
@@ -575,13 +585,15 @@ mod tests {
         }
     }
 
-    fn assert_failed(engine: RunnerEngine<FailingBackend, TestOutput>) {
+    fn assert_failed(engine: RunnerEngine<FailingBackend, TestOutput>, stage: RunFailureStage) {
         assert!(matches!(engine.status(), EngineStatus::Failed));
         assert!(engine.is_terminal());
         assert!(!engine.needs_tick());
         assert!(matches!(
             engine.output.0.last(),
-            Some(EngineEvent::Failed { error }) if error == "Backend already finalised"
+            Some(EngineEvent::Failed { error })
+                if error.summary == "Backend already finalised"
+                    && std::mem::discriminant(&error.stage) == std::mem::discriminant(&stage)
         ));
     }
 
@@ -614,6 +626,7 @@ mod tests {
             )
             .tick()
             .unwrap(),
+            RunFailureStage::Initialisation,
         );
 
         let mut engine = RunnerEngine::initialise(request(), FailingBackend(FailurePoint::Step), TestOutput::default())
@@ -621,7 +634,7 @@ mod tests {
             .unwrap();
         engine.handle_command(EngineCommand::Step).unwrap();
         let engine = engine.tick().unwrap();
-        assert_failed(engine);
+        assert_failed(engine, RunFailureStage::Timestep);
 
         let mut engine =
             RunnerEngine::initialise(request(), FailingBackend(FailurePoint::Finalise), TestOutput::default())
@@ -629,7 +642,7 @@ mod tests {
                 .unwrap();
         engine.handle_command(EngineCommand::RunToEnd).unwrap();
         let engine = engine.tick().unwrap().tick().unwrap();
-        assert_failed(engine);
+        assert_failed(engine, RunFailureStage::Finalisation);
 
         let mut engine =
             RunnerEngine::initialise(request(), FailingBackend(FailurePoint::Cancel), TestOutput::default())
@@ -637,7 +650,7 @@ mod tests {
                 .unwrap();
         engine.handle_command(EngineCommand::Cancel).unwrap();
         let engine = engine.tick().unwrap();
-        assert_failed(engine);
+        assert_failed(engine, RunFailureStage::Finalisation);
     }
 
     #[test]
@@ -658,7 +671,7 @@ mod tests {
 
         engine.handle_command(EngineCommand::Step).unwrap();
         assert!(matches!(engine.status(), EngineStatus::Running));
-        assert_failed(engine.tick().unwrap());
+        assert_failed(engine.tick().unwrap(), RunFailureStage::Timestep);
     }
 
     #[test]

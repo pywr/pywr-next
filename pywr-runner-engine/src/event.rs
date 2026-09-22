@@ -34,7 +34,7 @@ pub enum EngineEvent {
         summary: RunSummary,
     },
     Failed {
-        error: String,
+        error: RunFailure,
     },
 }
 
@@ -90,21 +90,48 @@ impl TryFrom<EngineEvent> for v1::ServerMessage {
                 summary: summary.try_into()?,
             },
 
-            EngineEvent::Failed { error, .. } => {
-                v1::ServerMessage::Failed {
-                    error: v1::RunnerError {
-                        // This is sufficient for the prototype. Eventually the
-                        // engine failure should carry a structured stage.
-                        stage: v1::RunnerStage::Timestep,
-                        summary: error,
-                        causes: Vec::new(),
-                        timestep: None,
-                    },
-                }
-            }
+            EngineEvent::Failed { error } => v1::ServerMessage::Failed { error: error.into() },
         };
 
         Ok(message)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct RunFailure {
+    pub stage: RunFailureStage,
+    pub summary: String,
+    pub causes: Vec<String>,
+    pub timestep: Option<DateTime>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum RunFailureStage {
+    Initialisation,
+    SchemaConversion,
+    ModelBuild,
+    SolverSetup,
+    Timestep,
+    Recorder,
+    Finalisation,
+}
+
+impl From<RunFailure> for v1::RunnerError {
+    fn from(value: RunFailure) -> Self {
+        Self {
+            stage: match value.stage {
+                RunFailureStage::Initialisation => v1::RunnerStage::Initialisation,
+                RunFailureStage::SchemaConversion => v1::RunnerStage::SchemaConversion,
+                RunFailureStage::ModelBuild => v1::RunnerStage::ModelBuild,
+                RunFailureStage::SolverSetup => v1::RunnerStage::SolverSetup,
+                RunFailureStage::Timestep => v1::RunnerStage::Timestep,
+                RunFailureStage::Recorder => v1::RunnerStage::Recorder,
+                RunFailureStage::Finalisation => v1::RunnerStage::Finalisation,
+            },
+            summary: value.summary,
+            causes: value.causes,
+            timestep: value.timestep,
+        }
     }
 }
 
@@ -299,5 +326,32 @@ impl TryFrom<RunSummary> for v1::RunSummary {
             outcome: value.outcome.try_into()?,
             progress: value.progress.try_into()?,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn failed_event_preserves_structured_failure_details() {
+        let message: v1::ServerMessage = EngineEvent::Failed {
+            error: RunFailure {
+                stage: RunFailureStage::Recorder,
+                summary: "failed to flush recorder output".into(),
+                causes: vec!["disk is full".into()],
+                timestep: Some("2024-01-02T00:00".parse().unwrap()),
+            },
+        }
+        .try_into()
+        .unwrap();
+
+        let v1::ServerMessage::Failed { error } = message else {
+            panic!("expected failed server message");
+        };
+        assert!(matches!(error.stage, v1::RunnerStage::Recorder));
+        assert_eq!(error.summary, "failed to flush recorder output");
+        assert_eq!(error.causes, ["disk is full"]);
+        assert_eq!(error.timestep, Some("2024-01-02T00:00".parse().unwrap()));
     }
 }

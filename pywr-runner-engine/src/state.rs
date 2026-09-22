@@ -1,5 +1,5 @@
 use crate::command::InitialiseRequest;
-use crate::event::{EngineStatus, RunSummary};
+use crate::event::{EngineStatus, RunFailure, RunSummary};
 use jiff::civil::DateTime;
 use pywr_core::recorders::ArrowStreamCommit;
 use std::sync::mpsc::Receiver;
@@ -34,7 +34,7 @@ pub enum RunnerState<R> {
     Completed(RunSummary),
     Cancelled(RunSummary),
     Failed {
-        error: String,
+        error: RunFailure,
     },
 }
 
