@@ -1,8 +1,8 @@
 use crate::backend::{BackendStepOutcome, RunnerBackend};
-use crate::command::{EngineCommand, EngineCommandKind, InitialiseRequest};
+use crate::command::{EngineCommand, InitialiseRequest};
 use crate::event::{EngineEvent, EngineStatus, LogLevel, LogRecord};
 use crate::logging::capture_logs;
-use crate::state::{ReadyReason, RunTarget, RunnerState, RunnerStateKind};
+use crate::state::{ReadyReason, RunTarget, RunnerState};
 use std::sync::mpsc::{self, Receiver};
 use thiserror::Error;
 
@@ -15,11 +15,6 @@ pub trait OutputSink {
 
 #[derive(Debug, Error)]
 pub enum CommandError {
-    #[error("Invalid command {command:?} for state {state:?}")]
-    InvalidState {
-        command: EngineCommandKind,
-        state: RunnerStateKind,
-    },
     #[error("Output sink error: {0}")]
     OutputSinkError(#[from] OutputError),
 }
@@ -72,8 +67,15 @@ where
         self.state.needs_tick()
     }
 
-    pub fn handle_command(mut self, command: EngineCommand) -> Result<Self, CommandError> {
-        self.state = match (self.state, command) {
+    pub fn handle_command(&mut self, command: EngineCommand) -> Result<(), CommandError> {
+        let state = std::mem::replace(
+            &mut self.state,
+            RunnerState::Failed {
+                error: "command handling state placeholder".into(),
+            },
+        );
+
+        self.state = match (state, command) {
             (
                 RunnerState::Ready {
                     runtime,
@@ -159,10 +161,13 @@ where
             },
 
             (state, command) => {
-                return Err(CommandError::InvalidState {
-                    command: command.kind(),
-                    state: state.kind(),
-                });
+                let command = command.to_string();
+                self.state = state;
+                self.output.emit(EngineEvent::CommandRejected {
+                    command,
+                    status: self.state.status(),
+                })?;
+                return Ok(());
             }
         };
 
@@ -170,7 +175,7 @@ where
             status: self.state.status(),
         })?;
 
-        Ok(self)
+        Ok(())
     }
 
     /// Performs at most one bounded unit of work.
@@ -504,33 +509,48 @@ mod tests {
             .unwrap(),
         );
 
-        let engine = RunnerEngine::initialise(request(), FailingBackend(FailurePoint::Step), TestOutput::default())
-            .tick()
-            .unwrap()
-            .handle_command(EngineCommand::Step)
-            .unwrap()
+        let mut engine = RunnerEngine::initialise(request(), FailingBackend(FailurePoint::Step), TestOutput::default())
             .tick()
             .unwrap();
+        engine.handle_command(EngineCommand::Step).unwrap();
+        let engine = engine.tick().unwrap();
         assert_failed(engine);
 
-        let engine = RunnerEngine::initialise(request(), FailingBackend(FailurePoint::Finalise), TestOutput::default())
-            .tick()
-            .unwrap()
-            .handle_command(EngineCommand::RunToEnd)
-            .unwrap()
-            .tick()
-            .unwrap()
-            .tick()
-            .unwrap();
+        let mut engine =
+            RunnerEngine::initialise(request(), FailingBackend(FailurePoint::Finalise), TestOutput::default())
+                .tick()
+                .unwrap();
+        engine.handle_command(EngineCommand::RunToEnd).unwrap();
+        let engine = engine.tick().unwrap().tick().unwrap();
         assert_failed(engine);
 
-        let engine = RunnerEngine::initialise(request(), FailingBackend(FailurePoint::Cancel), TestOutput::default())
-            .tick()
-            .unwrap()
-            .handle_command(EngineCommand::Cancel)
-            .unwrap()
+        let mut engine =
+            RunnerEngine::initialise(request(), FailingBackend(FailurePoint::Cancel), TestOutput::default())
+                .tick()
+                .unwrap();
+        engine.handle_command(EngineCommand::Cancel).unwrap();
+        let engine = engine.tick().unwrap();
+        assert_failed(engine);
+    }
+
+    #[test]
+    fn invalid_command_is_rejected_without_changing_the_engine_state() {
+        let mut engine = RunnerEngine::initialise(request(), FailingBackend(FailurePoint::Step), TestOutput::default())
             .tick()
             .unwrap();
-        assert_failed(engine);
+
+        engine.handle_command(EngineCommand::Pause).unwrap();
+
+        assert!(matches!(engine.status(), EngineStatus::Ready));
+        assert!(!engine.needs_tick());
+        assert!(matches!(
+            engine.output.0.last(),
+            Some(EngineEvent::CommandRejected { command, status })
+                if command == "pause" && matches!(status, EngineStatus::Ready)
+        ));
+
+        engine.handle_command(EngineCommand::Step).unwrap();
+        assert!(matches!(engine.status(), EngineStatus::Running));
+        assert_failed(engine.tick().unwrap());
     }
 }

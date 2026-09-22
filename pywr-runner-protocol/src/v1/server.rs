@@ -18,6 +18,10 @@ pub enum ServerMessage {
     Log {
         record: LogRecord,
     },
+    CommandRejected {
+        command: String,
+        status: ServerStatus,
+    },
     Failed {
         error: RunnerError,
     },
@@ -136,7 +140,7 @@ pub enum GoodbyeReason {
 
 #[cfg(test)]
 mod tests {
-    use super::{ArrowStreamCommit, RunProgress, ServerMessage};
+    use super::{ArrowStreamCommit, RunProgress, ServerMessage, ServerStatus};
 
     #[test]
     fn update_serializes_arrow_stream_commits() {
@@ -156,5 +160,18 @@ mod tests {
         let value = serde_json::to_value(message).unwrap();
         assert_eq!(value["type"], "update");
         assert_eq!(value["payload"]["arrow_stream_commits"][0]["byte_offset"], 4096);
+    }
+
+    #[test]
+    fn command_rejected_serializes_command_and_status() {
+        let value = serde_json::to_value(ServerMessage::CommandRejected {
+            command: "pause".into(),
+            status: ServerStatus::Ready,
+        })
+        .unwrap();
+
+        assert_eq!(value["type"], "command_rejected");
+        assert_eq!(value["payload"]["command"], "pause");
+        assert_eq!(value["payload"]["status"], "ready");
     }
 }

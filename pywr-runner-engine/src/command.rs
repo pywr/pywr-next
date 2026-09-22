@@ -6,8 +6,9 @@ use std::num::NonZeroUsize;
 use std::path::PathBuf;
 
 /// Represents a command to the engine.
-#[derive(Debug, strum_macros::EnumDiscriminants)]
+#[derive(Debug, strum_macros::EnumDiscriminants, strum_macros::Display)]
 #[strum_discriminants(name(EngineCommandKind))]
+#[strum(serialize_all = "kebab-case")]
 pub enum EngineCommand {
     Initialize { request: InitialiseRequest },
     Step,

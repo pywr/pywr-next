@@ -7,13 +7,13 @@ use crate::output::ServiceOutput;
 use crate::session::Session;
 use log::{error, info};
 use pywr_runner_engine::{PywrBackend, RunnerBackend};
-use pywr_runner_protocol::{v1, ClientHello, Envelope, HandshakeRejection, ProtocolVersion};
+use pywr_runner_protocol::{ClientHello, Envelope, HandshakeRejection, ProtocolVersion, v1};
 use pywr_runner_transport::{
     InterprocessLocalSocketListener, ReceiveOutcome, StdioConnection, TransportConnection, TransportError,
     TransportReader, TransportWriter,
 };
 use std::convert::Infallible;
-use std::sync::{mpsc, OnceLock};
+use std::sync::{OnceLock, mpsc};
 use std::thread::JoinHandle;
 use std::time::Duration;
 use thiserror::Error;
@@ -143,7 +143,7 @@ impl EngineWorker {
             let mut engine = engine;
             loop {
                 while let Ok(command) = receiver.try_recv() {
-                    engine = engine.handle_command(command).map_err(|error| error.to_string())?;
+                    engine.handle_command(command).map_err(|error| error.to_string())?;
                 }
 
                 if engine.needs_tick() {
@@ -155,7 +155,7 @@ impl EngineWorker {
                     let command = receiver
                         .recv()
                         .map_err(|_| "engine command channel disconnected".to_string())?;
-                    engine = engine.handle_command(command).map_err(|error| error.to_string())?;
+                    engine.handle_command(command).map_err(|error| error.to_string())?;
                 }
             }
         });
@@ -373,6 +373,7 @@ where
                     }
                     EngineEvent::StateChanged { .. } => {}
                     EngineEvent::Log { .. } => {}
+                    EngineEvent::CommandRejected { .. } => {}
                 }
 
                 let message: v1::ServerMessage = event.try_into()?;

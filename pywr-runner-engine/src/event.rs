@@ -23,6 +23,10 @@ pub enum EngineEvent {
     Log {
         log_record: LogRecord,
     },
+    CommandRejected {
+        command: String,
+        status: EngineStatus,
+    },
     Completed {
         summary: RunSummary,
     },
@@ -71,6 +75,11 @@ impl TryFrom<EngineEvent> for v1::ServerMessage {
 
             EngineEvent::Log { log_record } => v1::ServerMessage::Log {
                 record: log_record.try_into()?,
+            },
+
+            EngineEvent::CommandRejected { command, status } => v1::ServerMessage::CommandRejected {
+                command,
+                status: status.try_into()?,
             },
 
             EngineEvent::Completed { summary } => v1::ServerMessage::Completed {
