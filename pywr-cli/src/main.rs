@@ -617,7 +617,7 @@ fn run_project(
         }
         #[cfg(feature = "ipm-ocl")]
         Solver::CLIPMF32 => {
-            let mut settings_builder = ClIpmSolverSettingsBuilder::default();
+            let mut settings_builder = ClIpmF32SettingsBuilder::default();
             if threads > 1 {
                 settings_builder = settings_builder.parallel();
                 settings_builder = settings_builder.threads(threads);
@@ -631,7 +631,7 @@ fn run_project(
         }
         #[cfg(feature = "ipm-ocl")]
         Solver::CLIPMF64 => {
-            let mut settings_builder = ClIpmSolverSettingsBuilder::default();
+            let mut settings_builder = ClIpmF64SettingsBuilder::default();
             if threads > 1 {
                 settings_builder = settings_builder.parallel();
                 settings_builder = settings_builder.threads(threads);
