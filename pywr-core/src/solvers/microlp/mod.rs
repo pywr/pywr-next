@@ -12,7 +12,7 @@ use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum MicroLpError {
-    #[error("MicroLp solver error: {0}")]
+    #[error("MicroLp solver error.")]
     SolveError(#[from] microlp::Error),
     #[error("MicroLp solver was interrupted: {reason:?}")]
     Interrupted { reason: microlp::TerminationReason },
