@@ -538,6 +538,13 @@ impl Network {
         &self.edges
     }
 
+    pub fn parameters(&self) -> &ParameterCollection {
+        &self.parameters
+    }
+    pub fn metric_sets(&self) -> &[MetricSet] {
+        &self.metric_sets
+    }
+
     pub fn recorders(&self) -> &[Box<dyn recorders::Recorder>] {
         &self.recorders
     }
@@ -1067,6 +1074,22 @@ impl Network {
                 })?;
         }
         timings.recorder_saving += start.elapsed();
+        Ok(())
+    }
+
+    /// Wait until all recorder output queued by prior saves has been flushed.
+    pub fn flush_recorders(
+        &self,
+        recorder_internal_states: &mut [Option<Box<dyn RecorderInternalState>>],
+    ) -> Result<(), NetworkRecorderSaveError> {
+        for (recorder, internal_state) in self.recorders.iter().zip(recorder_internal_states) {
+            recorder
+                .flush(internal_state)
+                .map_err(|source| NetworkRecorderSaveError {
+                    name: recorder.name().to_string(),
+                    source,
+                })?;
+        }
         Ok(())
     }
 
