@@ -908,6 +908,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "doctest-file"
+version = "1.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c2db04e74f0a9a93103b50e90b96024c9b2bdca8bce6a632ec71b88736d3d359"
+
+[[package]]
 name = "dyn-clone"
 version = "1.0.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1251,6 +1257,19 @@ checksum = "d466e9454f08e4a911e14806c24e16fba1b4c121d1ea474396f396069cf949d9"
 dependencies = [
  "equivalent",
  "hashbrown",
+]
+
+[[package]]
+name = "interprocess"
+version = "2.4.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6cb02ffbf25e8ef0f4a95bff054eef75f6d1bf16919474cf2caa63b21997478a"
+dependencies = [
+ "doctest-file",
+ "libc",
+ "recvmsg",
+ "widestring",
+ "windows-sys",
 ]
 
 [[package]]
@@ -2029,6 +2048,7 @@ dependencies = [
  "log",
  "pywr-core",
  "pywr-project",
+ "pywr-runner-service",
  "pywr-schema",
  "pywr-v1-schema",
  "rand",
@@ -2091,14 +2111,64 @@ version = "2.0.0-beta7"
 dependencies = [
  "arrow",
  "jiff",
+ "log",
  "pyo3",
  "pyo3-log",
  "pywr-core",
  "pywr-project",
+ "pywr-runner-service",
  "pywr-schema",
  "pywr-v1-schema",
  "schemars",
  "serde_json",
+]
+
+[[package]]
+name = "pywr-runner-engine"
+version = "2.0.0-beta7"
+dependencies = [
+ "jiff",
+ "log",
+ "pywr-core",
+ "pywr-runner-protocol",
+ "pywr-schema",
+ "serde_json",
+ "strum",
+ "strum_macros",
+ "thiserror 2.0.20",
+]
+
+[[package]]
+name = "pywr-runner-protocol"
+version = "2.0.0-beta7"
+dependencies = [
+ "jiff",
+ "serde",
+ "serde_json",
+ "strum",
+ "strum_macros",
+ "uuid",
+]
+
+[[package]]
+name = "pywr-runner-service"
+version = "2.0.0-beta7"
+dependencies = [
+ "log",
+ "pywr-runner-engine",
+ "pywr-runner-protocol",
+ "pywr-runner-transport",
+ "serde_json",
+ "thiserror 2.0.20",
+]
+
+[[package]]
+name = "pywr-runner-transport"
+version = "2.0.0-beta7"
+dependencies = [
+ "interprocess",
+ "thiserror 2.0.20",
+ "windows-sys",
 ]
 
 [[package]]
@@ -2259,6 +2329,12 @@ dependencies = [
  "crossbeam-deque",
  "crossbeam-utils",
 ]
+
+[[package]]
+name = "recvmsg"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d3edd4d5d42c92f0a659926464d4cce56b562761267ecf0f469d85b7de384175"
 
 [[package]]
 name = "redox_syscall"
@@ -2730,6 +2806,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "06abde3611657adf66d383f00b093d7faecc7fa57071cce2578660c9f1010821"
 
 [[package]]
+name = "uuid"
+version = "1.26.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2ef6dac1e96601b4fb3acccccff2139741fcb757cb9a36089bf5be91cfb285ce"
+dependencies = [
+ "getrandom 0.4.3",
+ "js-sys",
+ "serde_core",
+ "wasm-bindgen",
+]
+
+[[package]]
 name = "vcpkg"
 version = "0.2.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2849,6 +2937,12 @@ dependencies = [
  "bytemuck",
  "safe_arch",
 ]
+
+[[package]]
+name = "widestring"
+version = "1.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "72069c3113ab32ab29e5584db3c6ec55d416895e60715417b5b883a357c3e471"
 
 [[package]]
 name = "winapi"

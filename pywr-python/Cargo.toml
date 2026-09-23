@@ -16,10 +16,11 @@ name = "pywr"
 crate-type = ["cdylib"]
 
 [features]
-default = ["clp", "cbc", "highs"]
-clp = ["pywr-core/clp", "pywr-schema/clp"]
-cbc = ["pywr-core/cbc", "pywr-schema/cbc"]
-highs = ["pywr-core/highs", "pywr-schema/highs"]
+default = ["clp", "cbc", "highs", "microlp"]
+clp = ["pywr-core/clp", "pywr-schema/clp", "pywr-runner-service/clp"]
+cbc = ["pywr-core/cbc", "pywr-schema/cbc", "pywr-runner-service/cbc"]
+highs = ["pywr-core/highs", "pywr-schema/highs", "pywr-runner-service/highs"]
+microlp = ["pywr-core/microlp", "pywr-schema/microlp", "pywr-runner-service/microlp"]
 ipm-ocl = ["pywr-core/ipm-ocl", "pywr-schema/ipm-ocl"]
 ipm-simd = ["pywr-core/ipm-simd", "pywr-schema/ipm-simd"]
 
@@ -33,8 +34,10 @@ jiff = { workspace = true }
 pyo3 = { workspace = true, features = ["extension-module", "macros", "jiff-02", "abi3-py310"] }
 pyo3-log = { workspace = true }
 pywr-core = { path = "../pywr-core" }
+pywr-runner-service = { path = "../pywr-runner-service" }
 pywr-schema = { path = "../pywr-schema" }
 pywr-project = { path = "../pywr-project" }
 pywr-v1-schema = { workspace = true }
 schemars = { workspace = true }
 serde_json = { workspace = true }
+log = { workspace = true }
