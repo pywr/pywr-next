@@ -8,6 +8,7 @@ use crate::exceptions::{
 use arrow::array::{Float64Builder, RecordBatch, StringBuilder, TimestampMillisecondBuilder, UInt64Builder};
 use arrow::pyarrow::PyArrowType;
 use jiff::civil::DateTime;
+use log::info;
 use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::{PyKeyError, PyRuntimeError};
 use pyo3::prelude::*;
@@ -23,6 +24,7 @@ use pywr_core::solvers::MultiStateSolverConfig;
 use pywr_core::solvers::SolverConfig;
 #[cfg(feature = "ipm-ocl")]
 use pywr_core::solvers::{ClIpmF32Settings, ClIpmF64Settings};
+use pywr_runner_service::{install_interrupt_handler, install_log_router_with};
 use pywr_schema::metric::Metric;
 use pywr_schema::{
     ComponentConversionError, ConversionData, ConversionError, ModelSchema, MultiNetworkModelSchema, TryIntoV2,
@@ -521,11 +523,39 @@ impl PyMultiNetworkModelSchema {
     }
 }
 
+#[pyfunction]
+fn run_server(py: Python<'_>, socket_name: &str) -> PyResult<()> {
+    use pywr_runner_service::{RunnerServiceConfigBuilder, run_local_socket_server};
+
+    fn py_check_signals() -> bool {
+        Python::attach(|py| {
+            // Check for Python signals (like KeyboardInterrupt)
+            if let Err(error) = py.check_signals() {
+                info!("Received signal, shutting down server: {}", error);
+                true
+            } else {
+                false
+            }
+        })
+    }
+
+    install_interrupt_handler(py_check_signals);
+
+    let config_builder = RunnerServiceConfigBuilder::new();
+
+    let socket_name = socket_name.to_string();
+    let config = config_builder.build();
+
+    py.detach(|| run_local_socket_server(&socket_name, config).map_err(|e| PyRuntimeError::new_err(e.to_string())))
+}
+
 /// A Python module implemented in Rust.
 #[pymodule]
 #[pyo3(name = "_pywr")]
 fn pywr(py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
-    pyo3_log::init();
+    let python_logger = pyo3_log::Logger::new(py, pyo3_log::Caching::LoggersAndLevels)?;
+    install_log_router_with(Box::new(python_logger))
+        .map_err(|_| PyRuntimeError::new_err("a global logger has already been installed"))?;
 
     m.add_function(wrap_pyfunction!(convert_model_from_v1_json_string, m)?)?;
     m.add_function(wrap_pyfunction!(convert_metric_from_v1_json_string, m)?)?;
@@ -543,6 +573,9 @@ fn pywr(py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyTimestep>()?;
     m.add_class::<PyScenarioIndex>()?;
     m.add_class::<ParameterInfo>()?;
+
+    // Runner service
+    m.add_function(wrap_pyfunction!(run_server, m)?)?;
 
     // Error classes
     m.add_class::<ComponentConversionError>()?;

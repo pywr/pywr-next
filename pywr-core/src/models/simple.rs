@@ -33,6 +33,11 @@ impl<S> ModelState<S> {
     pub fn recorder_state(&self) -> &Vec<Option<Box<dyn RecorderInternalState>>> {
         &self.recorder_state
     }
+
+    /// Get the current time-step index of the model state.
+    pub fn current_time_step_idx(&self) -> usize {
+        self.current_time_step_idx
+    }
 }
 
 /// Errors that can occur when setting up a multi-network model.
@@ -60,6 +65,11 @@ pub enum ModelStepError {
     #[error("Error saving recorder for network at timestep {timestep:#?}: {source}")]
     RecorderSaveError {
         timestep: Timestep,
+        #[source]
+        source: Box<NetworkRecorderSaveError>,
+    },
+    #[error("Error flushing recorder output: {source}")]
+    RecorderFlushError {
         #[source]
         source: Box<NetworkRecorderSaveError>,
     },
@@ -95,10 +105,17 @@ pub struct ModelTimings {
 }
 
 impl ModelTimings {
-    pub fn new_with_component_timings(network: &Network) -> Self {
+    pub fn new_with_component_timings(model: &Model) -> Self {
         Self {
             run_duration: RunDuration::start(),
-            network_timings: NetworkTimings::new_with_component_timings(network),
+            network_timings: NetworkTimings::new_with_component_timings(&model.network),
+        }
+    }
+
+    pub fn new_without_component_timings() -> Self {
+        Self {
+            run_duration: RunDuration::start(),
+            network_timings: NetworkTimings::new_without_component_timings(),
         }
     }
 
@@ -124,6 +141,14 @@ impl ModelTimings {
 
     pub fn speed(&self) -> f64 {
         self.run_duration.speed()
+    }
+
+    pub fn network_timings(&self) -> &NetworkTimings {
+        &self.network_timings
+    }
+
+    pub fn network_timings_mut(&mut self) -> &mut NetworkTimings {
+        &mut self.network_timings
     }
 }
 
@@ -158,6 +183,16 @@ impl Model {
         &self.network
     }
 
+    /// Wait until asynchronous recorder output saved in previous timesteps has
+    /// been flushed.
+    pub fn flush_recorders<S>(&self, state: &mut ModelState<S>) -> Result<(), ModelStepError> {
+        self.network
+            .flush_recorders(&mut state.recorder_state)
+            .map_err(|source| ModelStepError::RecorderFlushError {
+                source: Box::new(source),
+            })
+    }
+
     pub fn required_features(&self) -> HashSet<SolverFeatures> {
         self.network.required_features()
     }
@@ -167,19 +202,19 @@ impl Model {
     }
 
     /// Check whether a solver `S` has the required features to run this model.
-    pub fn check_solver_features<C>(&self) -> bool
+    pub fn check_solver_features<C>(&self, solver_config: &C) -> bool
     where
         C: SolverConfig,
     {
-        self.network.check_solver_features::<C>()
+        self.network.check_solver_features(solver_config)
     }
 
     /// Check whether a solver `S` has the required features to run this model.
-    pub fn check_multi_scenario_solver_features<C>(&self) -> bool
+    pub fn check_multi_scenario_solver_features<C>(&self, solver_config: &C) -> bool
     where
         C: MultiStateSolverConfig,
     {
-        self.network.check_multi_scenario_solver_features::<C>()
+        self.network.check_multi_scenario_solver_features(solver_config)
     }
 
     pub fn setup<C>(&self, solver_config: &C) -> Result<ModelState<Vec<Box<C::Solver>>>, ModelSetupError>
@@ -424,7 +459,7 @@ impl Model {
     {
         let mut state = self.setup(solver_config)?;
 
-        let mut timings = ModelTimings::new_with_component_timings(&self.network);
+        let mut timings = ModelTimings::new_with_component_timings(self);
 
         self.run_with_state(&mut state, solver_config, &mut timings)?;
 
@@ -479,7 +514,7 @@ impl Model {
     {
         // Setup the network and create the initial state
         let mut state = self.setup_multi_scenario(solver_config)?;
-        let mut timings = ModelTimings::new_with_component_timings(&self.network);
+        let mut timings = ModelTimings::new_with_component_timings(self);
         self.run_multi_scenario_with_state(&mut state, solver_config, &mut timings)?;
 
         let result = self.finalise_multi_scenario(state, timings)?;

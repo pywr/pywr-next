@@ -12,11 +12,11 @@ keywords.workspace = true
 categories.workspace = true
 
 [features]
-cbc = ["pywr-core/cbc", "pywr-schema/cbc"]
-highs = ["pywr-core/highs", "pywr-schema/highs"]
+cbc = ["pywr-core/cbc", "pywr-schema/cbc", "pywr-runner-service/cbc"]
+highs = ["pywr-core/highs", "pywr-schema/highs", "pywr-runner-service/highs"]
 ipm-ocl = ["pywr-core/ipm-ocl", "pywr-schema/ipm-ocl"]
 ipm-simd = ["pywr-core/ipm-simd", "pywr-schema/ipm-simd"]
-microlp = ["pywr-core/microlp"]
+microlp = ["pywr-core/microlp", "pywr-runner-service/microlp"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -27,6 +27,7 @@ env_logger = { workspace = true }
 jiff = { workspace = true }
 log = { workspace = true }
 pywr-core = { path = "../pywr-core" }
+pywr-runner-service = { path = "../pywr-runner-service" }
 pywr-schema = { path = "../pywr-schema" }
 pywr-v1-schema = { workspace = true }
 rand = { workspace = true }

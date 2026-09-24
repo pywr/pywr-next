@@ -58,6 +58,14 @@ impl Cbc {
         }
     }
 
+    pub fn clone_model(&self) -> Cbc {
+        let new_ptr: *mut Cbc_Model;
+        unsafe {
+            new_ptr = Cbc_clone(self.ptr);
+        }
+        Cbc { ptr: new_ptr }
+    }
+
     pub fn change_row_lower(&mut self, row_lower: &[c_double]) {
         for (i, val) in row_lower.iter().enumerate() {
             unsafe {
@@ -101,10 +109,10 @@ impl Cbc {
             let obj_coef = obj_coefs[col_idx as usize];
 
             unsafe {
-                let c_name = CString::new("col").expect("Failed to create CString for column name.");
+                let name = CString::new(format!("col_{col_idx}")).expect("column name contains a null byte");
                 Cbc_addCol(
                     self.ptr,
-                    c_name.as_ptr(),
+                    name.as_ptr(),
                     lower,
                     upper,
                     obj_coef,
@@ -150,6 +158,17 @@ impl Cbc {
                 Cbc_setRowUpper(self.ptr, row_idx, row_upper[row_idx as usize]);
                 Cbc_setRowLower(self.ptr, row_idx, row_lower[row_idx as usize]);
             }
+        }
+    }
+
+    fn set_mip_start(&mut self, integer_columns: &[c_int], previous_integer_solution: &[c_double]) {
+        unsafe {
+            Cbc_setMIPStartI(
+                self.ptr,
+                integer_columns.len() as c_int,
+                integer_columns.as_ptr(),
+                previous_integer_solution.as_ptr(),
+            );
         }
     }
 
@@ -199,7 +218,9 @@ impl Cbc {
 
 pub struct CbcSolver {
     builder: BuiltSolver<c_int>,
-    cbc: Cbc,
+    template: Cbc,
+    integer_columns: Vec<c_int>,
+    previous_solution: Option<Vec<c_double>>,
 }
 
 impl CbcSolver {
@@ -221,20 +242,70 @@ impl CbcSolver {
             builder.elements(),
         );
 
-        CbcSolver { builder, cbc }
+        // Identify the integer columns for MIP start
+        let integer_columns = builder
+            .col_type()
+            .iter()
+            .enumerate()
+            .filter_map(|(col_idx, col_type)| match col_type {
+                ColType::Continuous => None,
+                ColType::Integer => Some(col_idx as c_int),
+            })
+            .collect();
+
+        CbcSolver {
+            builder,
+            template: cbc,
+            integer_columns,
+            previous_solution: None,
+        }
     }
 
     fn solve(&mut self) -> Vec<c_double> {
-        self.cbc.solve();
+        let mut working = self.template.clone_model();
 
-        let num_cols = self.builder.num_cols() as usize;
+        if let Some(solution) = &self.previous_solution {
+            working.set_mip_start(&self.integer_columns, solution);
+        }
 
-        self.cbc.primal_column_solution(num_cols)
+        working.solve();
+
+        let solution = working.primal_column_solution(self.builder.num_cols() as usize);
+
+        // Store the solution for the integer columns for the next solve
+        self.previous_solution = Some(
+            self.integer_columns
+                .iter()
+                .map(|&col_idx| solution[col_idx as usize])
+                .collect::<Vec<c_double>>(),
+        );
+        solution
     }
+
+    // fn solve(&mut self) -> Vec<c_double> {
+    //     self.template.solve();
+    //
+    //     let num_cols = self.builder.num_cols() as usize;
+    //
+    //     self.template.primal_column_solution(num_cols)
+    // }
 }
 
 impl SolverConfig for CbcSolverSettings {
     type Solver = CbcSolver;
+
+    fn name(&self) -> &'static str {
+        "cbc"
+    }
+
+    fn features(&self) -> &'static [SolverFeatures] {
+        &[
+            SolverFeatures::AggregatedNode,
+            SolverFeatures::VirtualStorage,
+            SolverFeatures::AggregatedNodeFactors,
+            SolverFeatures::MutualExclusivity,
+        ]
+    }
 
     fn setup(&self, network: &Network, values: &ConstParameterValues) -> Result<Box<Self::Solver>, SolverSetupError> {
         let builder = SolverBuilder::new(f64::MAX, -f64::MAX);
@@ -246,19 +317,6 @@ impl SolverConfig for CbcSolverSettings {
 }
 
 impl Solver for CbcSolver {
-    fn name() -> &'static str {
-        "cbc"
-    }
-
-    fn features() -> &'static [SolverFeatures] {
-        &[
-            SolverFeatures::AggregatedNode,
-            SolverFeatures::VirtualStorage,
-            SolverFeatures::AggregatedNodeFactors,
-            SolverFeatures::MutualExclusivity,
-        ]
-    }
-
     fn solve(
         &mut self,
         network: &Network,
@@ -269,12 +327,12 @@ impl Solver for CbcSolver {
         self.builder.update(network, timestep, state, &mut timings)?;
 
         let now = Instant::now();
-        self.cbc.change_objective_coefficients(self.builder.col_obj_coef());
+        self.template.change_objective_coefficients(self.builder.col_obj_coef());
         timings.update_objective += now.elapsed();
 
         let now = Instant::now();
-        self.cbc.change_row_lower(self.builder.row_lower());
-        self.cbc.change_row_upper(self.builder.row_upper());
+        self.template.change_row_lower(self.builder.row_lower());
+        self.template.change_row_upper(self.builder.row_upper());
 
         if !self.builder.coefficients_to_update().is_empty() {
             return Err(SolverSolveError::MissingSolverFeatures);

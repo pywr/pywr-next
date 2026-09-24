@@ -15,6 +15,15 @@ mod cbc;
 mod clp;
 
 #[cfg(any(
+    feature = "clp",
+    feature = "cbc",
+    feature = "highs",
+    feature = "microlp",
+    feature = "ipm-ocl",
+    feature = "ipm-simd"
+))]
+mod built_in;
+#[cfg(any(
     feature = "cbc",
     feature = "clp",
     feature = "highs",
@@ -40,6 +49,10 @@ pub use self::ipm_ocl::{
 #[cfg(feature = "ipm-simd")]
 pub use self::ipm_simd::{SimdIpmF64Solver, SimdIpmSolverSettings, SimdIpmSolverSettingsBuilder};
 use crate::NodeIndex;
+#[cfg(any(feature = "ipm-simd", feature = "ipm-ocl"))]
+pub use built_in::{BuiltInMultiStateSolver, BuiltInMultiStateSolverConfig};
+#[cfg(any(feature = "clp", feature = "cbc", feature = "highs", feature = "microlp"))]
+pub use built_in::{BuiltInSolver, BuiltInSolverConfig};
 #[cfg(feature = "cbc")]
 pub use cbc::{CbcError, CbcSolver, CbcSolverSettings, CbcSolverSettingsBuilder};
 #[cfg(feature = "clp")]
@@ -129,6 +142,10 @@ pub enum SolverSetupError {
 pub trait SolverConfig: SolverSettings {
     type Solver: Solver;
 
+    fn name(&self) -> &'static str;
+    /// An array of features that this solver provides.
+    fn features(&self) -> &'static [SolverFeatures];
+
     fn setup(&self, network: &Network, values: &ConstParameterValues) -> Result<Box<Self::Solver>, SolverSetupError>;
 }
 
@@ -199,10 +216,6 @@ pub enum SolverSolveError {
 }
 
 pub trait Solver: Send {
-    fn name() -> &'static str;
-    /// An array of features that this solver provides.
-    fn features() -> &'static [SolverFeatures];
-
     fn solve(
         &mut self,
         network: &Network,
@@ -214,14 +227,14 @@ pub trait Solver: Send {
 pub trait MultiStateSolverConfig: SolverSettings {
     type Solver: MultiStateSolver;
 
+    fn name(&self) -> &'static str;
+    /// An array of features that this solver provides.
+    fn features(&self) -> &'static [SolverFeatures];
+
     fn setup(&self, network: &Network, num_scenarios: usize) -> Result<Box<Self::Solver>, SolverSetupError>;
 }
 
 pub trait MultiStateSolver: Send {
-    fn name() -> &'static str;
-    /// An array of features that this solver provides.
-    fn features() -> &'static [SolverFeatures];
-
     fn solve(
         &mut self,
         network: &Network,

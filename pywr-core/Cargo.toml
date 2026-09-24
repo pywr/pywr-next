@@ -27,6 +27,7 @@ hdf5 = ["dep:hdf5-metno"]
 
 [dependencies]
 arrow = { workspace = true }
+arrow-schema = { workspace = true }
 chrono = { workspace = true }
 ahash = { workspace = true, optional = true }
 coin-or-sys = { path = "../coin-or-sys", optional = true }
@@ -50,6 +51,7 @@ rand_chacha = { workspace = true }
 rand_distr = { workspace = true }
 rayon = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
 thiserror = { workspace = true }
 wide = { workspace = true, optional = true }
 
@@ -59,3 +61,4 @@ criterion = { workspace = true, features = ["html_reports"] }
 [[bench]]
 name = "random_models"
 harness = false
+required-features = ["clp"]

@@ -538,6 +538,13 @@ impl Network {
         &self.edges
     }
 
+    pub fn parameters(&self) -> &ParameterCollection {
+        &self.parameters
+    }
+    pub fn metric_sets(&self) -> &[MetricSet] {
+        &self.metric_sets
+    }
+
     pub fn recorders(&self) -> &[Box<dyn recorders::Recorder>] {
         &self.recorders
     }
@@ -617,24 +624,24 @@ impl Network {
         Ok(recorder_internal_states)
     }
 
-    /// Check whether a solver `S` has the required features to run this network.
-    pub fn check_solver_features<C>(&self) -> bool
+    /// Check whether a solver config has the required features to run this network.
+    pub fn check_solver_features<C>(&self, solver_config: &C) -> bool
     where
         C: SolverConfig,
     {
         let required_features = self.required_features();
 
-        required_features.iter().all(|f| C::Solver::features().contains(f))
+        required_features.iter().all(|f| solver_config.features().contains(f))
     }
 
-    /// Check whether a solver `S` has the required features to run this network.
-    pub fn check_multi_scenario_solver_features<C>(&self) -> bool
+    /// Check whether a multi-scenario solver config has the required features to run this network.
+    pub fn check_multi_scenario_solver_features<C>(&self, solver_config: &C) -> bool
     where
         C: MultiStateSolverConfig,
     {
         let required_features = self.required_features();
 
-        required_features.iter().all(|f| C::Solver::features().contains(f))
+        required_features.iter().all(|f| solver_config.features().contains(f))
     }
 
     pub fn setup_solver<C>(
@@ -646,7 +653,7 @@ impl Network {
     where
         C: SolverConfig,
     {
-        if !solver_config.ignore_feature_requirements() && !self.check_solver_features::<C>() {
+        if !solver_config.ignore_feature_requirements() && !self.check_solver_features(solver_config) {
             return Err(NetworkSolverSetupError::MissingSolverFeatures);
         }
 
@@ -670,7 +677,7 @@ impl Network {
     where
         C: MultiStateSolverConfig,
     {
-        if !solver_config.ignore_feature_requirements() && !self.check_multi_scenario_solver_features::<C>() {
+        if !solver_config.ignore_feature_requirements() && !self.check_multi_scenario_solver_features(solver_config) {
             return Err(NetworkSolverSetupError::MissingSolverFeatures);
         }
         Ok(solver_config.setup(self, scenario_indices.len())?)
@@ -1067,6 +1074,22 @@ impl Network {
                 })?;
         }
         timings.recorder_saving += start.elapsed();
+        Ok(())
+    }
+
+    /// Wait until all recorder output queued by prior saves has been flushed.
+    pub fn flush_recorders(
+        &self,
+        recorder_internal_states: &mut [Option<Box<dyn RecorderInternalState>>],
+    ) -> Result<(), NetworkRecorderSaveError> {
+        for (recorder, internal_state) in self.recorders.iter().zip(recorder_internal_states) {
+            recorder
+                .flush(internal_state)
+                .map_err(|source| NetworkRecorderSaveError {
+                    name: recorder.name().to_string(),
+                    source,
+                })?;
+        }
         Ok(())
     }
 

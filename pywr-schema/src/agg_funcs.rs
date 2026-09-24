@@ -50,7 +50,7 @@ impl PythonAggFunc {
 #[derive(Deserialize, Serialize, Debug, Default, Clone, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct AnyNonZero {
-    pub tolerance: Option<f64>
+    pub tolerance: Option<f64>,
 }
 
 #[cfg(feature = "core")]
