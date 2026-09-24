@@ -21,10 +21,10 @@ use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumString, IntoStaticS
 /// Defines the relationship between nodes in an `AggregatedNode`.
 ///
 /// - `Proportion`: The factors represent the proportion of the total flow that each node after
-///   the first should receive. The first node will have the residual flow. Factors should sum to a total
-///   less than 1.0, and there should be one less factor than the number of nodes.
+///   the first should receive. The first node will have the residual flow. Factors should be positive
+///   and sum to a total less than 1.0, and there should be one less factor than the number of nodes.
 /// - `Ratio`: The factors represent the ratio of flow between the nodes. There should be factors
-///   equal to the number of nodes, and the factors should be non-negative.
+///   equal to the number of nodes, and the factors should be positive.
 /// - `Coefficients`: The factors represent coefficients in a linear equation, with an optional
 ///   right-hand side. For example, for three nodes A and B with coefficients 2 and 3, and a
 ///   right-hand side of 100, the equation would be `2*A + 3*B = 100`. If no right-hand side

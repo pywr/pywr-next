@@ -134,6 +134,13 @@ pub enum SolverSetupError {
         lower_bound: f64,
         upper_bound: f64,
     },
+    #[error("Aggregated node `{name}` and sub-name `{}` error: {source}", .sub_name.as_deref().unwrap_or("None"))]
+    AggregatedNodeFactorError {
+        name: String,
+        sub_name: Option<String>,
+        #[source]
+        source: crate::aggregated_node::ConstantFactorError,
+    },
     #[cfg(feature = "highs")]
     #[error("Highs error: {0}")]
     HighsError(#[from] highs::HighsStatusError),
@@ -174,6 +181,13 @@ pub enum SolverSolveError {
         sub_name: Option<String>,
         #[source]
         source: crate::aggregated_node::AggregatedNodeError,
+    },
+    #[error("Aggregated node `{name}` and sub-name `{}` error: {source}", .sub_name.as_deref().unwrap_or("None"))]
+    AggregatedNodeFactorError {
+        name: String,
+        sub_name: Option<String>,
+        #[source]
+        source: crate::aggregated_node::FactorError,
     },
     #[error("Virtual storage error: {0}")]
     VirtualStorageError(#[from] crate::virtual_storage::VirtualStorageError),
