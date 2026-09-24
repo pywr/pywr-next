@@ -19,6 +19,7 @@ use crate::outputs::Output;
 use crate::time_series::TimeSeries;
 #[cfg(feature = "core")]
 use crate::time_series::{LoadedTimeSeriesCollection, LoadedTimeSeriesCollectionError};
+use crate::util::duplicates;
 use crate::v1::{ConversionData, TryIntoV2};
 use crate::visit::{Owner, Reference, ReferenceMut, VisitMetrics, VisitPaths, VisitReferences};
 #[cfg(all(feature = "core", feature = "pyo3"))]
@@ -355,26 +356,6 @@ impl VisitReferences for NetworkSchema {
             output.visit_references_mut(visitor);
         }
     }
-}
-
-/// The names used by more than one of `items`, with how many use each, sorted by name.
-fn duplicate_names<T>(items: Option<&[T]>, name_of: impl Fn(&T) -> &str) -> Vec<(String, usize)> {
-    let mut counts: HashMap<&str, usize> = HashMap::new();
-
-    for item in items.into_iter().flatten() {
-        *counts.entry(name_of(item)).or_default() += 1;
-    }
-
-    let mut duplicates: Vec<(String, usize)> = counts
-        .into_iter()
-        .filter(|(_, count)| *count > 1)
-        .map(|(name, count)| (name.to_string(), count))
-        .collect();
-
-    // The hash map's order is random.
-    duplicates.sort();
-
-    duplicates
 }
 
 impl NetworkSchema {
@@ -848,7 +829,7 @@ impl NetworkSchema {
             counts.entry(virtual_node.name()).or_default().1 += 1;
         }
 
-        let mut duplicates: Vec<DuplicateNodeName> = counts
+        let mut duplicate_nodes: Vec<DuplicateNodeName> = counts
             .into_iter()
             .filter(|(_, (nodes, virtual_nodes))| nodes + virtual_nodes > 1)
             .map(|(name, (nodes, virtual_nodes))| DuplicateNodeName {
@@ -870,30 +851,42 @@ impl NetworkSchema {
             .collect();
 
         // The duplicates come out of the hash map in a random order.
-        duplicates.sort_by(|a, b| a.name.cmp(&b.name));
+        duplicate_nodes.sort_by(|a, b| a.name.cmp(&b.name));
 
-        let problems: Vec<NetworkProblem> = duplicates
+        let problems: Vec<NetworkProblem> = duplicate_nodes
             .into_iter()
             .map(NetworkProblem::DuplicateNodeName)
             .chain(
-                duplicate_names(self.parameters.as_deref(), Parameter::name)
+                duplicates(self.parameters.iter().flatten(), Parameter::name)
                     .into_iter()
-                    .map(|(name, count)| NetworkProblem::DuplicateParameterName { name, count }),
+                    .map(|(name, count)| NetworkProblem::DuplicateParameterName {
+                        name: name.to_string(),
+                        count,
+                    }),
             )
             .chain(
-                duplicate_names(self.tables.as_deref(), DataTable::name)
+                duplicates(self.tables.iter().flatten(), DataTable::name)
                     .into_iter()
-                    .map(|(name, count)| NetworkProblem::DuplicateTableName { name, count }),
+                    .map(|(name, count)| NetworkProblem::DuplicateTableName {
+                        name: name.to_string(),
+                        count,
+                    }),
             )
             .chain(
-                duplicate_names(self.time_series.as_deref(), TimeSeries::name)
+                duplicates(self.time_series.iter().flatten(), TimeSeries::name)
                     .into_iter()
-                    .map(|(name, count)| NetworkProblem::DuplicateTimeSeriesName { name, count }),
+                    .map(|(name, count)| NetworkProblem::DuplicateTimeSeriesName {
+                        name: name.to_string(),
+                        count,
+                    }),
             )
             .chain(
-                duplicate_names(self.metric_sets.as_deref(), |metric_set| metric_set.name.as_str())
+                duplicates(self.metric_sets.iter().flatten(), |metric_set| metric_set.name.as_str())
                     .into_iter()
-                    .map(|(name, count)| NetworkProblem::DuplicateMetricSetName { name, count }),
+                    .map(|(name, count)| NetworkProblem::DuplicateMetricSetName {
+                        name: name.to_string(),
+                        count,
+                    }),
             )
             .chain(invalid_edges.into_iter().map(NetworkProblem::InvalidEdge))
             .collect();

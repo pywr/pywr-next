@@ -118,6 +118,180 @@ pub enum ModelProblem {
     NonPositiveFrequency { freq: String },
 }
 
+/// The subject of a message about a reference, naming the network holding it when the model has
+/// more than one.
+fn reference_subject(network: Option<&str>, owner: &str) -> String {
+    match network {
+        Some(network) => format!("The {owner} in the network `{network}`"),
+        None => format!("The {owner}"),
+    }
+}
+
+/// A problem with a model's scenarios, found by
+/// [`ScenarioDomain::validate`](crate::model::ScenarioDomain::validate), or with a reference to
+/// one of its groups, found by [`crate::ModelSchema::validate`].
+#[derive(Error, Debug, Clone, PartialEq, Eq)]
+pub enum ScenarioProblem {
+    /// A name used by more than one entry of `groups`.
+    #[error("The name `{name}` is used by {count} scenario groups, but each name must be unique.")]
+    DuplicateGroupName { name: String, count: usize },
+    /// A group whose `size` is zero.
+    #[error("The scenario group `{group}` has a size of zero, but a group must have at least one scenario.")]
+    EmptyGroup { group: String },
+    /// A group whose `labels` do not number its `size`.
+    #[error(
+        "The scenario group `{group}` has {found} label(s) for its {expected} scenario(s). A group with labels must have one for each of its scenarios."
+    )]
+    IncorrectNumberOfLabels {
+        group: String,
+        found: usize,
+        expected: usize,
+    },
+    /// A label used by more than one scenario of a group. A label resolves to the first scenario
+    /// holding it, so the rest could never be named.
+    #[error(
+        "The scenario group `{group}` uses the label `{label}` for {count} of its scenarios, but each label must be unique within its group."
+    )]
+    DuplicateLabel { group: String, label: String, count: usize },
+    /// A `Slice` subset whose `end` is not after its `start`, so it names no scenarios.
+    #[error(
+        "The `Slice` subset of the scenario group `{group}` runs from {start} to {end}, but a slice must start before it ends."
+    )]
+    EmptySlice { group: String, start: usize, end: usize },
+    /// A `Slice` subset that reaches past the end of its group.
+    #[error(
+        "The `Slice` subset of the scenario group `{group}` ends at {end}, but the group has only {size} scenario(s)."
+    )]
+    SliceOutOfRange { group: String, size: usize, end: usize },
+    /// A subset that names nothing.
+    #[error("The subset of the scenario group `{group}` is empty, but a subset must name at least one scenario.")]
+    EmptySubset { group: String },
+    /// An `Indices` subset entry that is not a scenario of its group.
+    #[error(
+        "The `Indices` subset of the scenario group `{group}` names the scenario {index}, but the group has only {size} scenario(s)."
+    )]
+    SubsetIndexOutOfRange { group: String, size: usize, index: usize },
+    /// An `Indices` subset naming one scenario more than once.
+    #[error(
+        "The `Indices` subset of the scenario group `{group}` names the scenario {index} {count} times, but a subset must name each scenario at most once."
+    )]
+    DuplicateSubsetIndex { group: String, index: usize, count: usize },
+    /// A `Labels` subset entry that is not one of its group's labels.
+    #[error(
+        "The `Labels` subset of the scenario group `{group}` names the label `{label}`, which the group does not have."
+    )]
+    SubsetLabelNotFound { group: String, label: String },
+    /// A `Labels` subset naming one label more than once.
+    #[error(
+        "The `Labels` subset of the scenario group `{group}` names the label `{label}` {count} times, but a subset must name each scenario at most once."
+    )]
+    DuplicateSubsetLabel { group: String, label: String, count: usize },
+    /// A `Labels` subset on a group that has no `labels`.
+    #[error("The scenario group `{group}` has a `Labels` subset, but the group has no `labels` for it to name.")]
+    SubsetNeedsGroupLabels { group: String },
+    /// A subset given alongside `combinations`. Either can constrain the domain, but not both.
+    #[error(
+        "The scenarios have `combinations` as well as a subset on the scenario group `{group}`. Only one of the two can constrain the domain."
+    )]
+    CombinationsAndSubset { group: String },
+    /// `combinations` given with no groups to combine.
+    #[error("The scenarios have `combinations`, but no `groups` for them to combine.")]
+    CombinationsWithoutGroups,
+    /// An empty list of `combinations`.
+    #[error("The scenarios have an empty list of `combinations`, but a model must simulate at least one scenario.")]
+    EmptyCombinations,
+    /// A combination that does not have one entry for each group.
+    #[error(
+        "The combination at index {combination} has {found} entry(s) for the model's {expected} scenario group(s). Each combination must have one entry for each group, in the order the groups are defined."
+    )]
+    IncorrectCombinationLength {
+        combination: usize,
+        found: usize,
+        expected: usize,
+    },
+    /// A combination entry that is not a scenario of its group.
+    #[error(
+        "The combination at index {combination} names the scenario {index} of the scenario group `{group}`, but the group has only {size} scenario(s)."
+    )]
+    CombinationIndexOutOfRange {
+        combination: usize,
+        group: String,
+        size: usize,
+        index: usize,
+    },
+    /// A combination entry naming a label its group does not have.
+    #[error(
+        "The combination at index {combination} names the label `{label}` of the scenario group `{group}`, which the group does not have."
+    )]
+    CombinationLabelNotFound {
+        combination: usize,
+        group: String,
+        label: String,
+    },
+    /// A combination entry naming a label of a group that has no `labels`.
+    #[error(
+        "The combination at index {combination} names the label `{label}` of the scenario group `{group}`, but the group has no `labels`. Name its scenarios by index instead."
+    )]
+    CombinationNeedsGroupLabels {
+        combination: usize,
+        group: String,
+        label: String,
+    },
+    /// A reference to a group that `scenarios.groups` does not define.
+    #[error(
+        "{} refers to the scenario group `{group}`, which the model's scenarios do not define.", reference_subject(.network.as_deref(), .owner)
+    )]
+    UnknownGroupReference {
+        /// The network holding the reference, for a [`crate::MultiNetworkModelSchema`]. `None`
+        /// for a [`crate::ModelSchema`], which has only one network.
+        network: Option<String>,
+        /// The component holding it, as an [`Owner`](crate::visit::Owner) displays itself.
+        owner: String,
+        /// The group it names.
+        group: String,
+    },
+}
+
+/// The problems [`ScenarioDomain::validate`](crate::model::ScenarioDomain::validate) found, as an
+/// error, so that building a model can carry them as a [`source`](std::error::Error::source).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ScenarioValidationError {
+    /// Never empty, and ordered as
+    /// [`ScenarioDomain::validate`](crate::model::ScenarioDomain::validate) documents.
+    pub problems: Vec<ScenarioProblem>,
+}
+
+impl ScenarioValidationError {
+    /// A multi-line report, as [`NetworkValidationError::report`].
+    pub fn report(&self) -> impl std::fmt::Display {
+        struct Report<'a>(&'a ScenarioValidationError);
+
+        impl std::fmt::Display for Report<'_> {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                self.0.write_summary(f)?;
+                write!(f, ":")?;
+                write_problem_lines(f, self.0.problems.iter().map(ToString::to_string))
+            }
+        }
+
+        Report(self)
+    }
+
+    /// Write the summary, without the punctuation that ends it.
+    fn write_summary(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "The scenarios have {} problem(s)", self.problems.len())
+    }
+}
+
+impl std::fmt::Display for ScenarioValidationError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.write_summary(f)?;
+        write!(f, ".")
+    }
+}
+
+impl std::error::Error for ScenarioValidationError {}
+
 /// A problem with one network, found by [`crate::NetworkSchema::validate`].
 ///
 /// A name must be unique within its list, not across lists: `nodes` and `virtual_nodes` share one
@@ -210,6 +384,8 @@ impl std::error::Error for NetworkValidationError {}
 pub struct ValidationError {
     /// The problems that are not about any one network.
     pub model: Vec<ModelProblem>,
+    /// The problems with the model's scenarios, including references to groups it does not define.
+    pub scenarios: Vec<ScenarioProblem>,
     /// The networks that have problems.
     pub networks: Vec<NetworkValidationError>,
 }
@@ -217,15 +393,16 @@ pub struct ValidationError {
 impl ValidationError {
     /// `Ok` if no problems were found, or `Err` with them all.
     pub(crate) fn into_result(self) -> Result<(), Self> {
-        if self.model.is_empty() && self.networks.is_empty() {
+        if self.model.is_empty() && self.scenarios.is_empty() && self.networks.is_empty() {
             Ok(())
         } else {
             Err(self)
         }
     }
 
-    /// As [`NetworkValidationError::report`], with each network's problems listed under the
-    /// model's, and named with the network unless it is the model's only one.
+    /// As [`NetworkValidationError::report`], with the scenarios' problems and then each
+    /// network's listed under the model's, and named with the network unless it is the model's
+    /// only one.
     pub fn report(&self) -> impl std::fmt::Display {
         struct Report<'a>(&'a ValidationError);
 
@@ -235,6 +412,7 @@ impl ValidationError {
                 write!(f, ":")?;
 
                 let model = self.0.model.iter().map(ToString::to_string);
+                let scenarios = self.0.scenarios.iter().map(ToString::to_string);
 
                 let networks = self.0.networks.iter().flat_map(|network| {
                     network.problems.iter().map(move |problem| match &network.name {
@@ -243,7 +421,7 @@ impl ValidationError {
                     })
                 });
 
-                write_problem_lines(f, model.chain(networks))
+                write_problem_lines(f, model.chain(scenarios).chain(networks))
             }
         }
 
@@ -252,7 +430,8 @@ impl ValidationError {
 
     /// Write the summary, without the punctuation that ends it.
     fn write_summary(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let count = self.model.len() + self.networks.iter().map(|n| n.problems.len()).sum::<usize>();
+        let count =
+            self.model.len() + self.scenarios.len() + self.networks.iter().map(|n| n.problems.len()).sum::<usize>();
 
         write!(f, "The model has {count} problem(s)")
     }
