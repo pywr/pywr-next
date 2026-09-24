@@ -522,15 +522,17 @@ impl ScenarioDomain {
 
         problems.extend(self.groups.iter().flat_map(ScenarioGroup::problems));
 
-        if let Some(combinations) = &self.combinations {
-            problems.extend(self.combination_problems(combinations));
-        }
+        problems.extend(self.combination_problems());
 
         if problems.is_empty() { Ok(()) } else { Err(problems) }
     }
 
     /// Every problem with `combinations`, in the order they are listed.
-    fn combination_problems(&self, combinations: &[Vec<ScenarioLabelOrIndex>]) -> Vec<ScenarioProblem> {
+    fn combination_problems(&self) -> Vec<ScenarioProblem> {
+        let Some(combinations) = &self.combinations else {
+            return Vec::new();
+        };
+
         if self.groups.is_empty() {
             return vec![ScenarioProblem::CombinationsWithoutGroups];
         }
