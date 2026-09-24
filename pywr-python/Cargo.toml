@@ -27,8 +27,7 @@ ipm-simd = ["pywr-core/ipm-simd", "pywr-schema/ipm-simd"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-# The Github workflow is configured to use the minimum version corresponding to the `abi3-pyXX` feature enabled here.
-# Please remember to update the workflow if changing the ABI version.
+anyhow = { workspace = true }
 arrow = { workspace = true }
 jiff = { workspace = true }
 pyo3 = { workspace = true, features = ["extension-module", "macros", "jiff-02", "abi3-py310"] }

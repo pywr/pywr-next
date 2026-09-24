@@ -2,9 +2,11 @@ mod exceptions;
 mod solver_settings;
 
 use crate::exceptions::{
-    PyModelBuilderError, PyModelRunError, PyModelSchemaBuildError, PyMultiNetworkModelBuilderError,
-    PyMultiNetworkModelRunError, PyMultiNetworkModelSchemaBuildError, PyRecorderAggregationError,
+    PyModelBuilderError, PyModelRunError, PyModelSchemaBuildError, PyModelSchemaReadError,
+    PyMultiNetworkModelBuilderError, PyMultiNetworkModelRunError, PyMultiNetworkModelSchemaBuildError,
+    PyRecorderAggregationError,
 };
+use anyhow::anyhow;
 use arrow::array::{Float64Builder, RecordBatch, StringBuilder, TimestampMillisecondBuilder, UInt64Builder};
 use arrow::pyarrow::PyArrowType;
 use jiff::civil::DateTime;
@@ -449,20 +451,21 @@ impl PyModelSchema {
     /// Create a new schema object from a file path.
     #[classmethod]
     fn from_path(_cls: &Bound<'_, PyType>, path: PathBuf) -> PyResult<Self> {
-        let inner = ModelSchema::from_path(path).map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        let inner = ModelSchema::from_path(path).map_err(PyModelSchemaReadError::from)?;
         Ok(Self { inner })
     }
 
     ///  Create a new schema object from a JSON string.
     #[classmethod]
     fn from_json_string(_cls: &Bound<'_, PyType>, data: &str) -> PyResult<Self> {
-        let inner = ModelSchema::from_str(data).map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        let inner = ModelSchema::from_str(data).map_err(PyModelSchemaReadError::from)?;
         Ok(Self { inner })
     }
 
     /// Serialize the schema to a JSON string.
     fn to_json_string(&self) -> PyResult<String> {
-        let data = serde_json::to_string_pretty(&self.inner).map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        let data = serde_json::to_string_pretty(&self.inner)
+            .map_err(|e| PyRuntimeError::new_err(format!("{:?}", anyhow!(e))))?;
         Ok(data)
     }
 
@@ -494,20 +497,21 @@ impl PyMultiNetworkModelSchema {
     /// Create a new schema object from a file path.
     #[classmethod]
     fn from_path(_cls: &Bound<'_, PyType>, path: PathBuf) -> PyResult<Self> {
-        let inner = MultiNetworkModelSchema::from_path(path).map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        let inner = MultiNetworkModelSchema::from_path(path).map_err(PyModelSchemaReadError::from)?;
         Ok(Self { inner })
     }
 
     ///  Create a new schema object from a JSON string.
     #[classmethod]
     fn from_json_string(_cls: &Bound<'_, PyType>, data: &str) -> PyResult<Self> {
-        let inner = MultiNetworkModelSchema::from_str(data).map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        let inner = MultiNetworkModelSchema::from_str(data).map_err(PyModelSchemaReadError::from)?;
         Ok(Self { inner })
     }
 
     /// Serialize the schema to a JSON string.
     fn to_json_string(&self) -> PyResult<String> {
-        let data = serde_json::to_string_pretty(&self.inner).map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        let data = serde_json::to_string_pretty(&self.inner)
+            .map_err(|e| PyRuntimeError::new_err(format!("{:?}", anyhow!(e))))?;
         Ok(data)
     }
 

@@ -616,26 +616,30 @@ impl From<ScenarioDomain> for pywr_core::scenario::ScenarioDomainBuilder {
 /// Error type for reading a [`ModelSchema`] or [`MultiNetworkModelSchema`] network from a file or string.
 #[derive(Error, Debug)]
 pub enum ModelSchemaReadError {
-    #[error("IO error on path `{path}`: {error}")]
-    IO { path: PathBuf, error: std::io::Error },
-    #[error("JSON error: {0}")]
+    #[error("IO error on path `{path}`.")]
+    IO {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+    #[error("JSON error deserialising model.")]
     Json(#[from] serde_json::Error),
 }
 
 #[derive(Error, Debug)]
 #[cfg(feature = "core")]
 pub enum ModelSchemaBuildError {
-    #[error("Failed to construct the network: {source}")]
+    #[error("Failed to construct the network.")]
     NetworkBuildError {
         #[source]
         source: Box<NetworkSchemaBuildError>,
     },
-    #[error("Scenario validation failed: {source}")]
+    #[error("Scenario validation failed.")]
     ScenarioValidation {
         #[from]
         source: ScenarioValidationError,
     },
-    #[error("Error building model domain: {0}")]
+    #[error("Error building model domain.")]
     CoreModelDomainBuilderError(#[from] ModelDomainBuilderError),
 }
 
@@ -763,9 +767,9 @@ impl ModelSchema {
     }
 
     pub fn from_path<P: AsRef<Path>>(path: P) -> Result<Self, ModelSchemaReadError> {
-        let data = std::fs::read_to_string(&path).map_err(|error| ModelSchemaReadError::IO {
+        let data = std::fs::read_to_string(&path).map_err(|source| ModelSchemaReadError::IO {
             path: path.as_ref().to_path_buf(),
-            error,
+            source,
         })?;
         Ok(serde_json::from_str(data.as_str())?)
     }
@@ -893,26 +897,26 @@ pub struct MultiNetworkEntry {
 #[derive(Error, Debug)]
 #[cfg(feature = "core")]
 pub enum MultiNetworkModelSchemaBuildError {
-    #[error("Error building model domain: {0}")]
+    #[error("Error building model domain.")]
     CoreModelDomainBuilderError(#[from] ModelDomainBuilderError),
-    #[error("Scenario validation failed: {source}")]
+    #[error("Scenario validation failed.")]
     ScenarioValidation {
         #[from]
         source: ScenarioValidationError,
     },
-    #[error("Failed to construct the network `{name}`: {source}")]
+    #[error("Failed to construct the network `{name}`.")]
     NetworkBuildError {
         name: String,
         #[source]
         source: Box<NetworkSchemaBuildError>,
     },
-    #[error("Failed to read Pywr network from path `{path}`: {source}")]
+    #[error("Failed to read Pywr network from path `{path}`.")]
     NetworkReadError {
         path: PathBuf,
         #[source]
         source: NetworkSchemaReadError,
     },
-    #[error("Failed to add node `{name}` to the model: {source}")]
+    #[error("Failed to add node `{name}` to the model.")]
     AddTransferError {
         name: String,
         #[source]
@@ -1016,9 +1020,9 @@ impl MultiNetworkModelSchema {
         }
     }
     pub fn from_path<P: AsRef<Path>>(path: P) -> Result<Self, ModelSchemaReadError> {
-        let data = std::fs::read_to_string(&path).map_err(|error| ModelSchemaReadError::IO {
+        let data = std::fs::read_to_string(&path).map_err(|source| ModelSchemaReadError::IO {
             path: path.as_ref().to_path_buf(),
-            error,
+            source,
         })?;
         Ok(serde_json::from_str(data.as_str())?)
     }
