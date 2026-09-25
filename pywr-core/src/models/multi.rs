@@ -142,19 +142,19 @@ pub struct MultiNetworkModelState<S> {
 /// Errors that can occur when setting up a multi-network model.
 #[derive(Debug, Error)]
 pub enum MultiNetworkModelSetupError {
-    #[error("Failed to setup network `{network}`: {source}")]
+    #[error("Failed to setup network `{network}`.")]
     NetworkSetupError {
         network: String,
         #[source]
         source: Box<NetworkSetupError>,
     },
-    #[error("Error setting up recorder for network `{network}`: {source}")]
+    #[error("Error setting up recorder for network `{network}`.")]
     RecorderSetupError {
         network: String,
         #[source]
         source: Box<NetworkRecorderSetupError>,
     },
-    #[error("Failed to setup solver for network `{network}`: {source}")]
+    #[error("Failed to setup solver for network `{network}`.")]
     SolverSetupError {
         network: String,
         #[source]
@@ -165,14 +165,14 @@ pub enum MultiNetworkModelSetupError {
 /// Errors that can occur when stepping through (simulating) a multi-network model.
 #[derive(Debug, Error)]
 pub enum MultiNetworkModelStepError {
-    #[error("Error stepping through network `{network}` at timestep {timestep:#?}: {source}")]
+    #[error("Error stepping through network `{network}` at timestep {timestep:#?}.")]
     NetworkStepError {
         network: String,
         timestep: Timestep,
         #[source]
         source: Box<NetworkStepError>,
     },
-    #[error("Failed to transfer value to `{to_network}`: {source}")]
+    #[error("Failed to transfer value to `{to_network}`.")]
     TransferError {
         to_network: String,
         #[source]
@@ -180,7 +180,7 @@ pub enum MultiNetworkModelStepError {
     },
     #[error("No more timesteps")]
     EndOfTimesteps,
-    #[error("Error saving recorder for network `{network}` at timestep {timestep:#?}: {source}")]
+    #[error("Error saving recorder for network `{network}` at timestep {timestep:#?}.")]
     RecorderSaveError {
         network: String,
         timestep: Timestep,
@@ -192,13 +192,13 @@ pub enum MultiNetworkModelStepError {
 /// Errors that can occur when finalising a multi-network model.
 #[derive(Debug, Error)]
 pub enum MultiNetworkModelFinaliseError {
-    #[error("Error finalising network `{network}`: {source}")]
+    #[error("Error finalising network `{network}`.")]
     NetworkFinaliseError {
         network: String,
         #[source]
         source: Box<NetworkFinaliseError>,
     },
-    #[error("Timing data from a different network: {source}")]
+    #[error("Timing data from a different network.")]
     TimingMismatchError {
         #[source]
         source: ParameterCollectionIdMismatchError,
@@ -207,11 +207,11 @@ pub enum MultiNetworkModelFinaliseError {
 
 #[derive(Debug, Error)]
 pub enum MultiNetworkModelRunError {
-    #[error("Error setting up multi-network model: {0}")]
+    #[error("Error setting up multi-network model.")]
     SetupError(#[from] MultiNetworkModelSetupError),
-    #[error("Error stepping through multi-network model: {0}")]
+    #[error("Error stepping through multi-network model.")]
     StepError(#[from] Box<MultiNetworkModelStepError>),
-    #[error("Error finalising multi-network model: {0}")]
+    #[error("Error finalising multi-network model.")]
     FinaliseError(#[from] MultiNetworkModelFinaliseError),
 }
 
@@ -790,7 +790,7 @@ impl MultiNetworkModel {
 
 #[derive(Debug, Error)]
 pub enum MultiNetworkModelBuilderError {
-    #[error("Error building network `{name}`: {source}")]
+    #[error("Error building network `{name}`.")]
     NetworkBuilderError {
         name: String,
         #[source]
@@ -798,7 +798,7 @@ pub enum MultiNetworkModelBuilderError {
     },
     #[error("Network `{network_name}` not found when resolving transfer.")]
     NetworkNotFoundForTransfer { name: String, network_name: String },
-    #[error("Could not resolve f64 metric for transfer `{name}` attribute: {source}")]
+    #[error("Could not resolve f64 metric for transfer `{name}` attribute.")]
     ResolveMetricF64ForTransferError {
         name: String,
         #[source]
@@ -934,13 +934,13 @@ impl MultiNetworkModelBuilder {
 
 #[derive(Debug, Error)]
 pub enum InterNetworkTransferError {
-    #[error("Error retrieving value to transfer to other network: {source}")]
+    #[error("Error retrieving value to transfer to other network `{other_network}`.")]
     RetrievingTransferValue {
         other_network: String,
         #[source]
         source: MetricF64Error,
     },
-    #[error("Error setting transfer in receiving network: {source}")]
+    #[error("Error setting transfer in receiving network `{other_network}`.")]
     SettingTransferValue {
         other_network: String,
         #[source]
