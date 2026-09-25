@@ -15,13 +15,13 @@ use thiserror::Error;
 pub enum VirtualStorageNodeBuilderError {
     #[error("Index not found in resolution map.")]
     IndexNotFound,
-    #[error("Could not resolve f64 metric for `{attr}` attribute: {source}")]
+    #[error("Could not resolve f64 metric for `{attr}` attribute.")]
     ResolveMetricF64Error {
         attr: String,
         #[source]
         source: MetricF64ResolutionError,
     },
-    #[error("Could not simplify f64 metric for `{attr}`: {source}")]
+    #[error("Could not simplify f64 metric for `{attr}` attribute.")]
     CouldNotSimplifyMetricF64 {
         attr: String,
         #[source]
@@ -33,7 +33,7 @@ pub enum VirtualStorageNodeBuilderError {
         "Found {num_factors} factors and {num_nodes} nodes. The number of factors should equal the number of nodes."
     )]
     IncorrectNumberOfFactors { num_factors: usize, num_nodes: usize },
-    #[error("Error building relationship: {0}")]
+    #[error("Error building relationship.")]
     RelationshipBuildError(#[from] RelationshipBuildError),
 }
 
@@ -354,11 +354,11 @@ impl VirtualStorageActivePeriod {
 
 #[derive(Debug, Error)]
 pub enum VirtualStorageError {
-    #[error("Network state error: {0}")]
+    #[error("Network state error.")]
     NetworkStateError(#[from] NetworkStateError),
-    #[error("State error: {0}")]
+    #[error("State error.")]
     StateError(#[from] StateError),
-    #[error("Simple metric error: {0}")]
+    #[error("Simple metric error.")]
     SimpleMetricError(#[from] SimpleMetricF64Error),
 }
 

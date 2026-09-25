@@ -18,7 +18,7 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum ConstantMetricF64Error {
-    #[error("Simple parameter value error: {0}")]
+    #[error("Simple parameter value error.")]
     ConstParameterValuesError(#[from] ConstParameterValuesError),
 }
 
@@ -54,11 +54,11 @@ impl ConstantMetricF64 {
 
 #[derive(Debug, Error)]
 pub enum SimpleMetricF64Error {
-    #[error("Simple parameter value error: {0}")]
+    #[error("Simple parameter value error.")]
     SimpleParameterValuesError(#[from] SimpleParameterValuesError),
-    #[error("Constant metric error: {0}")]
+    #[error("Constant metric error.")]
     ConstantMetricError(#[from] ConstantMetricF64Error),
-    #[error("Cannot simplify metric to a constant metric")]
+    #[error("Cannot simplify metric to a constant metric.")]
     CannotSimplifyMetric,
 }
 
@@ -125,17 +125,19 @@ pub enum MetricF64Error {
     NodeIndexNotFound(NodeIndex),
     #[error("Virtual storage node index not found: {0}")]
     VirtualStorageIndexNotFound(VirtualStorageIndex),
-    #[error("Node error: {0}")]
-    NodeError(#[from] Box<NodeError>),
+    #[error("Error getting node max flow.")]
+    NodeGetMaxFlowError(#[source] Box<NodeError>),
+    #[error("Error getting node max volume.")]
+    NodeGetMaxVolumeError(#[source] Box<NodeError>),
     #[error("Aggregated node index not found: {0}")]
     AggregatedNodeIndexNotFound(AggregatedNodeIndex),
     #[error("Aggregated storage node index not found: {0}")]
     AggregatedStorageNodeIndexNotFound(AggregatedStorageNodeIndex),
-    #[error("Network state error: {0}")]
+    #[error("Network state error.")]
     NetworkStateError(#[from] NetworkStateError),
-    #[error("State error: {0}")]
+    #[error("State error.")]
     StateError(#[from] StateError),
-    #[error("Constant metric error: {0}")]
+    #[error("Simple metric error.")]
     SimpleMetricError(#[from] SimpleMetricF64Error),
     #[error("Cannot simplify metric to a simple metric")]
     CannotSimplifyMetric,
@@ -201,7 +203,7 @@ impl MetricF64 {
                 .get_node(idx)
                 .ok_or(MetricF64Error::NodeIndexNotFound(*idx))?
                 .get_max_flow(network, state)
-                .map_err(|e| MetricF64Error::NodeError(Box::new(e)))?),
+                .map_err(|e| MetricF64Error::NodeGetMaxFlowError(Box::new(e)))?),
             MetricF64::NodeVolume(idx) => Ok(state.get_network_state().get_node_volume(idx)?),
             MetricF64::NodeProportionalVolume(idx) => {
                 Ok(state.get_network_state().get_node_proportional_volume(idx)?)
@@ -210,7 +212,7 @@ impl MetricF64 {
                 .get_node(idx)
                 .ok_or(MetricF64Error::NodeIndexNotFound(*idx))?
                 .get_max_volume(state)
-                .map_err(|e| MetricF64Error::NodeError(Box::new(e)))?),
+                .map_err(|e| MetricF64Error::NodeGetMaxVolumeError(Box::new(e)))?),
             MetricF64::AggregatedNodeInFlow(idx) => {
                 let node = network
                     .get_aggregated_node(idx)
@@ -1009,7 +1011,7 @@ fn resolve_parameter_return_value<T>(
 
 #[derive(Debug, Error)]
 pub enum ConstantMetricU64Error {
-    #[error("Simple parameter value error: {0}")]
+    #[error("Simple parameter value error.")]
     ConstParameterValuesError(#[from] ConstParameterValuesError),
 }
 
@@ -1035,9 +1037,9 @@ impl ConstantMetricU64 {
 
 #[derive(Debug, Error)]
 pub enum SimpleMetricU64Error {
-    #[error("Simple parameter value error: {0}")]
+    #[error("Simple parameter value error.")]
     SimpleParameterValuesError(#[from] SimpleParameterValuesError),
-    #[error("Constant metric error: {0}")]
+    #[error("Constant metric error.")]
     ConstantMetricError(#[from] ConstantMetricU64Error),
     #[error("Cannot simplify metric to a constant metric")]
     CannotSimplifyMetric,
@@ -1074,9 +1076,9 @@ pub enum MetricU64Error {
         index: SimpleParameterIndex<MultiValue>,
         key: String,
     },
-    #[error("State error: {0}")]
+    #[error("State error.")]
     StateError(#[from] StateError),
-    #[error("Constant metric error: {0}")]
+    #[error("Simple metric error.")]
     SimpleMetricError(#[from] SimpleMetricU64Error),
     #[error("Cannot simplify metric to a simple metric")]
     CannotSimplifyMetric,

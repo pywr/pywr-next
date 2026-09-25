@@ -14,11 +14,11 @@ pub enum NodeError {
     FlowConstraintsUndefined,
     #[error("Storage constraints are undefined for this node type")]
     StorageConstraintsUndefined,
-    #[error("F64 metric error: {0}")]
+    #[error("F64 metric error.")]
     MetricF64Error(#[from] MetricF64Error),
-    #[error("F64 simple metric error: {0}")]
+    #[error("F64 simple metric error.")]
     SimpleMetricF64Error(#[from] SimpleMetricF64Error),
-    #[error("F64 constant metric error: {0}")]
+    #[error("F64 constant metric error.")]
     ConstantMetricF64Error(#[from] ConstantMetricF64Error),
     #[error("Invalid node connection to input node.")]
     InvalidNodeConnectionToInput,
@@ -30,9 +30,9 @@ pub enum NodeError {
     OutputNodeHasNoOutgoingEdges,
     #[error("No virtual storage on storage node")]
     NoVirtualStorageOnStorageNode,
-    #[error("Network state error: {0}")]
+    #[error("Network state error.")]
     NetworkStateError(#[from] NetworkStateError),
-    #[error("State error: {0}")]
+    #[error("State error.")]
     StateError(#[from] StateError),
     #[error("Virtual storage index not found: {0}")]
     VirtualStorageIndexNotFound(VirtualStorageIndex),
@@ -44,13 +44,13 @@ pub enum NodeError {
 pub enum NodeBuilderError {
     #[error("Index not found in resolution map.")]
     IndexNotFound,
-    #[error("Could not resolve f64 metric for `{attr}` attribute: {source}")]
+    #[error("Could not resolve f64 metric for `{attr}` attribute.")]
     ResolveMetricF64Error {
         attr: String,
         #[source]
         source: MetricF64ResolutionError,
     },
-    #[error("Could not simplify f64 metric for `{attr}`: {source}")]
+    #[error("Could not simplify f64 metric for `{attr}`.")]
     CouldNotSimplifyMetricF64 {
         attr: String,
         #[source]

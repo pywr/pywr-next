@@ -634,7 +634,7 @@ pub enum ModelSchemaBuildError {
         #[source]
         source: Box<NetworkSchemaBuildError>,
     },
-    #[error("Scenario validation failed.")]
+    #[error(transparent)]
     ScenarioValidation {
         #[from]
         source: ScenarioValidationError,

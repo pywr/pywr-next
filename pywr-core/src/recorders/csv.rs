@@ -20,7 +20,7 @@ use thiserror::Error;
 pub enum CsvError {
     #[error("Metric set index `{index}` not found")]
     MetricSetIndexNotFound { index: MetricSetIndex },
-    #[error("CSV error with file at `{path}`: {source}")]
+    #[error("CSV error with file at `{path}`.")]
     CSVError {
         path: PathBuf,
         #[source]

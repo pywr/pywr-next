@@ -157,18 +157,35 @@ fn unknown_scenario_group() {
         let temp_dir = TempDir::new().unwrap();
         let data_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("invalid");
 
-        let error = match schema.create_model_builder(Some(&data_dir), Some(temp_dir.path())) {
-            Err(e) => e.to_string(),
+        match schema.create_model_builder(Some(&data_dir), Some(temp_dir.path())) {
+            Err(e) => panic!("Expected a `NetworkBuildError` error, but got: {e:?}"),
             Ok(builder) => match builder.build() {
-                Err(e) => e.to_string(),
+                Err(e) => match e {
+                    pywr_core::models::ModelBuilderError::NetworkBuildError(source) => match source {
+                        pywr_core::network::NetworkBuildError::ParameterCollectionBuildError(source) => match *source {
+                            pywr_core::parameters::ParameterCollectionBuilderError::ParameterBuildError {
+                                source,
+                                ..
+                            } => {
+                                match *source {
+                                    pywr_core::parameters::ParameterBuildError::ScenarioGroupNotFound(_) => {
+                                        // This is the expected error.
+                                    }
+                                    _ => panic!(
+                                        "Expected `ParameterBuildError::ScenarioGroupNotFound`, but got: {source:?}"
+                                    ),
+                                }
+                            }
+                            _ => panic!(
+                                "Expected `ParameterCollectionBuilderError::ParameterBuildError`, but got: {source:?}"
+                            ),
+                        },
+                        e => panic!("Expected `NetworkBuildError::ParameterCollectionBuildError`, but got: {e:?}"),
+                    },
+                },
                 Ok(_) => panic!("Expected the model to be refused for its unresolved scenario group!"),
             },
         };
-
-        assert!(
-            error.contains("Scenario group not found: weather"),
-            "Expected a failure naming the unresolved group, but got: {error}"
-        );
     }
 }
 

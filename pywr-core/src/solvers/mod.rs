@@ -121,7 +121,7 @@ pub trait SolverSettings {
 /// Errors that can occur during solver setup.
 #[derive(Debug, Error)]
 pub enum SolverSetupError {
-    #[error("Node error: {0}")]
+    #[error("Node error.")]
     NodeError(#[from] crate::node::NodeError),
     #[error("Cannot create linear programme. No edges defined in the model")]
     NoEdgesDefined,
@@ -135,7 +135,7 @@ pub enum SolverSetupError {
         upper_bound: f64,
     },
     #[cfg(feature = "highs")]
-    #[error("Highs error: {0}")]
+    #[error("Highs error.")]
     HighsError(#[from] highs::HighsStatusError),
 }
 
@@ -152,7 +152,7 @@ pub trait SolverConfig: SolverSettings {
 /// Errors that can occur during solver solve.
 #[derive(Debug, Error)]
 pub enum SolverSolveError {
-    #[error("Edge from `{from_name}` and sub-name `{}` to `{to_name}` and sub-name `{}` error: {source}", .from_sub_name.as_deref().unwrap_or("None"), .to_sub_name.as_deref().unwrap_or("None"))]
+    #[error("Edge from `{from_name}` and sub-name `{}` to `{to_name}` and sub-name `{}` error.", .from_sub_name.as_deref().unwrap_or("None"), .to_sub_name.as_deref().unwrap_or("None"))]
     EdgeError {
         from_name: String,
         from_sub_name: Option<String>,
@@ -161,21 +161,21 @@ pub enum SolverSolveError {
         #[source]
         source: crate::edge::EdgeError,
     },
-    #[error("Node `{name}` and sub-name `{}` error: {source}", .sub_name.as_deref().unwrap_or("None"))]
+    #[error("Node `{name}` and sub-name `{}` error.", .sub_name.as_deref().unwrap_or("None"))]
     NodeError {
         name: String,
         sub_name: Option<String>,
         #[source]
         source: crate::node::NodeError,
     },
-    #[error("Aggregated node `{name}` and sub-name `{}` error: {source}", .sub_name.as_deref().unwrap_or("None"))]
+    #[error("Aggregated node `{name}` and sub-name `{}` error.", .sub_name.as_deref().unwrap_or("None"))]
     AggregatedNodeError {
         name: String,
         sub_name: Option<String>,
         #[source]
         source: crate::aggregated_node::AggregatedNodeError,
     },
-    #[error("Virtual storage error: {0}")]
+    #[error("Virtual storage error.")]
     VirtualStorageError(#[from] crate::virtual_storage::VirtualStorageError),
     #[error("Node index not found: {0}")]
     NodeIndexNotFound(NodeIndex),
@@ -183,9 +183,9 @@ pub enum SolverSolveError {
     AggregatedNodeIndexNotFound(AggregatedNodeIndex),
     #[error("missing solver features")]
     MissingSolverFeatures,
-    #[error("Network state error: {0}")]
+    #[error("Network state error.")]
     NetworkStateError(#[from] crate::state::NetworkStateError),
-    #[error("State error: {0}")]
+    #[error("State error.")]
     StateError(#[from] crate::state::StateError),
     #[error("Node bounds [{lower_bound}, {upper_bound}] are infeasible for node `{name}` and sub-name `{}`", .sub_name.as_deref().unwrap_or("None"))]
     NodeBoundsInfeasible {
@@ -202,16 +202,16 @@ pub enum SolverSolveError {
         upper_bound: f64,
     },
     #[cfg(feature = "clp")]
-    #[error("Clp error: {0}")]
+    #[error("Clp error.")]
     ClpSolveError(#[from] ClpSolveStatusError),
     #[cfg(feature = "highs")]
-    #[error("Highs error: {0}")]
+    #[error("Highs status error.")]
     HighsError(#[from] highs::HighsStatusError),
     #[cfg(feature = "highs")]
-    #[error("Highs error: {0}")]
+    #[error("Highs model error.")]
     HighsModelError(#[from] highs::HighsModelError),
     #[cfg(feature = "microlp")]
-    #[error("MicroLP error: {0}")]
+    #[error("MicroLP error.")]
     MicroLpError(#[from] MicroLpError),
 }
 

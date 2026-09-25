@@ -20,7 +20,7 @@ pub enum AggregationError {
     AggregationFunctionNotDefined,
     #[error("Aggregation function failed.")]
     AggregationFunctionFailed,
-    #[error("Aggregation function error: {0}")]
+    #[error("Aggregation function error.")]
     AggFuncError(#[from] AggFuncError),
 }
 

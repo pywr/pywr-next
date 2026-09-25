@@ -20,20 +20,20 @@ use thiserror::Error;
 pub enum Hdf5Error {
     #[error("Metric set index `{index}` not found")]
     MetricSetIndexNotFound { index: MetricSetIndex },
-    #[error("HDF5 error with file at `{path}`: {source}")]
+    #[error("HDF5 error with file at `{path}`.")]
     HDF5Error {
         path: PathBuf,
         #[source]
         source: hdf5_metno::Error,
     },
-    #[error("HDF5 writing data for metric `{metric}` error in file at `{path}`: {source}")]
+    #[error("HDF5 writing data for metric `{metric}` error in file at `{path}`.")]
     HDF5MetricError {
         path: PathBuf,
         metric: String,
         #[source]
         source: hdf5_metno::Error,
     },
-    #[error("Could not create unicode variable name at `{path}`: {source}")]
+    #[error("Could not create unicode variable name at `{path}`.")]
     HDF5VarLenUnicode {
         path: PathBuf,
         #[source]
