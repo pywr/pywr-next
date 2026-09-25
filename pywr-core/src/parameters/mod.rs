@@ -858,7 +858,7 @@ impl<T: 'static> GeneralParameterEntry<T> {
 
 #[derive(Debug, Error)]
 pub enum ParameterBuildError {
-    #[error("Scenario group not found: {}", .0.name)]
+    #[error(transparent)]
     ScenarioGroupNotFound(#[from] ScenarioGroupNotFound),
     #[error(
         "Number of values ({values}) does not match the size ({scenarios}) of the specified scenario group '{group}'."
@@ -878,7 +878,7 @@ pub enum ParameterBuildError {
     },
     #[error("Error subsetting array with {array_cols} columns with subset {subset:?}.")]
     ArraySubSetError { array_cols: usize, subset: Vec<usize> },
-    #[error("Error casting array from {from:?} to {to:?}: {source}")]
+    #[error("Error casting array from `{from}` to `{to}`.")]
     ArrayCastError {
         from: DataType,
         to: DataType,
@@ -900,19 +900,19 @@ pub enum ParameterBuildError {
         data_start: DateTime,
         data_end: DateTime,
     },
-    #[error("Could not resolve f64 metric for `{attr}` attribute: {source}")]
+    #[error("Could not resolve f64 metric for `{attr}` attribute.")]
     ResolveMetricF64Error {
         attr: String,
         #[source]
         source: MetricF64ResolutionError,
     },
-    #[error("Could not resolve u64 metric for `{attr}` attribute: {source}")]
+    #[error("Could not resolve u64 metric for `{attr}` attribute.")]
     ResolveMetricU64Error {
         attr: String,
         #[source]
         source: MetricU64ResolutionError,
     },
-    #[error("Could not simplify f64 metric for `{attr}`: {source}")]
+    #[error("Could not simplify f64 metric for `{attr}` attribute.")]
     CouldNotSimplifyMetricF64 {
         attr: String,
         #[source]
@@ -1407,7 +1407,7 @@ pub enum ParameterCollectionError {
 
 /// Error in a parameter during setup.
 #[derive(Error, Debug)]
-#[error("Error setting up parameter '{name}': {source}")]
+#[error("Error setting up parameter '{name}'.")]
 pub struct ParameterCollectionSetupError {
     name: Box<ParameterName>,
     #[source]
@@ -1423,25 +1423,25 @@ pub enum ParameterCollectionConstCalculationError {
     U64IndexNotFound(ConstParameterIndex<u64>),
     #[error("Constant parameter Multi index '{0}' not found in collection")]
     MultiIndexNotFound(ConstParameterIndex<MultiValue>),
-    #[error("Error calculating constant parameter '{name}': {source}")]
+    #[error("Error calculating constant parameter '{name}'.")]
     CalculationError {
         name: ParameterName,
         #[source]
         source: ConstCalculationError,
     },
-    #[error("Error setting state for constant F64 parameter '{name}': {source}")]
+    #[error("Error setting state for constant F64 parameter '{name}'.")]
     F64SetStateError {
         name: ParameterName,
         #[source]
         source: SetStateError<ConstParameterIndex<f64>>,
     },
-    #[error("Error setting state for constant U64 parameter '{name}': {source}")]
+    #[error("Error setting state for constant U64 parameter '{name}'.")]
     U64SetStateError {
         name: ParameterName,
         #[source]
         source: SetStateError<ConstParameterIndex<u64>>,
     },
-    #[error("Error setting state for constant Multi parameter '{name}': {source}")]
+    #[error("Error setting state for constant Multi parameter '{name}'.")]
     MultiSetStateError {
         name: ParameterName,
         #[source]
@@ -1450,7 +1450,6 @@ pub enum ParameterCollectionConstCalculationError {
 }
 
 #[derive(Error, Debug)]
-#[error("Error calculating simple parameter '{name}': {source}")]
 pub enum ParameterCollectionSimpleCalculationError {
     #[error("Simple parameter F64 index '{0}' not found in collection")]
     F64IndexNotFound(SimpleParameterIndex<f64>),
@@ -1458,25 +1457,25 @@ pub enum ParameterCollectionSimpleCalculationError {
     U64IndexNotFound(SimpleParameterIndex<u64>),
     #[error("Simple parameter Multi index '{0}' not found in collection")]
     MultiIndexNotFound(SimpleParameterIndex<MultiValue>),
-    #[error("Error calculating simple parameter '{name}': {source}")]
+    #[error("Error calculating simple parameter '{name}'.")]
     CalculationError {
         name: ParameterName,
         #[source]
         source: SimpleCalculationError,
     },
-    #[error("Error setting state for simple F64 parameter '{name}': {source}")]
+    #[error("Error setting state for simple F64 parameter '{name}'.")]
     F64SetStateError {
         name: ParameterName,
         #[source]
         source: SetStateError<SimpleParameterIndex<f64>>,
     },
-    #[error("Error setting state for simple U64 parameter '{name}': {source}")]
+    #[error("Error setting state for simple U64 parameter '{name}'.")]
     U64SetStateError {
         name: ParameterName,
         #[source]
         source: SetStateError<SimpleParameterIndex<u64>>,
     },
-    #[error("Error setting state for simple Multi parameter '{name}': {source}")]
+    #[error("Error setting state for simple Multi parameter '{name}'.")]
     MultiSetStateError {
         name: ParameterName,
         #[source]
@@ -1679,7 +1678,6 @@ enum GeneralAfterScheduleEntry {
 }
 
 #[derive(Error, Debug)]
-#[error("Error calculating general parameter '{name}': {source}")]
 pub enum ParameterCollectionGeneralCalculationError {
     #[error("General parameter F64 index '{0}' not found in collection")]
     F64IndexNotFound(GeneralParameterIndex<f64>),
@@ -1687,43 +1685,43 @@ pub enum ParameterCollectionGeneralCalculationError {
     U64IndexNotFound(GeneralParameterIndex<u64>),
     #[error("General parameter Multi index '{0}' not found in collection")]
     MultiIndexNotFound(GeneralParameterIndex<MultiValue>),
-    #[error("Error calculating general parameter '{name}': {source}")]
+    #[error("Error calculating general parameter '{name}'.")]
     CalculationError {
         name: ParameterName,
         #[source]
         source: Box<GeneralCalculationError>,
     },
-    #[error("Error setting before state for general F64 parameter '{name}': {source}")]
+    #[error("Error setting before state for general F64 parameter '{name}'.")]
     F64SetBeforeStateError {
         name: ParameterName,
         #[source]
         source: SetStateError<GeneralBeforeValueIndex<f64>>,
     },
-    #[error("Error setting after state for general F64 parameter '{name}': {source}")]
+    #[error("Error setting after state for general F64 parameter '{name}'.")]
     F64SetAfterStateError {
         name: ParameterName,
         #[source]
         source: SetStateError<GeneralAfterValueIndex<f64>>,
     },
-    #[error("Error setting before state for general U64 parameter '{name}': {source}")]
+    #[error("Error setting before state for general U64 parameter '{name}'.")]
     U64SetBeforeStateError {
         name: ParameterName,
         #[source]
         source: SetStateError<GeneralBeforeValueIndex<u64>>,
     },
-    #[error("Error setting after state for general U64 parameter '{name}': {source}")]
+    #[error("Error setting after state for general U64 parameter '{name}'.")]
     U64SetAfterStateError {
         name: ParameterName,
         #[source]
         source: SetStateError<GeneralAfterValueIndex<u64>>,
     },
-    #[error("Error setting before state for general Multi parameter '{name}': {source}")]
+    #[error("Error setting before state for general Multi parameter '{name}'.")]
     MultiSetBeforeStateError {
         name: ParameterName,
         #[source]
         source: SetStateError<GeneralBeforeValueIndex<MultiValue>>,
     },
-    #[error("Error setting after state for general Multi parameter '{name}': {source}")]
+    #[error("Error setting after state for general Multi parameter '{name}'.")]
     MultiSetAfterStateError {
         name: ParameterName,
         #[source]
@@ -2980,7 +2978,7 @@ impl ParameterCollection {
 pub enum ParameterCollectionBuilderError {
     #[error("Duplicate parameter `{name}` found.")]
     DuplicateParameterName { name: ParameterName },
-    #[error("Error building parameter `{name}`: {source}")]
+    #[error("Error building parameter `{name}`.")]
     ParameterBuildError {
         name: ParameterName,
         #[source]
@@ -3683,7 +3681,6 @@ mod tests {
             other => panic!("expected a wrapped parameter build error, got {other:?}"),
         }
         assert!(display.contains("broken"));
-        assert!(display.contains("intentional failure"));
     }
 
     #[test]

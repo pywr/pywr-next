@@ -19,7 +19,7 @@ pub enum ChecksumError {
         expected: String,
         path: PathBuf,
     },
-    #[error("IO error when trying to read `{path}`: {source}")]
+    #[error("IO error when trying to read `{path}`.")]
     IoError {
         path: PathBuf,
         #[source]

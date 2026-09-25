@@ -231,7 +231,7 @@ pub enum Relationship {
 
 #[derive(Debug, Error)]
 pub enum RelationshipBuildError {
-    #[error("Could not resolve f64 metric for `{attr}` attribute: {source}")]
+    #[error("Could not resolve f64 metric for `{attr}` attribute.")]
     ResolveMetricF64Error {
         attr: String,
         #[source]
@@ -561,7 +561,7 @@ impl AggregatedNode {
 pub enum AggregatedNodeBuilderError {
     #[error("Index not found in resolution map.")]
     IndexNotFound,
-    #[error("Could not resolve f64 metric for `{attr}` attribute: {source}")]
+    #[error("Could not resolve f64 metric for `{attr}` attribute.")]
     ResolveMetricF64Error {
         attr: String,
         #[source]
@@ -569,7 +569,7 @@ pub enum AggregatedNodeBuilderError {
     },
     #[error("Reference to node not found.")]
     NodeIndexNotFound { node: UnresolvedNode },
-    #[error("Error building relationship: {0}")]
+    #[error("Error building relationship.")]
     RelationshipBuildError(#[from] RelationshipBuildError),
     #[error("Factors do not match the nodes: {0}")]
     FactorCountError(#[from] FactorCountError),
@@ -732,21 +732,21 @@ pub enum FactorCountError {
 
 #[derive(Debug, Error)]
 pub enum FactorError {
-    #[error("Error calculating proportional factors: {0}")]
+    #[error("Error calculating proportional factors.")]
     Proportional(#[from] ProportionalFactorError),
-    #[error("Error calculating ratio factors: {0}")]
+    #[error("Error calculating ratio factors.")]
     Ratio(#[from] RatioFactorError),
-    #[error("Error calculating coefficient factors: {0}")]
+    #[error("Error calculating coefficient factors.")]
     Coefficient(#[from] CoefficientFactorError),
 }
 
 #[derive(Debug, Error)]
 pub enum ConstantFactorError {
-    #[error("Error calculating proportional factors: {0}")]
+    #[error("Error calculating proportional factors.")]
     Proportional(#[from] ConstantProportionalFactorError),
-    #[error("Error calculating ratio factors: {0}")]
+    #[error("Error calculating ratio factors.")]
     Ratio(#[from] ConstantRatioFactorError),
-    #[error("Error calculating coefficient factors: {0}")]
+    #[error("Error calculating coefficient factors.")]
     Coefficient(#[from] ConstantCoefficientFactorError),
 }
 
@@ -756,7 +756,7 @@ pub enum ProportionalFactorError {
         "Found {num_factors} proportional factors and {num_nodes} nodes in aggregated node. The number of proportional factors should equal one less than the number of nodes."
     )]
     IncorrectNumberOfFactors { num_factors: usize, num_nodes: usize },
-    #[error("Failed to get metric value for factor: {0}")]
+    #[error("Failed to get metric value for factor.")]
     MetricF64(#[from] MetricF64Error),
     #[error("Negative or zero factor values are not allowed. Found: {value}")]
     NegativeOrZeroFactor { value: f64 },
@@ -821,7 +821,7 @@ pub enum ConstantProportionalFactorError {
         "Found {num_factors} proportional factors and {num_nodes} nodes in aggregated node. The number of proportional factors should equal one less than the number of nodes."
     )]
     IncorrectNumberOfFactors { num_factors: usize, num_nodes: usize },
-    #[error("Failed to get metric value for factor: {0}")]
+    #[error("Failed to get metric value for factor.")]
     MetricF64(#[from] ConstantMetricF64Error),
     #[error("Negative or zero factor values are not allowed. Found: {value}")]
     NegativeOrZeroFactor { value: f64 },
@@ -916,7 +916,7 @@ pub enum RatioFactorError {
         "Found {num_factors} ratio factors and {num_nodes} nodes in aggregated node. The number of ratio factors should equal the number of nodes."
     )]
     IncorrectNumberOfFactors { num_factors: usize, num_nodes: usize },
-    #[error("Failed to get metric value for factor: {0}")]
+    #[error("Failed to get metric value for factor.")]
     MetricF64(#[from] MetricF64Error),
     #[error("Negative or zero factor values are not allowed. Found: {value}")]
     NegativeOrZeroFactor { value: f64 },
@@ -976,7 +976,7 @@ pub enum ConstantRatioFactorError {
         "Found {num_factors} ratio factors and {num_nodes} nodes in aggregated node. The number of ratio factors should equal the number of nodes."
     )]
     IncorrectNumberOfFactors { num_factors: usize, num_nodes: usize },
-    #[error("Failed to get metric value for factor: {0}")]
+    #[error("Failed to get metric value for factor.")]
     MetricF64(#[from] ConstantMetricF64Error),
     #[error("Negative or zero factor values are not allowed. Found: {value}")]
     NegativeOrZeroFactor { value: f64 },
@@ -1043,7 +1043,7 @@ pub enum CoefficientFactorError {
     IncorrectNumberOfFactors { num_factors: usize, num_nodes: usize },
     #[error("Coefficient factors are not yet implemented for more than two nodes.")]
     MoreThanTwoFactors,
-    #[error("Failed to get metric value for factor: {0}")]
+    #[error("Failed to get metric value for factor.")]
     MetricF64(#[from] MetricF64Error),
 }
 
@@ -1093,7 +1093,7 @@ pub enum ConstantCoefficientFactorError {
     IncorrectNumberOfFactors { num_factors: usize, num_nodes: usize },
     #[error("Coefficient factors are not yet implemented for more than two nodes.")]
     MoreThanTwoFactors,
-    #[error("Failed to get metric value for factor: {0}")]
+    #[error("Failed to get metric value for factor.")]
     MetricF64(#[from] ConstantMetricF64Error),
 }
 

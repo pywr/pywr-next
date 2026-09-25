@@ -42,31 +42,31 @@ pub enum TimeSeriesError {
     #[error("TimeSeries provider '{provider}' does not support '{fmt}' file types")]
     UnsupportedFileFormat { provider: String, fmt: String },
     #[cfg(feature = "pyo3")]
-    #[error("Python error: {0}")]
+    #[error("Python error.")]
     PythonError(#[from] PyErr),
     #[cfg(feature = "core")]
     #[error("Python not enabled.")]
     PythonNotEnabled,
-    #[error("Checksum error: {0}")]
+    #[error("Checksum error.")]
     #[cfg(feature = "core")]
     ChecksumError(#[from] crate::digest::ChecksumError),
     #[error("Placeholder time series `{name}` cannot be loaded.")]
     PlaceholderTimeSeriesNotAllowed { name: String },
-    #[error("IO error on path `{path}`: {source}")]
+    #[error("IO error on path `{path}`.")]
     #[cfg(feature = "core")]
     IOError {
         path: PathBuf,
         #[source]
         source: std::io::Error,
     },
-    #[error("Arrow error on path `{path}`: {source}")]
+    #[error("Arrow error on path `{path}`.")]
     #[cfg(feature = "core")]
     ArrowError {
         path: PathBuf,
         #[source]
         source: arrow::error::ArrowError,
     },
-    #[error("Parquet error on path `{path}`: {source}")]
+    #[error("Parquet error on path `{path}`.")]
     #[cfg(feature = "core")]
     ParquetError {
         path: PathBuf,
@@ -272,7 +272,7 @@ pub enum LoadedTimeSeriesCollectionError {
         "No time column explicitly specified for time series input '{name}' and no temporal column could be inferred."
     )]
     TimeColumnCouldNotBeInferred { name: String },
-    #[error("Failed to load time series '{name}': {source}")]
+    #[error("Failed to load time series '{name}'.")]
     TimeSeriesError { name: String, source: TimeSeriesError },
     #[error("A time series with name '{0}' already exists.")]
     DuplicateTimeSeriesName(String),

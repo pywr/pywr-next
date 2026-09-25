@@ -65,12 +65,12 @@ impl RecorderMeta {
 /// Errors returned by recorder setup.
 #[derive(Error, Debug)]
 pub enum RecorderSetupError {
-    #[error("Arrow stream error: {0}")]
+    #[error("Arrow stream error.")]
     ArrowStreamError(#[from] ArrowStreamError),
-    #[error("CSV error: {0}")]
+    #[error("CSV error.")]
     CSVError(#[from] CsvError),
     #[cfg(feature = "hdf5")]
-    #[error("HDF5 error: {0}")]
+    #[error("HDF5 error.")]
     HDF5Error(#[from] Hdf5Error),
     #[error("Metric set index `{index}` not found")]
     MetricSetIndexNotFound { index: MetricSetIndex },
@@ -79,32 +79,32 @@ pub enum RecorderSetupError {
 /// Errors returned by recorder saving.
 #[derive(Error, Debug)]
 pub enum RecorderSaveError {
-    #[error("Arrow stream error: {0}")]
+    #[error("Arrow stream error.")]
     ArrowStreamError(#[from] ArrowStreamError),
-    #[error("F64 metric error: {0}")]
+    #[error("F64 metric error.")]
     MetricF64Error(#[from] MetricF64Error),
-    #[error("U64 metric error: {0}")]
+    #[error("U64 metric error.")]
     MetricU64Error(#[from] MetricU64Error),
     #[error("Metric set index `{index}` not found")]
     MetricSetIndexNotFound { index: MetricSetIndex },
-    #[error("CSV error: {0}")]
+    #[error("CSV error.")]
     CSVError(#[from] CsvError),
     #[cfg(feature = "hdf5")]
-    #[error("HDF5 error: {0}")]
+    #[error("HDF5 error.")]
     HDF5Error(#[from] Hdf5Error),
 }
 
 /// Errors returned by recorder saving.
 #[derive(Error, Debug)]
 pub enum RecorderFinaliseError {
-    #[error("Arrow stream error: {0}")]
+    #[error("Arrow stream error.")]
     ArrowStreamError(#[from] ArrowStreamError),
     #[error("Metric set index `{index}` not found")]
     MetricSetIndexNotFound { index: MetricSetIndex },
-    #[error("CSV error: {0}")]
+    #[error("CSV error.")]
     CSVError(#[from] CsvError),
     #[cfg(feature = "hdf5")]
-    #[error("HDF5 error: {0}")]
+    #[error("HDF5 error.")]
     HDF5Error(#[from] Hdf5Error),
 }
 
@@ -113,7 +113,7 @@ pub enum RecorderFinaliseError {
 pub enum RecorderAggregationError {
     #[error("Recorder does not supported aggregation")]
     RecorderDoesNotSupportAggregation,
-    #[error("Error aggregating value for recorder `{name}`: {source}")]
+    #[error("Error aggregating value for recorder `{name}`.")]
     AggregationError {
         name: String,
         #[source]
@@ -293,13 +293,13 @@ pub trait Recorder: Send + Sync + Debug {
 
 #[derive(Debug, Error)]
 pub enum RecorderBuilderError {
-    #[error("Could not resolve f64 metric for `{attr}` attribute: {source}")]
+    #[error("Could not resolve f64 metric for `{attr}` attribute.")]
     ResolveMetricF64Error {
         attr: String,
         #[source]
         source: MetricF64ResolutionError,
     },
-    #[error("Could not resolve u64 metric for `{attr}` attribute: {source}")]
+    #[error("Could not resolve u64 metric for `{attr}` attribute.")]
     ResolveMetricU64Error {
         attr: String,
         #[source]
