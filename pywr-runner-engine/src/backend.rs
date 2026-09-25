@@ -19,13 +19,13 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum BackendError {
-    #[error("Failed to deserialise model schema: {0}")]
+    #[error("Failed to deserialise model schema.")]
     ModelSchemaDeserialisationError(#[from] serde_json::Error),
-    #[error("Failed to create model builder from schema: {0}")]
+    #[error("Failed to create model builder from schema.")]
     ModelBuilderCreationError(#[from] pywr_schema::ModelSchemaBuildError),
-    #[error("Failed to build model from builder: {0}")]
+    #[error("Failed to build model from builder.")]
     ModelBuildError(#[from] pywr_core::models::ModelBuilderError),
-    #[error("Failed to setup model state: {0}")]
+    #[error("Failed to setup model state.")]
     ModelSetupError(#[from] pywr_core::models::ModelSetupError),
     #[error("Backend already finalised")]
     AlreadyFinalised,
@@ -33,9 +33,9 @@ pub enum BackendError {
     ModelStateNotInitialised,
     #[error("Requested solver is not enabled in this runner: {0:?}")]
     SolverUnavailable(Solver),
-    #[error("Model step error: {0}")]
+    #[error("Model step error.")]
     ModelStepError(#[from] ModelStepError),
-    #[error("Model finalisation error: {0}")]
+    #[error("Model finalisation error.")]
     ModelFinalisationError(#[from] ModelFinaliseError),
     #[error("Backend panicked: {0}")]
     Panic(String),
