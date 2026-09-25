@@ -33,6 +33,10 @@ pub struct InterpolatedParameter {
     pub error_on_bounds: Option<bool>,
 }
 
+impl InterpolatedParameter {
+    pub const DEFAULT_ERROR_ON_BOUNDS: bool = true;
+}
+
 #[cfg(feature = "core")]
 impl InterpolatedParameter {
     pub fn add_to_network(
@@ -72,7 +76,7 @@ impl InterpolatedParameter {
             ParameterPhase::Both => pywr_core::parameters::InterpolatedParameterBuilder::both(name, x, points),
         };
 
-        builder.error_on_bounds(self.error_on_bounds.unwrap_or(true));
+        builder.error_on_bounds(self.error_on_bounds.unwrap_or(Self::DEFAULT_ERROR_ON_BOUNDS));
 
         network.parameters().f64(Box::new(builder));
 

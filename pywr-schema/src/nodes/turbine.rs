@@ -1,6 +1,6 @@
 use crate::metric::Metric;
 use crate::nodes::NodeMeta;
-use crate::parameters::Parameter;
+use crate::parameters::{HydropowerTargetParameter, Parameter};
 #[cfg(feature = "core")]
 use crate::{
     error::SchemaError,
@@ -111,12 +111,12 @@ impl Default for TurbineNode {
             target: None,
             target_type: Some(TargetType::default()),
             water_elevation: None,
-            turbine_elevation: 0.0,
-            min_head: 0.0,
-            efficiency: 1.0,
-            water_density: 1000.0,
-            flow_unit_conversion: 1.0,
-            energy_unit_conversion: 1e-6,
+            turbine_elevation: HydropowerTargetParameter::DEFAULT_TURBINE_ELEVATION,
+            min_head: HydropowerTargetParameter::DEFAULT_MIN_HEAD,
+            efficiency: HydropowerTargetParameter::DEFAULT_EFFICIENCY,
+            water_density: HydropowerTargetParameter::DEFAULT_WATER_DENSITY,
+            flow_unit_conversion: HydropowerTargetParameter::DEFAULT_FLOW_UNIT_CONVERSION,
+            energy_unit_conversion: HydropowerTargetParameter::DEFAULT_ENERGY_UNIT_CONVERSION,
         }
     }
 }

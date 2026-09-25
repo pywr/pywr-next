@@ -295,6 +295,10 @@ pub struct MaxParameter {
     pub threshold: Option<f64>,
 }
 
+impl MaxParameter {
+    pub const DEFAULT_THRESHOLD: f64 = 0.0;
+}
+
 #[cfg(feature = "core")]
 impl MaxParameter {
     pub fn add_to_network(
@@ -304,7 +308,7 @@ impl MaxParameter {
         parent: Option<&str>,
     ) -> Result<(), SchemaError> {
         let idx = self.parameter.load(network, args, None)?;
-        let threshold = self.threshold.unwrap_or(0.0);
+        let threshold = self.threshold.unwrap_or(Self::DEFAULT_THRESHOLD);
         let name = ParameterName::new(&self.meta.name, parent);
 
         let p = match self.phase {
@@ -434,6 +438,10 @@ pub struct MinParameter {
     pub threshold: Option<f64>,
 }
 
+impl MinParameter {
+    pub const DEFAULT_THRESHOLD: f64 = 0.0;
+}
+
 #[cfg(feature = "core")]
 impl MinParameter {
     pub fn add_to_network(
@@ -443,7 +451,7 @@ impl MinParameter {
         parent: Option<&str>,
     ) -> Result<(), SchemaError> {
         let metric = self.parameter.load(network, args, None)?;
-        let threshold = self.threshold.unwrap_or(0.0);
+        let threshold = self.threshold.unwrap_or(Self::DEFAULT_THRESHOLD);
         let name = ParameterName::new(&self.meta.name, parent);
 
         let p = match self.phase {
@@ -557,6 +565,10 @@ pub struct NegativeMaxParameter {
     pub threshold: Option<f64>,
 }
 
+impl NegativeMaxParameter {
+    pub const DEFAULT_THRESHOLD: f64 = 0.0;
+}
+
 #[cfg(feature = "core")]
 impl NegativeMaxParameter {
     pub fn add_to_network(
@@ -566,7 +578,7 @@ impl NegativeMaxParameter {
         parent: Option<&str>,
     ) -> Result<(), SchemaError> {
         let metric = self.metric.load(network, args, None)?;
-        let threshold = self.threshold.unwrap_or(0.0);
+        let threshold = self.threshold.unwrap_or(Self::DEFAULT_THRESHOLD);
         let name = ParameterName::new(&self.meta.name, parent);
 
         let p = match self.phase {
@@ -630,6 +642,10 @@ pub struct NegativeMinParameter {
     pub threshold: Option<f64>,
 }
 
+impl NegativeMinParameter {
+    pub const DEFAULT_THRESHOLD: f64 = 0.0;
+}
+
 #[cfg(feature = "core")]
 impl NegativeMinParameter {
     pub fn add_to_network(
@@ -639,7 +655,7 @@ impl NegativeMinParameter {
         parent: Option<&str>,
     ) -> Result<(), SchemaError> {
         let metric = self.metric.load(network, args, None)?;
-        let threshold = self.threshold.unwrap_or(0.0);
+        let threshold = self.threshold.unwrap_or(Self::DEFAULT_THRESHOLD);
         let name = ParameterName::new(&self.meta.name, parent);
 
         let p = match self.phase {

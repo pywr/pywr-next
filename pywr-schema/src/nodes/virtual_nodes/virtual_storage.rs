@@ -198,6 +198,8 @@ pub struct VirtualStorageNode {
 
 impl VirtualStorageNode {
     const DEFAULT_ATTRIBUTE: VirtualStorageNodeAttribute = VirtualStorageNodeAttribute::Volume;
+    pub const DEFAULT_RESET: VirtualStorageReset = VirtualStorageReset::Never;
+    pub const DEFAULT_RESET_VOLUME: VirtualStorageResetVolume = VirtualStorageResetVolume::Initial;
 
     pub fn input_connectors(&self) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
         Ok(vec![])
@@ -262,14 +264,10 @@ impl VirtualStorageNode {
             builder.max_volume(value);
         }
 
-        if let Some(r) = self.reset.clone() {
-            let reset = r.try_into()?;
-            builder.reset(reset);
-        }
-
-        if let Some(rv) = &self.reset_volume {
-            builder.reset_volume((*rv).into());
-        }
+        let reset = self.reset.clone().unwrap_or(Self::DEFAULT_RESET).try_into()?;
+        builder
+            .reset(reset)
+            .reset_volume(self.reset_volume.unwrap_or(Self::DEFAULT_RESET_VOLUME).into());
 
         // Set the active period if this is a seasonal reset
         if let Some(VirtualStorageReset::Seasonal(seasonal)) = &self.reset {

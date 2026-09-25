@@ -82,6 +82,15 @@ pub struct HydropowerTargetParameter {
     pub energy_unit_conversion: Option<f64>,
 }
 
+impl HydropowerTargetParameter {
+    pub const DEFAULT_TURBINE_ELEVATION: f64 = 0.0;
+    pub const DEFAULT_MIN_HEAD: f64 = 0.0;
+    pub const DEFAULT_EFFICIENCY: f64 = 1.0;
+    pub const DEFAULT_WATER_DENSITY: f64 = 1000.0;
+    pub const DEFAULT_FLOW_UNIT_CONVERSION: f64 = 1.0;
+    pub const DEFAULT_ENERGY_UNIT_CONVERSION: f64 = 1e-6;
+}
+
 #[cfg(feature = "core")]
 impl HydropowerTargetParameter {
     pub fn add_to_network(
@@ -116,14 +125,17 @@ impl HydropowerTargetParameter {
             actual_flow,
             target,
             water_elevation,
-            elevation: self.turbine_elevation,
-            min_head: self.min_head,
+            elevation: Some(self.turbine_elevation.unwrap_or(Self::DEFAULT_TURBINE_ELEVATION)),
+            min_head: Some(self.min_head.unwrap_or(Self::DEFAULT_MIN_HEAD)),
             max_flow,
             min_flow,
-            efficiency: self.efficiency,
-            water_density: self.water_density,
-            flow_unit_conversion: self.flow_unit_conversion,
-            energy_unit_conversion: self.energy_unit_conversion,
+            efficiency: Some(self.efficiency.unwrap_or(Self::DEFAULT_EFFICIENCY)),
+            water_density: Some(self.water_density.unwrap_or(Self::DEFAULT_WATER_DENSITY)),
+            flow_unit_conversion: Some(self.flow_unit_conversion.unwrap_or(Self::DEFAULT_FLOW_UNIT_CONVERSION)),
+            energy_unit_conversion: Some(
+                self.energy_unit_conversion
+                    .unwrap_or(Self::DEFAULT_ENERGY_UNIT_CONVERSION),
+            ),
         };
         let p = pywr_core::parameters::HydropowerTargetParameterBuilder::new(
             ParameterName::new(&self.meta.name, parent),

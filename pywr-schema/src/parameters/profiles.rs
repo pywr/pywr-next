@@ -178,6 +178,12 @@ pub struct UniformDrawdownProfileParameter {
     pub residual_days: Option<ConstantValue<u64>>,
 }
 
+impl UniformDrawdownProfileParameter {
+    pub const DEFAULT_RESET_DAY: u64 = 1;
+    pub const DEFAULT_RESET_MONTH: u64 = 1;
+    pub const DEFAULT_RESIDUAL_DAYS: u64 = 0;
+}
+
 #[cfg(feature = "core")]
 impl UniformDrawdownProfileParameter {
     pub fn add_to_network(
@@ -188,15 +194,15 @@ impl UniformDrawdownProfileParameter {
     ) -> Result<(), SchemaError> {
         let reset_day = match &self.reset_day {
             Some(v) => v.load(args.tables)? as i8,
-            None => 1,
+            None => Self::DEFAULT_RESET_DAY as i8,
         };
         let reset_month = match &self.reset_month {
             Some(v) => v.load(args.tables)? as i8,
-            None => 1,
+            None => Self::DEFAULT_RESET_MONTH as i8,
         };
         let residual_days = match &self.residual_days {
             Some(v) => v.load(args.tables)? as u8,
-            None => 0,
+            None => Self::DEFAULT_RESIDUAL_DAYS as u8,
         };
 
         let mut p = pywr_core::parameters::UniformDrawdownProfileParameterBuilder::new(

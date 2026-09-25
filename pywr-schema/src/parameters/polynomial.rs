@@ -25,6 +25,11 @@ pub struct Polynomial1DParameter {
     pub offset: Option<f64>,
 }
 
+impl Polynomial1DParameter {
+    pub const DEFAULT_SCALE: f64 = 1.0;
+    pub const DEFAULT_OFFSET: f64 = 0.0;
+}
+
 #[cfg(feature = "core")]
 impl Polynomial1DParameter {
     pub fn add_to_network(
@@ -49,8 +54,8 @@ impl Polynomial1DParameter {
         };
 
         builder
-            .scale(self.scale.unwrap_or(1.0))
-            .offset(self.offset.unwrap_or(0.0));
+            .scale(self.scale.unwrap_or(Self::DEFAULT_SCALE))
+            .offset(self.offset.unwrap_or(Self::DEFAULT_OFFSET));
 
         network.parameters().f64(Box::new(builder));
 
