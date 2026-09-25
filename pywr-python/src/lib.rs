@@ -588,6 +588,7 @@ fn pywr(py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Exceptions
     m.add("PywrError", py.get_type::<exceptions::PywrError>())?;
 
+    m.add("SchemaReadError", py.get_type::<exceptions::SchemaReadError>())?;
     m.add("SchemaBuildError", py.get_type::<exceptions::SchemaBuildError>())?;
     m.add(
         "MultiNetworkSchemaBuildError",
