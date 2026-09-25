@@ -573,7 +573,8 @@ fn run_project(
     let project = pywr_project::ProjectManifest::from_path(path).unwrap();
     let composed_model = project.compose(path.parent().unwrap(), definition).unwrap();
     let composed_schemas = composed_model.load().unwrap();
-    let schema_v2 = composed_schemas.into_model_schema().unwrap();
+    let options = pywr_schema::NetworkMergeOptions::default();
+    let schema_v2 = composed_schemas.into_model_schema(&options).unwrap();
     let model_builder = schema_v2.create_model_builder(data_path, output_path).unwrap();
     let model = model_builder.build().unwrap();
 

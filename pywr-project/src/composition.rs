@@ -1,6 +1,6 @@
 use crate::error::ComposeToSchemaError;
 use crate::manifest::DefinitionOverrides;
-use pywr_schema::{ModelSchema, NetworkSchema};
+use pywr_schema::{ModelSchema, NetworkMergeOptions, NetworkSchema};
 use std::path::PathBuf;
 
 /// A composed model that combines a base model with additional networks and metadata overrides.
@@ -29,11 +29,11 @@ impl ComposedModelSchemas {
     }
 
     /// Compose the base model with the included networks and overrides, returning a new [`ModelSchema`].
-    pub fn into_model_schema(self) -> Result<ModelSchema, ComposeToSchemaError> {
+    pub fn into_model_schema(self, options: &NetworkMergeOptions) -> Result<ModelSchema, ComposeToSchemaError> {
         let mut model_schema = self.base_model;
 
         for network in self.includes {
-            model_schema.network.merge(network)?;
+            model_schema.network.merge(network, options)?;
         }
 
         if let Some(overrides) = self.overrides {

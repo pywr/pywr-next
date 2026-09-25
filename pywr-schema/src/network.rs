@@ -362,6 +362,15 @@ impl VisitReferences for NetworkSchema {
     }
 }
 
+/// Options for merging two [`NetworkSchema`] networks together.
+#[derive(Debug, Clone, Default)]
+pub struct NetworkMergeOptions {
+    /// If true, the coordinates of placeholder nodes will be kept when merging networks.
+    /// If false, the coordinates of placeholder nodes will be replaced by the coordinates of the
+    /// corresponding node in the other network.
+    pub keep_placeholder_positions: bool,
+}
+
 impl NetworkSchema {
     /// Visit every reference together with the top-level component holding it.
     pub fn visit_owned_references<F: FnMut(Owner<'_>, Reference<'_>)>(&self, visitor: &mut F) {
@@ -1081,14 +1090,22 @@ impl NetworkSchema {
     /// If an error occurs during the merge, the network will be left in a partially merged state.
     /// It is recommended to clone the network before merging if you want to keep the original network
     /// intact.
-    pub fn merge(&mut self, other: NetworkSchema) -> Result<(), NetworkMergeError> {
+    pub fn merge(&mut self, other: NetworkSchema, options: &NetworkMergeOptions) -> Result<(), NetworkMergeError> {
         // Merge nodes replacing placeholders at their index if they exist, otherwise appending
         // to the end of the list, or returning an error if a duplicate name is found.
         for node in other.nodes {
             match self.get_node_by_name_mut(node.name()) {
                 Some(existing_node) => {
                     if existing_node.is_placeholder() {
+                        let orig_position = options
+                            .keep_placeholder_positions
+                            .then(|| existing_node.meta().position);
+
                         *existing_node = node;
+
+                        if let Some(position) = orig_position {
+                            existing_node.meta_mut().position = position;
+                        }
                     } else {
                         return Err(NetworkMergeError::DuplicateNodeName(node.name().to_string()));
                     }
@@ -1110,7 +1127,15 @@ impl NetworkSchema {
                 match self.get_virtual_node_by_name_mut(v_node.name()) {
                     Some(existing_node) => {
                         if existing_node.is_placeholder() {
+                            let orig_position = options
+                                .keep_placeholder_positions
+                                .then(|| existing_node.meta().position);
+
                             *existing_node = v_node;
+
+                            if let Some(position) = orig_position {
+                                existing_node.meta_mut().position = position;
+                            }
                         } else {
                             return Err(NetworkMergeError::DuplicateNodeName(v_node.name().to_string()));
                         }
@@ -1257,7 +1282,7 @@ pub enum NetworkSchemaRef {
 
 #[cfg(test)]
 mod tests {
-    use super::{NetworkMergeError, NetworkSchema};
+    use super::{NetworkMergeError, NetworkMergeOptions, NetworkSchema};
     use crate::error::{DuplicateNodeName, EdgeProblem, EdgeValidationError, NetworkProblem};
     use crate::nodes::{NodeSlot, NodeType, VirtualNodeType};
     use crate::visit::VisitPaths;
@@ -1875,7 +1900,8 @@ mod tests {
             "#,
         );
 
-        base.merge(other).expect("Merge should succeed");
+        let options = NetworkMergeOptions::default();
+        base.merge(other, &options).expect("Merge should succeed");
 
         assert_eq!(base.nodes.len(), 3);
         assert_eq!(base.edges.len(), 2);
@@ -1906,7 +1932,9 @@ mod tests {
             "#,
         );
 
-        base.merge(other).expect("Merge should replace placeholder node");
+        let options = NetworkMergeOptions::default();
+        base.merge(other, &options)
+            .expect("Merge should replace placeholder node");
 
         let merged = base.get_node_by_name("shared").expect("Node should exist after merge");
         assert!(!merged.is_placeholder());
@@ -1936,7 +1964,10 @@ mod tests {
             "#,
         );
 
-        let err = base.merge(other).expect_err("Merge should reject duplicate node names");
+        let options = NetworkMergeOptions::default();
+        let err = base
+            .merge(other, &options)
+            .expect_err("Merge should reject duplicate node names");
         assert!(matches!(err, NetworkMergeError::DuplicateNodeName(name) if name == "shared"));
     }
 
@@ -1967,7 +1998,10 @@ mod tests {
             "#,
         );
 
-        let err = base.merge(other).expect_err("Merge should reject duplicate edges");
+        let options = NetworkMergeOptions::default();
+        let err = base
+            .merge(other, &options)
+            .expect_err("Merge should reject duplicate edges");
         assert!(matches!(
             err,
             NetworkMergeError::DuplicateEdge { from_node, to_node } if from_node == "a" && to_node == "b"
@@ -2000,7 +2034,8 @@ mod tests {
             "#,
         );
 
-        base.merge(other).expect("Merge should succeed");
+        let options = NetworkMergeOptions::default();
+        base.merge(other, &options).expect("Merge should succeed");
 
         let metric_sets = base.metric_sets.as_ref().expect("Metric sets should exist");
         assert_eq!(metric_sets.len(), 1);
@@ -2037,7 +2072,8 @@ mod tests {
             "#,
         );
 
-        base.merge(other)
+        let options = NetworkMergeOptions::default();
+        base.merge(other, &options)
             .expect("Merge should replace placeholder virtual node");
 
         let merged = base
@@ -2072,7 +2108,9 @@ mod tests {
             "#,
         );
 
-        base.merge(other).expect("Merge should replace placeholder parameter");
+        let options = NetworkMergeOptions::default();
+        base.merge(other, &options)
+            .expect("Merge should replace placeholder parameter");
 
         let merged = base
             .get_parameter_by_name("p-shared")
@@ -2106,8 +2144,9 @@ mod tests {
             "#,
         );
 
+        let options = NetworkMergeOptions::default();
         let err = base
-            .merge(other)
+            .merge(other, &options)
             .expect_err("Merge should reject duplicate parameter names");
         assert!(matches!(err, NetworkMergeError::DuplicateParameterName(name) if name == "p-shared"));
     }
@@ -2138,7 +2177,9 @@ mod tests {
             "#,
         );
 
-        base.merge(other).expect("Merge should replace placeholder table");
+        let options = NetworkMergeOptions::default();
+        base.merge(other, &options)
+            .expect("Merge should replace placeholder table");
 
         let merged = base
             .get_table_by_name("tbl-shared")
@@ -2172,8 +2213,9 @@ mod tests {
             "#,
         );
 
+        let options = NetworkMergeOptions::default();
         let err = base
-            .merge(other)
+            .merge(other, &options)
             .expect_err("Merge should reject duplicate table names");
         assert!(matches!(err, NetworkMergeError::DuplicateTableName(name) if name == "tbl-shared"));
     }
@@ -2204,7 +2246,9 @@ mod tests {
             "#,
         );
 
-        base.merge(other).expect("Merge should replace placeholder time series");
+        let options = NetworkMergeOptions::default();
+        base.merge(other, &options)
+            .expect("Merge should replace placeholder time series");
 
         let merged = base
             .get_time_series_by_name("ts-shared")
@@ -2238,8 +2282,9 @@ mod tests {
             "#,
         );
 
+        let options = NetworkMergeOptions::default();
         let err = base
-            .merge(other)
+            .merge(other, &options)
             .expect_err("Merge should reject duplicate time series names");
         assert!(matches!(err, NetworkMergeError::DuplicateTimeSeriesName(name) if name == "ts-shared"));
     }
@@ -2270,7 +2315,9 @@ mod tests {
             "#,
         );
 
-        base.merge(other).expect("Merge should replace placeholder output");
+        let options = NetworkMergeOptions::default();
+        base.merge(other, &options)
+            .expect("Merge should replace placeholder output");
 
         let merged = base
             .get_output_by_name("out-shared")
@@ -2304,8 +2351,9 @@ mod tests {
             "#,
         );
 
+        let options = NetworkMergeOptions::default();
         let err = base
-            .merge(other)
+            .merge(other, &options)
             .expect_err("Merge should reject duplicate output names");
         assert!(matches!(err, NetworkMergeError::DuplicateOutputName(name) if name == "out-shared"));
     }
