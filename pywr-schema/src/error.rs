@@ -6,8 +6,6 @@ use crate::nodes::{NodeAttribute, NodeComponent, NodeSlot, NodeType, VirtualNode
 #[cfg(feature = "core")]
 use crate::time_series::LoadedTimeSeriesCollectionError;
 use jiff::civil::DateTime;
-#[cfg(feature = "core")]
-use ndarray::ShapeError;
 #[cfg(feature = "pyo3")]
 use pyo3::prelude::*;
 use std::path::PathBuf;
@@ -450,10 +448,14 @@ impl std::error::Error for ValidationError {}
 pub enum SchemaError {
     // Catch infallible errors here rather than unwrapping at call site. This should be safer
     // in the long run if an infallible error is changed to a fallible one.
-    #[error("Infallible error: {0}")]
+    #[error(transparent)]
     Infallible(#[from] std::convert::Infallible),
-    #[error("IO error on path `{path}`: {error}")]
-    IO { path: PathBuf, error: std::io::Error },
+    #[error("IO error on path `{path}`.")]
+    IO {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
     // Use this error when a node is not found in the schema (i.e. while parsing the schema).
     #[error("Node with name {name} not found in the schema.")]
     NodeNotFound { name: String },
@@ -486,16 +488,7 @@ pub enum SchemaError {
     NetworkNotFound(String),
     #[error("Edge from `{from_node}` to `{to_node}` not found")]
     EdgeNotFound { from_node: String, to_node: String },
-    #[error("Pywr core network error: {0}")]
-    #[cfg(feature = "core")]
-    CoreNetworkError(#[from] pywr_core::NetworkError),
-    #[error("Pywr model domain error: {0}")]
-    #[cfg(feature = "core")]
-    CoreModelDomainError(#[from] pywr_core::models::ModelDomainError),
-    #[error("Metric F64 error: {0}")]
-    #[cfg(feature = "core")]
-    CoreMetricF64Error(#[from] pywr_core::metric::MetricF64Error),
-    #[error("Error loading data from table `{0}` (column: `{1:?}`, row: `{2:?}`) error: {source}", table_ref.table, table_ref.column, table_ref.row)]
+    #[error("Error loading data from table `{0}` (column: `{1:?}`, row: `{2:?}`).", table_ref.table, table_ref.column, table_ref.row)]
     #[cfg(feature = "core")]
     TableRefLoad {
         table_ref: TableDataRef,
@@ -503,19 +496,21 @@ pub enum SchemaError {
         source: Box<TableCollectionError>,
     },
     #[cfg(feature = "pyo3")]
-    #[error("Python error: {0}")]
+    #[error("Python error.")]
     PythonError(#[from] PyErr),
-    #[error("hdf5 error: {0}")]
-    HDF5Error(String),
-    #[error("Missing metric set: {0}")]
-    MissingMetricSet(String),
+    #[cfg(feature = "hdf5")]
+    #[error("HDF5 error with file at `{path}`.")]
+    HDF5Error {
+        path: PathBuf,
+        #[source]
+        source: hdf5_metno::Error,
+    },
+    #[error("Multiple metric-sets not supported. {0}")]
+    MultipleMetricSetsNotSupported(String),
     #[error("Mismatch in the length of data provided. expected: {expected}, found: {found}")]
     DataLengthMismatch { expected: usize, found: usize },
     #[error("Failed to estimate epsilon for use in the radial basis function.")]
     RbfEpsilonEstimation,
-    #[error("Scenario error: {0}")]
-    #[cfg(feature = "core")]
-    Scenario(#[from] pywr_core::scenario::ScenarioDomainBuilderError),
     #[error("Inter-network transfer with name {0} not found")]
     InterNetworkTransferNotFound(String),
     #[error("Invalid rolling window definition on parameter {name}. Must convert to a positive integer.")]
@@ -523,23 +518,18 @@ pub enum SchemaError {
     #[error("Failed to load parameter {name}: {error}")]
     LoadParameter { name: String, error: String },
     #[cfg(feature = "core")]
-    #[error("TimeSeries error: {0}")]
+    #[error("Loaded time-series error.")]
     TimeSeries(#[from] LoadedTimeSeriesCollectionError),
     #[error(
         "The output of literal constant values is not supported. This is because they do not have a unique identifier such as a name. If you would like to output a constant value please use a `Constant` parameter."
     )]
     LiteralConstantOutputNotSupported,
-    #[error("Chrono out of range error: {0}")]
-    OutOfRange(#[from] chrono::OutOfRange),
     #[error("The metric set with name '{0}' contains no metrics")]
     EmptyMetricSet(String),
     #[error("Missing the following attribute {attr:?} on node {name:?}.")]
     MissingNodeAttribute { attr: String, name: String },
     #[error("The feature '{0}' must be enabled to use this functionality.")]
     FeatureNotEnabled(String),
-    #[cfg(feature = "core")]
-    #[error("Shape error: {0}")]
-    NdarrayShape(#[from] ShapeError),
     #[cfg(feature = "core")]
     #[error("Placeholder node `{name}` cannot be added to a model.")]
     PlaceholderNodeNotAllowed { name: String },
@@ -557,7 +547,7 @@ pub enum SchemaError {
     NodeConnectionSlotNotFound { node: String, slot: NodeSlot },
     #[error("{msg}")]
     NodeConnectionSlotRequired { msg: String },
-    #[error("Checksum error: {0}")]
+    #[error("Checksum error.")]
     ChecksumError(#[from] ChecksumError),
 }
 

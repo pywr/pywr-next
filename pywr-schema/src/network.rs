@@ -40,9 +40,13 @@ use thiserror::Error;
 /// Error type for reading a [`NetworkSchema`] network from a file or string.
 #[derive(Error, Debug)]
 pub enum NetworkSchemaReadError {
-    #[error("IO error on path `{path}`: {error}")]
-    IO { path: PathBuf, error: std::io::Error },
-    #[error("JSON error: {0}")]
+    #[error("IO error on path `{path}`.")]
+    IO {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+    #[error("JSON error deserialising network.")]
     Json(#[from] serde_json::Error),
 }
 
@@ -50,7 +54,7 @@ pub enum NetworkSchemaReadError {
 #[cfg(feature = "core")]
 #[derive(Error, Debug)]
 pub enum NetworkSchemaBuildError {
-    #[error("Network schema validation failed: {source}")]
+    #[error("Network schema validation failed.")]
     Validation {
         #[source]
         source: NetworkValidationError,
@@ -59,66 +63,66 @@ pub enum NetworkSchemaBuildError {
     CircularNodeReference,
     #[error("Circular parameters reference(s) found. Unable to load the following parameters: {0:?}")]
     CircularParameterReference(Vec<String>),
-    #[error("Failed to add node `{name}` to the model: {source}")]
+    #[error("Failed to add node `{name}` to the model.")]
     AddNodeError {
         name: String,
         #[source]
         source: Box<SchemaError>,
     },
-    #[error("Failed to add virtual node `{name}` to the model: {source}")]
+    #[error("Failed to add virtual node `{name}` to the model.")]
     AddVirtualNodeError {
         name: String,
         #[source]
         source: Box<SchemaError>,
     },
-    #[error("Failed to set constraints for node `{name}`: {source}")]
+    #[error("Failed to set constraints for node `{name}`.")]
     SetNodeConstraintsError {
         name: String,
         #[source]
         source: Box<SchemaError>,
     },
-    #[error("Failed to set constraints for virtual node `{name}`: {source}")]
+    #[error("Failed to set constraints for virtual node `{name}`.")]
     SetVirtualNodeConstraintsError {
         name: String,
         #[source]
         source: Box<SchemaError>,
     },
-    #[error("Failed to add edge from `{from_node}` to `{to_node}`: {source}")]
+    #[error("Failed to add edge from `{from_node}` to `{to_node}`.")]
     AddEdgeError {
         from_node: String,
         to_node: String,
         #[source]
         source: Box<SchemaError>,
     },
-    #[error("Failed to add parameter `{name}` to the model: {source}")]
+    #[error("Failed to add parameter `{name}` to the model.")]
     AddParameterError {
         name: String,
         #[source]
         source: Box<SchemaError>,
     },
-    #[error("Failed to add local parameter from node `{parent}` with `{name}` to the model: {source}")]
+    #[error("Failed to add local parameter from node `{parent}` with `{name}` to the model.")]
     AddLocalParameterError {
         name: String,
         parent: String,
         #[source]
         source: Box<SchemaError>,
     },
-    #[error("Failed to add metric set with name `{name}` to the model: {source}")]
+    #[error("Failed to add metric set with name `{name}` to the model.")]
     AddMetricSetError {
         name: String,
         #[source]
         source: Box<SchemaError>,
     },
-    #[error("Failed to add output with name `{name}` to the model: {source}")]
+    #[error("Failed to add output with name `{name}` to the model.")]
     AddOutputError {
         name: String,
         #[source]
         source: Box<SchemaError>,
     },
-    #[error("{0}")]
+    #[error("Failed to load table data.")]
     TableLoadError(#[from] TableCollectionLoadError),
     #[cfg(feature = "core")]
-    #[error("{0}")]
+    #[error("Failed to load time-series data.")]
     LoadedTimeSeriesCollectionError(#[from] LoadedTimeSeriesCollectionError),
 }
 
@@ -426,9 +430,9 @@ impl NetworkSchema {
     }
 
     pub fn from_path<P: AsRef<Path>>(path: P) -> Result<Self, NetworkSchemaReadError> {
-        let data = std::fs::read_to_string(&path).map_err(|error| NetworkSchemaReadError::IO {
+        let data = std::fs::read_to_string(&path).map_err(|source| NetworkSchemaReadError::IO {
             path: path.as_ref().to_path_buf(),
-            error,
+            source,
         })?;
         Ok(serde_json::from_str(data.as_str())?)
     }

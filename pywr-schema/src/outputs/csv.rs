@@ -105,7 +105,7 @@ impl CsvOutput {
                     Box::new(CsvWideFmtOutputBuilder::new(&self.name, filename, metric_set))
                 }
                 CsvMetricSet::Multiple(_) => {
-                    return Err(SchemaError::MissingMetricSet(
+                    return Err(SchemaError::MultipleMetricSetsNotSupported(
                         "Wide format CSV output requires a single `metric_set`".to_string(),
                     ));
                 }
