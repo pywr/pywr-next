@@ -134,7 +134,7 @@ pub enum SolverSetupError {
         lower_bound: f64,
         upper_bound: f64,
     },
-    #[error("Aggregated node `{name}` and sub-name `{}` error: {source}", .sub_name.as_deref().unwrap_or("None"))]
+    #[error("Aggregated node `{name}` and sub-name `{}` error.", .sub_name.as_deref().unwrap_or("None"))]
     AggregatedNodeFactorError {
         name: String,
         sub_name: Option<String>,
@@ -182,7 +182,7 @@ pub enum SolverSolveError {
         #[source]
         source: crate::aggregated_node::AggregatedNodeError,
     },
-    #[error("Aggregated node `{name}` and sub-name `{}` error: {source}", .sub_name.as_deref().unwrap_or("None"))]
+    #[error("Aggregated node `{name}` and sub-name `{}` error.", .sub_name.as_deref().unwrap_or("None"))]
     AggregatedNodeFactorError {
         name: String,
         sub_name: Option<String>,

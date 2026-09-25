@@ -26,10 +26,10 @@ use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumString, IntoStaticS
 /// - `Ratio`: The factors represent the ratio of flow between the nodes. There should be factors
 ///   equal to the number of nodes, and the factors should be positive.
 /// - `Coefficients`: The factors represent coefficients in a linear equation, with an optional
-///   right-hand side. For example, for three nodes A and B with coefficients 2 and 3, and a
+///   right-hand side. For example, for two nodes A and B with coefficients 2 and 3, and a
 ///   right-hand side of 100, the equation would be `2*A + 3*B = 100`. If no right-hand side
-///   is provided, it is assumed to be 0, i.e. `2*A + 3*B = 0`. Currently, this is limited to
-///   a maximum of 2 nodes.
+///   is provided, it is assumed to be 0, i.e. `2*A + 3*B = 0`. Currently, this requires
+///   exactly 2 nodes, with one factor each.
 /// - `Exclusive`: Only a limited number of nodes can be active at any one time. The `min_active`
 ///   and `max_active` parameters define the minimum and maximum number of nodes that can be active
 ///   at any one time. If not specified, `min_active` defaults to 0 and `max_active` defaults to 1.

@@ -571,7 +571,7 @@ pub enum AggregatedNodeBuilderError {
     NodeIndexNotFound { node: UnresolvedNode },
     #[error("Error building relationship.")]
     RelationshipBuildError(#[from] RelationshipBuildError),
-    #[error("Factors do not match the nodes: {0}")]
+    #[error("Factors do not match the nodes.")]
     FactorCountError(#[from] FactorCountError),
 }
 
@@ -935,7 +935,6 @@ fn get_norm_ratio_factor_pairs<'a>(
     network: &Network,
     state: &State,
 ) -> Result<Vec<NodeFactorPair<'a>>, RatioFactorError> {
-    // TODO handle error cases more gracefully
     if factors.len() != nodes.len() {
         return Err(RatioFactorError::IncorrectNumberOfFactors {
             num_factors: factors.len(),
@@ -1059,7 +1058,6 @@ fn get_coefficient_factor_pairs<'a>(
     network: &Network,
     state: &State,
 ) -> Result<Vec<NodeFactorPair<'a>>, CoefficientFactorError> {
-    // TODO handle error cases more gracefully
     if factors.len() != nodes.len() {
         return Err(CoefficientFactorError::IncorrectNumberOfFactors {
             num_factors: factors.len(),
