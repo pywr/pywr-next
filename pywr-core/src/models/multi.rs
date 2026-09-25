@@ -244,8 +244,16 @@ impl MultiNetworkModelTimings {
         self.run_duration.total_duration().as_secs_f64()
     }
 
+    pub fn timesteps_completed(&self) -> usize {
+        self.network_timings
+            .values()
+            .map(|t| t.timesteps_completed())
+            .max()
+            .unwrap_or(0)
+    }
+
     pub fn speed(&self) -> f64 {
-        self.run_duration.speed()
+        self.timesteps_completed() as f64 / self.total_duration()
     }
 
     /// Print summary statistics of the model run.
@@ -254,16 +262,15 @@ impl MultiNetworkModelTimings {
         entries: &[MultiNetworkEntry],
     ) -> Result<(), ParameterCollectionIdMismatchError> {
         info!("Run timing statistics:");
-        let total_duration = self.run_duration.total_duration().as_secs_f64();
         info!("{: <24} | {: <10}", "Metric", "Value");
-        self.run_duration.print_table();
+        self.run_duration.print_table(self.timesteps_completed());
         for entry in entries {
             let timing = self
                 .network_timings
                 .get(&entry.name)
                 .expect("Network timings not found for network.");
             info!("Network: {}", entry.name);
-            timing.print_table(total_duration, &entry.network)?;
+            timing.print_table(&entry.network)?;
         }
 
         Ok(())
@@ -729,10 +736,6 @@ impl MultiNetworkModel {
                 Err(MultiNetworkModelStepError::EndOfTimesteps) => break,
                 Err(e) => return Err(MultiNetworkModelRunError::StepError(Box::new(e))),
             }
-
-            timings
-                .run_duration
-                .complete_scenarios(self.domain.scenario.indices().len());
         }
 
         Ok(())
@@ -778,10 +781,6 @@ impl MultiNetworkModel {
                 Err(MultiNetworkModelStepError::EndOfTimesteps) => break,
                 Err(e) => return Err(MultiNetworkModelRunError::StepError(Box::new(e))),
             }
-
-            timings
-                .run_duration
-                .complete_scenarios(self.domain.scenario.indices().len());
         }
 
         Ok(())
