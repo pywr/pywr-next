@@ -87,7 +87,7 @@
     ],
     "metric_sets": [
       {
-        "name": "nodes",
+        "meta": {"name": "nodes"},
         "metrics": [
           {
             "type": "Node",
@@ -106,7 +106,7 @@
     ],
     "outputs": [
       {
-        "name": "node-outputs",
+        "meta": {"name": "node-outputs"},
         "type": "CSV",
         "format": "Long",
         "filename": "reservoir_with_river1-expected.csv",

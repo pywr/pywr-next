@@ -10,7 +10,7 @@ mod py;
 use crate::ConversionError;
 use crate::digest::Checksum;
 use crate::error::ComponentConversionError;
-use crate::parameters::ParameterMeta;
+use crate::meta::NamedMeta;
 use crate::v1::{ConversionData, TryFromV1, TryIntoV2};
 use crate::visit::{Reference, ReferenceMut, VisitPaths, VisitReferences};
 #[cfg(feature = "core")]
@@ -113,17 +113,10 @@ impl TimeSeries {
     }
 
     pub fn name(&self) -> &str {
-        match &self {
-            TimeSeries::Polars(dataset) => dataset.meta.name.as_str(),
-            TimeSeries::Pandas(dataset) => dataset.meta.name.as_str(),
-            TimeSeries::Python(dataset) => dataset.meta.name.as_str(),
-            TimeSeries::Arrow(dataset) => dataset.meta.name.as_str(),
-            TimeSeries::Parquet(dataset) => dataset.meta.name.as_str(),
-            TimeSeries::Placeholder(dataset) => dataset.meta.name.as_str(),
-        }
+        &self.meta().name
     }
 
-    pub fn meta(&self) -> &ParameterMeta {
+    pub fn meta(&self) -> &NamedMeta {
         match &self {
             TimeSeries::Polars(dataset) => &dataset.meta,
             TimeSeries::Pandas(dataset) => &dataset.meta,
@@ -131,6 +124,17 @@ impl TimeSeries {
             TimeSeries::Arrow(dataset) => &dataset.meta,
             TimeSeries::Parquet(dataset) => &dataset.meta,
             TimeSeries::Placeholder(dataset) => &dataset.meta,
+        }
+    }
+
+    pub fn meta_mut(&mut self) -> &mut NamedMeta {
+        match self {
+            TimeSeries::Polars(dataset) => &mut dataset.meta,
+            TimeSeries::Pandas(dataset) => &mut dataset.meta,
+            TimeSeries::Python(dataset) => &mut dataset.meta,
+            TimeSeries::Arrow(dataset) => &mut dataset.meta,
+            TimeSeries::Parquet(dataset) => &mut dataset.meta,
+            TimeSeries::Placeholder(dataset) => &mut dataset.meta,
         }
     }
 
@@ -641,7 +645,7 @@ impl TryFromV1<DataFrameParameterV1> for ConvertedTimeSeriesReference {
         parent_node: Option<&str>,
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: ParameterMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
+        let meta: NamedMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
         let mut ts_name = meta.name.clone();
 
         if let Some(url) = v1.url {
@@ -735,7 +739,7 @@ mod tests {
 
     fn arrow_time_series(path: PathBuf, format: Option<arrow_ts::ArrowFormat>) -> TimeSeries {
         TimeSeries::Arrow(ArrowTimeSeries {
-            meta: ParameterMeta {
+            meta: NamedMeta {
                 name: "test".to_string(),
                 comment: None,
                 tags: Default::default(),
@@ -793,7 +797,7 @@ mod tests {
         writer.close().unwrap();
 
         let time_series = TimeSeries::Parquet(ParquetTimeSeries {
-            meta: ParameterMeta {
+            meta: NamedMeta {
                 name: "test".to_string(),
                 comment: None,
                 tags: Default::default(),

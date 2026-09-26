@@ -77,7 +77,7 @@
     ],
     "metric_sets": [
       {
-        "name": "nodes",
+        "meta": {"name": "nodes"},
         "aggregator": {
           "freq": {
             "type": "Annual"
@@ -105,7 +105,7 @@
     ],
     "outputs": [
       {
-        "name": "outputs",
+        "meta": {"name": "outputs"},
         "type": "Memory",
         "metric_set": "nodes",
         "aggregation": {

@@ -1,4 +1,4 @@
-use crate::parameters::ParameterMeta;
+use crate::meta::NamedMeta;
 use crate::{Checksum, VisitPaths};
 use pywr_schema_macros::skip_serializing_none;
 use schemars::JsonSchema;
@@ -21,7 +21,7 @@ pub enum ArrowFormat {
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ArrowTimeSeries {
-    pub meta: ParameterMeta,
+    pub meta: NamedMeta,
     pub time_col: Option<String>,
     /// Path to the dataset. If this is a relative path, it will be resolved relative to the provided data path.
     pub path: PathBuf,

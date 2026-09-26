@@ -1,10 +1,10 @@
 use crate::agg_funcs::{AggFunc, IndexAggFunc};
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
+use crate::meta::NamedMeta;
 use crate::metric::{IndexMetric, Metric, NodeAttrReference};
 #[cfg(feature = "core")]
 use crate::network::LoadArgs;
-use crate::parameters::ParameterMeta;
 use crate::v1::TryIntoV2;
 use crate::{ComponentConversionError, ConversionData, ConversionError, TryFromV1};
 #[cfg(feature = "core")]
@@ -24,7 +24,7 @@ use schemars::JsonSchema;
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct RollingParameter {
-    pub meta: ParameterMeta,
+    pub meta: NamedMeta,
     pub metric: Metric,
     pub window_size: u64,
     pub initial_value: f64,
@@ -67,7 +67,7 @@ impl RollingParameter {
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct RollingIndexParameter {
-    pub meta: ParameterMeta,
+    pub meta: NamedMeta,
     pub metric: IndexMetric,
     pub window_size: u64,
     pub initial_value: u64,
@@ -106,7 +106,7 @@ impl TryFromV1<RollingMeanFlowNodeParameterV1> for RollingParameter {
         parent_node: Option<&str>,
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: ParameterMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
+        let meta: NamedMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
 
         let window_size = match (v1.timesteps, v1.days) {
             (Some(timesteps), None) => timesteps as u64,

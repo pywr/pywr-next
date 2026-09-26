@@ -68,8 +68,8 @@ pub enum RoutingMethod {
         initial_value: ConstantValue<f64>,
     },
     Muskingum {
-        travel_time: Metric,
-        weight: Metric,
+        travel_time: Box<Metric>,
+        weight: Box<Metric>,
         initial_condition: MuskingumInitialCondition,
     },
 }

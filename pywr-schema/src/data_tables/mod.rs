@@ -20,13 +20,14 @@ mod vec;
 
 use crate::ConversionError;
 use crate::digest::{Checksum, ChecksumError};
+use crate::meta::NamedMeta;
 use crate::parameters::TableIndex;
 use crate::visit::{Reference, ReferenceMut, VisitReferences};
 #[cfg(feature = "core")]
 use log::{debug, info};
 #[cfg(feature = "pyo3")]
 use pyo3::pyclass;
-use pywr_schema_macros::{PywrVisitAll, PywrVisitMetrics, PywrVisitPaths, skip_serializing_none};
+use pywr_schema_macros::{PywrVisitMetrics, PywrVisitPaths, skip_serializing_none};
 use pywr_v1_schema::parameters::TableDataRef as TableDataRefV1;
 #[cfg(feature = "core")]
 use scalar::LoadedScalarTable;
@@ -45,13 +46,6 @@ pub enum DataTableValueType {
     Array,
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Default, JsonSchema, PywrVisitAll)]
-pub struct TableMeta {
-    pub name: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub comment: Option<String>,
-}
-
 #[derive(
     serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitPaths, Display, EnumDiscriminants,
 )]
@@ -68,10 +62,17 @@ impl DataTable {
         self.meta().name.as_str()
     }
 
-    pub fn meta(&self) -> &TableMeta {
+    pub fn meta(&self) -> &NamedMeta {
         match self {
             DataTable::CSV(tbl) => &tbl.meta,
             DataTable::Placeholder(tbl) => &tbl.meta,
+        }
+    }
+
+    pub fn meta_mut(&mut self) -> &mut NamedMeta {
+        match self {
+            DataTable::CSV(tbl) => &mut tbl.meta,
+            DataTable::Placeholder(tbl) => &mut tbl.meta,
         }
     }
 
@@ -105,7 +106,7 @@ pub enum CsvDataTableLookup {
 /// An external table of data that can be referenced
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitPaths)]
 pub struct CsvDataTable {
-    pub meta: TableMeta,
+    pub meta: NamedMeta,
     #[serde(rename = "type")]
     pub ty: DataTableValueType,
     pub lookup: CsvDataTableLookup,
@@ -152,7 +153,7 @@ impl CsvDataTable {
 /// A placeholder for an external table of data that can be referenced
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitPaths)]
 pub struct PlaceholderTable {
-    pub meta: TableMeta,
+    pub meta: NamedMeta,
 }
 
 /// Make a finalised path for reading data from.

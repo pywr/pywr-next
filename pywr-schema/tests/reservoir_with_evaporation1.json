@@ -43,7 +43,10 @@
         },
         "surface_area": {
           "data": {
-            "Polynomial": [0.0, 0.5]
+            "Polynomial": [
+              0.0,
+              0.5
+            ]
           },
           "is_storage_proportional": false
         },
@@ -85,7 +88,9 @@
     ],
     "metric_sets": [
       {
-        "name": "nodes",
+        "meta": {
+          "name": "nodes"
+        },
         "metrics": [
           {
             "type": "Node",
@@ -105,7 +110,9 @@
     ],
     "outputs": [
       {
-        "name": "node-outputs",
+        "meta": {
+          "name": "node-outputs"
+        },
         "type": "CSV",
         "format": "Long",
         "filename": "reservoir_with_evaporation1-expected.csv",
