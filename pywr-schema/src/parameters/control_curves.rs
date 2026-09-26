@@ -36,18 +36,18 @@ impl ControlCurveInterpolatedParameter {
         args: &LoadArgs,
         parent: Option<&str>,
     ) -> Result<(), SchemaError> {
-        let metric = self.storage_metric.load(network, args, None)?;
+        let metric = self.storage_metric.load(network, args, parent)?;
 
         let control_curves = self
             .control_curves
             .iter()
-            .map(|cc| cc.load(network, args, None))
+            .map(|cc| cc.load(network, args, parent))
             .collect::<Result<Vec<_>, _>>()?;
 
         let values = self
             .values
             .iter()
-            .map(|val| val.load(network, args, None))
+            .map(|val| val.load(network, args, parent))
             .collect::<Result<Vec<_>, _>>()?;
 
         let mut p = pywr_core::parameters::ControlCurveInterpolatedParameterBuilder::before(
@@ -273,7 +273,7 @@ impl ControlCurveParameter {
         args: &LoadArgs,
         parent: Option<&str>,
     ) -> Result<(), SchemaError> {
-        let metric = self.storage_metric.load(network, args, None)?;
+        let metric = self.storage_metric.load(network, args, parent)?;
 
         let mut builder = pywr_core::parameters::ControlCurveParameterBuilder::before(
             ParameterName::new(&self.meta.name, parent),
