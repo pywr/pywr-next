@@ -484,7 +484,7 @@ impl ReservoirNode {
 
             // add evaporation node and edge
             if let Some(evaporation) = &self.evaporation {
-                let mut evaporation_output = pywr_core::NodeBuilder::input(self.evaporation_node_sub_name());
+                let mut evaporation_output = pywr_core::NodeBuilder::output(self.evaporation_node_sub_name());
 
                 let use_max_area = evaporation.use_max_area.unwrap_or(false);
                 let evaporation_area_metric =
@@ -637,7 +637,7 @@ impl ReservoirNode {
                         }
                     }
                     ReservoirNodeAttribute::Evaporation => {
-                        if self.rainfall.is_some() && self.surface_area.is_some() {
+                        if self.evaporation.is_some() && self.surface_area.is_some() {
                             UnresolvedMetricF64::NodeInFlow(self.evaporation_node_sub_name())
                         } else {
                             0.0.into()
