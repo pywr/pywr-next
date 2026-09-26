@@ -111,7 +111,7 @@ pub enum Parameter {
     Negative(NegativeParameter),
     NegativeMax(NegativeMaxParameter),
     NegativeMin(NegativeMinParameter),
-    HydropowerTarget(HydropowerTargetParameter),
+    HydropowerTarget(Box<HydropowerTargetParameter>),
     Polynomial1D(Polynomial1DParameter),
     Threshold(ThresholdParameter),
     TablesArray(TablesArrayParameter),
@@ -702,7 +702,7 @@ impl TryFromV1<ParameterV1> for ParameterOrTimeSeriesRef {
                     Parameter::Interpolated(p.try_into_v2(parent_node, conversion_data)?).into()
                 }
                 CoreParameter::HydropowerTarget(p) => {
-                    Parameter::HydropowerTarget(p.try_into_v2(parent_node, conversion_data)?).into()
+                    Parameter::HydropowerTarget(Box::new(p.try_into_v2(parent_node, conversion_data)?)).into()
                 }
                 CoreParameter::WeeklyProfile(p) => {
                     Parameter::WeeklyProfile(p.try_into_v2(parent_node, conversion_data)?).into()
