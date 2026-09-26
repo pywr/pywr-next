@@ -126,10 +126,10 @@ impl ModelTimings {
     /// Print summary statistics of the model run.
     pub fn print_summary_statistics(&self, network: &Network) -> Result<(), ParameterCollectionIdMismatchError> {
         info!("Run timing statistics:");
-        let total_duration = self.run_duration.total_duration().as_secs_f64();
         info!("{: <24} | {: <10}", "Metric", "Value");
-        self.run_duration.print_table();
-        self.network_timings.print_table(total_duration, network)?;
+        self.run_duration
+            .print_table(self.network_timings.timesteps_completed());
+        self.network_timings.print_table(network)?;
 
         Ok(())
     }
@@ -139,8 +139,13 @@ impl ModelTimings {
         self.run_duration.total_duration().as_secs_f64()
     }
 
+    pub fn timesteps_completed(&self) -> usize {
+        self.network_timings.timesteps_completed()
+    }
+
+    /// Average speed of the model run in timesteps per second.
     pub fn speed(&self) -> f64 {
-        self.run_duration.speed()
+        self.timesteps_completed() as f64 / self.total_duration()
     }
 
     pub fn network_timings(&self) -> &NetworkTimings {
@@ -283,6 +288,8 @@ impl Model {
     where
         S: Solver,
     {
+        let step_start = std::time::Instant::now();
+
         let timestep = self
             .domain
             .time
@@ -333,6 +340,8 @@ impl Model {
         // Finally increment the time-step index
         state.current_time_step_idx += 1;
 
+        timings.complete_step(step_start.elapsed(), scenario_indices.len());
+
         Ok(())
     }
 
@@ -345,6 +354,8 @@ impl Model {
     where
         S: MultiStateSolver,
     {
+        let step_start = std::time::Instant::now();
+
         let timestep = self
             .domain
             .time
@@ -384,6 +395,8 @@ impl Model {
 
         // Finally increment the time-step index
         state.current_time_step_idx += 1;
+
+        timings.complete_step(step_start.elapsed(), scenario_indices.len());
 
         Ok(())
     }
@@ -496,10 +509,6 @@ impl Model {
                 Err(ModelStepError::EndOfTimesteps) => break,
                 Err(e) => return Err(ModelRunError::StepError(e)),
             }
-
-            timings
-                .run_duration
-                .complete_scenarios(self.domain.scenario.indices().len());
         }
 
         Ok(())
@@ -550,10 +559,6 @@ impl Model {
                 Err(ModelStepError::EndOfTimesteps) => break,
                 Err(e) => return Err(ModelRunError::StepError(e)),
             }
-
-            timings
-                .run_duration
-                .complete_scenarios(self.domain.scenario.indices().len());
         }
 
         Ok(())

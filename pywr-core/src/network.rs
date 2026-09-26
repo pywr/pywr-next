@@ -46,14 +46,10 @@ pub enum RunDuration {
     Running {
         /// The instant the run was started.
         started: Instant,
-        /// The number of time steps completed so far.
-        timesteps_completed: usize,
     },
     Finished {
         /// The total duration of the run.
         duration: Duration,
-        /// The total number of time steps completed.
-        timesteps_completed: usize,
     },
 }
 
@@ -62,19 +58,6 @@ impl RunDuration {
     pub fn start() -> Self {
         RunDuration::Running {
             started: Instant::now(),
-            timesteps_completed: 0,
-        }
-    }
-
-    /// Increment the number of completed scenarios by `num`.
-    ///
-    /// This has no effect if the run has already finished.
-    pub fn complete_scenarios(&mut self, num: usize) {
-        if let RunDuration::Running {
-            timesteps_completed, ..
-        } = self
-        {
-            *timesteps_completed += num;
         }
     }
 
@@ -82,14 +65,9 @@ impl RunDuration {
     ///
     /// If the timer has already finished this method has no effect.
     pub fn finish(self) -> Self {
-        if let RunDuration::Running {
-            started,
-            timesteps_completed,
-        } = self
-        {
+        if let RunDuration::Running { started } = self {
             RunDuration::Finished {
                 duration: started.elapsed(),
-                timesteps_completed,
             }
         } else {
             self
@@ -105,23 +83,17 @@ impl RunDuration {
     }
 
     /// Returns the speed of the run in terms of time steps per second.
-    pub fn speed(&self) -> f64 {
+    pub fn speed(&self, timesteps_completed: usize) -> f64 {
         match self {
-            RunDuration::Running {
-                started,
-                timesteps_completed,
-            } => *timesteps_completed as f64 / started.elapsed().as_secs_f64(),
-            RunDuration::Finished {
-                duration,
-                timesteps_completed,
-            } => *timesteps_completed as f64 / duration.as_secs_f64(),
+            RunDuration::Running { started, .. } => timesteps_completed as f64 / started.elapsed().as_secs_f64(),
+            RunDuration::Finished { duration } => timesteps_completed as f64 / duration.as_secs_f64(),
         }
     }
 
     /// Prints a summary of the run duration and speed to the log.
-    pub fn print_table(&self) {
+    pub fn print_table(&self, timesteps_completed: usize) {
         info!("{: <24} | {: <10.5} s", "Total", self.total_duration().as_secs_f64());
-        info!("{: <24} | {: <10.5} ts/s", "Speed", self.speed());
+        info!("{: <24} | {: <10.5} ts/s", "Speed", self.speed(timesteps_completed));
     }
 }
 
@@ -160,6 +132,8 @@ impl ComponentTimings {
 /// Collects timing information for a network
 #[derive(Clone)]
 pub struct NetworkTimings {
+    total_step_duration: Duration,
+    timesteps_completed: usize,
     /// Timing information for component calculations.
     component_timings: ComponentTimings,
     recorder_saving: Duration,
@@ -170,6 +144,8 @@ impl NetworkTimings {
     pub fn new_with_component_timings(network: &Network) -> Self {
         let parameter_timings = ParameterTimings::from_collection(&network.parameters);
         Self {
+            total_step_duration: Duration::ZERO,
+            timesteps_completed: 0,
             component_timings: ComponentTimings::new(Some(parameter_timings)),
             recorder_saving: Duration::ZERO,
             solve: SolverTimings::default(),
@@ -178,18 +154,38 @@ impl NetworkTimings {
 
     pub fn new_without_component_timings() -> Self {
         Self {
+            total_step_duration: Duration::ZERO,
+            timesteps_completed: 0,
             component_timings: ComponentTimings::new(None),
             recorder_saving: Duration::ZERO,
             solve: SolverTimings::default(),
         }
     }
 
+    pub fn complete_step(&mut self, step_duration: Duration, num_timesteps: usize) {
+        self.total_step_duration += step_duration;
+        self.timesteps_completed += num_timesteps;
+    }
+
+    pub fn timesteps_completed(&self) -> usize {
+        self.timesteps_completed
+    }
+
+    pub fn total_duration(&self) -> Duration {
+        self.total_step_duration
+    }
+
+    pub fn speed(&self) -> f64 {
+        self.timesteps_completed as f64 / self.total_step_duration.as_secs_f64()
+    }
+
     /// Print a summary of the timings to the log.
-    pub fn print_table(
-        &self,
-        total_duration: f64,
-        network: &Network,
-    ) -> Result<(), ParameterCollectionIdMismatchError> {
+    pub fn print_table(&self, network: &Network) -> Result<(), ParameterCollectionIdMismatchError> {
+        let total_duration = self.total_step_duration.as_secs_f64();
+
+        info!("{: <24} | {: <10.5} s", "Stepping total", total_duration);
+        info!("{: <24} | {: <10.5} ts/s", "Stepping speed", self.speed());
+
         info!(
             "{: <24} | {: <10.5}s ({:5.2}%)",
             "Components calcs",
@@ -215,7 +211,7 @@ impl NetworkTimings {
             "{: <24} | {: <10.5}s ({:5.2}%)",
             "Solver::const update",
             self.solve.update_constraints.as_secs_f64(),
-            100.0 * self.solve.update_constraints.as_secs_f64() / total_duration
+            100.0 * self.solve.update_constraints.as_secs_f64() / total_duration,
         );
 
         info!(
