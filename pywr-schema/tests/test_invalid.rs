@@ -6,40 +6,6 @@ use std::path::Path;
 #[cfg(feature = "core")]
 use tempfile::TempDir;
 
-macro_rules! invalid_tests {
-    ($($test_func:ident: $value:expr, $expected_err:ident,)*) => {
-    $(
-        #[test]
-        fn $test_func() {
-            // Deserialise the schema and run it
-            #[cfg(feature = "core")]
-            {
-                let input: &str = $value;
-                let input_pth = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("invalid").join(input);
-
-                let schema = deserialise_test_model(&input_pth);
-                let err = build_test_model(&schema);
-                if !matches!(err, ModelSchemaBuildError::$expected_err { .. }) {
-                    panic!("Expected error: PywrModelBuildError::{}, but got: {:?}", stringify!($expected_err), err);
-                };
-            }
-
-            // Just deserialise the schema
-            #[cfg(not(feature = "core"))]
-            {
-                let input: &str = $value;
-                let input_pth = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("invalid").join(input);
-                let _schema = deserialise_test_model(&input_pth);
-            }
-        }
-    )*
-    }
-}
-
-invalid_tests! {
-    agg_storage_with_flow_node: "agg-storage-with-flow-node.json", NetworkBuildError,
-}
-
 /// Models that are rejected by [`ModelSchema::validate`].
 macro_rules! invalid_schema_tests {
     ($($test_func:ident: $value:expr, $expected_err:ident,)*) => {
@@ -94,6 +60,9 @@ invalid_schema_tests! {
     // Two parameters sharing a name. The core builder would refuse this too, but validation now
     // refuses it first, as it does the same clash in tables, timeseries and metric sets.
     duplicate_parameter_name: "duplicate-parameter-name.json", DuplicateParameterName,
+    // A link as a member of an aggregated storage node, which takes only storage nodes. The core
+    // builder would refuse this too, but validation now refuses it first.
+    agg_storage_with_flow_node: "agg-storage-with-flow-node.json", MemberNotStorage,
 }
 
 /// A group of no scenarios, which `pywr-core` would build into a model that simulates nothing.

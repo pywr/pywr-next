@@ -18,6 +18,7 @@ use pywr_core::{
 use pywr_schema_macros::{PywrVisitAll, skip_serializing_none};
 use pywr_v1_schema::nodes::LinkNode as LinkNodeV1;
 use schemars::JsonSchema;
+use strum::IntoEnumIterator;
 
 // This macro generates a subset enum for the `RiverNode` attributes.
 // It allows for easy conversion between the enum and the `NodeAttribute` type.
@@ -129,6 +130,13 @@ impl RiverNode {
 
     pub fn default_component(&self) -> RiverNodeComponent {
         Self::DEFAULT_COMPONENT
+    }
+
+    pub(crate) fn built_components(&self) -> impl Iterator<Item = RiverNodeComponent> + '_ {
+        RiverNodeComponent::iter().filter(|component| match component {
+            RiverNodeComponent::Inflow | RiverNodeComponent::Outflow => true,
+            RiverNodeComponent::Loss => self.loss_factor.is_some(),
+        })
     }
 }
 

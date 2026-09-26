@@ -13,6 +13,7 @@ use crate::{mermaid, node_attribute_subset_enum, node_component_subset_enum};
 use pywr_core::{metric::UnresolvedMetricF64, node::UnresolvedNode};
 use pywr_schema_macros::{PywrVisitAll, skip_serializing_none};
 use schemars::JsonSchema;
+use strum::IntoEnumIterator;
 
 // This macro generates a subset enum for the `WaterTreatmentWorksNode` attributes.
 // It allows for easy conversion between the enum and the `NodeAttribute` type.
@@ -83,6 +84,13 @@ impl WaterTreatmentWorksNode {
 
     pub fn default_component(&self) -> WaterTreatmentWorksNodeComponent {
         Self::DEFAULT_COMPONENT
+    }
+
+    pub(crate) fn built_components(&self) -> impl Iterator<Item = WaterTreatmentWorksNodeComponent> + '_ {
+        WaterTreatmentWorksNodeComponent::iter().filter(|component| match component {
+            WaterTreatmentWorksNodeComponent::Inflow | WaterTreatmentWorksNodeComponent::Outflow => true,
+            WaterTreatmentWorksNodeComponent::Loss => self.loss_factor.is_some(),
+        })
     }
 }
 

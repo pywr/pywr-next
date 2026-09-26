@@ -290,6 +290,16 @@ impl std::fmt::Display for ScenarioValidationError {
 
 impl std::error::Error for ScenarioValidationError {}
 
+/// The components a node builds, for the end of a message about one it does not.
+fn component_list_message(built: &[NodeComponent]) -> String {
+    if built.is_empty() {
+        "As configured, it builds no components.".to_string()
+    } else {
+        let built: Vec<String> = built.iter().map(|component| format!("`{component}`")).collect();
+        format!("It builds: {}.", built.join(", "))
+    }
+}
+
 /// A problem with one network, found by [`crate::NetworkSchema::validate`].
 ///
 /// A name must be unique within its list, not across lists: `nodes` and `virtual_nodes` share one
@@ -314,6 +324,40 @@ pub enum NetworkProblem {
     /// An edge that could not connect the nodes it names.
     #[error("{0}")]
     InvalidEdge(EdgeValidationError),
+    /// A member of an `Aggregated` or `VirtualStorage` node naming a node with no components.
+    #[error(
+        "The virtual node `{virtual_node}` names the `{node_type}` node `{node}`, but nodes of this type have no components for it to take."
+    )]
+    MemberWithoutComponents {
+        virtual_node: String,
+        node: String,
+        node_type: NodeType,
+    },
+    /// A member of an `Aggregated` or `VirtualStorage` node taking a component its node does not
+    /// build.
+    #[error(
+        "The virtual node `{virtual_node}` takes the {}component `{component}` of the `{node_type}` node `{node}`, but that node does not build it. {}", if *.default { "default " } else { "" }, component_list_message(.built)
+    )]
+    MemberComponentNotBuilt {
+        virtual_node: String,
+        node: String,
+        node_type: NodeType,
+        /// The component the member names, or its node's default.
+        component: NodeComponent,
+        /// Whether the member names no component.
+        default: bool,
+        /// The components the node does build.
+        built: Vec<NodeComponent>,
+    },
+    /// A member of an `AggregatedStorage` node that is not a storage.
+    #[error(
+        "The virtual node `{virtual_node}` names the `{node_type}` node `{node}`, but an `AggregatedStorage` node takes only storage nodes."
+    )]
+    MemberNotStorage {
+        virtual_node: String,
+        node: String,
+        node_type: NodeType,
+    },
 }
 
 /// Write one bullet per problem, each on its own line, under a summary written by the caller.
@@ -332,7 +376,8 @@ pub struct NetworkValidationError {
     /// on its own, or as part of a [`crate::ModelSchema`].
     pub name: Option<String>,
     /// Never empty. Duplicate names first, list by list in the order nodes, parameters, tables,
-    /// time series, metric sets, each sorted by name; then invalid edges in the order listed.
+    /// time series, metric sets, each sorted by name; then invalid edges and then invalid members
+    /// of virtual nodes, each in the order listed.
     pub problems: Vec<NetworkProblem>,
 }
 
