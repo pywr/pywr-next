@@ -12,6 +12,7 @@ use strum_macros::{Display, EnumIter};
 
 #[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Debug, Default, Clone, JsonSchema, PywrVisitPaths)]
+#[serde(deny_unknown_fields)]
 pub struct MemoryAggregation {
     pub time: Option<AggFunc>,
     pub scenario: Option<AggFunc>,
@@ -22,8 +23,8 @@ pub struct MemoryAggregation {
 impl MemoryAggregation {
     fn load(&self, data_path: Option<&Path>) -> Result<pywr_core::recorders::Aggregation, SchemaError> {
         Ok(pywr_core::recorders::Aggregation::new(
-            self.time.as_ref().map(|f| f.load(data_path)).transpose()?,
             self.scenario.as_ref().map(|f| f.load(data_path)).transpose()?,
+            self.time.as_ref().map(|f| f.load(data_path)).transpose()?,
             self.metric.as_ref().map(|f| f.load(data_path)).transpose()?,
         ))
     }
@@ -135,6 +136,7 @@ mod tests {
             .aggregated_value()
             .expect("No results found");
 
-        assert_approx_eq!(f64, result, 91.0);
+        // 91 in each of the two scenarios, summed by the scenario function.
+        assert_approx_eq!(f64, result, 182.0);
     }
 }

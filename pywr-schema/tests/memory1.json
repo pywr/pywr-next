@@ -4,6 +4,14 @@
     "description": "A very simple example.",
     "minimum_version": "0.1"
   },
+  "scenarios": {
+    "groups": [
+      {
+        "name": "scenario1",
+        "size": 2
+      }
+    ]
+  },
   "time": {
     "start": "2015-01-01",
     "end": "2015-12-31",
@@ -104,7 +112,7 @@
           "time": {
             "type": "CountNonZero"
           },
-          "metrics": {
+          "metric": {
             "type": "Max"
           },
           "scenario": {
