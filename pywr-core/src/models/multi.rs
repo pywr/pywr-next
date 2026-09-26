@@ -529,7 +529,7 @@ impl MultiNetworkModel {
                     source: Box::new(source),
                 })?;
 
-            timings.complete_step(step_start.elapsed(), scenario_indices.len());
+            timing.complete_step(step_start.elapsed(), scenario_indices.len());
         }
 
         // Finally increment the time-step index
@@ -604,7 +604,7 @@ impl MultiNetworkModel {
                     source: Box::new(source),
                 })?;
 
-            timings.complete_step(step_start.elapsed(), scenario_indices.len());
+            timing.complete_step(step_start.elapsed(), scenario_indices.len());
         }
 
         // Finally increment the time-step index
