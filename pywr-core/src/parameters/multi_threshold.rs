@@ -127,7 +127,7 @@ pub struct MultiThresholdParameterBuilder {
 }
 
 impl MultiThresholdParameterBuilder {
-    // Create a new builder for [`MultiThresholdParameter`] that is evaluated in the "before" phase.
+    /// Create a new builder for [`MultiThresholdParameter`] that is evaluated in the "before" phase.
     pub fn before(name: ParameterName, metric: UnresolvedMetricF64, predicate: Predicate) -> Self {
         Self {
             meta: ParameterMeta::new(name),
@@ -139,7 +139,7 @@ impl MultiThresholdParameterBuilder {
         }
     }
 
-    // Create a new builder for [`MultiThresholdParameter`] that is evaluated in the "after" phase.
+    /// Create a new builder for [`MultiThresholdParameter`] that is evaluated in the "after" phase.
     pub fn after(name: ParameterName, metric: UnresolvedMetricF64, predicate: Predicate) -> Self {
         Self {
             meta: ParameterMeta::new(name),
@@ -151,7 +151,7 @@ impl MultiThresholdParameterBuilder {
         }
     }
 
-    // Create a new builder for [`MultiThresholdParameter`] that is evaluated in both "before" and "after" phases.
+    /// Create a new builder for [`MultiThresholdParameter`] that is evaluated in both "before" and "after" phases.
     pub fn both(name: ParameterName, metric: UnresolvedMetricF64, predicate: Predicate) -> Self {
         Self {
             meta: ParameterMeta::new(name),
