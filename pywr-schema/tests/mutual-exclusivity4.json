@@ -101,7 +101,7 @@
     ],
     "metric_sets": [
       {
-        "name": "nodes",
+        "meta": {"name": "nodes"},
         "metrics": [
           {
             "type": "Node",
@@ -128,7 +128,7 @@
     ],
     "outputs": [
       {
-        "name": "node-outputs",
+        "meta": {"name": "node-outputs"},
         "type": "CSV",
         "format": "Long",
         "filename": "mutual-exclusivity4.csv",

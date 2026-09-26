@@ -112,7 +112,7 @@
     ],
     "metric_sets": [
       {
-        "name": "parameters",
+        "meta": {"name": "parameters"},
         "metrics": [
           {
             "type": "Parameter",
@@ -129,7 +129,7 @@
     ],
     "outputs": [
       {
-        "name": "nodes",
+        "meta": {"name": "nodes"},
         "type": "CSV",
         "format": "Long",
         "filename": "hydropower1-expected.csv",

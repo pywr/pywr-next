@@ -128,7 +128,7 @@
     ],
     "metric_sets": [
       {
-        "name": "nodes",
+        "meta": {"name": "nodes"},
         "metrics": [
           {
             "type": "Node",
@@ -139,7 +139,7 @@
     ],
     "outputs": [
       {
-        "name": "nodes",
+        "meta": {"name": "nodes"},
         "type": "CSV",
         "format": "Long",
         "filename": "time-series2-expected.csv",

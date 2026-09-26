@@ -256,7 +256,7 @@
     ],
     "metric_sets": [
       {
-        "name": "table-values",
+        "meta": {"name": "table-values"},
         "metrics": [
           {
             "type": "Table",
@@ -317,7 +317,7 @@
     ],
     "outputs": [
       {
-        "name": "table-values",
+        "meta": {"name": "table-values"},
         "type": "CSV",
         "format": "Long",
         "filename": "tbl-formats1-expected.csv",

@@ -159,7 +159,10 @@ fn apply_result_options_to_schema(
     // Add a nodes metric set if requested
     if let Some(nodes_metric_set) = &result_options.all_nodes_metric_set {
         let metric_set = pywr_schema::metric_sets::MetricSet {
-            name: nodes_metric_set.name.clone(),
+            meta: pywr_schema::meta::NamedMeta {
+                name: nodes_metric_set.name.clone(),
+                ..Default::default()
+            },
             metrics: None,
             aggregator: None,
             filters: pywr_schema::metric_sets::MetricSetFilters {
@@ -180,7 +183,10 @@ fn apply_result_options_to_schema(
     // Add an edges metric set if requested
     if let Some(edges_metric_set) = &result_options.all_edges_metric_set {
         let metric_set = pywr_schema::metric_sets::MetricSet {
-            name: edges_metric_set.name.clone(),
+            meta: pywr_schema::meta::NamedMeta {
+                name: edges_metric_set.name.clone(),
+                ..Default::default()
+            },
             metrics: None,
             aggregator: None,
             filters: pywr_schema::metric_sets::MetricSetFilters {

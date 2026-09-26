@@ -1,6 +1,7 @@
 #[cfg(feature = "core")]
 use crate::SchemaError;
 use crate::agg_funcs::AggFunc;
+use crate::meta::NamedMeta;
 use crate::visit::{Reference, ReferenceMut, VisitReferences};
 #[cfg(feature = "core")]
 use pywr_core::recorders::MemoryRecorderBuilder;
@@ -49,7 +50,7 @@ impl From<MemoryAggregationOrder> for pywr_core::recorders::AggregationOrder {
 #[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitPaths)]
 pub struct MemoryOutput {
-    pub name: String,
+    pub meta: NamedMeta,
     pub metric_set: String,
     pub aggregation: Option<MemoryAggregation>,
     pub order: Option<MemoryAggregationOrder>,
@@ -78,7 +79,7 @@ impl MemoryOutput {
         data_path: Option<&Path>,
     ) -> Result<(), SchemaError> {
         let recorder = MemoryRecorderBuilder::new(
-            &self.name,
+            &self.meta.name,
             &self.metric_set,
             self.aggregation.clone().unwrap_or_default().load(data_path)?,
             self.order.unwrap_or(Self::DEFAULT_ORDER).into(),

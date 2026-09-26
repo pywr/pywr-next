@@ -7,6 +7,7 @@ mod placeholder;
 pub use self::csv::{CsvFormat, CsvMetricSet, CsvMetricSetType, CsvOutput};
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
+use crate::meta::NamedMeta;
 pub use arrow_stream::ArrowStreamOutput;
 pub use hdf::Hdf5Output;
 pub use memory::{MemoryAggregation, MemoryAggregationOrder, MemoryOutput};
@@ -41,12 +42,26 @@ pub enum Output {
 
 impl Output {
     pub fn name(&self) -> &str {
+        &self.meta().name
+    }
+
+    pub fn meta(&self) -> &NamedMeta {
         match self {
-            Self::ArrowStream(o) => &o.name,
-            Self::CSV(o) => &o.name,
-            Self::HDF5(o) => &o.name,
-            Self::Memory(o) => &o.name,
-            Self::Placeholder(o) => &o.name,
+            Self::ArrowStream(o) => &o.meta,
+            Self::CSV(o) => &o.meta,
+            Self::HDF5(o) => &o.meta,
+            Self::Memory(o) => &o.meta,
+            Self::Placeholder(o) => &o.meta,
+        }
+    }
+
+    pub fn meta_mut(&mut self) -> &mut NamedMeta {
+        match self {
+            Self::ArrowStream(o) => &mut o.meta,
+            Self::CSV(o) => &mut o.meta,
+            Self::HDF5(o) => &mut o.meta,
+            Self::Memory(o) => &mut o.meta,
+            Self::Placeholder(o) => &mut o.meta,
         }
     }
     pub fn is_placeholder(&self) -> bool {

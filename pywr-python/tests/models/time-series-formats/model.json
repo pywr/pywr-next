@@ -71,7 +71,7 @@
     ],
     "metric_sets": [
       {
-        "name": "timeseries",
+        "meta": {"name": "timeseries"},
         "metrics": [
           {
             "type": "TimeSeries",
@@ -102,13 +102,13 @@
     ],
     "outputs": [
       {
-        "name": "outputs",
+        "meta": {"name": "outputs"},
         "type": "HDF5",
         "filename": "outputs.h5",
         "metric_set": "timeseries"
       },
       {
-        "name": "timeseries",
+        "meta": {"name": "timeseries"},
         "type": "Memory",
         "metric_set": "timeseries"
       }

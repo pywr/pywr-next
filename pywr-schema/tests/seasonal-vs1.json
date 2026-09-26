@@ -97,7 +97,7 @@
     ],
     "metric_sets": [
       {
-        "name": "nodes",
+        "meta": {"name": "nodes"},
         "metrics": [
           {
             "type": "VirtualNode",
@@ -108,7 +108,7 @@
     ],
     "outputs": [
       {
-        "name": "my-outputs",
+        "meta": {"name": "my-outputs"},
         "type": "CSV",
         "format": "Long",
         "filename": "seasonal-vs1-expected.csv",

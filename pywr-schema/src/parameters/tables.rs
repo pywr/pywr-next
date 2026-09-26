@@ -1,9 +1,10 @@
 use crate::digest::Checksum;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
+use crate::meta::NamedMeta;
 #[cfg(feature = "core")]
 use crate::network::LoadArgs;
-use crate::parameters::{ConversionData, ParameterMeta};
+use crate::parameters::ConversionData;
 use crate::v1::{TryIntoV2, try_convert_parameter_attr};
 use crate::visit::{Reference, ReferenceMut, VisitReferences};
 use crate::{ComponentConversionError, TryFromV1};
@@ -22,7 +23,7 @@ use std::path::PathBuf;
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitMetrics, PywrVisitPaths)]
 #[serde(deny_unknown_fields)]
 pub struct TablesArrayParameter {
-    pub meta: ParameterMeta,
+    pub meta: NamedMeta,
     pub node: String,
     #[serde(rename = "where")]
     pub wh: String,
@@ -134,7 +135,7 @@ impl TryFromV1<TablesArrayParameterV1> for TablesArrayParameter {
         parent_node: Option<&str>,
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: ParameterMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
+        let meta: NamedMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
 
         let checksum = match v1.checksum {
             Some(checksum) => Some(try_convert_parameter_attr(

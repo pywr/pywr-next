@@ -69,7 +69,7 @@
     ],
     "metric_sets": [
       {
-        "name": "nodes",
+        "meta": {"name": "nodes"},
         "metrics": [
           {
             "type": "Node",
@@ -80,14 +80,14 @@
     ],
     "outputs": [
       {
-        "name": "my-outputs",
+        "meta": {"name": "my-outputs"},
         "type": "CSV",
         "format": "Long",
         "filename": "csv1-outputs-long.csv",
         "metric_set": "nodes"
       },
       {
-        "name": "my-outputs",
+        "meta": {"name": "my-outputs"},
         "type": "CSV",
         "format": "Wide",
         "filename": "csv1-outputs-wide.csv",

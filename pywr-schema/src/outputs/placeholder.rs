@@ -1,5 +1,6 @@
 #[cfg(feature = "core")]
 use crate::SchemaError;
+use crate::meta::NamedMeta;
 use crate::visit::VisitReferences;
 use pywr_schema_macros::{PywrVisitPaths, skip_serializing_none};
 use schemars::JsonSchema;
@@ -7,7 +8,7 @@ use schemars::JsonSchema;
 #[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitPaths)]
 pub struct PlaceholderOutput {
-    pub name: String,
+    pub meta: NamedMeta,
 }
 
 /// A placeholder names no metric set, and its own name is a definition.
@@ -17,7 +18,7 @@ impl VisitReferences for PlaceholderOutput {}
 impl PlaceholderOutput {
     pub fn add_to_network(&self) -> Result<(), SchemaError> {
         Err(SchemaError::PlaceholderOutputNotAllowed {
-            name: self.name.clone(),
+            name: self.meta.name.clone(),
         })
     }
 }

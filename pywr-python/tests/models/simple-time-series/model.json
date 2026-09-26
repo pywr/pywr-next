@@ -80,7 +80,7 @@
     ],
     "metric_sets": [
       {
-        "name": "nodes",
+        "meta": {"name": "nodes"},
         "metrics": [
           {
             "type": "Node",
@@ -99,13 +99,13 @@
     ],
     "outputs": [
       {
-        "name": "outputs",
+        "meta": {"name": "outputs"},
         "type": "HDF5",
         "filename": "outputs.h5",
         "metric_set": "nodes"
       },
       {
-        "name": "nodes",
+        "meta": {"name": "nodes"},
         "type": "Memory",
         "metric_set": "nodes"
       }

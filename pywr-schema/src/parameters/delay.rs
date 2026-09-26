@@ -1,9 +1,9 @@
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
+use crate::meta::NamedMeta;
 use crate::metric::{IndexMetric, Metric};
 #[cfg(feature = "core")]
 use crate::network::LoadArgs;
-use crate::parameters::ParameterMeta;
 #[cfg(feature = "core")]
 use pywr_core::parameters::ParameterName;
 use pywr_schema_macros::PywrVisitAll;
@@ -13,7 +13,7 @@ use schemars::JsonSchema;
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct DelayParameter {
-    pub meta: ParameterMeta,
+    pub meta: NamedMeta,
     pub metric: Metric,
     pub delay: u64,
     pub initial_value: f64,
@@ -45,7 +45,7 @@ impl DelayParameter {
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct DelayIndexParameter {
-    pub meta: ParameterMeta,
+    pub meta: NamedMeta,
     pub metric: IndexMetric,
     pub delay: u64,
     pub initial_value: u64,
