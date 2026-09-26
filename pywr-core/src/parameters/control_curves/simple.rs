@@ -1,11 +1,11 @@
 use crate::metric::{MetricConsumerPhase, MetricF64, UnresolvedMetricF64};
 use crate::network::ResolutionMaps;
-use crate::parameters::errors::GeneralCalculationError;
 use crate::parameters::control_curves::index::control_curve_index;
+use crate::parameters::errors::GeneralCalculationError;
 use crate::parameters::{
-    BuiltParameter, GeneralBeforeParameter, GeneralAfterParameter, GeneralParameter, GeneralParameterContext, GeneralParameterEntry,
-    MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder, ParameterMeta, ParameterName,
-    ParameterState,
+    BuiltParameter, GeneralAfterParameter, GeneralBeforeParameter, GeneralParameter, GeneralParameterContext,
+    GeneralParameterEntry, MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder, ParameterMeta,
+    ParameterName, ParameterState,
 };
 use crate::{resolve_metric_f64, resolve_metric_f64_vec};
 
@@ -43,18 +43,13 @@ impl GeneralBeforeParameter<f64> for ControlCurveParameter {
         let control_curves = self
             .control_curves
             .iter()
-            .map(|cc| cc.get_value(ctx.network, ctx.state))
-            .collect::<Result<Vec<_>, _>>()?;
-        let values = self
-            .values
-            .iter()
-            .map(|v| v.get_value(ctx.network, ctx.state))
-            .collect::<Result<Vec<_>, _>>()?;
-        
-        calculate_control_curve(x, &control_curves, &values)
+            .map(|cc| cc.get_value(ctx.network, ctx.state));
+
+        let values = self.values.iter().map(|v| v.get_value(ctx.network, ctx.state));
+
+        calculate_control_curve(x, control_curves, values)
     }
 }
-
 
 impl GeneralAfterParameter<f64> for ControlCurveParameter {
     fn after(
@@ -67,30 +62,37 @@ impl GeneralAfterParameter<f64> for ControlCurveParameter {
         let control_curves = self
             .control_curves
             .iter()
-            .map(|cc| cc.get_value(ctx.network, ctx.state))
-            .collect::<Result<Vec<_>, _>>()?;
-        let values = self
-            .values
-            .iter()
-            .map(|v| v.get_value(ctx.network, ctx.state))
-            .collect::<Result<Vec<_>, _>>()?;
+            .map(|cc| cc.get_value(ctx.network, ctx.state));
 
-        calculate_control_curve(x, &control_curves, &values)
+        let values = self.values.iter().map(|v| v.get_value(ctx.network, ctx.state));
+
+        calculate_control_curve(x, control_curves, values)
     }
 }
 
-fn calculate_control_curve(x: f64, control_curves: &[f64], values: &[f64]) -> Result<f64, GeneralCalculationError> {
-    let idx = control_curve_index(x, control_curves) as usize;
-    let value = values
-        .get(idx)
-        .ok_or_else(|| GeneralCalculationError::OutOfBoundsError {
-            axis: 0,
-            index: idx,
-            length: values.len(),
-        })?;
-    Ok(*value)
-}
+fn calculate_control_curve<E>(
+    x: f64,
+    control_curves: impl IntoIterator<Item = Result<f64, E>>,
+    values: impl IntoIterator<Item = Result<f64, E>>,
+) -> Result<f64, GeneralCalculationError>
+where
+    GeneralCalculationError: From<E>,
+{
+    let idx = control_curve_index(x, control_curves)? as usize;
 
+    let mut length = 0;
+    for value in values {
+        if length == idx {
+            return Ok(value?);
+        }
+        length += 1;
+    }
+    Err(GeneralCalculationError::OutOfBoundsError {
+        axis: 0,
+        index: idx,
+        length,
+    })
+}
 
 #[derive(Debug)]
 pub struct ControlCurveParameterBuilder {
@@ -157,8 +159,13 @@ impl ParameterBuilder<f64> for ControlCurveParameterBuilder {
     ) -> Result<MaybeBuiltParameter<f64>, ParameterBuildError> {
         let metric = resolve_metric_f64!(self, self.metric, resolution_maps, self.phase, "metric");
 
-        let control_curves =
-            resolve_metric_f64_vec!(self, &self.control_curves, resolution_maps, self.phase, "control_curves");
+        let control_curves = resolve_metric_f64_vec!(
+            self,
+            &self.control_curves,
+            resolution_maps,
+            self.phase,
+            "control_curves"
+        );
 
         let values = resolve_metric_f64_vec!(self, &self.values, resolution_maps, self.phase, "values");
 
@@ -177,46 +184,58 @@ impl ParameterBuilder<f64> for ControlCurveParameterBuilder {
         };
 
         let built = match self.phase {
-            MetricConsumerPhase::Before => {
-                BuiltParameter::General(GeneralParameterEntry::before(p))
-            },
-            MetricConsumerPhase::After => {
-                BuiltParameter::General(GeneralParameterEntry::after(p))
-            },
-            MetricConsumerPhase::Both => {
-                BuiltParameter::General(GeneralParameterEntry::both(p))
-            }
+            MetricConsumerPhase::Before => BuiltParameter::General(GeneralParameterEntry::before(p)),
+            MetricConsumerPhase::After => BuiltParameter::General(GeneralParameterEntry::after(p)),
+            MetricConsumerPhase::Both => BuiltParameter::General(GeneralParameterEntry::both(p)),
         };
 
         Ok(built.into())
     }
 }
 
-
 #[cfg(test)]
 mod tests {
-    use super:: calculate_control_curve;
+    use super::calculate_control_curve;
+    use crate::parameters::GeneralCalculationError;
 
     #[test]
     fn test_calculate_control_curve() {
-        let control_curves = vec![0.8, 0.5, 0.2];
-        let values = vec![10.0, 20.0, 30.0, 50.0];
+        let control_curves = [0.8, 0.5, 0.2];
+        let values = [10.0, 20.0, 30.0, 50.0];
 
-        assert_eq!(calculate_control_curve(0.9, &control_curves, &values).unwrap(), 10.0);
-        assert_eq!(calculate_control_curve(0.8, &control_curves, &values).unwrap(), 10.0);
-        assert_eq!(calculate_control_curve(0.6, &control_curves, &values).unwrap(), 20.0);
-        assert_eq!(calculate_control_curve(0.5, &control_curves, &values).unwrap(), 20.0);
-        assert_eq!(calculate_control_curve(0.3, &control_curves, &values).unwrap(), 30.0);
-        assert_eq!(calculate_control_curve(0.2, &control_curves, &values).unwrap(), 30.0);
-        assert_eq!(calculate_control_curve(0.1, &control_curves, &values).unwrap(), 50.0);
+        let value = |x| {
+            calculate_control_curve(
+                x,
+                control_curves.iter().copied().map(Ok::<_, GeneralCalculationError>),
+                values.iter().copied().map(Ok::<_, GeneralCalculationError>),
+            )
+            .unwrap()
+        };
+
+        assert_eq!(value(0.9), 10.0);
+        assert_eq!(value(0.8), 10.0);
+        assert_eq!(value(0.6), 20.0);
+        assert_eq!(value(0.5), 20.0);
+        assert_eq!(value(0.3), 30.0);
+        assert_eq!(value(0.2), 30.0);
+        assert_eq!(value(0.1), 50.0);
     }
 
     #[test]
     fn test_calculate_control_curves_empty() {
-        let control_curves = vec![];
-        let values = vec![10.0, ];
+        let control_curves: [f64; 0] = [];
+        let values = [10.0];
 
-        assert_eq!(calculate_control_curve(0.9, &control_curves, &values).unwrap(), 10.0);
-        assert_eq!(calculate_control_curve(0.2, &control_curves, &values).unwrap(), 10.0);
+        let value = |x| {
+            calculate_control_curve(
+                x,
+                control_curves.iter().copied().map(Ok::<_, GeneralCalculationError>),
+                values.iter().copied().map(Ok::<_, GeneralCalculationError>),
+            )
+            .unwrap()
+        };
+
+        assert_eq!(value(0.9), 10.0);
+        assert_eq!(value(0.2), 10.0);
     }
 }

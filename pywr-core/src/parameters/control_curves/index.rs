@@ -2,9 +2,9 @@ use crate::metric::{MetricConsumerPhase, MetricF64, UnresolvedMetricF64};
 use crate::network::ResolutionMaps;
 use crate::parameters::errors::GeneralCalculationError;
 use crate::parameters::{
-    BuiltParameter, GeneralBeforeParameter, GeneralAfterParameter, GeneralParameter, GeneralParameterContext, GeneralParameterEntry,
-    MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder, ParameterMeta, ParameterName,
-    ParameterState,
+    BuiltParameter, GeneralAfterParameter, GeneralBeforeParameter, GeneralParameter, GeneralParameterContext,
+    GeneralParameterEntry, MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder, ParameterMeta,
+    ParameterName, ParameterState,
 };
 use crate::{resolve_metric_f64, resolve_metric_f64_vec};
 
@@ -41,13 +41,11 @@ impl GeneralBeforeParameter<u64> for ControlCurveIndexParameter {
         let values = self
             .control_curves
             .iter()
-            .map(|cc| cc.get_value(ctx.network, ctx.state))
-            .collect::<Result<Vec<f64>, _>>()?;
+            .map(|cc| cc.get_value(ctx.network, ctx.state));
 
-        Ok(control_curve_index(x, &values))
+        Ok(control_curve_index(x, values)?)
     }
 }
-
 
 impl GeneralAfterParameter<u64> for ControlCurveIndexParameter {
     fn after(
@@ -60,24 +58,23 @@ impl GeneralAfterParameter<u64> for ControlCurveIndexParameter {
         let values = self
             .control_curves
             .iter()
-            .map(|cc| cc.get_value(ctx.network, ctx.state))
-            .collect::<Result<Vec<f64>, _>>()?;
+            .map(|cc| cc.get_value(ctx.network, ctx.state));
 
-        Ok(control_curve_index(x, &values))
+        Ok(control_curve_index(x, values)?)
     }
 }
 
-
-pub fn control_curve_index(x: f64, control_curves: &[f64]) -> u64 {
-    for (idx, cc_value) in control_curves.iter().enumerate() {
-        if x >= *cc_value {
-            return idx as u64;
+pub fn control_curve_index<E>(x: f64, control_curves: impl IntoIterator<Item = Result<f64, E>>) -> Result<u64, E> {
+    let mut index = 0;
+    for cc_value in control_curves {
+        let cc_value = cc_value?;
+        if x >= cc_value {
+            return Ok(index);
         }
+        index += 1;
     }
-    control_curves.len() as u64
+    Ok(index)
 }
-
-
 
 #[derive(Debug)]
 pub struct ControlCurveIndexParameterBuilder {
@@ -133,10 +130,14 @@ impl ParameterBuilder<u64> for ControlCurveIndexParameterBuilder {
         self: Box<Self>,
         resolution_maps: &ResolutionMaps,
     ) -> Result<MaybeBuiltParameter<u64>, ParameterBuildError> {
-
         let metric = resolve_metric_f64!(self, self.metric, resolution_maps, self.phase, "metric");
-        let control_curves =
-            resolve_metric_f64_vec!(self, &self.control_curves, resolution_maps, self.phase, "control_curves");
+        let control_curves = resolve_metric_f64_vec!(
+            self,
+            &self.control_curves,
+            resolution_maps,
+            self.phase,
+            "control_curves"
+        );
 
         let p = ControlCurveIndexParameter {
             meta: self.meta,
@@ -145,21 +146,14 @@ impl ParameterBuilder<u64> for ControlCurveIndexParameterBuilder {
         };
 
         let built = match self.phase {
-            MetricConsumerPhase::Before => {
-                BuiltParameter::General(GeneralParameterEntry::before(p))
-            },
-            MetricConsumerPhase::After => {
-                BuiltParameter::General(GeneralParameterEntry::after(p))
-            },
-            MetricConsumerPhase::Both => {
-                BuiltParameter::General(GeneralParameterEntry::both(p))
-            }
+            MetricConsumerPhase::Before => BuiltParameter::General(GeneralParameterEntry::before(p)),
+            MetricConsumerPhase::After => BuiltParameter::General(GeneralParameterEntry::after(p)),
+            MetricConsumerPhase::Both => BuiltParameter::General(GeneralParameterEntry::both(p)),
         };
 
         Ok(built.into())
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -167,15 +161,15 @@ mod tests {
 
     #[test]
     fn computes_index_correctly() {
-        let control_curves = vec![0.8, 0.5, 0.2];
+        let control_curves = [0.8, 0.5, 0.2];
+        let index = |x| control_curve_index(x, control_curves.iter().copied().map(Ok::<_, ()>)).unwrap();
 
-        assert_eq!(control_curve_index(0.1, &control_curves), 3);
-        assert_eq!(control_curve_index(0.2, &control_curves), 2);
-        assert_eq!(control_curve_index(0.3, &control_curves), 2);
-        assert_eq!(control_curve_index(0.5, &control_curves), 1);
-        assert_eq!(control_curve_index(0.6, &control_curves), 1);
-        assert_eq!(control_curve_index(0.8, &control_curves), 0);
-        assert_eq!(control_curve_index(0.9, &control_curves), 0);
+        assert_eq!(index(0.1), 3);
+        assert_eq!(index(0.2), 2);
+        assert_eq!(index(0.3), 2);
+        assert_eq!(index(0.5), 1);
+        assert_eq!(index(0.6), 1);
+        assert_eq!(index(0.8), 0);
+        assert_eq!(index(0.9), 0);
     }
-
 }
