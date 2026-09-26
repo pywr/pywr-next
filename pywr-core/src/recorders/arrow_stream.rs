@@ -111,7 +111,7 @@ pub struct ArrowStreamCommit {
 /// Errors produced by the Arrow IPC stream output.
 #[derive(Debug, Error)]
 pub enum ArrowStreamError {
-    #[error("I/O error with Arrow stream at `{path}`: {source}")]
+    #[error("I/O error with Arrow stream at `{path}`.")]
     Io {
         path: PathBuf,
         #[source]
@@ -119,7 +119,7 @@ pub enum ArrowStreamError {
     },
     #[error("Arrow stream output already exists at `{path}`")]
     OutputAlreadyExists { path: PathBuf },
-    #[error("Arrow IPC error: {0}")]
+    #[error("Arrow IPC error.")]
     Arrow(#[from] ArrowError),
     #[error("Metric set index `{index}` not found")]
     MetricSetIndexNotFound { index: MetricSetIndex },
