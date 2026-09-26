@@ -19,7 +19,7 @@ pub struct IndexedArrayParameter {
     pub phase: ParameterPhase,
     #[serde(alias = "params")]
     pub metrics: Vec<Metric>,
-    pub index_parameter: IndexMetric,
+    pub index_metric: IndexMetric,
 }
 
 #[cfg(feature = "core")]
@@ -30,7 +30,7 @@ impl IndexedArrayParameter {
         args: &LoadArgs,
         parent: Option<&str>,
     ) -> Result<(), SchemaError> {
-        let index_parameter = self.index_parameter.load(network, args, None)?;
+        let index_parameter = self.index_metric.load(network, args, parent)?;
 
         let name = ParameterName::new(&self.meta.name, parent);
 
@@ -79,7 +79,7 @@ impl TryFromV1<IndexedArrayParameterV1> for IndexedArrayParameter {
 
         let p = Self {
             meta,
-            index_parameter,
+            index_metric: index_parameter,
             metrics,
             phase: ParameterPhase::Before,
         };

@@ -21,7 +21,7 @@
     "meta": {
       "name": "my-indexed-array-param"
     },
-    "index_parameter": {
+    "index_metric": {
       "type": "Parameter",
       "name": "my-threshold-param"
     },

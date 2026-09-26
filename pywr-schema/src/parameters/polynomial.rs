@@ -38,7 +38,7 @@ impl Polynomial1DParameter {
         args: &LoadArgs,
         parent: Option<&str>,
     ) -> Result<(), SchemaError> {
-        let metric = self.metric.load(network, args, None)?;
+        let metric = self.metric.load(network, args, parent)?;
         let name = ParameterName::new(&self.meta.name, parent);
         let coefficients = self.coefficients.clone();
         let scale = self.scale.unwrap_or(Self::DEFAULT_SCALE);
