@@ -5,9 +5,10 @@ use crate::metric::{Metric, NodeAttrReference, VirtualNodeAttrReference};
 #[cfg(feature = "core")]
 use crate::network::LoadArgs;
 use crate::nodes::NodeAttribute;
-use crate::parameters::{ConversionData, ParameterMeta};
+use crate::parameters::ConversionData;
 use crate::v1::{TryFromV1, TryIntoV2, try_convert_control_curves, try_convert_parameter_attr};
 
+use crate::meta::NamedMeta;
 #[cfg(feature = "core")]
 use pywr_core::parameters::{ParameterName, PiecewiseInterpolatedParameterBuilder};
 use pywr_schema_macros::{PywrVisitAll, skip_serializing_none};
@@ -22,7 +23,7 @@ use schemars::JsonSchema;
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct ControlCurveInterpolatedParameter {
-    pub meta: ParameterMeta,
+    pub meta: NamedMeta,
     pub control_curves: Vec<Metric>,
     pub storage_metric: Metric,
     pub values: Vec<Metric>,
@@ -77,7 +78,7 @@ impl TryFromV1<ControlCurveInterpolatedParameterV1> for ControlCurveInterpolated
         parent_node: Option<&str>,
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: ParameterMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
+        let meta: NamedMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
 
         let control_curves = try_convert_control_curves(
             &meta.name,
@@ -142,7 +143,7 @@ impl TryFromV1<ControlCurveInterpolatedParameterV1> for ControlCurveInterpolated
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct ControlCurveIndexParameter {
-    pub meta: ParameterMeta,
+    pub meta: NamedMeta,
     pub control_curves: Vec<Metric>,
     pub storage_metric: Metric,
 }
@@ -179,7 +180,7 @@ impl TryFromV1<ControlCurveIndexParameterV1> for ControlCurveIndexParameter {
         parent_node: Option<&str>,
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: ParameterMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
+        let meta: NamedMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
 
         let control_curves = v1
             .control_curves
@@ -221,7 +222,7 @@ impl TryFromV1<ControlCurveParameterV1> for ControlCurveIndexParameter {
         parent_node: Option<&str>,
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: ParameterMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
+        let meta: NamedMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
 
         let control_curves = try_convert_control_curves(
             &meta.name,
@@ -259,7 +260,7 @@ impl TryFromV1<ControlCurveParameterV1> for ControlCurveIndexParameter {
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct ControlCurveParameter {
-    pub meta: ParameterMeta,
+    pub meta: NamedMeta,
     pub control_curves: Vec<Metric>,
     pub storage_metric: Metric,
     pub values: Vec<Metric>,
@@ -302,7 +303,7 @@ impl TryFromV1<ControlCurveParameterV1> for ControlCurveParameter {
         parent_node: Option<&str>,
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: ParameterMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
+        let meta: NamedMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
 
         let control_curves = try_convert_control_curves(
             &meta.name,
@@ -358,7 +359,7 @@ impl TryFromV1<ControlCurveParameterV1> for ControlCurveParameter {
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct ControlCurvePiecewiseInterpolatedParameter {
-    pub meta: ParameterMeta,
+    pub meta: NamedMeta,
     pub control_curves: Vec<Metric>,
     pub storage_metric: Metric,
     pub values: Option<Vec<[f64; 2]>>,
@@ -411,7 +412,7 @@ impl TryFromV1<ControlCurvePiecewiseInterpolatedParameterV1> for ControlCurvePie
         parent_node: Option<&str>,
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: ParameterMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
+        let meta: NamedMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
 
         let control_curves = try_convert_control_curves(
             &meta.name,

@@ -2,10 +2,11 @@ use crate::agg_funcs::{AggFunc, IndexAggFunc};
 use crate::error::ComponentConversionError;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
+use crate::meta::NamedMeta;
 use crate::metric::{IndexMetric, Metric};
 #[cfg(feature = "core")]
 use crate::network::LoadArgs;
-use crate::parameters::{ConversionData, ParameterMeta, ParameterPhase};
+use crate::parameters::{ConversionData, ParameterPhase};
 use crate::v1::{TryFromV1, TryIntoV2, try_convert_parameter_attr};
 #[cfg(feature = "core")]
 use pywr_core::parameters::ParameterName;
@@ -42,7 +43,7 @@ use std::collections::HashMap;
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct AggregatedParameter {
-    pub meta: ParameterMeta,
+    pub meta: NamedMeta,
     pub phase: ParameterPhase,
     pub agg_func: AggFunc,
     pub metrics: Vec<Metric>,
@@ -84,7 +85,7 @@ impl TryFromV1<AggregatedParameterV1> for AggregatedParameter {
         parent_node: Option<&str>,
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: ParameterMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
+        let meta: NamedMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
 
         let metrics = v1
             .parameters
@@ -105,7 +106,7 @@ impl TryFromV1<AggregatedParameterV1> for AggregatedParameter {
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct AggregatedIndexParameter {
-    pub meta: ParameterMeta,
+    pub meta: NamedMeta,
     pub phase: ParameterPhase,
     pub agg_func: IndexAggFunc,
     pub metrics: Vec<IndexMetric>,
@@ -153,7 +154,7 @@ impl TryFromV1<AggregatedIndexParameterV1> for AggregatedIndexParameter {
         parent_node: Option<&str>,
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: ParameterMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
+        let meta: NamedMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
 
         let metrics = v1
             .parameters

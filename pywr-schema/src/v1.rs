@@ -14,9 +14,10 @@ use std::collections::HashMap;
 
 use crate::ConversionError;
 use crate::error::ComponentConversionError;
+use crate::meta::NamedMeta;
 use crate::metric::Metric;
 use crate::nodes::{NodeMeta, StorageInitialVolume};
-use crate::parameters::{ConstantFloatVec, Parameter, ParameterMeta};
+use crate::parameters::{ConstantFloatVec, Parameter};
 use crate::time_series::TimeSeries;
 use pywr_v1_schema::nodes::NodeMeta as NodeMetaV1;
 use pywr_v1_schema::parameters::{
@@ -100,7 +101,7 @@ pub(crate) fn convert_tags(
         .collect()
 }
 
-impl TryFromV1<ParameterMetaV1> for ParameterMeta {
+impl TryFromV1<ParameterMetaV1> for NamedMeta {
     type Error = Box<ComponentConversionError>;
 
     fn try_from_v1(
@@ -133,7 +134,7 @@ impl TryFromV1<ParameterMetaV1> for ParameterMeta {
     }
 }
 
-impl TryFromV1<Option<ParameterMetaV1>> for ParameterMeta {
+impl TryFromV1<Option<ParameterMetaV1>> for NamedMeta {
     type Error = Box<ComponentConversionError>;
 
     fn try_from_v1(

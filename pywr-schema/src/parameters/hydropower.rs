@@ -1,10 +1,11 @@
 #[cfg(feature = "core")]
 use crate::SchemaError;
 use crate::error::ComponentConversionError;
+use crate::meta::NamedMeta;
 use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::network::LoadArgs;
-use crate::parameters::{ConversionData, ParameterMeta};
+use crate::parameters::ConversionData;
 use crate::v1::{TryFromV1, TryIntoV2, try_convert_parameter_attr};
 #[cfg(feature = "core")]
 use pywr_core::parameters::{HydropowerTargetData, ParameterName};
@@ -42,7 +43,7 @@ use schemars::JsonSchema;
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct HydropowerTargetParameter {
-    pub meta: ParameterMeta,
+    pub meta: NamedMeta,
     /// The flow through the turbine node. If provided, this is used as the actual flow to
     /// compute the actual power output in the "after" method of the parameter. This is optional
     /// and if not provided then no power output is calculated.
@@ -155,7 +156,7 @@ impl TryFromV1<HydropowerTargetParameterV1> for HydropowerTargetParameter {
         parent_node: Option<&str>,
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: ParameterMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
+        let meta: NamedMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
         let target = try_convert_parameter_attr(&meta.name, "target", v1.target, parent_node, conversion_data)?;
         let water_elevation = try_convert_parameter_attr(
             &meta.name,

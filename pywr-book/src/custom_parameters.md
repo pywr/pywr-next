@@ -373,7 +373,7 @@ and selects its `after` value.
 ```json,ignore
     "metric_sets": [
       {
-        "name": "parameters",
+        "meta": { "name": "parameters" },
         "aggregator": {
           "freq": {
             "type": "Annual"

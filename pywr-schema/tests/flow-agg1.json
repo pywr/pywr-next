@@ -109,7 +109,7 @@
     ],
     "metric_sets": [
       {
-        "name": "all",
+        "meta": {"name": "all"},
         "filters": {
           "all_nodes": true,
           "all_virtual_nodes": true,
@@ -120,7 +120,7 @@
     ],
     "outputs": [
       {
-        "name": "nodes",
+        "meta": {"name": "nodes"},
         "type": "CSV",
         "format": "Long",
         "filename": "flow-agg1-expected.csv",

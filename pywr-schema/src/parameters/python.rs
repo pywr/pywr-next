@@ -1,9 +1,10 @@
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
+use crate::meta::NamedMeta;
 use crate::metric::{IndexMetric, Metric};
 #[cfg(feature = "core")]
 use crate::network::LoadArgs;
-use crate::parameters::{DynamicFloatValueType, ParameterMeta};
+use crate::parameters::DynamicFloatValueType;
 use crate::py_utils::PythonSource;
 #[cfg(all(feature = "core", feature = "pyo3"))]
 use crate::py_utils::{try_load_optional_py_args, try_load_optional_py_kwargs};
@@ -119,7 +120,7 @@ pub enum PythonReturnType {
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct PythonParameter {
-    pub meta: ParameterMeta,
+    pub meta: NamedMeta,
     pub source: PythonSource,
     /// The type of Python object from the module to use. This is either a class or a function.
     pub object: PythonObject,

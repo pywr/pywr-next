@@ -129,8 +129,9 @@ impl ParameterBuilder<f64> for MaxParameterBuilder {
 mod schema {
     #[cfg(feature = "core")]
     use pywr_core::parameters::ParameterName;
+    use pywr_schema::meta::NamedMeta;
     use pywr_schema::metric::Metric;
-    use pywr_schema::parameters::{ParameterMeta, ParameterPhase};
+    use pywr_schema::parameters::ParameterPhase;
     #[cfg(feature = "core")]
     use pywr_schema::{LoadArgs, SchemaError};
     use schemars::JsonSchema;
@@ -138,8 +139,7 @@ mod schema {
     // ANCHOR: schema
     #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
     pub struct MaxParameter {
-        #[serde(flatten)]
-        pub meta: ParameterMeta,
+        pub meta: NamedMeta,
         pub phase: ParameterPhase,
         pub parameter: Metric,
         pub threshold: Option<f64>,

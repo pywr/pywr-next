@@ -386,7 +386,7 @@ impl NetworkSchema {
         }
 
         for metric_set in self.metric_sets.as_deref().into_iter().flatten() {
-            let owner = Owner::MetricSet(&metric_set.name);
+            let owner = Owner::MetricSet(metric_set.name());
             metric_set.visit_references(&mut |reference| visitor(owner, reference));
         }
 
@@ -419,7 +419,7 @@ impl NetworkSchema {
         }
 
         for metric_set in self.metric_sets.as_deref_mut().into_iter().flatten() {
-            let owner_name = metric_set.name.clone();
+            let owner_name = metric_set.name().to_string();
             metric_set.visit_references_mut(&mut |reference| visitor(Owner::MetricSet(&owner_name), reference));
         }
 
@@ -701,14 +701,14 @@ impl NetworkSchema {
 
     pub fn get_metric_set_by_name(&self, name: &str) -> Option<&MetricSet> {
         match &self.metric_sets {
-            Some(metric_sets) => metric_sets.iter().find(|ms| ms.name == name),
+            Some(metric_sets) => metric_sets.iter().find(|ms| ms.name() == name),
             None => None,
         }
     }
 
     pub fn get_metric_set_by_name_mut(&mut self, name: &str) -> Option<&mut MetricSet> {
         match &mut self.metric_sets {
-            Some(metric_sets) => metric_sets.iter_mut().find(|ms| ms.name == name),
+            Some(metric_sets) => metric_sets.iter_mut().find(|ms| ms.name() == name),
             None => None,
         }
     }
@@ -885,7 +885,7 @@ impl NetworkSchema {
                     }),
             )
             .chain(
-                duplicates(self.metric_sets.iter().flatten(), |metric_set| metric_set.name.as_str())
+                duplicates(self.metric_sets.iter().flatten(), |metric_set| metric_set.name())
                     .into_iter()
                     .map(|(name, count)| NetworkProblem::DuplicateMetricSetName {
                         name: name.to_string(),
@@ -992,7 +992,7 @@ impl NetworkSchema {
             for metric_set in metric_sets {
                 metric_set.add_to_network(network_builder, &args).map_err(|source| {
                     NetworkSchemaBuildError::AddMetricSetError {
-                        name: metric_set.name.clone(),
+                        name: metric_set.name().to_string(),
                         source: Box::new(source),
                     }
                 })?;
@@ -1141,7 +1141,8 @@ impl NetworkSchema {
         // of any metric sets with the same name.
         if let Some(other_metric_sets) = other.metric_sets {
             for ms in other_metric_sets {
-                match self.get_metric_set_by_name_mut(&ms.name) {
+                let name = ms.name().to_string();
+                match self.get_metric_set_by_name_mut(ms.name()) {
                     Some(existing_ms) => {
                         // Merge the metrics of the existing metric set with the new one.
                         if let Some(existing_metrics) = &mut existing_ms.metrics {
@@ -1149,7 +1150,7 @@ impl NetworkSchema {
                                 // Check for duplicate metrics
                                 for new_metric in &new_metrics {
                                     if existing_metrics.iter().any(|m| m == new_metric) {
-                                        return Err(NetworkMergeError::DuplicateMetric(ms.name.clone()));
+                                        return Err(NetworkMergeError::DuplicateMetric(name));
                                     }
                                 }
 
@@ -1616,9 +1617,9 @@ mod tests {
                     { "meta": { "name": "shared" }, "type": "Placeholder" }
                 ],
                 "metric_sets": [
-                    { "name": "ms", "filters": { "all_nodes": true } },
-                    { "name": "ms", "filters": { "all_virtual_nodes": true } },
-                    { "name": "shared", "filters": { "all_nodes": true } }
+                    { "meta": { "name": "ms" }, "filters": { "all_nodes": true } },
+                    { "meta": { "name": "ms" }, "filters": { "all_virtual_nodes": true } },
+                    { "meta": { "name": "shared" }, "filters": { "all_nodes": true } }
                 ]
             }
             "#,
@@ -1816,7 +1817,7 @@ mod tests {
             {
                 "nodes": [],
                 "edges": [
-                    { "from_node": "a", "to_node": "b" }
+                    { "from_node": "a", "to_node": "b", "meta": {} }
                 ]
             }
             "#,
@@ -1837,7 +1838,7 @@ mod tests {
                 "nodes": [],
                 "edges": [],
                 "metric_sets": [
-                    { "name": "main" }
+                    { "meta": { "name": "main" } }
                 ]
             }
             "#,
@@ -1849,7 +1850,7 @@ mod tests {
                 "nodes": [],
                 "edges": [],
                 "metric_sets": [
-                    { "name": "main", "metrics": [] }
+                    { "meta": { "name": "main" }, "metrics": [] }
                 ]
             }
             "#,
@@ -2107,7 +2108,7 @@ mod tests {
                 "nodes": [],
                 "edges": [],
                 "outputs": [
-                    { "type": "Placeholder", "name": "out-shared" }
+                    { "type": "Placeholder", "meta": { "name": "out-shared" } }
                 ]
             }
             "#,
@@ -2119,7 +2120,7 @@ mod tests {
                 "nodes": [],
                 "edges": [],
                 "outputs": [
-                    { "type": "Memory", "name": "out-shared", "metric_set": "ms" }
+                    { "type": "Memory", "meta": { "name": "out-shared" }, "metric_set": "ms" }
                 ]
             }
             "#,
@@ -2141,7 +2142,7 @@ mod tests {
                 "nodes": [],
                 "edges": [],
                 "outputs": [
-                    { "type": "Memory", "name": "out-shared", "metric_set": "ms" }
+                    { "type": "Memory", "meta": { "name": "out-shared" }, "metric_set": "ms" }
                 ]
             }
             "#,
@@ -2153,7 +2154,7 @@ mod tests {
                 "nodes": [],
                 "edges": [],
                 "outputs": [
-                    { "type": "Memory", "name": "out-shared", "metric_set": "ms2" }
+                    { "type": "Memory", "meta": { "name": "out-shared" }, "metric_set": "ms2" }
                 ]
             }
             "#,
@@ -2228,7 +2229,7 @@ mod tests {
         ],
         "metric_sets": [
             {
-                "name": "ms1",
+                "meta": { "name": "ms1" },
                 "metrics": [{ "type": "Node", "name": "demand" }],
                 "aggregator": {
                     "func": {
@@ -2247,7 +2248,7 @@ mod tests {
             }
         ],
         "outputs": [
-            { "name": "csv-out", "type": "CSV", "format": "Long", "filename": "output.csv", "metric_set": "ms1" }
+            { "meta": { "name": "csv-out" }, "type": "CSV", "format": "Long", "filename": "output.csv", "metric_set": "ms1" }
         ]
     }
     "#;

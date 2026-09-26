@@ -10,6 +10,7 @@ mod digest;
 pub mod edge;
 mod error;
 mod mermaid;
+pub mod meta;
 pub mod metric;
 pub mod metric_sets;
 pub mod model;
