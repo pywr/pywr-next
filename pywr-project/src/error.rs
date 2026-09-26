@@ -90,6 +90,8 @@ pub enum ComposeModelError {
     FileNotFound { set: String, file: String },
     #[error("file is selected more than once in network set '{set}': {file}")]
     DuplicateFile { set: String, file: String },
+    #[error("metadata for file '{file}' in network set '{set}' does not match a selected file")]
+    UnusedFileMeta { set: String, file: String },
 }
 
 #[derive(Error, Debug)]

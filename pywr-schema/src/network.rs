@@ -369,6 +369,10 @@ pub struct NetworkMergeOptions {
     /// If false, the coordinates of placeholder nodes will be replaced by the coordinates of the
     /// corresponding node in the other network.
     pub keep_placeholder_positions: bool,
+    /// Position offset to apply to the schematic coordinates of nodes when merging networks.
+    pub schematic_position_offset: Option<(f32, f32)>,
+    /// Position offset to apply to the geographic coordinates of nodes when merging networks.
+    pub geographic_position_offset: Option<(f32, f32)>,
 }
 
 impl NetworkSchema {
@@ -1104,7 +1108,16 @@ impl NetworkSchema {
                         *existing_node = node;
 
                         if let Some(position) = orig_position {
+                            // Restore the original position if we are keeping placeholder positions
                             existing_node.meta_mut().position = position;
+                        } else {
+                            // Otherwise, apply any position offsets if they are specified in the options
+                            if let Some(offset) = options.schematic_position_offset {
+                                existing_node.meta_mut().apply_schematic_offset(offset);
+                            }
+                            if let Some(offset) = options.geographic_position_offset {
+                                existing_node.meta_mut().apply_geographic_offset(offset);
+                            }
                         }
                     } else {
                         return Err(NetworkMergeError::DuplicateNodeName(node.name().to_string()));
@@ -1115,7 +1128,17 @@ impl NetworkSchema {
                     if self.get_virtual_node_index_by_name(node.name()).is_some() {
                         return Err(NetworkMergeError::DuplicateNodeName(node.name().to_string()));
                     }
-                    self.nodes.push(node.clone());
+
+                    let mut new_node = node.clone();
+
+                    if let Some(offset) = options.schematic_position_offset {
+                        new_node.meta_mut().apply_schematic_offset(offset);
+                    }
+                    if let Some(offset) = options.geographic_position_offset {
+                        new_node.meta_mut().apply_geographic_offset(offset);
+                    }
+
+                    self.nodes.push(new_node);
                 }
             }
         }
@@ -1135,6 +1158,14 @@ impl NetworkSchema {
 
                             if let Some(position) = orig_position {
                                 existing_node.meta_mut().position = position;
+                            } else {
+                                // Otherwise, apply any position offsets if they are specified in the options
+                                if let Some(offset) = options.schematic_position_offset {
+                                    existing_node.meta_mut().apply_schematic_offset(offset);
+                                }
+                                if let Some(offset) = options.geographic_position_offset {
+                                    existing_node.meta_mut().apply_geographic_offset(offset);
+                                }
                             }
                         } else {
                             return Err(NetworkMergeError::DuplicateNodeName(v_node.name().to_string()));
@@ -1146,7 +1177,16 @@ impl NetworkSchema {
                             return Err(NetworkMergeError::DuplicateNodeName(v_node.name().to_string()));
                         }
 
-                        self.virtual_nodes.get_or_insert_default().push(v_node);
+                        let mut new_v_node = v_node.clone();
+
+                        if let Some(offset) = options.schematic_position_offset {
+                            new_v_node.meta_mut().apply_schematic_offset(offset);
+                        }
+                        if let Some(offset) = options.geographic_position_offset {
+                            new_v_node.meta_mut().apply_geographic_offset(offset);
+                        }
+
+                        self.virtual_nodes.get_or_insert_default().push(new_v_node);
                     }
                 }
             }

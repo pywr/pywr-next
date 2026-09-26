@@ -1,4 +1,4 @@
-use crate::composition::{ComposedModel, ComposedModelBuilder};
+use crate::composition::{ComposedModel, ComposedModelBuilder, ComposedNetworkPath, PositionOffset};
 use crate::error::{ComposeModelError, ValidationError};
 use crate::manifest::DefinitionOverrides;
 use schemars::JsonSchema;
@@ -43,6 +43,11 @@ pub enum ProjectManifestValidationError {
         file: String,
     },
     DuplicateFile {
+        definition: String,
+        set: String,
+        file: String,
+    },
+    UnusedFileMeta {
         definition: String,
         set: String,
         file: String,
@@ -265,7 +270,17 @@ impl Definition {
 
         for set in sets.values() {
             let selected = match self.include.iter().find(|selection| selection.set == set.name) {
-                Some(selection) => resolve_selection(self, selection, set, errors),
+                Some(selection) => {
+                    let selected = resolve_selection(self, selection, set, errors);
+                    for file in unused_file_meta_keys(selection, &selected) {
+                        errors.push(ProjectManifestValidationError::UnusedFileMeta {
+                            definition: self.name.clone(),
+                            set: set.name.clone(),
+                            file: file.to_string(),
+                        });
+                    }
+                    selected
+                }
                 None => Vec::new(),
             };
             validate_constraints(self, set, selected.len(), errors);
@@ -306,6 +321,12 @@ impl Definition {
                 }
             }
             let files = resolve_selection_for_composition(selection, set)?;
+            if let Some(file) = unused_file_meta_keys(selection, &files).into_iter().next() {
+                return Err(ComposeModelError::UnusedFileMeta {
+                    set: set.name.clone(),
+                    file: file.to_string(),
+                });
+            }
             if let Some(min_files) = set.min_files {
                 if files.len() < min_files {
                     return Err(ComposeModelError::MinFilesNotMet {
@@ -324,8 +345,19 @@ impl Definition {
                     });
                 }
             }
+
             for file in files {
-                builder.add_include(file.path.clone());
+                let position_offset = file
+                    .name
+                    .to_str()
+                    .and_then(|name| selection.file_meta.as_ref()?.get(name))
+                    .and_then(|meta| meta.position_offset.clone());
+
+                let composed_path = ComposedNetworkPath {
+                    path: file.path.clone(),
+                    position_offset: position_offset.map(PositionOffset::from),
+                };
+                builder.add_include(composed_path);
             }
         }
         // Constraints also apply to sets omitted by this definition.
@@ -350,6 +382,29 @@ impl Definition {
 }
 
 #[derive(Clone, Serialize, Deserialize, JsonSchema)]
+pub struct DefinitionSelectionPositionOffset {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub schematic: Option<(f32, f32)>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub geographic: Option<(f32, f32)>,
+}
+
+impl From<DefinitionSelectionPositionOffset> for PositionOffset {
+    fn from(offset: DefinitionSelectionPositionOffset) -> Self {
+        PositionOffset {
+            schematic: offset.schematic,
+            geographic: offset.geographic,
+        }
+    }
+}
+
+#[derive(Clone, Serialize, Deserialize, JsonSchema)]
+pub struct DefinitionSelectionFileMeta {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub position_offset: Option<DefinitionSelectionPositionOffset>,
+}
+
+#[derive(Clone, Serialize, Deserialize, JsonSchema)]
 pub struct DefinitionSelection {
     /// Name of the network set.
     pub set: String,
@@ -358,6 +413,10 @@ pub struct DefinitionSelection {
     pub files: Option<Vec<String>>,
     /// If true, include all JSON files in the set directory. Overrides `files` if both are specified.
     pub include_all: Option<bool>,
+    /// Optional metadata for each selected file.
+    /// The keys are the filenames, and the values are the metadata for that file.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub file_meta: Option<HashMap<String, DefinitionSelectionFileMeta>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -455,6 +514,21 @@ fn resolve_selection_for_composition<'a>(
         result.push(resolved);
     }
     Ok(result)
+}
+
+fn unused_file_meta_keys<'a>(
+    selection: &'a DefinitionSelection,
+    resolved_files: &[&ResolvedNetworkFile],
+) -> Vec<&'a str> {
+    let mut unused = selection
+        .file_meta
+        .iter()
+        .flat_map(|meta| meta.keys())
+        .filter(|name| !resolved_files.iter().any(|file| file.name == OsStr::new(name)))
+        .map(String::as_str)
+        .collect::<Vec<_>>();
+    unused.sort_unstable();
+    unused
 }
 
 fn validate_constraints(
@@ -691,10 +765,115 @@ mod test {
             set: set.to_string(),
             files: files.map(|files| files.into_iter().map(str::to_string).collect()),
             include_all: Some(include_all),
+            file_meta: None,
         }
     }
     fn touch(path: &Path) {
         std::fs::write(path, "{}").unwrap();
+    }
+
+    fn with_offset(mut selection: DefinitionSelection, file: &str) -> DefinitionSelection {
+        selection.file_meta = Some(HashMap::from([(
+            file.to_string(),
+            DefinitionSelectionFileMeta {
+                position_offset: Some(DefinitionSelectionPositionOffset {
+                    schematic: Some((10.0, -2.0)),
+                    geographic: Some((1.0, 2.0)),
+                }),
+            },
+        )]));
+        selection
+    }
+
+    #[test]
+    fn metadata_must_match_a_selected_file_with_explicit_or_all_selection() {
+        let root = tempdir().unwrap();
+        touch(&root.path().join("base.json"));
+        std::fs::create_dir(root.path().join("nets")).unwrap();
+        touch(&root.path().join("nets/a.json"));
+        touch(&root.path().join("nets/b.json"));
+
+        for (selection, unused) in [
+            (selection("nets", Some(vec!["a.json"]), false), "b.json"),
+            (selection("nets", None, true), "missing.json"),
+        ] {
+            let project = manifest(
+                "base.json",
+                vec![set("nets", None, None, None)],
+                vec![with_offset(selection, unused)],
+            );
+            for report in [
+                project.validate(root.path()).unwrap(),
+                project.validate_model(root.path(), "test").unwrap(),
+            ] {
+                assert!(report.errors.iter().any(|error| matches!(
+                    error,
+                    ProjectManifestValidationError::UnusedFileMeta { definition, set, file }
+                        if definition == "test" && set == "nets" && file == unused
+                )));
+            }
+            assert!(matches!(
+                project.compose_model(root.path(), "test"),
+                Err(ComposeModelError::UnusedFileMeta { set, file }) if set == "nets" && file == unused
+            ));
+        }
+    }
+
+    #[test]
+    fn selected_file_metadata_applies_offsets_with_both_selection_modes() {
+        let root = tempdir().unwrap();
+        std::fs::write(
+            root.path().join("base.json"),
+            serde_json::to_vec(&pywr_schema::ModelSchema::default()).unwrap(),
+        )
+        .unwrap();
+        std::fs::create_dir(root.path().join("nets")).unwrap();
+        std::fs::write(
+            root.path().join("nets/a.json"),
+            r#"{"nodes":[{"type":"Input","meta":{"name":"a","position":{"schematic":[3.0,4.0],"geographic":[5.0,6.0]}}}],"edges":[],"virtual_nodes":[{"type":"Aggregated","nodes":[],"meta":{"name":"v","position":{"schematic":[0.0,1.0]}}}]}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            root.path().join("nets/b.json"),
+            r#"{"nodes":[{"type":"Output","meta":{"name":"b","position":{"schematic":[3.0,4.0]}}}],"edges":[]}"#,
+        )
+        .unwrap();
+
+        for include_all in [false, true] {
+            let project = manifest(
+                "base.json",
+                vec![set("nets", None, None, None)],
+                vec![with_offset(
+                    selection("nets", Some(vec!["a.json"]), include_all),
+                    "a.json",
+                )],
+            );
+            assert!(project.validate(root.path()).unwrap().is_valid());
+            let composed = project.compose_model(root.path(), "test").unwrap();
+            let options = pywr_schema::NetworkMergeOptions {
+                schematic_position_offset: Some((1.0, 1.0)),
+                geographic_position_offset: Some((2.0, 3.0)),
+                ..Default::default()
+            };
+            let merged = composed.load().unwrap().into_model_schema(&options).unwrap();
+            let position = merged.network.get_node_by_name("a").unwrap().meta().position.unwrap();
+            assert_eq!(position.schematic, Some((14.0, 3.0)));
+            assert_eq!(position.geographic, Some((8.0, 11.0)));
+            let position = merged
+                .network
+                .get_virtual_node_by_name("v")
+                .unwrap()
+                .meta()
+                .position
+                .unwrap();
+            assert_eq!(position.schematic, Some((11.0, 0.0)));
+            if include_all {
+                let position = merged.network.get_node_by_name("b").unwrap().meta().position.unwrap();
+                assert_eq!(position.schematic, Some((4.0, 5.0)));
+            } else {
+                assert!(merged.network.get_node_by_name("b").is_none());
+            }
+        }
     }
 
     #[test]

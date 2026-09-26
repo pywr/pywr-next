@@ -1,13 +1,24 @@
 use crate::error::ComposeToSchemaError;
 use crate::manifest::DefinitionOverrides;
-use pywr_schema::{ModelSchema, NetworkMergeOptions, NetworkSchema};
+use pywr_schema::{ModelSchema, NetworkMergeOptions, NetworkSchema, NetworkSchemaReadError};
 use std::path::PathBuf;
+
+#[derive(Clone, Copy, Debug)]
+pub struct PositionOffset {
+    pub schematic: Option<(f32, f32)>,
+    pub geographic: Option<(f32, f32)>,
+}
+
+pub struct ComposedModelNetworkSchema {
+    network_schema: NetworkSchema,
+    position_offset: Option<PositionOffset>,
+}
 
 /// A composed model that combines a base model with additional networks and metadata overrides.
 pub struct ComposedModelSchemas {
     name: String,
     base_model: ModelSchema,
-    includes: Vec<NetworkSchema>,
+    includes: Vec<ComposedModelNetworkSchema>,
     overrides: Option<DefinitionOverrides>,
 }
 
@@ -20,7 +31,7 @@ impl ComposedModelSchemas {
         &self.base_model
     }
 
-    pub fn includes(&self) -> &[NetworkSchema] {
+    pub fn includes(&self) -> &[ComposedModelNetworkSchema] {
         &self.includes
     }
 
@@ -33,7 +44,28 @@ impl ComposedModelSchemas {
         let mut model_schema = self.base_model;
 
         for network in self.includes {
-            model_schema.network.merge(network, options)?;
+            // Clone the options and apply any position offsets from the network
+            let mut network_options = options.clone();
+            if let Some(offset) = network.position_offset {
+                if let Some(offset) = offset.schematic {
+                    if let Some(existing_offset) = &mut network_options.schematic_position_offset {
+                        existing_offset.0 += offset.0;
+                        existing_offset.1 += offset.1;
+                    } else {
+                        network_options.schematic_position_offset = Some(offset);
+                    }
+                }
+                if let Some(offset) = offset.geographic {
+                    if let Some(existing_offset) = &mut network_options.geographic_position_offset {
+                        existing_offset.0 += offset.0;
+                        existing_offset.1 += offset.1;
+                    } else {
+                        network_options.geographic_position_offset = Some(offset);
+                    }
+                }
+            }
+
+            model_schema.network.merge(network.network_schema, &network_options)?;
         }
 
         if let Some(overrides) = self.overrides {
@@ -51,11 +83,16 @@ impl ComposedModelSchemas {
     }
 }
 
+pub struct ComposedNetworkPath {
+    pub path: PathBuf,
+    pub position_offset: Option<PositionOffset>,
+}
+
 /// A composed model that combines a base model with additional networks and metadata overrides.
 pub struct ComposedModel {
     name: String,
     base_model: PathBuf,
-    includes: Vec<PathBuf>,
+    includes: Vec<ComposedNetworkPath>,
     overrides: Option<DefinitionOverrides>,
 }
 
@@ -67,11 +104,17 @@ impl ComposedModel {
     pub fn load(&self) -> Result<ComposedModelSchemas, ComposeToSchemaError> {
         let base_schema = ModelSchema::from_path(&self.base_model)?;
 
-        let includes: Vec<NetworkSchema> = self
+        let includes: Vec<ComposedModelNetworkSchema> = self
             .includes
             .iter()
-            .map(NetworkSchema::from_path)
-            .collect::<Result<Vec<_>, _>>()?;
+            .map(|network| {
+                let network_schema = NetworkSchema::from_path(&network.path)?;
+                Ok(ComposedModelNetworkSchema {
+                    network_schema,
+                    position_offset: network.position_offset,
+                })
+            })
+            .collect::<Result<Vec<_>, NetworkSchemaReadError>>()?;
 
         Ok(ComposedModelSchemas {
             name: self.name.clone(),
@@ -83,7 +126,7 @@ impl ComposedModel {
 
     pub fn all_paths(&self) -> Vec<PathBuf> {
         let mut paths = vec![self.base_model.clone()];
-        paths.extend(self.includes.clone());
+        paths.extend(self.includes.iter().map(|n| n.path.clone()));
         paths
     }
 }
@@ -91,7 +134,7 @@ impl ComposedModel {
 pub struct ComposedModelBuilder {
     name: String,
     base_model: PathBuf,
-    includes: Vec<PathBuf>,
+    includes: Vec<ComposedNetworkPath>,
     overrides: Option<DefinitionOverrides>,
 }
 
@@ -105,7 +148,7 @@ impl ComposedModelBuilder {
         }
     }
 
-    pub fn add_include(&mut self, include: PathBuf) -> &mut Self {
+    pub fn add_include(&mut self, include: ComposedNetworkPath) -> &mut Self {
         self.includes.push(include);
         self
     }
