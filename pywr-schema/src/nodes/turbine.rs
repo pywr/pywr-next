@@ -19,19 +19,10 @@ use schemars::JsonSchema;
 use strum_macros::EnumIter;
 
 #[derive(
-    serde::Deserialize,
-    serde::Serialize,
-    Clone,
-    Debug,
-    strum_macros::Display,
-    JsonSchema,
-    PywrVisitAll,
-    EnumIter,
-    Default,
+    serde::Deserialize, serde::Serialize, Clone, Debug, strum_macros::Display, JsonSchema, PywrVisitAll, EnumIter,
 )]
 pub enum TargetType {
     // set flow derived from the hydropower target as a max_flow
-    #[default]
     MaxFlow,
     // set flow derived from the hydropower target as a min_flow
     MinFlow,
@@ -109,7 +100,7 @@ impl Default for TurbineNode {
             parameters: None,
             cost: None,
             target: None,
-            target_type: Some(TargetType::default()),
+            target_type: Some(Self::DEFAULT_TARGET_TYPE),
             water_elevation: None,
             turbine_elevation: HydropowerTargetParameter::DEFAULT_TURBINE_ELEVATION,
             min_head: HydropowerTargetParameter::DEFAULT_MIN_HEAD,
@@ -124,6 +115,7 @@ impl Default for TurbineNode {
 impl TurbineNode {
     const DEFAULT_ATTRIBUTE: TurbineNodeAttribute = TurbineNodeAttribute::Outflow;
     const DEFAULT_COMPONENT: TurbineNodeComponent = TurbineNodeComponent::Outflow;
+    pub const DEFAULT_TARGET_TYPE: TargetType = TargetType::MaxFlow;
 
     pub fn default_attribute(&self) -> TurbineNodeAttribute {
         Self::DEFAULT_ATTRIBUTE
@@ -217,7 +209,7 @@ impl TurbineNode {
         if self.target.is_some() {
             let metric = UnresolvedMetricF64::new_parameter_before(name);
 
-            match self.target_type.clone().unwrap_or_default() {
+            match self.target_type.clone().unwrap_or(Self::DEFAULT_TARGET_TYPE) {
                 TargetType::MaxFlow => {
                     link_node.max_flow(metric);
                 }
