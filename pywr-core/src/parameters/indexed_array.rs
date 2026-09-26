@@ -2,9 +2,9 @@ use crate::metric::{MetricConsumerPhase, MetricF64, MetricU64, UnresolvedMetricF
 use crate::network::ResolutionMaps;
 use crate::parameters::errors::GeneralCalculationError;
 use crate::parameters::{
-    BuiltParameter, GeneralBeforeParameter, GeneralAfterParameter, GeneralParameter, GeneralParameterContext, GeneralParameterEntry,
-    MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder, ParameterMeta, ParameterName,
-    ParameterState,
+    BuiltParameter, GeneralAfterParameter, GeneralBeforeParameter, GeneralParameter, GeneralParameterContext,
+    GeneralParameterEntry, MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder, ParameterMeta,
+    ParameterName, ParameterState,
 };
 use crate::{resolve_metric_f64_vec, resolve_metric_u64};
 
@@ -70,7 +70,6 @@ impl GeneralAfterParameter<f64> for IndexedArrayParameter {
     }
 }
 
-
 /// Builder for creating an [`IndexedArrayParameter`].
 #[derive(Debug)]
 pub struct IndexedArrayParameterBuilder {
@@ -126,9 +125,13 @@ impl ParameterBuilder<f64> for IndexedArrayParameterBuilder {
         self: Box<Self>,
         resolution_maps: &ResolutionMaps,
     ) -> Result<MaybeBuiltParameter<f64>, ParameterBuildError> {
-
-        let index_parameter =
-            resolve_metric_u64!(self, self.index_parameter, resolution_maps, self.phase, "index_parameter");
+        let index_parameter = resolve_metric_u64!(
+            self,
+            self.index_parameter,
+            resolution_maps,
+            self.phase,
+            "index_parameter"
+        );
         let metrics = resolve_metric_f64_vec!(self, &self.metrics, resolution_maps, self.phase, "metrics");
 
         let p = IndexedArrayParameter {
@@ -138,15 +141,9 @@ impl ParameterBuilder<f64> for IndexedArrayParameterBuilder {
         };
 
         let built = match self.phase {
-            MetricConsumerPhase::Before => {
-                BuiltParameter::General(GeneralParameterEntry::before(p))
-            },
-            MetricConsumerPhase::After => {
-                BuiltParameter::General(GeneralParameterEntry::after(p))
-            },
-            MetricConsumerPhase::Both => {
-                BuiltParameter::General(GeneralParameterEntry::both(p))
-            }
+            MetricConsumerPhase::Before => BuiltParameter::General(GeneralParameterEntry::before(p)),
+            MetricConsumerPhase::After => BuiltParameter::General(GeneralParameterEntry::after(p)),
+            MetricConsumerPhase::Both => BuiltParameter::General(GeneralParameterEntry::both(p)),
         };
 
         Ok(built.into())

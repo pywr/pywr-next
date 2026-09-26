@@ -130,19 +130,19 @@ impl ThresholdParameter {
                 name.clone(),
                 metric,
                 threshold,
-                self.predicate.into()
+                self.predicate.into(),
             ),
             ParameterPhase::After => pywr_core::parameters::ThresholdParameterBuilder::after(
                 name.clone(),
                 metric,
                 threshold,
-                self.predicate.into()
+                self.predicate.into(),
             ),
             ParameterPhase::Both => pywr_core::parameters::ThresholdParameterBuilder::both(
                 name.clone(),
                 metric,
                 threshold,
-                self.predicate.into()
+                self.predicate.into(),
             ),
         };
 
@@ -153,7 +153,6 @@ impl ThresholdParameter {
         network.parameters().u64(Box::new(builder));
 
         if let Some(values) = &self.returned_metrics {
-
             let mut values_builder = match self.phase {
                 ParameterPhase::Before => pywr_core::parameters::IndexedArrayParameterBuilder::before(
                     ParameterName::new(&self.meta.name, parent),
@@ -377,18 +376,16 @@ impl MultiThresholdParameter {
             ParameterPhase::Before => pywr_core::parameters::MultiThresholdParameterBuilder::before(
                 name.clone(),
                 metric,
-                self.predicate.into()
+                self.predicate.into(),
             ),
             ParameterPhase::After => pywr_core::parameters::MultiThresholdParameterBuilder::after(
                 name.clone(),
                 metric,
-                self.predicate.into()
+                self.predicate.into(),
             ),
-            ParameterPhase::Both => pywr_core::parameters::MultiThresholdParameterBuilder::both(
-                name.clone(),
-                metric,
-                self.predicate.into()
-            ),
+            ParameterPhase::Both => {
+                pywr_core::parameters::MultiThresholdParameterBuilder::both(name.clone(), metric, self.predicate.into())
+            }
         };
 
         for t in &self.thresholds {

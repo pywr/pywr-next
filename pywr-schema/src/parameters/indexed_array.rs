@@ -35,7 +35,9 @@ impl IndexedArrayParameter {
         let name = ParameterName::new(&self.meta.name, parent);
 
         let mut builder = match self.phase {
-            ParameterPhase::Before => pywr_core::parameters::IndexedArrayParameterBuilder::before(name, index_parameter),
+            ParameterPhase::Before => {
+                pywr_core::parameters::IndexedArrayParameterBuilder::before(name, index_parameter)
+            }
             ParameterPhase::After => pywr_core::parameters::IndexedArrayParameterBuilder::after(name, index_parameter),
             ParameterPhase::Both => pywr_core::parameters::IndexedArrayParameterBuilder::both(name, index_parameter),
         };
