@@ -1,10 +1,11 @@
 use crate::error::ComponentConversionError;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
+use crate::meta::NamedMeta;
 use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::network::LoadArgs;
-use crate::parameters::{ConstantFloatVec, ConstantValue, ConversionData, ParameterMeta, ParameterPhase};
+use crate::parameters::{ConstantFloatVec, ConstantValue, ConversionData, ParameterPhase};
 use crate::v1::{TryFromV1, TryIntoV2, try_convert_parameter_attr, try_convert_values};
 use crate::visit::{Reference, ReferenceMut, VisitReferences};
 #[cfg(feature = "core")]
@@ -163,7 +164,7 @@ pub struct VariableSettings {
 #[serde(deny_unknown_fields)]
 pub struct ConstantParameter {
     /// Meta-data.
-    pub meta: ParameterMeta,
+    pub meta: NamedMeta,
     /// The value the parameter should return.
     ///
     /// In the simple case this will be the value used by the network. However, if an activation
@@ -197,7 +198,7 @@ impl TryFromV1<ConstantParameterV1> for ConstantParameter {
         parent_node: Option<&str>,
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: ParameterMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
+        let meta: NamedMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
 
         let value = if let Some(v) = v1.value {
             v.into()
@@ -227,7 +228,7 @@ impl TryFromV1<ConstantParameterV1> for ConstantParameter {
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitMetrics, PywrVisitPaths)]
 #[serde(deny_unknown_fields)]
 pub struct ConstantScenarioParameter {
-    pub meta: ParameterMeta,
+    pub meta: NamedMeta,
     /// The values the parameter should return.
     ///
     /// The length of this array must match the number of scenarios in the scenario group.
@@ -276,7 +277,7 @@ impl TryFromV1<ConstantScenarioParameterV1> for ConstantScenarioParameter {
         parent_node: Option<&str>,
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: ParameterMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
+        let meta: NamedMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
 
         let values = try_convert_values(&meta.name, v1.values, v1.external, v1.table)?;
 
@@ -293,7 +294,7 @@ impl TryFromV1<ConstantScenarioParameterV1> for ConstantScenarioParameter {
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct MaxParameter {
-    pub meta: ParameterMeta,
+    pub meta: NamedMeta,
     pub phase: ParameterPhase,
     pub parameter: Metric,
     pub threshold: Option<f64>,
@@ -311,7 +312,7 @@ impl MaxParameter {
         args: &LoadArgs,
         parent: Option<&str>,
     ) -> Result<(), SchemaError> {
-        let idx = self.parameter.load(network, args, None)?;
+        let idx = self.parameter.load(network, args, parent)?;
         let threshold = self.threshold.unwrap_or(Self::DEFAULT_THRESHOLD);
         let name = ParameterName::new(&self.meta.name, parent);
 
@@ -335,7 +336,7 @@ impl TryFromV1<MaxParameterV1> for MaxParameter {
         parent_node: Option<&str>,
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: ParameterMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
+        let meta: NamedMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
 
         let parameter =
             try_convert_parameter_attr(&meta.name, "parameter", v1.parameter, parent_node, conversion_data)?;
@@ -365,7 +366,7 @@ impl TryFromV1<MaxParameterV1> for MaxParameter {
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct DivisionParameter {
-    pub meta: ParameterMeta,
+    pub meta: NamedMeta,
     pub phase: ParameterPhase,
     pub numerator: Metric,
     pub denominator: Metric,
@@ -379,8 +380,8 @@ impl DivisionParameter {
         args: &LoadArgs,
         parent: Option<&str>,
     ) -> Result<(), SchemaError> {
-        let n = self.numerator.load(network, args, None)?;
-        let d = self.denominator.load(network, args, None)?;
+        let n = self.numerator.load(network, args, parent)?;
+        let d = self.denominator.load(network, args, parent)?;
 
         let name = ParameterName::new(&self.meta.name, parent);
 
@@ -403,7 +404,7 @@ impl TryFromV1<DivisionParameterV1> for DivisionParameter {
         parent_node: Option<&str>,
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: ParameterMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
+        let meta: NamedMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
 
         let numerator =
             try_convert_parameter_attr(&meta.name, "numerator", v1.numerator, parent_node, conversion_data)?;
@@ -436,7 +437,7 @@ impl TryFromV1<DivisionParameterV1> for DivisionParameter {
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct MinParameter {
-    pub meta: ParameterMeta,
+    pub meta: NamedMeta,
     pub phase: ParameterPhase,
     pub parameter: Metric,
     pub threshold: Option<f64>,
@@ -454,7 +455,7 @@ impl MinParameter {
         args: &LoadArgs,
         parent: Option<&str>,
     ) -> Result<(), SchemaError> {
-        let metric = self.parameter.load(network, args, None)?;
+        let metric = self.parameter.load(network, args, parent)?;
         let threshold = self.threshold.unwrap_or(Self::DEFAULT_THRESHOLD);
         let name = ParameterName::new(&self.meta.name, parent);
 
@@ -477,7 +478,7 @@ impl TryFromV1<MinParameterV1> for MinParameter {
         parent_node: Option<&str>,
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: ParameterMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
+        let meta: NamedMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
 
         let parameter =
             try_convert_parameter_attr(&meta.name, "parameter", v1.parameter, parent_node, conversion_data)?;
@@ -495,7 +496,7 @@ impl TryFromV1<MinParameterV1> for MinParameter {
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct NegativeParameter {
-    pub meta: ParameterMeta,
+    pub meta: NamedMeta,
     pub phase: ParameterPhase,
     pub parameter: Metric,
 }
@@ -508,7 +509,7 @@ impl NegativeParameter {
         args: &LoadArgs,
         parent: Option<&str>,
     ) -> Result<(), SchemaError> {
-        let metric = self.parameter.load(network, args, None)?;
+        let metric = self.parameter.load(network, args, parent)?;
         let name = ParameterName::new(&self.meta.name, parent);
 
         let p = match self.phase {
@@ -531,7 +532,7 @@ impl TryFromV1<NegativeParameterV1> for NegativeParameter {
         parent_node: Option<&str>,
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: ParameterMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
+        let meta: NamedMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
 
         let parameter =
             try_convert_parameter_attr(&meta.name, "parameter", v1.parameter, parent_node, conversion_data)?;
@@ -563,7 +564,7 @@ impl TryFromV1<NegativeParameterV1> for NegativeParameter {
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct NegativeMaxParameter {
-    pub meta: ParameterMeta,
+    pub meta: NamedMeta,
     pub phase: ParameterPhase,
     pub metric: Metric,
     pub threshold: Option<f64>,
@@ -581,7 +582,7 @@ impl NegativeMaxParameter {
         args: &LoadArgs,
         parent: Option<&str>,
     ) -> Result<(), SchemaError> {
-        let metric = self.metric.load(network, args, None)?;
+        let metric = self.metric.load(network, args, parent)?;
         let threshold = self.threshold.unwrap_or(Self::DEFAULT_THRESHOLD);
         let name = ParameterName::new(&self.meta.name, parent);
 
@@ -607,7 +608,7 @@ impl TryFromV1<NegativeMaxParameterV1> for NegativeMaxParameter {
         parent_node: Option<&str>,
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: ParameterMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
+        let meta: NamedMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
 
         let parameter =
             try_convert_parameter_attr(&meta.name, "parameter", v1.parameter, parent_node, conversion_data)?;
@@ -640,7 +641,7 @@ impl TryFromV1<NegativeMaxParameterV1> for NegativeMaxParameter {
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct NegativeMinParameter {
-    pub meta: ParameterMeta,
+    pub meta: NamedMeta,
     pub phase: ParameterPhase,
     pub metric: Metric,
     pub threshold: Option<f64>,
@@ -658,7 +659,7 @@ impl NegativeMinParameter {
         args: &LoadArgs,
         parent: Option<&str>,
     ) -> Result<(), SchemaError> {
-        let metric = self.metric.load(network, args, None)?;
+        let metric = self.metric.load(network, args, parent)?;
         let threshold = self.threshold.unwrap_or(Self::DEFAULT_THRESHOLD);
         let name = ParameterName::new(&self.meta.name, parent);
 
@@ -684,7 +685,7 @@ impl TryFromV1<NegativeMinParameterV1> for NegativeMinParameter {
         parent_node: Option<&str>,
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: ParameterMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
+        let meta: NamedMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
         let parameter =
             try_convert_parameter_attr(&meta.name, "parameter", v1.parameter, parent_node, conversion_data)?;
 

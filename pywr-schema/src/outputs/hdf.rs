@@ -1,5 +1,6 @@
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
+use crate::meta::NamedMeta;
 use crate::visit::{Reference, ReferenceMut, VisitReferences};
 #[cfg(all(feature = "core", feature = "hdf5"))]
 use pywr_core::recorders::HDF5RecorderBuilder;
@@ -11,7 +12,7 @@ use std::path::PathBuf;
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitPaths)]
 pub struct Hdf5Output {
-    pub name: String,
+    pub meta: NamedMeta,
     pub filename: PathBuf,
     /// The metric set to save
     pub metric_set: String,
@@ -40,7 +41,7 @@ impl Hdf5Output {
             _ => self.filename.to_path_buf(),
         };
 
-        let recorder = HDF5RecorderBuilder::new(&self.name, filename, &self.metric_set);
+        let recorder = HDF5RecorderBuilder::new(&self.meta.name, filename, &self.metric_set);
 
         network.recorder(Box::new(recorder));
 

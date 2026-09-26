@@ -2,10 +2,11 @@ use crate::ConversionError;
 use crate::error::ComponentConversionError;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
+use crate::meta::NamedMeta;
 use crate::metric::{Metric, NodeAttrReference};
 #[cfg(feature = "core")]
 use crate::network::LoadArgs;
-use crate::parameters::{ConversionData, ParameterMeta, ParameterPhase};
+use crate::parameters::{ConversionData, ParameterPhase};
 use crate::v1::{TryFromV1, TryIntoV2, try_convert_parameter_attr};
 #[cfg(feature = "core")]
 use pywr_core::{metric::UnresolvedMetricU64, parameters::ParameterName};
@@ -87,7 +88,7 @@ impl From<Predicate> for pywr_core::parameters::Predicate {
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct ThresholdParameter {
-    pub meta: ParameterMeta,
+    pub meta: NamedMeta,
     pub phase: ParameterPhase,
     /// The metric to compare against the threshold.
     pub metric: Metric,
@@ -112,15 +113,15 @@ impl ThresholdParameter {
         args: &LoadArgs,
         parent: Option<&str>,
     ) -> Result<(), SchemaError> {
-        let metric = self.metric.load(network, args, None)?;
-        let threshold = self.threshold.load(network, args, None)?;
+        let metric = self.metric.load(network, args, parent)?;
+        let threshold = self.threshold.load(network, args, parent)?;
 
         // If the parameter has returned metrics, we need to create a sub-name for the threshold parameter
         // so that it can be distinguished from the indexed array parameter.
         // If it does not have returned metrics, we can just use the parameter name as the
         // name for the threshold parameter.
         let name = if self.returned_metrics.is_some() {
-            ParameterName::new_with_subname(&self.meta.name, Some("threshold"), Some(&self.meta.name))
+            ParameterName::new_with_subname(&self.meta.name, Some("threshold"), parent)
         } else {
             ParameterName::new(&self.meta.name, parent)
         };
@@ -169,7 +170,7 @@ impl ThresholdParameter {
             };
 
             for v in values {
-                values_builder.metric(v.load(network, args, None)?);
+                values_builder.metric(v.load(network, args, parent)?);
             }
             network.parameters().f64(Box::new(values_builder));
         }
@@ -186,7 +187,7 @@ impl TryFromV1<ParameterThresholdParameterV1> for ThresholdParameter {
         parent_node: Option<&str>,
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: ParameterMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
+        let meta: NamedMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
 
         let metric = try_convert_parameter_attr(&meta.name, "parameter", v1.parameter, parent_node, conversion_data)?;
         let threshold =
@@ -233,7 +234,7 @@ impl TryFromV1<NodeThresholdParameterV1> for ThresholdParameter {
         parent_node: Option<&str>,
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: ParameterMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
+        let meta: NamedMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
 
         let metric = Metric::Node(NodeAttrReference::new(v1.node, None));
 
@@ -281,7 +282,7 @@ impl TryFromV1<StorageThresholdParameterV1> for ThresholdParameter {
         parent_node: Option<&str>,
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: ParameterMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
+        let meta: NamedMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
 
         let metric = Metric::Node(NodeAttrReference::new(v1.storage_node, None));
 
@@ -340,7 +341,7 @@ impl TryFromV1<StorageThresholdParameterV1> for ThresholdParameter {
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct MultiThresholdParameter {
-    pub meta: ParameterMeta,
+    pub meta: NamedMeta,
     pub phase: ParameterPhase,
     /// The metric to compare against the threshold.
     pub metric: Metric,
@@ -364,12 +365,12 @@ impl MultiThresholdParameter {
         args: &LoadArgs,
         parent: Option<&str>,
     ) -> Result<(), SchemaError> {
-        let metric = self.metric.load(network, args, None)?;
+        let metric = self.metric.load(network, args, parent)?;
 
         let name = if self.returned_metrics.is_some() {
-            ParameterName::new_with_subname(&self.meta.name, Some("threshold"), Some(&self.meta.name))
+            ParameterName::new_with_subname(&self.meta.name, Some("threshold"), parent)
         } else {
-            self.meta.name.as_str().into()
+            ParameterName::new(&self.meta.name, parent)
         };
 
         let mut builder = match self.phase {
@@ -415,7 +416,7 @@ impl MultiThresholdParameter {
             };
 
             for v in values {
-                values_builder.metric(v.load(network, args, None)?);
+                values_builder.metric(v.load(network, args, parent)?);
             }
 
             network.parameters().f64(Box::new(values_builder));
@@ -433,7 +434,7 @@ impl TryFromV1<MultiThresholdIndexParameterV1> for MultiThresholdParameter {
         parent_node: Option<&str>,
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: ParameterMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
+        let meta: NamedMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
 
         let metric = Metric::Node(NodeAttrReference::new(v1.node, None));
 
@@ -464,7 +465,7 @@ impl TryFromV1<MultipleThresholdParameterIndexParameterV1> for MultiThresholdPar
         parent_node: Option<&str>,
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: ParameterMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
+        let meta: NamedMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
 
         let metric = try_convert_parameter_attr(&meta.name, "parameter", v1.parameter, parent_node, conversion_data)?;
 

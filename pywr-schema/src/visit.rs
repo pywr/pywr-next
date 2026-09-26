@@ -617,7 +617,7 @@ mod tests {
         ],
         "metric_sets": [
             {
-                "name": "ms1",
+                "meta": { "name": "ms1" },
                 "metrics": [{ "type": "Parameter", "name": "metric-set-metric" }]
             }
         ]
@@ -758,12 +758,12 @@ mod tests {
                     { "type": "VirtualNode", "name": "virtual-node-metric" },
                     { "type": "Edge", "edge": { "from_node": "metric-edge-from", "to_node": "metric-edge-to" } }
                 ],
-                "index_parameter": { "type": "Node", "name": "index-metric" }
+                "index_metric": { "type": "Node", "name": "index-metric" }
             }
         ],
         "metric_sets": [
             {
-                "name": "ms1",
+                "meta": { "name": "ms1" },
                 "metrics": [{ "type": "Node", "name": "metric-set-metric" }]
             }
         ]
@@ -853,7 +853,7 @@ mod tests {
                 "metrics": [
                     { "type": "Edge", "edge": { "from_node": "metric-edge-from", "to_node": "metric-edge-to" } }
                 ],
-                "index_parameter": { "type": "Parameter", "name": "index-metric-parameter" }
+                "index_metric": { "type": "Parameter", "name": "index-metric-parameter" }
             },
             {
                 "meta": { "name": "index-agg" },
@@ -893,15 +893,15 @@ mod tests {
         ],
         "metric_sets": [
             {
-                "name": "ms1",
+                "meta": { "name": "ms1" },
                 "metrics": [{ "type": "Parameter", "name": "metric-set-parameter" }]
             }
         ],
         "outputs": [
-            { "name": "csv-out", "type": "CSV", "format": "Long", "filename": "out.csv",
+            { "meta": { "name": "csv-out" }, "type": "CSV", "format": "Long", "filename": "out.csv",
               "metric_set": ["csv-output-metric-set-1", "csv-output-metric-set-2"] },
-            { "name": "hdf-out", "type": "HDF5", "filename": "out.h5", "metric_set": "hdf5-output-metric-set" },
-            { "name": "memory-out", "type": "Memory", "metric_set": "memory-output-metric-set" }
+            { "meta": { "name": "hdf-out" }, "type": "HDF5", "filename": "out.h5", "metric_set": "hdf5-output-metric-set" },
+            { "meta": { "name": "memory-out" }, "type": "Memory", "metric_set": "memory-output-metric-set" }
         ]
     }
     "#;

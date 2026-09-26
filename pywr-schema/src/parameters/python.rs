@@ -1,9 +1,10 @@
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
+use crate::meta::NamedMeta;
 use crate::metric::{IndexMetric, Metric};
 #[cfg(feature = "core")]
 use crate::network::LoadArgs;
-use crate::parameters::{DynamicFloatValueType, ParameterMeta};
+use crate::parameters::DynamicFloatValueType;
 use crate::py_utils::PythonSource;
 #[cfg(all(feature = "core", feature = "pyo3"))]
 use crate::py_utils::{try_load_optional_py_args, try_load_optional_py_kwargs};
@@ -119,7 +120,7 @@ pub enum PythonReturnType {
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct PythonParameter {
-    pub meta: ParameterMeta,
+    pub meta: NamedMeta,
     pub source: PythonSource,
     /// The type of Python object from the module to use. This is either a class or a function.
     pub object: PythonObject,
@@ -236,7 +237,7 @@ impl PythonParameter {
         let metrics = match &self.metrics {
             Some(metrics) => metrics
                 .iter()
-                .map(|(k, v)| Ok((k.to_string(), v.load(network, args, None)?)))
+                .map(|(k, v)| Ok((k.to_string(), v.load(network, args, parent)?)))
                 .collect::<Result<HashMap<_, _>, SchemaError>>()?,
             None => HashMap::new(),
         };
@@ -244,7 +245,7 @@ impl PythonParameter {
         let indices = match &self.indices {
             Some(indices) => indices
                 .iter()
-                .map(|(k, v)| Ok((k.to_string(), v.load(network, args, None)?)))
+                .map(|(k, v)| Ok((k.to_string(), v.load(network, args, parent)?)))
                 .collect::<Result<HashMap<_, _>, SchemaError>>()?,
             None => HashMap::new(),
         };

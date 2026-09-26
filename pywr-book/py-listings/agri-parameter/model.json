@@ -80,7 +80,7 @@
     ],
     "metric_sets": [
       {
-        "name": "parameters",
+        "meta": {"name": "parameters"},
         "aggregator": {
           "freq": {
             "type": "Annual"
@@ -100,7 +100,7 @@
     ],
     "outputs": [
       {
-        "name": "nodes",
+        "meta": {"name": "nodes"},
         "type": "CSV",
         "format": "Long",
         "filename": "agri-results.csv",

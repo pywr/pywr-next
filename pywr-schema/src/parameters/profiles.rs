@@ -1,9 +1,10 @@
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
 use crate::error::{ComponentConversionError, ConversionError};
+use crate::meta::NamedMeta;
 #[cfg(feature = "core")]
 use crate::network::LoadArgs;
-use crate::parameters::{ConstantFloatVec, ConstantValue, ConversionData, ParameterMeta};
+use crate::parameters::{ConstantFloatVec, ConstantValue, ConversionData};
 use crate::v1::{TryFromV1, TryIntoV2, try_convert_values};
 #[cfg(feature = "core")]
 use pywr_core::parameters::{ParameterName, WeeklyProfileError, WeeklyProfileValues};
@@ -25,7 +26,7 @@ use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumString, IntoStaticS
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct DailyProfileParameter {
-    pub meta: ParameterMeta,
+    pub meta: NamedMeta,
     pub values: ConstantFloatVec,
 }
 
@@ -73,7 +74,7 @@ impl TryFromV1<DailyProfileParameterV1> for DailyProfileParameter {
         parent_node: Option<&str>,
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: ParameterMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
+        let meta: NamedMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
 
         let values = try_convert_values(&meta.name, v1.values, v1.external, v1.table_ref)?;
 
@@ -102,7 +103,7 @@ impl From<MonthlyInterpDay> for pywr_core::parameters::MonthlyInterpDay {
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct MonthlyProfileParameter {
-    pub meta: ParameterMeta,
+    pub meta: NamedMeta,
     pub values: ConstantFloatVec,
     pub interp_day: Option<MonthlyInterpDay>,
 }
@@ -154,7 +155,7 @@ impl TryFromV1<MonthlyProfileParameterV1> for MonthlyProfileParameter {
         parent_node: Option<&str>,
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: ParameterMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
+        let meta: NamedMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
         let interp_day = v1.interp_day.map(|id| id.into());
 
         let values = try_convert_values(&meta.name, v1.values.map(|v| v.to_vec()), v1.external, v1.table_ref)?;
@@ -172,7 +173,7 @@ impl TryFromV1<MonthlyProfileParameterV1> for MonthlyProfileParameter {
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct UniformDrawdownProfileParameter {
-    pub meta: ParameterMeta,
+    pub meta: NamedMeta,
     pub reset_day: Option<ConstantValue<u64>>,
     pub reset_month: Option<ConstantValue<u64>>,
     pub residual_days: Option<ConstantValue<u64>>,
@@ -226,7 +227,7 @@ impl TryFromV1<UniformDrawdownProfileParameterV1> for UniformDrawdownProfilePara
         parent_node: Option<&str>,
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: ParameterMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
+        let meta: NamedMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
 
         Ok(Self {
             meta,
@@ -379,7 +380,7 @@ impl From<RbfProfileVariableSettings> for pywr_core::parameters::RbfProfileVaria
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct RbfProfileParameter {
-    pub meta: ParameterMeta,
+    pub meta: NamedMeta,
     /// The points are the profile positions defined by an ordinal day of the year and a value.
     /// Radial basis function interpolation is used to create a daily profile from these points.
     pub points: Vec<(u32, f64)>,
@@ -419,7 +420,7 @@ impl TryFromV1<RbfProfileParameterV1> for RbfProfileParameter {
         parent_node: Option<&str>,
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: ParameterMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
+        let meta: NamedMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
 
         let points = v1.days_of_year.into_iter().zip(v1.values).collect();
 
@@ -588,7 +589,7 @@ impl From<WeeklyInterpDay> for pywr_core::parameters::WeeklyInterpDay {
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct WeeklyProfileParameter {
-    pub meta: ParameterMeta,
+    pub meta: NamedMeta,
     pub values: ConstantFloatVec,
     pub interp_day: Option<WeeklyInterpDay>,
 }
@@ -629,7 +630,7 @@ impl TryFromV1<WeeklyProfileParameterV1> for WeeklyProfileParameter {
         parent_node: Option<&str>,
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: ParameterMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
+        let meta: NamedMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
 
         let values = try_convert_values(&meta.name, v1.values, v1.external, v1.table_ref)?;
 
@@ -657,7 +658,7 @@ impl TryFromV1<WeeklyProfileParameterV1> for WeeklyProfileParameter {
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct DirunalProfileParameter {
-    pub meta: ParameterMeta,
+    pub meta: NamedMeta,
     pub values: ConstantFloatVec,
 }
 
@@ -691,7 +692,6 @@ impl DirunalProfileParameter {
 mod tests {
     use super::*;
     use crate::network::NetworkSchema;
-    use crate::parameters::ParameterMeta;
     use crate::parameters::{ConstantFloatVec, Parameter};
     use pywr_core::models::ModelDomain;
     use pywr_core::network::NetworkBuilder;
@@ -699,7 +699,7 @@ mod tests {
 
     #[test]
     fn add_to_model_with_366_values() {
-        let meta = ParameterMeta {
+        let meta = NamedMeta {
             name: "test".to_string(),
             comment: None,
             tags: Default::default(),
@@ -720,7 +720,7 @@ mod tests {
 
     #[test]
     fn add_to_model_with_365_values_inserts_feb_29() {
-        let meta = ParameterMeta {
+        let meta = NamedMeta {
             name: "test".to_string(),
             comment: None,
             tags: Default::default(),
@@ -743,7 +743,7 @@ mod tests {
 
     #[test]
     fn add_to_model_with_invalid_length_returns_error() {
-        let meta = ParameterMeta {
+        let meta = NamedMeta {
             name: "test".to_string(),
             comment: None,
             tags: Default::default(),

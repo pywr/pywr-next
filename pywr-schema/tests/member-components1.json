@@ -1,0 +1,185 @@
+{
+  "metadata": {
+    "title": "Members naming optional parts",
+    "description": "An aggregated node whose members name every part that a node builds only when a field is set: a reservoir's compensation, rainfall, evaporation and leakage, and the losses of a water treatment works, a river and a loss link.",
+    "minimum_version": "0.1"
+  },
+  "time": {
+    "start": "2015-01-01",
+    "end": "2015-01-06",
+    "timestep": {
+      "type": "Days",
+      "days": 1
+    }
+  },
+  "network": {
+    "nodes": [
+      {
+        "meta": {
+          "name": "Catchment"
+        },
+        "type": "Catchment",
+        "flow": {
+          "type": "Literal",
+          "value": 15
+        }
+      },
+      {
+        "meta": {
+          "name": "Reservoir"
+        },
+        "type": "Reservoir",
+        "max_volume": {
+          "type": "Literal",
+          "value": 1000
+        },
+        "initial_volume": {
+          "type": "Proportional",
+          "proportion": 1.0
+        },
+        "compensation": {
+          "type": "Literal",
+          "value": 1.0
+        },
+        "spill": "OutputNode",
+        "surface_area": {
+          "data": {
+            "Polynomial": [0.0, 0.01]
+          },
+          "is_storage_proportional": false
+        },
+        "rainfall": {
+          "data": {
+            "type": "Literal",
+            "value": 1.0
+          }
+        },
+        "evaporation": {
+          "data": {
+            "type": "Literal",
+            "value": 1.0
+          }
+        },
+        "leakage": {
+          "loss": {
+            "type": "Literal",
+            "value": 1.0
+          }
+        }
+      },
+      {
+        "meta": {
+          "name": "Works"
+        },
+        "type": "WaterTreatmentWorks",
+        "loss_factor": {
+          "type": "Net",
+          "factor": {
+            "type": "Literal",
+            "value": 0.1
+          }
+        }
+      },
+      {
+        "meta": {
+          "name": "River"
+        },
+        "type": "River",
+        "loss_factor": {
+          "type": "Gross",
+          "factor": {
+            "type": "Literal",
+            "value": 0.1
+          }
+        }
+      },
+      {
+        "meta": {
+          "name": "Loss link"
+        },
+        "type": "LossLink",
+        "loss_factor": {
+          "type": "Gross",
+          "factor": {
+            "type": "Literal",
+            "value": 0.1
+          }
+        }
+      },
+      {
+        "meta": {
+          "name": "Demand"
+        },
+        "type": "Output",
+        "max_flow": {
+          "type": "Literal",
+          "value": 10.0
+        },
+        "cost": {
+          "type": "Literal",
+          "value": -10.0
+        }
+      }
+    ],
+    "edges": [
+      {
+        "from_node": "Catchment",
+        "to_node": "Reservoir"
+      },
+      {
+        "from_node": "Reservoir",
+        "to_node": "Works"
+      },
+      {
+        "from_node": "Works",
+        "to_node": "River"
+      },
+      {
+        "from_node": "River",
+        "to_node": "Loss link"
+      },
+      {
+        "from_node": "Loss link",
+        "to_node": "Demand"
+      }
+    ],
+    "virtual_nodes": [
+      {
+        "meta": {
+          "name": "Optional parts"
+        },
+        "type": "Aggregated",
+        "nodes": [
+          {
+            "name": "Reservoir",
+            "component": "Compensation"
+          },
+          {
+            "name": "Reservoir",
+            "component": "Rainfall"
+          },
+          {
+            "name": "Reservoir",
+            "component": "Evaporation"
+          },
+          {
+            "name": "Reservoir",
+            "component": "Loss"
+          },
+          {
+            "name": "Works",
+            "component": "Loss"
+          },
+          {
+            "name": "River",
+            "component": "Loss"
+          },
+          {
+            "name": "Loss link",
+            "component": "Loss"
+          }
+        ]
+      }
+    ]
+  }
+}

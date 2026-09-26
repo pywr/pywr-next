@@ -1,9 +1,10 @@
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
+use crate::meta::NamedMeta;
 use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::network::LoadArgs;
-use crate::parameters::{ParameterMeta, ParameterPhase};
+use crate::parameters::ParameterPhase;
 #[cfg(feature = "core")]
 use pywr_core::parameters::ParameterName;
 use pywr_schema_macros::PywrVisitAll;
@@ -33,7 +34,7 @@ use schemars::JsonSchema;
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct DifferenceParameter {
-    pub meta: ParameterMeta,
+    pub meta: NamedMeta,
     pub phase: ParameterPhase,
     pub a: Metric,
     pub b: Metric,
@@ -50,7 +51,7 @@ impl DifferenceParameter {
         parent: Option<&str>,
     ) -> Result<(), SchemaError> {
         let name = ParameterName::new(&self.meta.name, parent);
-        let a = self.a.load(network, args, None)?;
+        let a = self.a.load(network, args, parent)?;
         let b = self.b.load(network, args, parent)?;
 
         let mut builder = match self.phase {

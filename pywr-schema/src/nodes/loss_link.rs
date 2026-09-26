@@ -20,6 +20,7 @@ use pywr_schema_macros::PywrVisitAll;
 use pywr_schema_macros::skip_serializing_none;
 use pywr_v1_schema::nodes::LossLinkNode as LossLinkNodeV1;
 use schemars::JsonSchema;
+use strum::IntoEnumIterator;
 use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumString, IntoStaticStr};
 
 /// The type of loss factor applied.
@@ -133,6 +134,13 @@ impl LossLinkNode {
 
     pub fn default_component(&self) -> LossLinkNodeComponent {
         Self::DEFAULT_COMPONENT
+    }
+
+    pub(crate) fn built_components(&self) -> impl Iterator<Item = LossLinkNodeComponent> + '_ {
+        LossLinkNodeComponent::iter().filter(|component| match component {
+            LossLinkNodeComponent::Inflow | LossLinkNodeComponent::Outflow => true,
+            LossLinkNodeComponent::Loss => self.loss_factor.is_some(),
+        })
     }
 }
 

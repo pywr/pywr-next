@@ -13,6 +13,7 @@ use crate::{node_attribute_subset_enum, node_component_subset_enum};
 use pywr_core::{agg_funcs::AggFuncF64, metric::UnresolvedMetricF64, node::UnresolvedNode, parameters::ParameterName};
 use pywr_schema_macros::{PywrVisitAll, skip_serializing_none};
 use schemars::JsonSchema;
+use strum::IntoEnumIterator;
 use strum_macros::{Display, EnumIter};
 
 /// The type of spill node.
@@ -304,6 +305,15 @@ impl ReservoirNode {
 
     pub fn default_component(&self) -> ReservoirNodeComponent {
         Self::DEFAULT_COMPONENT
+    }
+
+    pub(crate) fn built_components(&self) -> impl Iterator<Item = ReservoirNodeComponent> + '_ {
+        ReservoirNodeComponent::iter().filter(|component| match component {
+            ReservoirNodeComponent::Loss => self.leakage.is_some(),
+            ReservoirNodeComponent::Compensation => self.compensation.is_some(),
+            ReservoirNodeComponent::Rainfall => self.rainfall.is_some() && self.surface_area.is_some(),
+            ReservoirNodeComponent::Evaporation => self.evaporation.is_some() && self.surface_area.is_some(),
+        })
     }
 }
 

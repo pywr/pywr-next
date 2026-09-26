@@ -1,11 +1,12 @@
 use crate::error::ComponentConversionError;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
+use crate::meta::NamedMeta;
 use crate::metric::{Metric, NodeAttrReference};
 #[cfg(feature = "core")]
 use crate::network::LoadArgs;
 use crate::nodes::NodeAttribute;
-use crate::parameters::{ConversionData, ParameterMeta, ParameterPhase};
+use crate::parameters::{ConversionData, ParameterPhase};
 use crate::v1::{TryFromV1, TryIntoV2};
 #[cfg(feature = "core")]
 use pywr_core::parameters::ParameterName;
@@ -17,7 +18,7 @@ use schemars::JsonSchema;
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct Polynomial1DParameter {
-    pub meta: ParameterMeta,
+    pub meta: NamedMeta,
     pub phase: ParameterPhase,
     pub metric: Metric,
     pub coefficients: Vec<f64>,
@@ -38,7 +39,7 @@ impl Polynomial1DParameter {
         args: &LoadArgs,
         parent: Option<&str>,
     ) -> Result<(), SchemaError> {
-        let metric = self.metric.load(network, args, None)?;
+        let metric = self.metric.load(network, args, parent)?;
         let name = ParameterName::new(&self.meta.name, parent);
         let coefficients = self.coefficients.clone();
         let scale = self.scale.unwrap_or(Self::DEFAULT_SCALE);
