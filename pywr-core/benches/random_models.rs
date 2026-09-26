@@ -55,7 +55,7 @@ impl<'m> ModelExperiment<'m> {
                     || {
                         // Do the setup here outside of the time-step loop
                         let state = self.model.setup(solver_config).expect("Failed to setup the model.");
-                        let timings = ModelTimings::new_with_component_timings(self.model.network());
+                        let timings = ModelTimings::new_with_component_timings(self.model);
                         (state, solver_config, timings)
                     },
                     |(mut state, solver_config, mut timings)| {
@@ -86,7 +86,7 @@ impl<'m> ModelExperiment<'m> {
                             .model
                             .setup_multi_scenario(solver_config)
                             .expect("Failed to setup the model.");
-                        let timings = ModelTimings::new_with_component_timings(self.model.network());
+                        let timings = ModelTimings::new_with_component_timings(self.model);
                         (state, solver_config, timings)
                     },
                     |(mut state, solver_config, mut timings)| {

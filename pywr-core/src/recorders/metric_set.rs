@@ -40,6 +40,16 @@ impl OutputMetric {
     pub fn sub_type(&self) -> Option<&str> {
         self.sub_type.as_deref()
     }
+
+    /// Get a fully qualified name for the metric that includes the type and subtype (if any) and
+    /// attribute.
+    pub fn fully_qualified_name(&self) -> String {
+        if let Some(sub_type) = &self.sub_type {
+            format!("{}.{}.{}.{}", self.ty, sub_type, self.name, self.attribute)
+        } else {
+            format!("{}.{}.{}", self.ty, self.name, self.attribute)
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -92,7 +102,7 @@ impl MetricSetState {
 
 #[derive(Debug, Error)]
 pub enum MetricSetSaveError {
-    #[error("Metric error: {0}")]
+    #[error("Metric error.")]
     MetricF64Error(#[from] MetricF64Error),
 }
 
@@ -202,7 +212,7 @@ impl MetricSet {
 
 #[derive(Error, Debug)]
 pub enum MetricSetBuilderError {
-    #[error("Could not resolve output f64 metric `{name}`: {source}")]
+    #[error("Could not resolve output f64 metric `{name}`.")]
     ResolveMetricF64Error {
         name: String,
         #[source]

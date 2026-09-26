@@ -11,8 +11,10 @@ pub enum EdgeError {
     FromNodeIndexNotFound(NodeIndex),
     #[error("To node index not found: {0}")]
     ToNodeIndexNotFound(NodeIndex),
-    #[error("Node error: {0}")]
-    NodeError(#[from] Box<NodeError>),
+    #[error("Failed to get cost for 'from' node.")]
+    FromNodeCostError(#[source] Box<NodeError>),
+    #[error("Failed to get cost for 'to' node.")]
+    ToNodeCostError(#[source] Box<NodeError>),
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -53,10 +55,10 @@ impl Edge {
 
         let from_cost = from_node
             .get_outgoing_cost(network, state)
-            .map_err(|e| EdgeError::NodeError(Box::new(e)))?;
+            .map_err(|e| EdgeError::FromNodeCostError(Box::new(e)))?;
         let to_cost = to_node
             .get_incoming_cost(network, state)
-            .map_err(|e| EdgeError::NodeError(Box::new(e)))?;
+            .map_err(|e| EdgeError::ToNodeCostError(Box::new(e)))?;
 
         Ok(from_cost + to_cost)
     }

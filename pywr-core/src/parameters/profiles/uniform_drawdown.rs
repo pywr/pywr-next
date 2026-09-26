@@ -79,18 +79,13 @@ pub struct UniformDrawdownProfileParameterBuilder {
 }
 
 impl UniformDrawdownProfileParameterBuilder {
-    pub fn new(name: ParameterName, reset_day: i8, reset_month: i8) -> Self {
+    pub fn new(name: ParameterName, reset_day: i8, reset_month: i8, residual_days: u8) -> Self {
         Self {
             meta: ParameterMeta::new(name),
-            residual_days: 0,
+            residual_days,
             reset_month,
             reset_day,
         }
-    }
-
-    pub fn residual_days(&mut self, residual_days: u8) -> &mut Self {
-        self.residual_days = residual_days;
-        self
     }
 }
 

@@ -12,6 +12,7 @@ use strum_macros::{Display, EnumIter};
 
 #[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Debug, Default, Clone, JsonSchema, PywrVisitPaths)]
+#[serde(deny_unknown_fields)]
 pub struct MemoryAggregation {
     pub time: Option<AggFunc>,
     pub scenario: Option<AggFunc>,
@@ -22,8 +23,8 @@ pub struct MemoryAggregation {
 impl MemoryAggregation {
     fn load(&self, data_path: Option<&Path>) -> Result<pywr_core::recorders::Aggregation, SchemaError> {
         Ok(pywr_core::recorders::Aggregation::new(
-            self.time.as_ref().map(|f| f.load(data_path)).transpose()?,
             self.scenario.as_ref().map(|f| f.load(data_path)).transpose()?,
+            self.time.as_ref().map(|f| f.load(data_path)).transpose()?,
             self.metric.as_ref().map(|f| f.load(data_path)).transpose()?,
         ))
     }
@@ -54,6 +55,10 @@ pub struct MemoryOutput {
     pub order: Option<MemoryAggregationOrder>,
 }
 
+impl MemoryOutput {
+    pub const DEFAULT_ORDER: MemoryAggregationOrder = MemoryAggregationOrder::MetricTimeScenario;
+}
+
 /// Written out rather than derived: a derive would walk `metric_set` as a plain `String`.
 impl VisitReferences for MemoryOutput {
     fn visit_references<F: FnMut(Reference<'_>)>(&self, visitor: &mut F) {
@@ -76,7 +81,7 @@ impl MemoryOutput {
             &self.name,
             &self.metric_set,
             self.aggregation.clone().unwrap_or_default().load(data_path)?,
-            self.order.map(|o| o.into()).unwrap_or_default(),
+            self.order.unwrap_or(Self::DEFAULT_ORDER).into(),
         );
 
         network.recorder(Box::new(recorder));
@@ -131,6 +136,7 @@ mod tests {
             .aggregated_value()
             .expect("No results found");
 
-        assert_approx_eq!(f64, result, 91.0);
+        // 91 in each of the two scenarios, summed by the scenario function.
+        assert_approx_eq!(f64, result, 182.0);
     }
 }

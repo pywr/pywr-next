@@ -1,0 +1,198 @@
+use crate::event::LogLevel;
+use jiff::civil::DateTime;
+use pywr_runner_protocol::v1;
+use std::convert::Infallible;
+use std::num::NonZeroUsize;
+use std::path::PathBuf;
+
+/// Represents a command to the engine.
+#[derive(Debug, strum_macros::EnumDiscriminants, strum_macros::Display)]
+#[strum_discriminants(name(EngineCommandKind))]
+#[strum(serialize_all = "kebab-case")]
+pub enum EngineCommand {
+    Initialize { request: Box<InitialiseRequest> },
+    Step,
+    RunUntil { datetime: DateTime },
+    RunToEnd,
+    Pause,
+    Cancel,
+    Ping { nonce: u64 },
+    Shutdown,
+}
+
+impl EngineCommand {
+    pub fn kind(&self) -> EngineCommandKind {
+        self.into()
+    }
+}
+
+#[allow(clippy::infallible_try_from)]
+impl TryFrom<v1::ClientCommand> for EngineCommand {
+    type Error = Infallible;
+
+    fn try_from(cmd: v1::ClientCommand) -> Result<Self, Self::Error> {
+        let cmd = match cmd {
+            v1::ClientCommand::Step => EngineCommand::Step,
+            v1::ClientCommand::RunUntil { datetime } => EngineCommand::RunUntil { datetime },
+            v1::ClientCommand::RunToEnd => EngineCommand::RunToEnd,
+            v1::ClientCommand::Pause => EngineCommand::Pause,
+            v1::ClientCommand::Initialise { request } => EngineCommand::Initialize {
+                request: Box::new((*request).try_into()?),
+            },
+            v1::ClientCommand::Cancel => EngineCommand::Cancel,
+
+            v1::ClientCommand::Ping { nonce } => EngineCommand::Ping { nonce },
+            v1::ClientCommand::Shutdown => EngineCommand::Shutdown,
+        };
+
+        Ok(cmd)
+    }
+}
+
+#[derive(Debug)]
+pub struct InitialiseRequest {
+    pub run_name: String,
+
+    // Stable wire representation, not a ModelSchema Rust value.
+    pub model: ModelDocument,
+
+    pub data_path: Option<PathBuf>,
+    pub output_path: Option<PathBuf>,
+    pub log_level: Option<LogLevel>,
+
+    pub solver: SolverConfiguration,
+    pub result_options: ResultOptions,
+}
+
+#[allow(clippy::infallible_try_from)]
+impl TryFrom<v1::InitialiseRequest> for InitialiseRequest {
+    type Error = Infallible;
+
+    fn try_from(req: v1::InitialiseRequest) -> Result<Self, Self::Error> {
+        Ok(InitialiseRequest {
+            run_name: req.run_name,
+            model: req.model.try_into()?,
+            output_path: req.output_path,
+            data_path: req.data_path,
+            log_level: req.log_level.map(TryInto::try_into).transpose()?,
+            solver: req.solver.try_into()?,
+            result_options: req.result_options.try_into()?,
+        })
+    }
+}
+
+#[derive(Debug)]
+pub enum ModelDocument {
+    Json(serde_json::Value),
+}
+
+#[allow(clippy::infallible_try_from)]
+impl TryFrom<v1::ModelDocument> for ModelDocument {
+    type Error = Infallible;
+
+    fn try_from(doc: v1::ModelDocument) -> Result<Self, Self::Error> {
+        let doc = match doc {
+            v1::ModelDocument::Json(json) => ModelDocument::Json(json),
+        };
+
+        Ok(doc)
+    }
+}
+#[derive(Debug, Clone, Copy)]
+pub struct SolverConfiguration {
+    pub solver: Solver,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum Solver {
+    Clp,
+    Cbc,
+    Highs,
+    Microlp,
+}
+
+#[allow(clippy::infallible_try_from)]
+impl TryFrom<v1::SolverConfiguration> for SolverConfiguration {
+    type Error = Infallible;
+
+    fn try_from(config: v1::SolverConfiguration) -> Result<Self, Self::Error> {
+        let solver = match config.solver {
+            v1::Solver::Clp => Solver::Clp,
+            v1::Solver::Cbc => Solver::Cbc,
+            v1::Solver::Highs => Solver::Highs,
+            v1::Solver::Microlp => Solver::Microlp,
+        };
+        Ok(SolverConfiguration { solver })
+    }
+}
+#[derive(Debug)]
+pub struct ResultOptions {
+    pub all_nodes_metric_set: Option<AddNodesMetricSet>,
+    pub all_edges_metric_set: Option<AddEdgesMetricSet>,
+    pub clear_existing_outputs: bool,
+    pub arrow_stream: Option<ArrowStreamOptions>,
+}
+
+#[allow(clippy::infallible_try_from)]
+impl TryFrom<v1::ResultOptions> for ResultOptions {
+    type Error = Infallible;
+
+    fn try_from(options: v1::ResultOptions) -> Result<Self, Self::Error> {
+        Ok(ResultOptions {
+            all_nodes_metric_set: options.all_nodes_metric_set.map(|set| set.try_into()).transpose()?,
+            all_edges_metric_set: options.all_edges_metric_set.map(|set| set.try_into()).transpose()?,
+            clear_existing_outputs: options.clear_existing_outputs,
+            arrow_stream: options.arrow_stream.map(TryInto::try_into).transpose()?,
+        })
+    }
+}
+
+#[derive(Debug)]
+pub struct AddNodesMetricSet {
+    pub name: String,
+}
+
+#[allow(clippy::infallible_try_from)]
+impl TryFrom<v1::AddNodesMetricSet> for AddNodesMetricSet {
+    type Error = Infallible;
+
+    fn try_from(set: v1::AddNodesMetricSet) -> Result<Self, Self::Error> {
+        Ok(AddNodesMetricSet { name: set.name })
+    }
+}
+
+#[derive(Debug)]
+pub struct AddEdgesMetricSet {
+    pub name: String,
+}
+
+#[allow(clippy::infallible_try_from)]
+impl TryFrom<v1::AddEdgesMetricSet> for AddEdgesMetricSet {
+    type Error = Infallible;
+
+    fn try_from(set: v1::AddEdgesMetricSet) -> Result<Self, Self::Error> {
+        Ok(AddEdgesMetricSet { name: set.name })
+    }
+}
+
+#[derive(Debug)]
+pub struct ArrowStreamOptions {
+    pub name: String,
+    pub filename: PathBuf,
+    pub metric_set: String,
+    pub batch_size: NonZeroUsize,
+}
+
+#[allow(clippy::infallible_try_from)]
+impl TryFrom<v1::ArrowStreamOptions> for ArrowStreamOptions {
+    type Error = Infallible;
+
+    fn try_from(options: v1::ArrowStreamOptions) -> Result<Self, Self::Error> {
+        Ok(ArrowStreamOptions {
+            name: options.name,
+            filename: options.filename,
+            metric_set: options.metric_set,
+            batch_size: options.batch_size,
+        })
+    }
+}

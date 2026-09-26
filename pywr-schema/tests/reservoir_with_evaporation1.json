@@ -1,0 +1,118 @@
+{
+  "metadata": {
+    "title": "Reservoir node with evaporation",
+    "description": "A test of the ReservoirNode with evaporation from a surface area that varies with the volume. Inflow matches demand, and evaporation takes half the volume each day.",
+    "minimum_version": "0.1"
+  },
+  "time": {
+    "start": "2015-01-01",
+    "end": "2015-01-06",
+    "timestep": {
+      "type": "Days",
+      "days": 1
+    }
+  },
+  "network": {
+    "nodes": [
+      {
+        "meta": {
+          "name": "Catchment"
+        },
+        "type": "Catchment",
+        "flow": {
+          "type": "Literal",
+          "value": 10
+        }
+      },
+      {
+        "meta": {
+          "name": "Reservoir"
+        },
+        "type": "Reservoir",
+        "max_volume": {
+          "type": "Literal",
+          "value": 1000
+        },
+        "cost": {
+          "type": "Literal",
+          "value": -1.0
+        },
+        "initial_volume": {
+          "type": "Proportional",
+          "proportion": 1.0
+        },
+        "surface_area": {
+          "data": {
+            "Polynomial": [0.0, 0.5]
+          },
+          "is_storage_proportional": false
+        },
+        "evaporation": {
+          "data": {
+            "type": "Literal",
+            "value": 1.0
+          },
+          "cost": {
+            "type": "Literal",
+            "value": -5.0
+          }
+        }
+      },
+      {
+        "meta": {
+          "name": "Demand"
+        },
+        "type": "Output",
+        "max_flow": {
+          "type": "Literal",
+          "value": 10.0
+        },
+        "cost": {
+          "type": "Literal",
+          "value": -10.0
+        }
+      }
+    ],
+    "edges": [
+      {
+        "from_node": "Catchment",
+        "to_node": "Reservoir"
+      },
+      {
+        "from_node": "Reservoir",
+        "to_node": "Demand"
+      }
+    ],
+    "metric_sets": [
+      {
+        "name": "nodes",
+        "metrics": [
+          {
+            "type": "Node",
+            "name": "Reservoir"
+          },
+          {
+            "type": "Node",
+            "name": "Reservoir",
+            "attribute": "Evaporation"
+          },
+          {
+            "type": "Node",
+            "name": "Demand"
+          }
+        ]
+      }
+    ],
+    "outputs": [
+      {
+        "name": "node-outputs",
+        "type": "CSV",
+        "format": "Long",
+        "filename": "reservoir_with_evaporation1-expected.csv",
+        "metric_set": [
+          "nodes"
+        ]
+      }
+    ]
+  }
+}

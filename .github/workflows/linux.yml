@@ -20,6 +20,8 @@ jobs:
       - uses: actions/checkout@v7
         with:
           submodules: true
+      - name: Cargo format
+        run: cargo fmt --all -- --check
       - uses: swatinem/rust-cache@v2
       - name: "Set up Python"
         uses: actions/setup-python@v7
@@ -36,7 +38,7 @@ jobs:
           mkdir bin
           curl -sSL $url | tar -xz --directory=bin
           echo "$(pwd)/bin" >> $GITHUB_PATH
-      - uses: taiki-e/install-action@v2.87.11
+      - uses: taiki-e/install-action@v2.87.15
         with:
           tool: cargo-hack@0.5
       - name: Check (pywr-core)
@@ -46,7 +48,7 @@ jobs:
       - name: Build
         run: cargo build --verbose  --all-features --workspace --exclude pywr-python
       - name: Run tests
-        run: cargo test  --features highs,cbc,microlp,ipm-simd --verbose -- --test-threads=1
+        run: cargo test --all --exclude pywr-python --exclude ipm-ocl --features highs,cbc,microlp,ipm-simd --verbose -- --test-threads=1
       - name: Run mdbook test & build
         run: |
           output=$(mdbook test ./pywr-book 2>&1)

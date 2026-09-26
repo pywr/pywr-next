@@ -385,6 +385,11 @@ pub struct ControlCurvePiecewiseInterpolatedParameter {
     pub maximum: Option<f64>,
 }
 
+impl ControlCurvePiecewiseInterpolatedParameter {
+    pub const DEFAULT_MINIMUM: f64 = 0.0;
+    pub const DEFAULT_MAXIMUM: f64 = 1.0;
+}
+
 #[cfg(feature = "core")]
 impl ControlCurvePiecewiseInterpolatedParameter {
     pub fn add_to_network(
@@ -396,8 +401,8 @@ impl ControlCurvePiecewiseInterpolatedParameter {
         let metric = self.storage_metric.load(network, args, parent)?;
         let name = ParameterName::new(&self.meta.name, parent);
 
-        let maximum = self.maximum.unwrap_or(1.0);
-        let minimum = self.minimum.unwrap_or(0.0);
+        let maximum = self.maximum.unwrap_or(Self::DEFAULT_MAXIMUM);
+        let minimum = self.minimum.unwrap_or(Self::DEFAULT_MINIMUM);
 
         let mut builder = match self.phase {
             ParameterPhase::Before => {

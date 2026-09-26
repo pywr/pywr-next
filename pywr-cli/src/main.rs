@@ -13,6 +13,7 @@ use pywr_core::solvers::{MicroLpSolverSettings, MicroLpSolverSettingsBuilder};
 #[cfg(feature = "ipm-simd")]
 use pywr_core::solvers::{SimdIpmSolverSettings, SimdIpmSolverSettingsBuilder};
 use pywr_core::test_utils::make_random_model_builder;
+use pywr_runner_service::RunnerServiceConfig;
 use pywr_schema::{ComponentConversionError, ModelSchema, MultiNetworkModelSchema, NetworkSchema};
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
@@ -55,6 +56,14 @@ impl Display for Solver {
             Solver::Microlp => write!(f, "microlp"),
         }
     }
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum)]
+enum RunServerMode {
+    /// Listen for connections on a namespaced local socket.
+    LocalSocket,
+    /// Serve one framed connection using process stdin and stdout.
+    Stdio,
 }
 
 #[derive(Parser)]
@@ -126,9 +135,20 @@ enum Commands {
         /// Path to save the JSON schema.
         out: PathBuf,
     },
+    /// Run the Pywr model runner service over a local socket or standard I/O.
+    RunServer {
+        /// IPC transport to use.
+        #[arg(long, value_enum, default_value_t = RunServerMode::LocalSocket)]
+        mode: RunServerMode,
+        /// Portable local-socket namespace name.
+        ///
+        /// This option applies only when `--mode local-socket` is selected.
+        #[arg(long, default_value = "pywr-runner")]
+        socket_name: String,
+    },
 }
 
-fn init_logger(debug: bool) {
+fn build_logger(debug: bool) -> env_logger::Logger {
     let mut builder = env_logger::Builder::new();
 
     builder.format_timestamp_micros().format_level(true);
@@ -140,17 +160,20 @@ fn init_logger(debug: bool) {
     };
 
     builder
+        .target(env_logger::Target::Stderr)
         .filter_module("pywr_v1_schema", level)
         .filter_module("pywr_core", level)
         .filter_module("pywr_schema", level)
+        .filter_module("pywr_runner_service", level)
         .filter_module("pywr_cli", level);
 
-    builder.init();
+    builder.build()
 }
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
-    init_logger(cli.debug);
+    pywr_runner_service::install_log_router_with(Box::new(build_logger(cli.debug)))
+        .map_err(|_| anyhow::anyhow!("a global logger has already been installed"))?;
 
     match &cli.command {
         Commands::Convert {
@@ -188,6 +211,9 @@ fn main() -> Result<()> {
             solver,
         } => run_random(*num_systems, *density, *num_scenarios, solver),
         Commands::ExportSchema { out } => export_schema(out)?,
+        Commands::RunServer { mode, socket_name } => {
+            run_server(*mode, socket_name)?;
+        }
     }
 
     Ok(())
@@ -455,4 +481,48 @@ fn export_schema(out_path: &Path) -> Result<()> {
     .with_context(|| format!("Failed to write file: {out_path:?}",))?;
 
     Ok(())
+}
+
+fn run_server(mode: RunServerMode, socket_name: &str) -> Result<()> {
+    use pywr_runner_service::{RunnerServiceConfigBuilder, run_local_socket_server, run_stdio_server};
+
+    let config: RunnerServiceConfig = RunnerServiceConfigBuilder::new().build();
+
+    match mode {
+        RunServerMode::LocalSocket => {
+            info!("Starting Pywr runner service on socket: {socket_name}");
+            run_local_socket_server(socket_name, config)
+                .with_context(|| "Failed to run Pywr runner service".to_string())?;
+        }
+        RunServerMode::Stdio => {
+            info!("Starting Pywr runner service over standard input/output");
+            run_stdio_server(config).with_context(|| "Failed to run Pywr runner service".to_string())?;
+        }
+    }
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn run_server_mode_defaults_to_local_socket() {
+        let cli = Cli::try_parse_from(["pywr", "run-server"]).unwrap();
+        let Commands::RunServer { mode, socket_name } = cli.command else {
+            panic!("expected run-server command");
+        };
+        assert_eq!(mode, RunServerMode::LocalSocket);
+        assert_eq!(socket_name, "pywr-runner");
+    }
+
+    #[test]
+    fn run_server_accepts_stdio_mode() {
+        let cli = Cli::try_parse_from(["pywr", "run-server", "--mode", "stdio"]).unwrap();
+        let Commands::RunServer { mode, .. } = cli.command else {
+            panic!("expected run-server command");
+        };
+        assert_eq!(mode, RunServerMode::Stdio);
+    }
 }

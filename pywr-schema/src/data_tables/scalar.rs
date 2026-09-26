@@ -148,7 +148,10 @@ fn load_csv_row_col_scalar_table<const R: usize, const C: usize, const N: usize>
     // Const generic expressions are not yet stable, so we use an assert at runtime.
     assert_eq!(R + C, N, "R + C must equal N");
 
-    let file = File::open(path).map_err(|e| TableError::IO(e.to_string()))?;
+    let file = File::open(path).map_err(|source| TableError::IO {
+        path: path.to_path_buf(),
+        source,
+    })?;
     let buf_reader = BufReader::new(file);
     let mut rdr = csv::Reader::from_reader(buf_reader);
 
@@ -157,7 +160,10 @@ fn load_csv_row_col_scalar_table<const R: usize, const C: usize, const N: usize>
     // Each header is a vector of strings, one for each row header
     let mut col_headers: Vec<Vec<String>> = rdr
         .headers()
-        .map_err(|e| TableError::Csv(e.to_string()))?
+        .map_err(|source| TableError::Csv {
+            path: path.to_path_buf(),
+            source,
+        })?
         .iter()
         .skip(C)
         .map(|s| {
@@ -170,14 +176,18 @@ fn load_csv_row_col_scalar_table<const R: usize, const C: usize, const N: usize>
     let mut records = rdr.records();
 
     // Read the next R-1 header rows
-    for _ in 1..R {
+    for r in 1..R {
         let next_headers = records.next();
         if let Some(Ok(record)) = next_headers {
             for (i, header) in record.iter().skip(C).enumerate() {
                 col_headers[i].push(header.to_string());
             }
         } else {
-            return Err(TableError::Csv("Not enough header rows".to_string()));
+            return Err(TableError::NotEnoughHeaderRows {
+                path: path.to_path_buf(),
+                found: r,
+                expected: R,
+            });
         }
     }
 
@@ -190,7 +200,10 @@ fn load_csv_row_col_scalar_table<const R: usize, const C: usize, const N: usize>
         .map(|result| {
             // The iterator yields Result<StringRecord, Error>, so we check the
             // error here.
-            let record = result.map_err(|e| TableError::Csv(e.to_string()))?;
+            let record = result.map_err(|source| TableError::Csv {
+                path: path.to_path_buf(),
+                source,
+            })?;
 
             let key: Vec<_> = (0..C)
                 .map(|i| Ok(record.get(i).ok_or(TableError::KeyParse)?.to_string()))
@@ -232,7 +245,10 @@ fn load_csv_row_col_scalar_table<const R: usize, const C: usize, const N: usize>
 
 /// Load a CSV file with a row-based index of size `N`.
 fn load_csv_rows_scalar_table<const N: usize>(path: &Path) -> Result<ScalarTable<N>, TableError> {
-    let file = File::open(path).map_err(|e| TableError::IO(e.to_string()))?;
+    let file = File::open(path).map_err(|source| TableError::IO {
+        path: path.to_path_buf(),
+        source,
+    })?;
     let buf_reader = BufReader::new(file);
     let mut rdr = csv::Reader::from_reader(buf_reader);
 
@@ -241,7 +257,10 @@ fn load_csv_rows_scalar_table<const N: usize>(path: &Path) -> Result<ScalarTable
         .map(|result| {
             // The iterator yields Result<StringRecord, Error>, so we check the
             // error here.
-            let record = result.map_err(|e| TableError::Csv(e.to_string()))?;
+            let record = result.map_err(|source| TableError::Csv {
+                path: path.to_path_buf(),
+                source,
+            })?;
 
             let key: [String; N] = (0..N)
                 .map(|i| Ok(record.get(i).ok_or(TableError::KeyParse)?.to_string()))
@@ -278,7 +297,10 @@ fn load_csv_rows_scalar_table<const N: usize>(path: &Path) -> Result<ScalarTable
 /// The CSV file should have a header row(s) with the column names.
 /// The rest of the cells should be scalar values.
 fn load_csv_cols_scalar_table<const N: usize>(path: &Path) -> Result<ScalarTable<N>, TableError> {
-    let file = File::open(path).map_err(|e| TableError::IO(e.to_string()))?;
+    let file = File::open(path).map_err(|source| TableError::IO {
+        path: path.to_path_buf(),
+        source,
+    })?;
     let buf_reader = BufReader::new(file);
     let mut rdr = csv::Reader::from_reader(buf_reader);
 
@@ -287,7 +309,10 @@ fn load_csv_cols_scalar_table<const N: usize>(path: &Path) -> Result<ScalarTable
     // Each header is a vector of strings, one for each row header
     let mut col_headers: Vec<Vec<String>> = rdr
         .headers()
-        .map_err(|e| TableError::Csv(e.to_string()))?
+        .map_err(|source| TableError::Csv {
+            path: path.to_path_buf(),
+            source,
+        })?
         .iter()
         .map(|s| {
             let mut h = Vec::with_capacity(N);
@@ -299,14 +324,18 @@ fn load_csv_cols_scalar_table<const N: usize>(path: &Path) -> Result<ScalarTable
     let mut records = rdr.records();
 
     // Read the next N-1 header rows
-    for _ in 1..N {
+    for r in 1..N {
         let next_headers = records.next();
         if let Some(Ok(record)) = next_headers {
             for (i, header) in record.iter().enumerate() {
                 col_headers[i].push(header.to_string());
             }
         } else {
-            return Err(TableError::Csv("Not enough header rows".to_string()));
+            return Err(TableError::NotEnoughHeaderRows {
+                path: path.to_path_buf(),
+                found: r,
+                expected: N,
+            });
         }
     }
 
@@ -314,7 +343,10 @@ fn load_csv_cols_scalar_table<const N: usize>(path: &Path) -> Result<ScalarTable
         .map(|result| {
             // The iterator yields Result<StringRecord, Error>, so we check the
             // error here.
-            let record = result.map_err(|e| TableError::Csv(e.to_string()))?;
+            let record = result.map_err(|source| TableError::Csv {
+                path: path.to_path_buf(),
+                source,
+            })?;
 
             let values: Vec<Option<TableScalarValue>> =
                 record.iter().map(|v| TableScalarValue::from_str(v).ok()).collect();

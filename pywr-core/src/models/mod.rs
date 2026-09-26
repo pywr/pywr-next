@@ -16,10 +16,10 @@ use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum ModelDomainError {
-    #[error("Error in time domain: {0}")]
-    TimestepError(#[from] crate::timestep::TimeDomainBuilderError),
-    #[error("Error in scenario domain: {0}")]
-    ScenarioError(#[from] crate::scenario::ScenarioDomainBuilderError),
+    #[error("Error in time domain.")]
+    TimestepError(#[from] TimeDomainBuilderError),
+    #[error("Error in scenario domain.")]
+    ScenarioError(#[from] ScenarioDomainBuilderError),
 }
 
 #[derive(Debug, Clone)]
@@ -44,9 +44,9 @@ impl ModelDomain {
 
 #[derive(Debug, Error)]
 pub enum ModelDomainBuilderError {
-    #[error("Error building time domain: {0}")]
+    #[error("Error building time domain.")]
     Time(#[from] TimeDomainBuilderError),
-    #[error("Error building scenario domain: {0}")]
+    #[error("Error building scenario domain.")]
     Scenario(#[from] ScenarioDomainBuilderError),
 }
 

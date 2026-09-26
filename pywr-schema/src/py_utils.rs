@@ -46,9 +46,9 @@ impl PythonSource {
             PythonSource::Module { module } => PyModule::import(py, module.as_str()),
             PythonSource::Path { path } => {
                 let path = &make_path(path, data_path);
-                let code = CString::new(std::fs::read_to_string(path).map_err(|error| SchemaError::IO {
+                let code = CString::new(std::fs::read_to_string(path).map_err(|source| SchemaError::IO {
                     path: path.to_path_buf(),
-                    error,
+                    source,
                 })?)
                 .unwrap();
 

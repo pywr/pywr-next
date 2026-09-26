@@ -308,6 +308,21 @@ pub enum Owner<'a> {
     Output(&'a str),
 }
 
+/// The owner's kind and name, without an article so that it can sit anywhere in a sentence:
+/// ``parameter `flow` ``.
+impl std::fmt::Display for Owner<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Node(name) => write!(f, "node `{name}`"),
+            Self::VirtualNode(name) => write!(f, "virtual node `{name}`"),
+            Self::Edge(edge) => write!(f, "edge `{edge}`"),
+            Self::Parameter(name) => write!(f, "parameter `{name}`"),
+            Self::MetricSet(name) => write!(f, "metric set `{name}`"),
+            Self::Output(name) => write!(f, "output `{name}`"),
+        }
+    }
+}
+
 /// A trait for recursively visiting every reference a schema component makes by name.
 ///
 /// It reaches what [`VisitMetrics`] cannot, since an [`IndexMetric`] is not a [`Metric`] and its
@@ -738,6 +753,7 @@ mod tests {
             {
                 "meta": { "name": "p1" },
                 "type": "IndexedArray",
+                "phase": "Before",
                 "metrics": [
                     { "type": "VirtualNode", "name": "virtual-node-metric" },
                     { "type": "Edge", "edge": { "from_node": "metric-edge-from", "to_node": "metric-edge-to" } }
@@ -833,6 +849,7 @@ mod tests {
             {
                 "meta": { "name": "index-holder" },
                 "type": "IndexedArray",
+                "phase": "Before",
                 "metrics": [
                     { "type": "Edge", "edge": { "from_node": "metric-edge-from", "to_node": "metric-edge-to" } }
                 ],

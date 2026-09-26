@@ -21,6 +21,7 @@ from ._pywr import (
     RecorderDoesNotSupportAggregation,
     ScenarioIndex,
     SchemaBuildError,
+    SchemaReadError,
     SetupError,
     StepError,
     Timestep,
@@ -28,13 +29,22 @@ from ._pywr import (
     convert_model_from_v1_json_string,
     export_schema,
 )
+from .arrow import (
+    METRIC_EXTENSION_NAME,
+    MetricColumnExtensionType,
+    MetricColumnMetadata,
+    register_metric_extension_type,
+)
 
 __all__ = [
+    "METRIC_EXTENSION_NAME",
     "AggregationError",
     "ComponentConversionError",
     "ConversionError",
     "FinaliseError",
     "Metric",
+    "MetricColumnExtensionType",
+    "MetricColumnMetadata",
     "Model",
     "ModelResult",
     "ModelSchema",
@@ -50,12 +60,14 @@ __all__ = [
     "RecorderDoesNotSupportAggregation",
     "ScenarioIndex",
     "SchemaBuildError",
+    "SchemaReadError",
     "SetupError",
     "StepError",
     "Timestep",
     "convert_metric_from_v1_json_string",
     "convert_model_from_v1_json_string",
     "export_schema",
+    "register_metric_extension_type",
     "run_from_path",
 ]
 

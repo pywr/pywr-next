@@ -19,13 +19,14 @@ pub mod outputs;
 pub mod parameters;
 mod py_utils;
 pub mod time_series;
+mod util;
 mod v1;
 mod visit;
 
 pub use digest::{Checksum, ChecksumError};
 pub use error::{
     ComponentConversionError, ConversionError, DuplicateNodeName, EdgeProblem, EdgeValidationError, ModelProblem,
-    NetworkProblem, NetworkValidationError, SchemaError, ValidationError,
+    NetworkProblem, NetworkValidationError, ScenarioProblem, ScenarioValidationError, SchemaError, ValidationError,
 };
 pub use model::{ModelSchema, ModelSchemaReadError, MultiNetworkModelSchema};
 #[cfg(feature = "core")]

@@ -20,7 +20,7 @@ pub enum AggregationError {
     AggregationFunctionNotDefined,
     #[error("Aggregation function failed.")]
     AggregationFunctionFailed,
-    #[error("Aggregation function error: {0}")]
+    #[error("Aggregation function error.")]
     AggFuncError(#[from] AggFuncError),
 }
 
@@ -252,9 +252,8 @@ impl RecorderFinalResult for MemoryRecorderResult {
     }
 }
 
-#[derive(Debug, Default, Copy, Clone)]
+#[derive(Debug, Copy, Clone)]
 pub enum AggregationOrder {
-    #[default]
     MetricTimeScenario,
     TimeMetricScenario,
 }

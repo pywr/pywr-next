@@ -1,12 +1,32 @@
 //! Wrapping Pywr errors for use in Python.
+
+use anyhow::anyhow;
 use pyo3::exceptions::PyException;
 use pyo3::{PyErr, create_exception};
 use pywr_core::models::{ModelBuilderError, ModelRunError, MultiNetworkModelBuilderError, MultiNetworkModelRunError};
 use pywr_core::recorders::RecorderAggregationError;
-use pywr_schema::{ModelSchemaBuildError, MultiNetworkModelSchemaBuildError};
+use pywr_schema::{ModelSchemaBuildError, ModelSchemaReadError, MultiNetworkModelSchemaBuildError};
 
 // Base exception for all Pywr errors
 create_exception!(pywr, PywrError, PyException);
+
+pub(crate) struct PyModelSchemaReadError {
+    inner: ModelSchemaReadError,
+}
+
+impl From<ModelSchemaReadError> for PyModelSchemaReadError {
+    fn from(error: ModelSchemaReadError) -> Self {
+        PyModelSchemaReadError { inner: error }
+    }
+}
+
+create_exception!(pywr, SchemaReadError, PywrError);
+
+impl From<PyModelSchemaReadError> for PyErr {
+    fn from(error: PyModelSchemaReadError) -> Self {
+        PyErr::new::<SchemaReadError, _>(format!("{:?}", anyhow!(error.inner)))
+    }
+}
 
 pub(crate) struct PyModelSchemaBuildError {
     inner: ModelSchemaBuildError,
@@ -22,7 +42,7 @@ create_exception!(pywr, SchemaBuildError, PywrError);
 
 impl From<PyModelSchemaBuildError> for PyErr {
     fn from(error: PyModelSchemaBuildError) -> Self {
-        PyErr::new::<SchemaBuildError, _>(format!("{}", error.inner))
+        PyErr::new::<SchemaBuildError, _>(format!("{:?}", anyhow!(error.inner)))
     }
 }
 
@@ -40,7 +60,7 @@ create_exception!(pywr, MultiNetworkSchemaBuildError, PywrError);
 
 impl From<PyMultiNetworkModelSchemaBuildError> for PyErr {
     fn from(error: PyMultiNetworkModelSchemaBuildError) -> Self {
-        PyErr::new::<MultiNetworkSchemaBuildError, _>(format!("{}", error.inner))
+        PyErr::new::<MultiNetworkSchemaBuildError, _>(format!("{:?}", anyhow!(error.inner)))
     }
 }
 
@@ -59,7 +79,9 @@ create_exception!(pywr, NetworkBuildError, PywrError);
 impl From<PyModelBuilderError> for PyErr {
     fn from(error: PyModelBuilderError) -> Self {
         match error.inner {
-            ModelBuilderError::NetworkBuildError(_) => PyErr::new::<NetworkBuildError, _>(format!("{}", error.inner)),
+            ModelBuilderError::NetworkBuildError(_) => {
+                PyErr::new::<NetworkBuildError, _>(format!("{:?}", anyhow!(error.inner)))
+            }
         }
     }
 }
@@ -81,13 +103,13 @@ impl From<PyMultiNetworkModelBuilderError> for PyErr {
         match error.inner {
             MultiNetworkModelBuilderError::NetworkBuilderError { .. }
             | MultiNetworkModelBuilderError::DuplicateNetworkName { .. } => {
-                PyErr::new::<NetworkBuildError, _>(format!("{}", error.inner))
+                PyErr::new::<NetworkBuildError, _>(format!("{:?}", anyhow!(error.inner)))
             }
             MultiNetworkModelBuilderError::NetworkNotFoundForTransfer { .. }
             | MultiNetworkModelBuilderError::ResolveMetricF64ForTransferError { .. }
             | MultiNetworkModelBuilderError::DuplicateTransferName { .. }
             | MultiNetworkModelBuilderError::TransferToSelf { .. } => {
-                PyErr::new::<NetworkTransferError, _>(format!("{}", error.inner))
+                PyErr::new::<NetworkTransferError, _>(format!("{:?}", anyhow!(error.inner)))
             }
         }
     }
@@ -110,9 +132,9 @@ create_exception!(pywr, FinaliseError, PywrError);
 impl From<PyModelRunError> for PyErr {
     fn from(error: PyModelRunError) -> Self {
         match error.inner {
-            ModelRunError::SetupError(_) => PyErr::new::<SetupError, _>(format!("{}", error.inner)),
-            ModelRunError::StepError(_) => PyErr::new::<StepError, _>(format!("{}", error.inner)),
-            ModelRunError::FinaliseError(_) => PyErr::new::<FinaliseError, _>(format!("{}", error.inner)),
+            ModelRunError::SetupError(_) => PyErr::new::<SetupError, _>(format!("{:?}", anyhow!(error.inner))),
+            ModelRunError::StepError(_) => PyErr::new::<StepError, _>(format!("{:?}", anyhow!(error.inner))),
+            ModelRunError::FinaliseError(_) => PyErr::new::<FinaliseError, _>(format!("{:?}", anyhow!(error.inner))),
         }
     }
 }
@@ -130,9 +152,15 @@ impl From<MultiNetworkModelRunError> for PyMultiNetworkModelRunError {
 impl From<PyMultiNetworkModelRunError> for PyErr {
     fn from(error: PyMultiNetworkModelRunError) -> Self {
         match error.error {
-            MultiNetworkModelRunError::SetupError(_) => PyErr::new::<SetupError, _>(format!("{}", error.error)),
-            MultiNetworkModelRunError::StepError(_) => PyErr::new::<StepError, _>(format!("{}", error.error)),
-            MultiNetworkModelRunError::FinaliseError(_) => PyErr::new::<FinaliseError, _>(format!("{}", error.error)),
+            MultiNetworkModelRunError::SetupError(_) => {
+                PyErr::new::<SetupError, _>(format!("{:?}", anyhow!(error.error)))
+            }
+            MultiNetworkModelRunError::StepError(_) => {
+                PyErr::new::<StepError, _>(format!("{:?}", anyhow!(error.error)))
+            }
+            MultiNetworkModelRunError::FinaliseError(_) => {
+                PyErr::new::<FinaliseError, _>(format!("{:?}", anyhow!(error.error)))
+            }
         }
     }
 }
@@ -154,10 +182,10 @@ impl From<PyRecorderAggregationError> for PyErr {
     fn from(error: PyRecorderAggregationError) -> Self {
         match error.inner {
             RecorderAggregationError::RecorderDoesNotSupportAggregation => {
-                PyErr::new::<RecorderDoesNotSupportAggregation, _>(format!("{}", error.inner))
+                PyErr::new::<RecorderDoesNotSupportAggregation, _>(format!("{:?}", anyhow!(error.inner)))
             }
             RecorderAggregationError::AggregationError { .. } => {
-                PyErr::new::<AggregationError, _>(format!("{}", error.inner))
+                PyErr::new::<AggregationError, _>(format!("{:?}", anyhow!(error.inner)))
             }
         }
     }

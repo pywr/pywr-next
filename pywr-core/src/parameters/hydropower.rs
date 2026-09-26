@@ -13,15 +13,15 @@ use crate::utils::{hydropower_calculation, inverse_hydropower_calculation};
 pub struct HydropowerTargetData {
     pub actual_flow: Option<UnresolvedMetricF64>,
     pub target: Option<UnresolvedMetricF64>,
-    pub elevation: Option<f64>,
-    pub min_head: Option<f64>,
+    pub elevation: f64,
+    pub min_head: f64,
     pub max_flow: Option<UnresolvedMetricF64>,
     pub min_flow: Option<UnresolvedMetricF64>,
-    pub efficiency: Option<f64>,
+    pub efficiency: f64,
     pub water_elevation: Option<UnresolvedMetricF64>,
-    pub water_density: Option<f64>,
-    pub flow_unit_conversion: Option<f64>,
-    pub energy_unit_conversion: Option<f64>,
+    pub water_density: f64,
+    pub flow_unit_conversion: f64,
+    pub energy_unit_conversion: f64,
 }
 
 #[derive(Debug)]
@@ -170,14 +170,14 @@ impl HydropowerTargetParameterBuilder {
             actual_flow: turbine_data.actual_flow,
             target: turbine_data.target,
             water_elevation: turbine_data.water_elevation,
-            turbine_elevation: turbine_data.elevation.unwrap_or(0.0),
-            turbine_min_head: turbine_data.min_head.unwrap_or(0.0),
-            turbine_efficiency: turbine_data.efficiency.unwrap_or(1.0),
+            turbine_elevation: turbine_data.elevation,
+            turbine_min_head: turbine_data.min_head,
+            turbine_efficiency: turbine_data.efficiency,
             max_flow: turbine_data.max_flow,
             min_flow: turbine_data.min_flow,
-            water_density: turbine_data.water_density.unwrap_or(1000.0),
-            flow_unit_conversion: turbine_data.flow_unit_conversion.unwrap_or(1.0),
-            energy_unit_conversion: turbine_data.energy_unit_conversion.unwrap_or(1e-6),
+            water_density: turbine_data.water_density,
+            flow_unit_conversion: turbine_data.flow_unit_conversion,
+            energy_unit_conversion: turbine_data.energy_unit_conversion,
         }
     }
 }

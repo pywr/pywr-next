@@ -46,14 +46,10 @@ pub enum RunDuration {
     Running {
         /// The instant the run was started.
         started: Instant,
-        /// The number of time steps completed so far.
-        timesteps_completed: usize,
     },
     Finished {
         /// The total duration of the run.
         duration: Duration,
-        /// The total number of time steps completed.
-        timesteps_completed: usize,
     },
 }
 
@@ -62,19 +58,6 @@ impl RunDuration {
     pub fn start() -> Self {
         RunDuration::Running {
             started: Instant::now(),
-            timesteps_completed: 0,
-        }
-    }
-
-    /// Increment the number of completed scenarios by `num`.
-    ///
-    /// This has no effect if the run has already finished.
-    pub fn complete_scenarios(&mut self, num: usize) {
-        if let RunDuration::Running {
-            timesteps_completed, ..
-        } = self
-        {
-            *timesteps_completed += num;
         }
     }
 
@@ -82,14 +65,9 @@ impl RunDuration {
     ///
     /// If the timer has already finished this method has no effect.
     pub fn finish(self) -> Self {
-        if let RunDuration::Running {
-            started,
-            timesteps_completed,
-        } = self
-        {
+        if let RunDuration::Running { started } = self {
             RunDuration::Finished {
                 duration: started.elapsed(),
-                timesteps_completed,
             }
         } else {
             self
@@ -105,23 +83,17 @@ impl RunDuration {
     }
 
     /// Returns the speed of the run in terms of time steps per second.
-    pub fn speed(&self) -> f64 {
+    pub fn speed(&self, timesteps_completed: usize) -> f64 {
         match self {
-            RunDuration::Running {
-                started,
-                timesteps_completed,
-            } => *timesteps_completed as f64 / started.elapsed().as_secs_f64(),
-            RunDuration::Finished {
-                duration,
-                timesteps_completed,
-            } => *timesteps_completed as f64 / duration.as_secs_f64(),
+            RunDuration::Running { started, .. } => timesteps_completed as f64 / started.elapsed().as_secs_f64(),
+            RunDuration::Finished { duration } => timesteps_completed as f64 / duration.as_secs_f64(),
         }
     }
 
     /// Prints a summary of the run duration and speed to the log.
-    pub fn print_table(&self) {
+    pub fn print_table(&self, timesteps_completed: usize) {
         info!("{: <24} | {: <10.5} s", "Total", self.total_duration().as_secs_f64());
-        info!("{: <24} | {: <10.5} ts/s", "Speed", self.speed());
+        info!("{: <24} | {: <10.5} ts/s", "Speed", self.speed(timesteps_completed));
     }
 }
 
@@ -160,6 +132,8 @@ impl ComponentTimings {
 /// Collects timing information for a network
 #[derive(Clone)]
 pub struct NetworkTimings {
+    total_step_duration: Duration,
+    timesteps_completed: usize,
     /// Timing information for component calculations.
     component_timings: ComponentTimings,
     recorder_saving: Duration,
@@ -170,6 +144,8 @@ impl NetworkTimings {
     pub fn new_with_component_timings(network: &Network) -> Self {
         let parameter_timings = ParameterTimings::from_collection(&network.parameters);
         Self {
+            total_step_duration: Duration::ZERO,
+            timesteps_completed: 0,
             component_timings: ComponentTimings::new(Some(parameter_timings)),
             recorder_saving: Duration::ZERO,
             solve: SolverTimings::default(),
@@ -178,18 +154,38 @@ impl NetworkTimings {
 
     pub fn new_without_component_timings() -> Self {
         Self {
+            total_step_duration: Duration::ZERO,
+            timesteps_completed: 0,
             component_timings: ComponentTimings::new(None),
             recorder_saving: Duration::ZERO,
             solve: SolverTimings::default(),
         }
     }
 
+    pub fn complete_step(&mut self, step_duration: Duration, num_timesteps: usize) {
+        self.total_step_duration += step_duration;
+        self.timesteps_completed += num_timesteps;
+    }
+
+    pub fn timesteps_completed(&self) -> usize {
+        self.timesteps_completed
+    }
+
+    pub fn total_duration(&self) -> Duration {
+        self.total_step_duration
+    }
+
+    pub fn speed(&self) -> f64 {
+        self.timesteps_completed as f64 / self.total_step_duration.as_secs_f64()
+    }
+
     /// Print a summary of the timings to the log.
-    pub fn print_table(
-        &self,
-        total_duration: f64,
-        network: &Network,
-    ) -> Result<(), ParameterCollectionIdMismatchError> {
+    pub fn print_table(&self, network: &Network) -> Result<(), ParameterCollectionIdMismatchError> {
+        let total_duration = self.total_step_duration.as_secs_f64();
+
+        info!("{: <24} | {: <10.5} s", "Stepping total", total_duration);
+        info!("{: <24} | {: <10.5} ts/s", "Stepping speed", self.speed());
+
         info!(
             "{: <24} | {: <10.5}s ({:5.2}%)",
             "Components calcs",
@@ -215,7 +211,7 @@ impl NetworkTimings {
             "{: <24} | {: <10.5}s ({:5.2}%)",
             "Solver::const update",
             self.solve.update_constraints.as_secs_f64(),
-            100.0 * self.solve.update_constraints.as_secs_f64() / total_duration
+            100.0 * self.solve.update_constraints.as_secs_f64() / total_duration,
         );
 
         info!(
@@ -338,11 +334,11 @@ impl NetworkState {
 
 #[derive(Debug, Error)]
 pub enum NetworkSetupError {
-    #[error("Error setting up recorder `{}`: `{}`", .0.name, .0.source)]
+    #[error(transparent)]
     RecorderSetupError(#[from] NetworkRecorderSetupError),
-    #[error("Error setting up parameters: `{0}`")]
+    #[error(transparent)]
     ParameterSetupError(#[from] ParameterCollectionSetupError),
-    #[error("Error computing constant parameters: `{0}`")]
+    #[error("Error computing constant parameters.")]
     ConstantParameterCalculationError(#[from] ParameterCollectionConstCalculationError),
 }
 
@@ -350,15 +346,15 @@ pub enum NetworkSetupError {
 pub enum NetworkStepError {
     #[error("Aggregated node index not found: {0}")]
     AggregatedNodeIndexNotFound(AggregatedNodeIndex),
-    #[error("Error saving recorder `{}`: `{}`", .0.name, .0.source)]
+    #[error("Error saving recorder.")]
     RecorderSaveError(#[from] NetworkRecorderSaveError),
-    #[error("Error solving time-step: `{0}`")]
+    #[error("Error solving time-step.")]
     SolverError(#[from] SolverSolveError),
-    #[error("Error computing simple parameters: `{0}`")]
+    #[error("Error computing simple parameters.")]
     SimpleParameterCalculationError(#[from] ParameterCollectionSimpleCalculationError),
     #[error("Node index not found: {0}")]
     NodeIndexNotFound(NodeIndex),
-    #[error("Error performing `before` method on node `{name}`: `{source}`")]
+    #[error("Error performing `before` method on node `{name}`.")]
     NodeBeforeError {
         name: String,
         #[source]
@@ -366,7 +362,7 @@ pub enum NetworkStepError {
     },
     #[error("Virtual storage index not found: {0}")]
     VirtualStorageIndexNotFound(VirtualStorageIndex),
-    #[error("Error performing `before` method on virtual storage `{name}`: `{source}`")]
+    #[error("Error performing `before` method on virtual storage `{name}`.")]
     VirtualStorageBeforeError {
         name: String,
         #[source]
@@ -378,9 +374,9 @@ pub enum NetworkStepError {
     ParameterU64IndexNotFound(GeneralParameterIndex<u64>),
     #[error("General parameter Multi index '{0}' not found.")]
     ParameterMultiIndexNotFound(GeneralParameterIndex<MultiValue>),
-    #[error("Error computing general parameters: `{0}`")]
+    #[error("Error computing general parameters.")]
     GeneralParameterCalculationError(#[from] Box<ParameterCollectionGeneralCalculationError>),
-    #[error("Error saving metric set `{name}`: `{source}`")]
+    #[error("Error saving metric set `{name}`.")]
     MetricSetSaveError {
         name: String,
         #[source]
@@ -390,12 +386,12 @@ pub enum NetworkStepError {
 
 #[derive(Debug, Error)]
 pub enum NetworkFinaliseError {
-    #[error("Error finalising recorder `{}`: `{}`", .0.name, .0.source)]
+    #[error("Error finalising recorder.")]
     RecorderFinaliseError(#[from] NetworkRecorderFinaliseError),
 }
 
 #[derive(Error, Debug)]
-#[error("Error setting up recorder `{name}`: `{source}`")]
+#[error("Error setting up recorder `{name}`.")]
 pub struct NetworkRecorderSetupError {
     name: String,
     #[source]
@@ -403,7 +399,7 @@ pub struct NetworkRecorderSetupError {
 }
 
 #[derive(Error, Debug)]
-#[error("Error saving recorder `{name}`: `{source}`")]
+#[error("Error saving recorder `{name}`.")]
 pub struct NetworkRecorderSaveError {
     name: String,
     #[source]
@@ -411,7 +407,7 @@ pub struct NetworkRecorderSaveError {
 }
 
 #[derive(Error, Debug)]
-#[error("Error finalising recorder `{name}`: `{source}`")]
+#[error("Error finalising recorder `{name}`.")]
 pub struct NetworkRecorderFinaliseError {
     name: String,
     #[source]
@@ -420,9 +416,9 @@ pub struct NetworkRecorderFinaliseError {
 
 #[derive(Error, Debug)]
 pub enum NetworkSolverSetupError {
-    #[error("Missing solver features required to run this network")]
+    #[error("Missing solver features required to run this network.")]
     MissingSolverFeatures,
-    #[error("Error setting up solver: {0}")]
+    #[error("Error setting up solver.")]
     SolverSetupError(#[from] SolverSetupError),
 }
 
@@ -432,7 +428,7 @@ pub enum NetworkError {
     NodeNotFound { name: String, sub_name: Option<String> },
     #[error("Node with index `{index}` not found")]
     NodeIndexNotFound { index: NodeIndex },
-    #[error("Error setting attribute `{attribute}` for node `{name}` and sub-name `{}`: {source}", .sub_name.as_deref().unwrap_or("None"))]
+    #[error("Error setting attribute `{attribute}` for node `{name}` and sub-name `{}`.", .sub_name.as_deref().unwrap_or("None"))]
     NodeSetAttributeError {
         name: String,
         sub_name: Option<String>,
@@ -440,16 +436,16 @@ pub enum NetworkError {
         #[source]
         source: Box<NodeError>,
     },
-    #[error("Node with name `{name}` and sub-name `{}` already exists", .sub_name.as_deref().unwrap_or("None"))]
+    #[error("Node with name `{name}` and sub-name `{}` already exists.", .sub_name.as_deref().unwrap_or("None"))]
     NodeAlreadyExists { name: String, sub_name: Option<String> },
-    #[error("Error on node `{name}`: `{source}`")]
+    #[error("Error on node `{name}`.")]
     NodeError {
         name: String,
         sub_name: Option<String>,
         #[source]
         source: Box<NodeError>,
     },
-    #[error("Error in parameter collection: `{0}`")]
+    #[error("Error in parameter collection.")]
     ParameterCollectionError(#[from] ParameterCollectionError),
     #[error("Metric set `{0}` already exists")]
     MetricSetNameAlreadyExists(String),
@@ -463,7 +459,7 @@ pub enum NetworkError {
     ParameterF64IndexNotFound(ParameterIndex<f64>),
     #[error("U64 Parameter with index `{0}` not found")]
     ParameterU64IndexNotFound(ParameterIndex<u64>),
-    #[error("Error with variable parameter `{name}`: {source}")]
+    #[error("Error with variable parameter `{name}`.")]
     VariableParameterError {
         name: ParameterName,
         #[source]
@@ -475,7 +471,7 @@ pub enum NetworkError {
 pub enum NetworkRecorderAggregationError {
     #[error("Recorder `{name}` not found in network")]
     NotFound { name: String },
-    #[error("Error aggregating recorder `{name}`: {source}")]
+    #[error("Error aggregating recorder `{name}`.")]
     AggregationError {
         name: String,
         #[source]
@@ -536,6 +532,13 @@ impl Network {
 
     pub fn edges(&self) -> &[Edge] {
         &self.edges
+    }
+
+    pub fn parameters(&self) -> &ParameterCollection {
+        &self.parameters
+    }
+    pub fn metric_sets(&self) -> &[MetricSet] {
+        &self.metric_sets
     }
 
     pub fn recorders(&self) -> &[Box<dyn recorders::Recorder>] {
@@ -1067,6 +1070,22 @@ impl Network {
                 })?;
         }
         timings.recorder_saving += start.elapsed();
+        Ok(())
+    }
+
+    /// Wait until all recorder output queued by prior saves has been flushed.
+    pub fn flush_recorders(
+        &self,
+        recorder_internal_states: &mut [Option<Box<dyn RecorderInternalState>>],
+    ) -> Result<(), NetworkRecorderSaveError> {
+        for (recorder, internal_state) in self.recorders.iter().zip(recorder_internal_states) {
+            recorder
+                .flush(internal_state)
+                .map_err(|source| NetworkRecorderSaveError {
+                    name: recorder.name().to_string(),
+                    source,
+                })?;
+        }
         Ok(())
     }
 
@@ -1748,7 +1767,7 @@ pub enum NetworkBuildError {
         name: UnresolvedNode,
         virtual_storage: UnresolvedNode,
     },
-    #[error("Error building node `{name}`: {source}")]
+    #[error("Error building node `{name}`.")]
     NodeBuilderError {
         name: UnresolvedNode,
         #[source]
@@ -1756,37 +1775,37 @@ pub enum NetworkBuildError {
     },
     #[error("Cannot connect a node to itself: `{name}`")]
     NodeConnectToSelf { name: UnresolvedNode },
-    #[error("Error building aggregated node `{name}`: {source}")]
+    #[error("Error building aggregated node `{name}`.")]
     AggregatedNodeBuilderError {
         name: UnresolvedNode,
         #[source]
         source: Box<AggregatedNodeBuilderError>,
     },
-    #[error("Error building aggregated storage node `{name}`: {source}")]
+    #[error("Error building aggregated storage node `{name}`.")]
     AggregatedStorageNodeBuilderError {
         name: UnresolvedNode,
         #[source]
         source: Box<AggregatedStorageNodeBuilderError>,
     },
-    #[error("Error building virtual storage node `{name}`: {source}")]
+    #[error("Error building virtual storage node `{name}`.")]
     VirtualStorageNodeBuilderError {
         name: UnresolvedNode,
         #[source]
         source: Box<VirtualStorageNodeBuilderError>,
     },
-    #[error("Error building recorder `{name}`: {source}")]
+    #[error("Error building recorder `{name}`.")]
     RecorderBuilderError {
         name: String,
         #[source]
         source: Box<RecorderBuilderError>,
     },
-    #[error("Error building metric set `{name}`: {source}")]
+    #[error("Error building metric set `{name}`.")]
     MetricSetBuilderError {
         name: String,
         #[source]
         source: Box<MetricSetBuilderError>,
     },
-    #[error("Parameter collection build error: {0}")]
+    #[error("Parameter collection build error.")]
     ParameterCollectionBuildError(#[from] Box<ParameterCollectionBuilderError>),
 }
 

@@ -71,16 +71,15 @@ impl TablesArrayParameter {
             checksum.check(&pth)?;
         }
 
-        let file = hdf5_metno::File::open(pth).map_err(|e| SchemaError::HDF5Error(e.to_string()))?; // open for reading
+        let hdf5_err = |source| SchemaError::HDF5Error {
+            path: pth.clone(),
+            source,
+        };
 
-        let grp = file
-            .group(&self.wh)
-            .map_err(|e| SchemaError::HDF5Error(e.to_string()))?; // find the group
-        let ds = grp
-            .dataset(&self.node)
-            .map_err(|e| SchemaError::HDF5Error(e.to_string()))?; // find the dataset
-
-        let array = ds.read_2d::<f64>().map_err(|e| SchemaError::HDF5Error(e.to_string()))?;
+        let file = hdf5_metno::File::open(&pth).map_err(hdf5_err)?; // open for reading
+        let grp = file.group(&self.wh).map_err(hdf5_err)?; // find the group
+        let ds = grp.dataset(&self.node).map_err(hdf5_err)?; // find the dataset
+        let array = ds.read_2d::<f64>().map_err(hdf5_err)?;
 
         // Create an ArrayParameter using the loaded array.
         if let Some(scenario) = &self.scenario {
