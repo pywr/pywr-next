@@ -311,7 +311,7 @@ impl MaxParameter {
         args: &LoadArgs,
         parent: Option<&str>,
     ) -> Result<(), SchemaError> {
-        let idx = self.parameter.load(network, args, None)?;
+        let idx = self.parameter.load(network, args, parent)?;
         let threshold = self.threshold.unwrap_or(Self::DEFAULT_THRESHOLD);
         let name = ParameterName::new(&self.meta.name, parent);
 
@@ -379,8 +379,8 @@ impl DivisionParameter {
         args: &LoadArgs,
         parent: Option<&str>,
     ) -> Result<(), SchemaError> {
-        let n = self.numerator.load(network, args, None)?;
-        let d = self.denominator.load(network, args, None)?;
+        let n = self.numerator.load(network, args, parent)?;
+        let d = self.denominator.load(network, args, parent)?;
 
         let name = ParameterName::new(&self.meta.name, parent);
 
@@ -454,7 +454,7 @@ impl MinParameter {
         args: &LoadArgs,
         parent: Option<&str>,
     ) -> Result<(), SchemaError> {
-        let metric = self.parameter.load(network, args, None)?;
+        let metric = self.parameter.load(network, args, parent)?;
         let threshold = self.threshold.unwrap_or(Self::DEFAULT_THRESHOLD);
         let name = ParameterName::new(&self.meta.name, parent);
 
@@ -508,7 +508,7 @@ impl NegativeParameter {
         args: &LoadArgs,
         parent: Option<&str>,
     ) -> Result<(), SchemaError> {
-        let metric = self.parameter.load(network, args, None)?;
+        let metric = self.parameter.load(network, args, parent)?;
         let name = ParameterName::new(&self.meta.name, parent);
 
         let p = match self.phase {
@@ -581,7 +581,7 @@ impl NegativeMaxParameter {
         args: &LoadArgs,
         parent: Option<&str>,
     ) -> Result<(), SchemaError> {
-        let metric = self.metric.load(network, args, None)?;
+        let metric = self.metric.load(network, args, parent)?;
         let threshold = self.threshold.unwrap_or(Self::DEFAULT_THRESHOLD);
         let name = ParameterName::new(&self.meta.name, parent);
 
@@ -658,7 +658,7 @@ impl NegativeMinParameter {
         args: &LoadArgs,
         parent: Option<&str>,
     ) -> Result<(), SchemaError> {
-        let metric = self.metric.load(network, args, None)?;
+        let metric = self.metric.load(network, args, parent)?;
         let threshold = self.threshold.unwrap_or(Self::DEFAULT_THRESHOLD);
         let name = ParameterName::new(&self.meta.name, parent);
 

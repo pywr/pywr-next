@@ -50,7 +50,7 @@ impl OffsetParameter {
         args: &LoadArgs,
         parent: Option<&str>,
     ) -> Result<(), SchemaError> {
-        let metric = self.metric.load(network, args, None)?;
+        let metric = self.metric.load(network, args, parent)?;
         let name = ParameterName::new(&self.meta.name, parent);
 
         let p = match self.phase {

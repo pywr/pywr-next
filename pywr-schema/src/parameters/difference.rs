@@ -50,7 +50,7 @@ impl DifferenceParameter {
         parent: Option<&str>,
     ) -> Result<(), SchemaError> {
         let name = ParameterName::new(&self.meta.name, parent);
-        let a = self.a.load(network, args, None)?;
+        let a = self.a.load(network, args, parent)?;
         let b = self.b.load(network, args, parent)?;
 
         let mut builder = match self.phase {

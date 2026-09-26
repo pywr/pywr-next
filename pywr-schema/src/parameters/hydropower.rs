@@ -99,26 +99,30 @@ impl HydropowerTargetParameter {
         args: &LoadArgs,
         parent: Option<&str>,
     ) -> Result<(), SchemaError> {
-        let target = self.target.as_ref().map(|t| t.load(network, args, None)).transpose()?;
+        let target = self
+            .target
+            .as_ref()
+            .map(|t| t.load(network, args, parent))
+            .transpose()?;
         let water_elevation = self
             .water_elevation
             .as_ref()
-            .map(|t| t.load(network, args, None))
+            .map(|t| t.load(network, args, parent))
             .transpose()?;
         let max_flow = self
             .max_flow
             .as_ref()
-            .map(|t| t.load(network, args, None))
+            .map(|t| t.load(network, args, parent))
             .transpose()?;
         let min_flow = self
             .min_flow
             .as_ref()
-            .map(|t| t.load(network, args, None))
+            .map(|t| t.load(network, args, parent))
             .transpose()?;
         let actual_flow = self
             .actual_flow
             .as_ref()
-            .map(|t| t.load(network, args, None))
+            .map(|t| t.load(network, args, parent))
             .transpose()?;
 
         let turbine_data = HydropowerTargetData {
