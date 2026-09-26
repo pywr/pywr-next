@@ -11,7 +11,7 @@ use crate::error::{
     ComponentConversionError, DuplicateNodeName, EdgeProblem, EdgeValidationError, NetworkProblem,
     NetworkValidationError,
 };
-use crate::metric::Metric;
+use crate::metric::{Metric, NodeComponentReference};
 use crate::metric_sets::MetricSet;
 #[cfg(feature = "core")]
 use crate::model::MultiNetworkTransfer;
@@ -815,12 +815,61 @@ impl NetworkSchema {
         Ok(())
     }
 
+    /// The problems with `virtual_node`'s members, in the order listed. A member naming a node
+    /// that is not in `nodes`, or a placeholder, is skipped.
+    fn member_problems(&self, virtual_node: &VirtualNode) -> Vec<NetworkProblem> {
+        let (members, takes_storage): (&[NodeComponentReference], bool) = match virtual_node {
+            VirtualNode::Aggregated(n) => (&n.nodes, false),
+            VirtualNode::VirtualStorage(n) => (&n.nodes, false),
+            VirtualNode::AggregatedStorage(n) => (&n.storage_nodes, true),
+            VirtualNode::Placeholder(_) => (&[], false),
+        };
+
+        members
+            .iter()
+            .filter_map(|member| {
+                let node = self
+                    .get_node_by_name(&member.name)
+                    .filter(|node| !node.is_placeholder())?;
+
+                if takes_storage {
+                    return (!node.is_storage()).then(|| NetworkProblem::MemberNotStorage {
+                        virtual_node: virtual_node.name().to_string(),
+                        node: member.name.clone(),
+                        node_type: node.node_type(),
+                    });
+                }
+
+                let Some(default) = node.default_component() else {
+                    return Some(NetworkProblem::MemberWithoutComponents {
+                        virtual_node: virtual_node.name().to_string(),
+                        node: member.name.clone(),
+                        node_type: node.node_type(),
+                    });
+                };
+
+                let component = member.component.unwrap_or(default);
+                let built = node.built_components();
+
+                (!built.contains(&component)).then(|| NetworkProblem::MemberComponentNotBuilt {
+                    virtual_node: virtual_node.name().to_string(),
+                    node: member.name.clone(),
+                    node_type: node.node_type(),
+                    component,
+                    default: member.component.is_none(),
+                    built,
+                })
+            })
+            .collect()
+    }
+
     /// Validate the network schema and report every problem.
     ///
-    /// This checks that the schema is unambiguous and that its edges could be made, not that the
-    /// whole model can be built; use [`NetworkSchema::add_to_network`] for the latter. See
-    /// [`NetworkProblem`] for the problems that are detected, and
-    /// [`NetworkSchema::validate_edge`] for the edge rules in particular.
+    /// This checks that the schema is unambiguous, that its edges could be made and that its
+    /// virtual nodes' members name parts their nodes build, not that the whole model can be
+    /// built; use [`NetworkSchema::add_to_network`] for the latter. See [`NetworkProblem`] for
+    /// the problems that are detected, and [`NetworkSchema::validate_edge`] for the edge rules in
+    /// particular.
     pub fn validate(&self) -> Result<(), NetworkValidationError> {
         // Count the occurrences of each name in each of the two lists.
         let mut counts: HashMap<&str, (usize, usize)> = HashMap::with_capacity(self.nodes.len());
@@ -893,6 +942,12 @@ impl NetworkSchema {
                     }),
             )
             .chain(invalid_edges.into_iter().map(NetworkProblem::InvalidEdge))
+            .chain(
+                self.virtual_nodes
+                    .iter()
+                    .flatten()
+                    .flat_map(|virtual_node| self.member_problems(virtual_node)),
+            )
             .collect();
 
         if problems.is_empty() {
@@ -1535,6 +1590,95 @@ mod tests {
             vec![
                 "The `RiverSplitWithGauge` node `split` has no output slot `Split[5]`. Its output slots are: `River`, `Split[0]`, `User[to-supply]`.",
                 "The `Link` node `river` has no output slot `Spill`. Nodes of this type have no output slots.",
+            ]
+        );
+    }
+
+    /// A network with a member for every member problem, and members that pass: a part the node
+    /// builds, a placeholder, a node the network does not have, and an aggregated storage member
+    /// naming a component, which it ignores.
+    const NETWORK_WITH_INVALID_MEMBERS: &str = r#"
+    {
+        "nodes": [
+            {
+                "meta": { "name": "reservoir" },
+                "type": "Reservoir",
+                "initial_volume": { "type": "Proportional", "proportion": 1.0 },
+                "compensation": { "type": "Literal", "value": 1.0 },
+                "rainfall": { "data": { "type": "Literal", "value": 1.0 } }
+            },
+            {
+                "meta": { "name": "bare-reservoir" },
+                "type": "Reservoir",
+                "initial_volume": { "type": "Proportional", "proportion": 1.0 }
+            },
+            {
+                "meta": { "name": "store" },
+                "type": "Storage",
+                "initial_volume": { "type": "Proportional", "proportion": 1.0 }
+            },
+            { "meta": { "name": "works" }, "type": "WaterTreatmentWorks" },
+            { "meta": { "name": "river" }, "type": "River" },
+            { "meta": { "name": "loss-link" }, "type": "LossLink" },
+            { "meta": { "name": "link" }, "type": "Link" },
+            { "meta": { "name": "placeholder" }, "type": "Placeholder" }
+        ],
+        "edges": [],
+        "virtual_nodes": [
+            {
+                "meta": { "name": "agg" },
+                "type": "Aggregated",
+                "nodes": [
+                    { "name": "reservoir", "component": "Compensation" },
+                    { "name": "reservoir", "component": "Rainfall" },
+                    { "name": "bare-reservoir" },
+                    { "name": "link", "component": "Loss" },
+                    { "name": "store" },
+                    { "name": "placeholder" },
+                    { "name": "missing" }
+                ]
+            },
+            {
+                "meta": { "name": "licence" },
+                "type": "VirtualStorage",
+                "nodes": [
+                    { "name": "works", "component": "Loss" },
+                    { "name": "river", "component": "Loss" },
+                    { "name": "loss-link", "component": "Loss" }
+                ],
+                "initial_volume": { "type": "Proportional", "proportion": 1.0 }
+            },
+            {
+                "meta": { "name": "total" },
+                "type": "AggregatedStorage",
+                "storage_nodes": [
+                    { "name": "bare-reservoir", "component": "Rainfall" },
+                    { "name": "link" }
+                ]
+            }
+        ]
+    }
+    "#;
+
+    /// Every invalid member is reported, in the order listed. A reservoir's rainfall needs a
+    /// surface area as well.
+    #[test]
+    fn test_validate_reports_all_invalid_members() {
+        let network = parse_network(NETWORK_WITH_INVALID_MEMBERS);
+
+        let messages: Vec<String> = expect_problems(&network).iter().map(ToString::to_string).collect();
+
+        assert_eq!(
+            messages,
+            vec![
+                "The virtual node `agg` takes the component `Rainfall` of the `Reservoir` node `reservoir`, but that node does not build it. It builds: `Compensation`.",
+                "The virtual node `agg` takes the default component `Compensation` of the `Reservoir` node `bare-reservoir`, but that node does not build it. As configured, it builds no components.",
+                "The virtual node `agg` takes the component `Loss` of the `Link` node `link`, but that node does not build it. It builds: `Inflow`, `Outflow`.",
+                "The virtual node `agg` names the `Storage` node `store`, but nodes of this type have no components for it to take.",
+                "The virtual node `licence` takes the component `Loss` of the `WaterTreatmentWorks` node `works`, but that node does not build it. It builds: `Inflow`, `Outflow`.",
+                "The virtual node `licence` takes the component `Loss` of the `River` node `river`, but that node does not build it. It builds: `Inflow`, `Outflow`.",
+                "The virtual node `licence` takes the component `Loss` of the `LossLink` node `loss-link`, but that node does not build it. It builds: `Inflow`, `Outflow`.",
+                "The virtual node `total` names the `Link` node `link`, but an `AggregatedStorage` node takes only storage nodes.",
             ]
         );
     }
