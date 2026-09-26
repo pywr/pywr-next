@@ -476,6 +476,8 @@ impl MultiNetworkModel {
         let scenario_indices = self.domain.scenario.indices();
 
         for (idx, entry) in self.networks.iter().enumerate() {
+            let step_start = std::time::Instant::now();
+
             let timing = timings
                 .network_timings
                 .get_mut(&entry.name)
@@ -526,6 +528,8 @@ impl MultiNetworkModel {
                     timestep: *timestep,
                     source: Box::new(source),
                 })?;
+
+            timings.complete_step(step_start.elapsed(), scenario_indices.len());
         }
 
         // Finally increment the time-step index
@@ -553,6 +557,8 @@ impl MultiNetworkModel {
         let scenario_indices = self.domain.scenario.indices();
 
         for (idx, entry) in self.networks.iter().enumerate() {
+            let step_start = std::time::Instant::now();
+
             let timing = timings
                 .network_timings
                 .get_mut(&entry.name)
@@ -597,6 +603,8 @@ impl MultiNetworkModel {
                     timestep: *timestep,
                     source: Box::new(source),
                 })?;
+
+            timings.complete_step(step_start.elapsed(), scenario_indices.len());
         }
 
         // Finally increment the time-step index
