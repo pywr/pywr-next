@@ -237,7 +237,7 @@ impl PythonParameter {
         let metrics = match &self.metrics {
             Some(metrics) => metrics
                 .iter()
-                .map(|(k, v)| Ok((k.to_string(), v.load(network, args, None)?)))
+                .map(|(k, v)| Ok((k.to_string(), v.load(network, args, parent)?)))
                 .collect::<Result<HashMap<_, _>, SchemaError>>()?,
             None => HashMap::new(),
         };
@@ -245,7 +245,7 @@ impl PythonParameter {
         let indices = match &self.indices {
             Some(indices) => indices
                 .iter()
-                .map(|(k, v)| Ok((k.to_string(), v.load(network, args, None)?)))
+                .map(|(k, v)| Ok((k.to_string(), v.load(network, args, parent)?)))
                 .collect::<Result<HashMap<_, _>, SchemaError>>()?,
             None => HashMap::new(),
         };

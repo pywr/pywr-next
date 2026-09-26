@@ -46,7 +46,7 @@ impl InterpolatedParameter {
         args: &LoadArgs,
         parent: Option<&str>,
     ) -> Result<(), SchemaError> {
-        let x = self.x.load(network, args, None)?;
+        let x = self.x.load(network, args, parent)?;
 
         // Sense check the points
         if self.xp.len() != self.fp.len() {
@@ -59,12 +59,12 @@ impl InterpolatedParameter {
         let xp = self
             .xp
             .iter()
-            .map(|p| p.load(network, args, None))
+            .map(|p| p.load(network, args, parent))
             .collect::<Result<Vec<_>, _>>()?;
         let fp = self
             .fp
             .iter()
-            .map(|p| p.load(network, args, None))
+            .map(|p| p.load(network, args, parent))
             .collect::<Result<Vec<_>, _>>()?;
 
         let points = xp.into_iter().zip(fp).collect::<Vec<_>>();

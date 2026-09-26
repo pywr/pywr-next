@@ -27,7 +27,7 @@ impl DelayParameter {
         args: &LoadArgs,
         parent: Option<&str>,
     ) -> Result<(), SchemaError> {
-        let metric = self.metric.load(network, args, None)?;
+        let metric = self.metric.load(network, args, parent)?;
         let p = pywr_core::parameters::DelayParameterBuilder::new(
             ParameterName::new(&self.meta.name, parent),
             metric,
@@ -59,7 +59,7 @@ impl DelayIndexParameter {
         args: &LoadArgs,
         parent: Option<&str>,
     ) -> Result<(), SchemaError> {
-        let metric = self.metric.load(network, args, None)?;
+        let metric = self.metric.load(network, args, parent)?;
         let p = pywr_core::parameters::DelayParameterBuilder::new(
             ParameterName::new(&self.meta.name, parent),
             metric,

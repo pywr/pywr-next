@@ -113,15 +113,15 @@ impl ThresholdParameter {
         args: &LoadArgs,
         parent: Option<&str>,
     ) -> Result<(), SchemaError> {
-        let metric = self.metric.load(network, args, None)?;
-        let threshold = self.threshold.load(network, args, None)?;
+        let metric = self.metric.load(network, args, parent)?;
+        let threshold = self.threshold.load(network, args, parent)?;
 
         // If the parameter has returned metrics, we need to create a sub-name for the threshold parameter
         // so that it can be distinguished from the indexed array parameter.
         // If it does not have returned metrics, we can just use the parameter name as the
         // name for the threshold parameter.
         let name = if self.returned_metrics.is_some() {
-            ParameterName::new_with_subname(&self.meta.name, Some("threshold"), Some(&self.meta.name))
+            ParameterName::new_with_subname(&self.meta.name, Some("threshold"), parent)
         } else {
             ParameterName::new(&self.meta.name, parent)
         };
@@ -170,7 +170,7 @@ impl ThresholdParameter {
             };
 
             for v in values {
-                values_builder.metric(v.load(network, args, None)?);
+                values_builder.metric(v.load(network, args, parent)?);
             }
             network.parameters().f64(Box::new(values_builder));
         }
@@ -365,12 +365,12 @@ impl MultiThresholdParameter {
         args: &LoadArgs,
         parent: Option<&str>,
     ) -> Result<(), SchemaError> {
-        let metric = self.metric.load(network, args, None)?;
+        let metric = self.metric.load(network, args, parent)?;
 
         let name = if self.returned_metrics.is_some() {
-            ParameterName::new_with_subname(&self.meta.name, Some("threshold"), Some(&self.meta.name))
+            ParameterName::new_with_subname(&self.meta.name, Some("threshold"), parent)
         } else {
-            self.meta.name.as_str().into()
+            ParameterName::new(&self.meta.name, parent)
         };
 
         let mut builder = match self.phase {
@@ -416,7 +416,7 @@ impl MultiThresholdParameter {
             };
 
             for v in values {
-                values_builder.metric(v.load(network, args, None)?);
+                values_builder.metric(v.load(network, args, parent)?);
             }
 
             network.parameters().f64(Box::new(values_builder));

@@ -758,7 +758,7 @@ mod tests {
                     { "type": "VirtualNode", "name": "virtual-node-metric" },
                     { "type": "Edge", "edge": { "from_node": "metric-edge-from", "to_node": "metric-edge-to" } }
                 ],
-                "index_parameter": { "type": "Node", "name": "index-metric" }
+                "index_metric": { "type": "Node", "name": "index-metric" }
             }
         ],
         "metric_sets": [
@@ -853,7 +853,7 @@ mod tests {
                 "metrics": [
                     { "type": "Edge", "edge": { "from_node": "metric-edge-from", "to_node": "metric-edge-to" } }
                 ],
-                "index_parameter": { "type": "Parameter", "name": "index-metric-parameter" }
+                "index_metric": { "type": "Parameter", "name": "index-metric-parameter" }
             },
             {
                 "meta": { "name": "index-agg" },

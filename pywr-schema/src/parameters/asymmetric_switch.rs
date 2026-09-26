@@ -18,8 +18,8 @@ use schemars::JsonSchema;
 #[serde(deny_unknown_fields)]
 pub struct AsymmetricSwitchIndexParameter {
     pub meta: NamedMeta,
-    pub on_index_parameter: IndexMetric,
-    pub off_index_parameter: IndexMetric,
+    pub on_index_metric: IndexMetric,
+    pub off_index_metric: IndexMetric,
 }
 
 #[cfg(feature = "core")]
@@ -30,8 +30,8 @@ impl AsymmetricSwitchIndexParameter {
         args: &LoadArgs,
         parent: Option<&str>,
     ) -> Result<(), SchemaError> {
-        let on_index_parameter = self.on_index_parameter.load(network, args, None)?;
-        let off_index_parameter = self.off_index_parameter.load(network, args, None)?;
+        let on_index_parameter = self.on_index_metric.load(network, args, parent)?;
+        let off_index_parameter = self.off_index_metric.load(network, args, parent)?;
 
         let p = pywr_core::parameters::AsymmetricSwitchIndexParameterBuilder::before(
             ParameterName::new(&self.meta.name, parent),
@@ -72,8 +72,8 @@ impl TryFromV1<AsymmetricSwitchIndexParameterV1> for AsymmetricSwitchIndexParame
 
         let p = Self {
             meta,
-            on_index_parameter,
-            off_index_parameter,
+            on_index_metric: on_index_parameter,
+            off_index_metric: off_index_parameter,
         };
         Ok(p)
     }

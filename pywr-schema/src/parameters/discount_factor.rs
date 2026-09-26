@@ -30,7 +30,7 @@ impl DiscountFactorParameter {
         args: &LoadArgs,
         parent: Option<&str>,
     ) -> Result<(), SchemaError> {
-        let discount_rate = self.discount_rate.load(network, args, None)?;
+        let discount_rate = self.discount_rate.load(network, args, parent)?;
         let p = pywr_core::parameters::DiscountFactorParameterBuilder::new(
             ParameterName::new(&self.meta.name, parent),
             discount_rate,

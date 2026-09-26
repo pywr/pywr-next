@@ -40,7 +40,7 @@ impl RollingParameter {
         args: &LoadArgs,
         parent: Option<&str>,
     ) -> Result<(), SchemaError> {
-        let metric = self.metric.load(network, args, None)?;
+        let metric = self.metric.load(network, args, parent)?;
         let p = pywr_core::parameters::RollingParameterBuilder::new(
             ParameterName::new(&self.meta.name, parent),
             metric,
@@ -83,7 +83,7 @@ impl RollingIndexParameter {
         args: &LoadArgs,
         parent: Option<&str>,
     ) -> Result<(), SchemaError> {
-        let metric = self.metric.load(network, args, None)?;
+        let metric = self.metric.load(network, args, parent)?;
         let p = pywr_core::parameters::RollingParameterBuilder::new(
             ParameterName::new(&self.meta.name, parent),
             metric,
