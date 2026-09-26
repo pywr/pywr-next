@@ -78,20 +78,16 @@ fn calculate_control_curve<E>(
 where
     GeneralCalculationError: From<E>,
 {
-    let idx = control_curve_index(x, control_curves)? as usize;
+    let index = control_curve_index(x, control_curves)? as usize;
 
     let mut length = 0;
     for value in values {
-        if length == idx {
+        if length == index {
             return Ok(value?);
         }
         length += 1;
     }
-    Err(GeneralCalculationError::OutOfBoundsError {
-        axis: 0,
-        index: idx,
-        length,
-    })
+    Err(GeneralCalculationError::OutOfBoundsError { axis: 0, index, length })
 }
 
 #[derive(Debug)]

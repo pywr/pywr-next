@@ -48,15 +48,15 @@ impl GeneralBeforeParameter<f64> for ControlCurveInterpolatedParameter {
         let control_curves = self
             .control_curves
             .iter()
-            .map(|cc| cc.get_value(ctx.network, ctx.state))
-            .collect::<Result<Vec<_>, _>>()?;
-        let values = self
-            .values
-            .iter()
-            .map(|v| v.get_value(ctx.network, ctx.state))
-            .collect::<Result<Vec<_>, _>>()?;
+            .map(|cc| cc.get_value(ctx.network, ctx.state));
 
-        Ok(control_curve_interpolated(x, &control_curves, &values))
+        let values = self.values.windows(2).map(|w| {
+            let v0 = w[0].get_value(ctx.network, ctx.state)?;
+            let v1 = w[1].get_value(ctx.network, ctx.state)?;
+            Ok((v0, v1))
+        });
+
+        control_curve_interpolated(x, control_curves, values)
     }
 }
 
@@ -71,39 +71,64 @@ impl GeneralAfterParameter<f64> for ControlCurveInterpolatedParameter {
         let control_curves = self
             .control_curves
             .iter()
-            .map(|cc| cc.get_value(ctx.network, ctx.state))
-            .collect::<Result<Vec<_>, _>>()?;
-        let values = self
-            .values
-            .iter()
-            .map(|v| v.get_value(ctx.network, ctx.state))
-            .collect::<Result<Vec<_>, _>>()?;
+            .map(|cc| cc.get_value(ctx.network, ctx.state));
 
-        Ok(control_curve_interpolated(x, &control_curves, &values))
+        let values = self.values.windows(2).map(|w| {
+            let v0 = w[0].get_value(ctx.network, ctx.state)?;
+            let v1 = w[1].get_value(ctx.network, ctx.state)?;
+            Ok((v0, v1))
+        });
+
+        control_curve_interpolated(x, control_curves, values)
     }
 }
 
-fn control_curve_interpolated(x: f64, control_curves: &[f64], values: &[f64]) -> f64 {
+/// Interpolate between control curves and values
+fn control_curve_interpolated<E>(
+    x: f64,
+    control_curves: impl IntoIterator<Item = Result<f64, E>>,
+    values: impl IntoIterator<Item = Result<(f64, f64), E>>,
+) -> Result<f64, GeneralCalculationError>
+where
+    GeneralCalculationError: From<E>,
+{
     let mut cc_prev = 1.0;
 
-    for (idx, &cc_value) in control_curves.iter().enumerate() {
+    let mut index = 0;
+    for control_curve in control_curves {
+        let cc_value = control_curve?;
         if x >= cc_value {
-            let lower_value = values[idx + 1];
-            let upper_value = values[idx];
-
-            return interpolate(x, cc_value, cc_prev, lower_value, upper_value);
+            let (upper_value, lower_value) = upper_lower(index, values)?;
+            return Ok(interpolate(x, cc_value, cc_prev, lower_value, upper_value));
         }
 
         cc_prev = cc_value;
+        index += 1;
     }
 
     let cc_value = 0.0;
-    let n = values.len();
 
-    let lower_value = values[n - 1];
-    let upper_value = values[n - 2];
+    let (upper_value, lower_value) = upper_lower(index, values)?;
 
-    interpolate(x, cc_value, cc_prev, lower_value, upper_value)
+    Ok(interpolate(x, cc_value, cc_prev, lower_value, upper_value))
+}
+
+fn upper_lower<E>(
+    index: usize,
+    values: impl IntoIterator<Item = Result<(f64, f64), E>>,
+) -> Result<(f64, f64), GeneralCalculationError>
+where
+    GeneralCalculationError: From<E>,
+{
+    let mut length = 0;
+    for value in values.into_iter() {
+        if length == index {
+            return Ok(value?);
+        }
+        length += 1;
+    }
+
+    Err(GeneralCalculationError::OutOfBoundsError { axis: 0, index, length })
 }
 
 #[derive(Debug)]
@@ -206,28 +231,51 @@ impl ParameterBuilder<f64> for ControlCurveInterpolatedParameterBuilder {
 #[cfg(test)]
 mod tests {
     use super::control_curve_interpolated;
+    use crate::parameters::GeneralCalculationError;
 
     #[test]
     fn test_control_curve_interpolated() {
-        let control_curves = vec![0.8, 0.5, 0.2];
-        let values = vec![10.0, 20.0, 30.0, 40.0, 50.0];
+        let control_curves = [0.8, 0.5, 0.2];
+        let values = [10.0, 20.0, 30.0, 40.0, 50.0];
 
-        assert_eq!(control_curve_interpolated(0.9, &control_curves, &values), 15.0);
-        assert_eq!(control_curve_interpolated(0.8, &control_curves, &values), 20.0);
-        assert_eq!(control_curve_interpolated(0.65, &control_curves, &values), 25.0);
-        assert_eq!(control_curve_interpolated(0.5, &control_curves, &values), 30.0);
-        assert_eq!(control_curve_interpolated(0.35, &control_curves, &values), 35.0);
-        assert_eq!(control_curve_interpolated(0.1, &control_curves, &values), 45.0);
+        let value = |x| {
+            control_curve_interpolated(
+                x,
+                control_curves.iter().copied().map(Ok::<_, GeneralCalculationError>),
+                values
+                    .windows(2)
+                    .map(|w| Ok::<_, GeneralCalculationError>((w[0], w[1]))),
+            )
+            .unwrap()
+        };
+
+        assert_eq!(value(0.9), 15.0);
+        assert_eq!(value(0.8), 20.0);
+        assert_eq!(value(0.65), 25.0);
+        assert_eq!(value(0.5), 30.0);
+        assert_eq!(value(0.35), 35.0);
+        assert_eq!(value(0.1), 45.0);
     }
 
     #[test]
     fn test_control_curve_empty_interpolated() {
-        let control_curves = vec![];
-        let values = vec![10.0, 20.0];
+        let control_curves = [];
+        let values = [10.0, 20.0];
 
-        assert_eq!(control_curve_interpolated(0.9, &control_curves, &values), 11.0);
-        assert_eq!(control_curve_interpolated(0.8, &control_curves, &values), 12.0);
-        assert_eq!(control_curve_interpolated(0.5, &control_curves, &values), 15.0);
-        assert_eq!(control_curve_interpolated(0.1, &control_curves, &values), 19.0);
+        let value = |x| {
+            control_curve_interpolated(
+                x,
+                control_curves.iter().copied().map(Ok::<_, GeneralCalculationError>),
+                values
+                    .windows(2)
+                    .map(|w| Ok::<_, GeneralCalculationError>((w[0], w[1]))),
+            )
+            .unwrap()
+        };
+
+        assert_eq!(value(0.9), 11.0);
+        assert_eq!(value(0.8), 12.0);
+        assert_eq!(value(0.5), 15.0);
+        assert_eq!(value(0.1), 19.0);
     }
 }
