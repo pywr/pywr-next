@@ -7,25 +7,30 @@ use crate::nodes::NodeSlot;
 use crate::visit::{Reference, ReferenceMut, VisitReferences};
 #[cfg(feature = "core")]
 use pywr_core::{metric::UnresolvedMetricF64, network::UnresolvedEdge, node::UnresolvedNode};
-use pywr_schema_macros::skip_serializing_none;
+use pywr_schema_macros::{PywrVisitAll, skip_serializing_none};
 use schemars::JsonSchema;
+use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
-use std::hash::Hash;
+
+/// Optional annotations for an edge. Edges are identified by endpoints and slots, not metadata.
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Default, JsonSchema, PywrVisitAll)]
+#[serde(deny_unknown_fields)]
+pub struct EdgeMeta {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub comment: Option<String>,
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub tags: HashMap<String, String>,
+}
 
 #[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Clone, JsonSchema, Debug)]
 pub struct Edge {
+    pub meta: Option<EdgeMeta>,
     pub from_node: String,
     pub to_node: String,
     pub from_slot: Option<NodeSlot>,
     pub to_slot: Option<NodeSlot>,
-    pub meta: Option<EdgeMeta>,
 }
-
-/// Optional annotations for an edge. Edges are identified by endpoints and slots, not metadata.
-#[derive(serde::Deserialize, serde::Serialize, Clone, Default, JsonSchema, Debug, PartialEq, Eq, Hash)]
-#[serde(deny_unknown_fields)]
-pub struct EdgeMeta {}
 
 impl Edge {
     pub fn meta(&self) -> Option<&EdgeMeta> {
