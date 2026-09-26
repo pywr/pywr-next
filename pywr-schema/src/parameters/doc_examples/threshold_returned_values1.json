@@ -1,5 +1,6 @@
 {
   "type": "Threshold",
+  "phase": "Before",
   "meta": {
     "name": "my-threshold-param"
   },

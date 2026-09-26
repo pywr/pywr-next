@@ -1246,6 +1246,20 @@ impl UnresolvedMetricU64 {
             return_value: UnresolvedParameterReturnValue::Before,
         }
     }
+
+    pub fn new_parameter_after<N: Into<ParameterName>>(name: N) -> Self {
+        Self::ParameterValue {
+            name: name.into(),
+            return_value: UnresolvedParameterReturnValue::After,
+        }
+    }
+
+    pub fn new_parameter_both<N: Into<ParameterName>>(name: N) -> Self {
+        Self::ParameterValue {
+            name: name.into(),
+            return_value: UnresolvedParameterReturnValue::Both,
+        }
+    }
     pub fn resolve(
         &self,
         resolution_maps: &ResolutionMaps,
