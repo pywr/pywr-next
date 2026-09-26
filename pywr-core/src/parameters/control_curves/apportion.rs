@@ -2,9 +2,9 @@ use crate::metric::{MetricConsumerPhase, MetricF64, UnresolvedMetricF64};
 use crate::network::ResolutionMaps;
 use crate::parameters::errors::GeneralCalculationError;
 use crate::parameters::{
-    BuiltParameter, GeneralBeforeParameter, GeneralAfterParameter, GeneralParameter, GeneralParameterContext, GeneralParameterEntry,
-    MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder, ParameterMeta, ParameterName,
-    ParameterState,
+    BuiltParameter, GeneralAfterParameter, GeneralBeforeParameter, GeneralParameter, GeneralParameterContext,
+    GeneralParameterEntry, MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder, ParameterMeta,
+    ParameterName, ParameterState,
 };
 use crate::resolve_metric_f64;
 use crate::state::MultiValue;
@@ -71,7 +71,6 @@ impl GeneralAfterParameter<MultiValue> for ApportionParameter {
         Ok(apportion(x, control_curve))
     }
 }
-
 
 fn apportion(x: f64, control_curve: f64) -> MultiValue {
     let upper = (1.0 - control_curve) * x;
@@ -140,15 +139,9 @@ impl ParameterBuilder<MultiValue> for ApportionParameterBuilder {
         };
 
         let built = match self.phase {
-            MetricConsumerPhase::Before => {
-                BuiltParameter::General(GeneralParameterEntry::before(p))
-            },
-            MetricConsumerPhase::After => {
-                BuiltParameter::General(GeneralParameterEntry::after(p))
-            },
-            MetricConsumerPhase::Both => {
-                BuiltParameter::General(GeneralParameterEntry::both(p))
-            }
+            MetricConsumerPhase::Before => BuiltParameter::General(GeneralParameterEntry::before(p)),
+            MetricConsumerPhase::After => BuiltParameter::General(GeneralParameterEntry::after(p)),
+            MetricConsumerPhase::Both => BuiltParameter::General(GeneralParameterEntry::both(p)),
         };
 
         Ok(built.into())

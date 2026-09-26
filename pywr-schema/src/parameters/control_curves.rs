@@ -9,7 +9,7 @@ use crate::parameters::{ConversionData, ParameterMeta, ParameterPhase};
 use crate::v1::{TryFromV1, TryIntoV2, try_convert_control_curves, try_convert_parameter_attr};
 
 #[cfg(feature = "core")]
-use pywr_core::parameters::{ParameterName};
+use pywr_core::parameters::ParameterName;
 use pywr_schema_macros::{PywrVisitAll, skip_serializing_none};
 use pywr_v1_schema::parameters::{
     ControlCurveIndexParameter as ControlCurveIndexParameterV1,
@@ -53,19 +53,14 @@ impl ControlCurveInterpolatedParameter {
 
         let name = ParameterName::new(&self.meta.name, parent);
 
-        let mut p =  match self.phase {
-            ParameterPhase::Before => pywr_core::parameters::ControlCurveInterpolatedParameterBuilder::before(
-                name,
-                metric,
-            ),
-            ParameterPhase::After => pywr_core::parameters::ControlCurveInterpolatedParameterBuilder::after(
-                name,
-                metric,
-            ),
-            ParameterPhase::Both => pywr_core::parameters::ControlCurveInterpolatedParameterBuilder::both(
-                name,
-                metric,
-            ),
+        let mut p = match self.phase {
+            ParameterPhase::Before => {
+                pywr_core::parameters::ControlCurveInterpolatedParameterBuilder::before(name, metric)
+            }
+            ParameterPhase::After => {
+                pywr_core::parameters::ControlCurveInterpolatedParameterBuilder::after(name, metric)
+            }
+            ParameterPhase::Both => pywr_core::parameters::ControlCurveInterpolatedParameterBuilder::both(name, metric),
         };
 
         for cc in control_curves {
@@ -406,23 +401,14 @@ impl ControlCurvePiecewiseInterpolatedParameter {
 
         let mut builder = match self.phase {
             ParameterPhase::Before => {
-                pywr_core::parameters::PiecewiseInterpolatedParameterBuilder::before(name,
-                                                                                     metric,
-                                                                                     maximum,
-                                                                                     minimum, )
-            },
+                pywr_core::parameters::PiecewiseInterpolatedParameterBuilder::before(name, metric, maximum, minimum)
+            }
             ParameterPhase::After => {
-                pywr_core::parameters::PiecewiseInterpolatedParameterBuilder::after(name,
-                                                                                    metric,
-                                                                                    maximum,
-                                                                                    minimum, )
-            },
+                pywr_core::parameters::PiecewiseInterpolatedParameterBuilder::after(name, metric, maximum, minimum)
+            }
             ParameterPhase::Both => {
-                pywr_core::parameters::PiecewiseInterpolatedParameterBuilder::both(name,
-                                                                                   metric,
-                                                                                   maximum,
-                                                                                   minimum, )
-            },
+                pywr_core::parameters::PiecewiseInterpolatedParameterBuilder::both(name, metric, maximum, minimum)
+            }
         };
 
         for cc in &self.control_curves {

@@ -3,12 +3,11 @@ use crate::network::ResolutionMaps;
 use crate::parameters::errors::GeneralCalculationError;
 use crate::parameters::interpolate::interpolate;
 use crate::parameters::{
-    BuiltParameter, GeneralBeforeParameter, GeneralAfterParameter, GeneralParameter, GeneralParameterContext, GeneralParameterEntry,
-    MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder, ParameterMeta, ParameterName,
-    ParameterState,
+    BuiltParameter, GeneralAfterParameter, GeneralBeforeParameter, GeneralParameter, GeneralParameterContext,
+    GeneralParameterEntry, MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder, ParameterMeta,
+    ParameterName, ParameterState,
 };
 use crate::{resolve_metric_f64, resolve_metric_f64_vec};
-
 
 /// A control curve parameter that interpolates between three or more values.
 ///
@@ -61,7 +60,6 @@ impl GeneralBeforeParameter<f64> for ControlCurveInterpolatedParameter {
     }
 }
 
-
 impl GeneralAfterParameter<f64> for ControlCurveInterpolatedParameter {
     fn after(
         &self,
@@ -85,7 +83,6 @@ impl GeneralAfterParameter<f64> for ControlCurveInterpolatedParameter {
     }
 }
 
-
 fn control_curve_interpolated(x: f64, control_curves: &[f64], values: &[f64]) -> f64 {
     let mut cc_prev = 1.0;
 
@@ -108,7 +105,6 @@ fn control_curve_interpolated(x: f64, control_curves: &[f64], values: &[f64]) ->
 
     interpolate(x, cc_value, cc_prev, lower_value, upper_value)
 }
-
 
 #[derive(Debug)]
 pub struct ControlCurveInterpolatedParameterBuilder {
@@ -174,8 +170,13 @@ impl ParameterBuilder<f64> for ControlCurveInterpolatedParameterBuilder {
         resolution_maps: &ResolutionMaps,
     ) -> Result<MaybeBuiltParameter<f64>, ParameterBuildError> {
         let metric = resolve_metric_f64!(self, self.metric, resolution_maps, self.phase, "metric");
-        let control_curves =
-            resolve_metric_f64_vec!(self, &self.control_curves, resolution_maps, self.phase, "control_curves");
+        let control_curves = resolve_metric_f64_vec!(
+            self,
+            &self.control_curves,
+            resolution_maps,
+            self.phase,
+            "control_curves"
+        );
         let values = resolve_metric_f64_vec!(self, &self.values, resolution_maps, self.phase, "values");
 
         if values.len() != control_curves.len() + 2 {
@@ -193,21 +194,14 @@ impl ParameterBuilder<f64> for ControlCurveInterpolatedParameterBuilder {
         };
 
         let built = match self.phase {
-            MetricConsumerPhase::Before => {
-                BuiltParameter::General(GeneralParameterEntry::before(p))
-            },
-            MetricConsumerPhase::After => {
-                BuiltParameter::General(GeneralParameterEntry::after(p))
-            },
-            MetricConsumerPhase::Both => {
-                BuiltParameter::General(GeneralParameterEntry::both(p))
-            }
+            MetricConsumerPhase::Before => BuiltParameter::General(GeneralParameterEntry::before(p)),
+            MetricConsumerPhase::After => BuiltParameter::General(GeneralParameterEntry::after(p)),
+            MetricConsumerPhase::Both => BuiltParameter::General(GeneralParameterEntry::both(p)),
         };
 
         Ok(built.into())
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -224,7 +218,6 @@ mod tests {
         assert_eq!(control_curve_interpolated(0.5, &control_curves, &values), 30.0);
         assert_eq!(control_curve_interpolated(0.35, &control_curves, &values), 35.0);
         assert_eq!(control_curve_interpolated(0.1, &control_curves, &values), 45.0);
-
     }
 
     #[test]
@@ -236,6 +229,5 @@ mod tests {
         assert_eq!(control_curve_interpolated(0.8, &control_curves, &values), 12.0);
         assert_eq!(control_curve_interpolated(0.5, &control_curves, &values), 15.0);
         assert_eq!(control_curve_interpolated(0.1, &control_curves, &values), 19.0);
-
     }
 }
