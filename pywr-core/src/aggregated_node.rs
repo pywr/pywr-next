@@ -190,24 +190,10 @@ pub struct ExclusivityBuilder {
     max_active: u64,
 }
 
-impl Default for ExclusivityBuilder {
-    fn default() -> Self {
-        Self {
-            min_active: 0,
-            max_active: 1,
-        }
-    }
-}
-
 impl ExclusivityBuilder {
-    pub fn min_active(&mut self, min_active: u64) -> &mut Self {
-        self.min_active = min_active;
-        self
-    }
-
-    pub fn max_active(&mut self, max_active: u64) -> &mut Self {
-        self.max_active = max_active;
-        self
+    #[must_use]
+    pub fn new(min_active: u64, max_active: u64) -> Self {
+        Self { min_active, max_active }
     }
 }
 
@@ -1499,8 +1485,7 @@ mod tests {
             UnresolvedNode::new("output", Some("1")),
         );
 
-        let mut relationship = ExclusivityBuilder::default();
-        relationship.min_active(0).max_active(1);
+        let relationship = ExclusivityBuilder::new(0, 1);
 
         let mut agg_node = AggregatedNodeBuilder::new("mutual-exclusivity");
         agg_node
@@ -1594,8 +1579,7 @@ mod tests {
             UnresolvedNode::new("output", Some("2")),
         );
 
-        let mut relationship = ExclusivityBuilder::default();
-        relationship.min_active(0).max_active(1);
+        let relationship = ExclusivityBuilder::new(0, 1);
 
         let mut agg_node = AggregatedNodeBuilder::new("mutual-exclusivity-01");
         agg_node

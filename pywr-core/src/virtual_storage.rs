@@ -42,7 +42,7 @@ pub enum VirtualStorageNodeBuilderError {
 pub struct VirtualStorageNodeBuilder {
     name: UnresolvedNode,
     nodes: Vec<UnresolvedNode>,
-    factors: Option<Vec<f64>>,
+    factors: Vec<f64>,
     initial_volume: UnresolvedStorageInitialVolume,
     reset: VirtualStorageReset,
     reset_volume: VirtualStorageResetVolume,
@@ -54,17 +54,26 @@ pub struct VirtualStorageNodeBuilder {
 }
 
 impl VirtualStorageNodeBuilder {
-    pub fn new(name: &str, nodes: &[UnresolvedNode]) -> Self {
+    /// `factors` holds one factor for each node, in the same order.
+    pub fn new(
+        name: &str,
+        nodes: &[UnresolvedNode],
+        factors: &[f64],
+        initial_volume: UnresolvedStorageInitialVolume,
+        reset: VirtualStorageReset,
+        reset_volume: VirtualStorageResetVolume,
+        active_period: VirtualStorageActivePeriod,
+    ) -> Self {
         let name = UnresolvedNode::new(name, None);
         Self {
             name,
             nodes: nodes.to_vec(),
-            factors: None,
-            initial_volume: UnresolvedStorageInitialVolume::Absolute(0.0),
-            reset: VirtualStorageReset::Never,
-            reset_volume: VirtualStorageResetVolume::Initial,
+            factors: factors.to_vec(),
+            initial_volume,
+            reset,
+            reset_volume,
             rolling_window: None,
-            active_period: VirtualStorageActivePeriod::Always,
+            active_period,
             cost: None,
             max_volume: None,
             min_volume: None,
@@ -85,17 +94,6 @@ impl VirtualStorageNodeBuilder {
         self
     }
 
-    /// Set the factors, one for each node and in the same order.
-    pub fn factors(&mut self, factors: &[f64]) -> &mut Self {
-        self.factors = Some(factors.to_vec());
-        self
-    }
-
-    pub fn initial_volume(&mut self, initial_volume: UnresolvedStorageInitialVolume) -> &mut Self {
-        self.initial_volume = initial_volume;
-        self
-    }
-
     pub fn cost(&mut self, cost: UnresolvedMetricF64) -> &mut Self {
         self.cost = Some(cost);
         self
@@ -111,23 +109,8 @@ impl VirtualStorageNodeBuilder {
         self
     }
 
-    pub fn reset(&mut self, reset: VirtualStorageReset) -> &mut Self {
-        self.reset = reset;
-        self
-    }
-
-    pub fn reset_volume(&mut self, reset_volume: VirtualStorageResetVolume) -> &mut Self {
-        self.reset_volume = reset_volume;
-        self
-    }
-
     pub fn rolling_window(&mut self, rolling_window: NonZeroUsize) -> &mut Self {
         self.rolling_window = Some(rolling_window);
-        self
-    }
-
-    pub fn active_period(&mut self, active_period: VirtualStorageActivePeriod) -> &mut Self {
-        self.active_period = active_period;
         self
     }
 
@@ -251,11 +234,9 @@ impl VirtualStorageNodeBuilder {
             .ok_or(VirtualStorageNodeBuilderError::IndexNotFound)?;
         let meta = NodeMeta::from_unresolved_name(self.name.clone(), *index);
 
-        // Default to unit factors if none provided
-        let factors = self.factors.clone().unwrap_or_else(|| vec![1.0; self.nodes.len()]);
-        if factors.len() != self.nodes.len() {
+        if self.factors.len() != self.nodes.len() {
             return Err(VirtualStorageNodeBuilderError::IncorrectNumberOfFactors {
-                num_factors: factors.len(),
+                num_factors: self.factors.len(),
                 num_nodes: self.nodes.len(),
             });
         }
@@ -284,7 +265,7 @@ impl VirtualStorageNodeBuilder {
         let vs = VirtualStorageNode {
             meta,
             nodes,
-            factors,
+            factors: self.factors.clone(),
             initial_volume: self.build_storage_initial_volume(resolution_maps)?,
             storage_constraints: self.build_storage_constraints(resolution_maps)?,
             reset: self.reset.clone(),
@@ -366,7 +347,7 @@ pub enum VirtualStorageError {
 ///
 /// Virtual storage are not part of the main network but can have their volume "used" by
 /// association with real nodes. Flow through one or more nodes lowers the virtual storage
-/// volume by a corresponding factor (default 1.0). Flow can be constrained in those nodes
+/// volume by a corresponding factor. Flow can be constrained in those nodes
 /// if it were to violate the virtual storage's min or max volume limits.
 ///
 /// Virtual storage volume can be reset at different frequencies. See [`VirtualStorageReset`]
@@ -525,7 +506,7 @@ mod tests {
     use crate::timestep::{TimeDomainBuilder, Timestep, TimestepDuration};
     use crate::virtual_storage::{
         VirtualStorageActivePeriod, VirtualStorageNodeBuilder, VirtualStorageNodeBuilderError, VirtualStorageReset,
-        months_since_last_reset,
+        VirtualStorageResetVolume, months_since_last_reset,
     };
     use jiff::civil::date;
     use ndarray::Array;
@@ -597,13 +578,14 @@ mod tests {
                 UnresolvedNode::new("link", Some("0")),
                 UnresolvedNode::new("link", Some("1")),
             ],
+            &[2.0, 1.0],
+            UnresolvedStorageInitialVolume::Absolute(100.0),
+            VirtualStorageReset::Never,
+            VirtualStorageResetVolume::Initial,
+            VirtualStorageActivePeriod::Always,
         );
 
-        vs_builder
-            .factors(&[2.0, 1.0])
-            .initial_volume(UnresolvedStorageInitialVolume::Absolute(100.0))
-            .reset(VirtualStorageReset::Never)
-            .max_volume(100.0.into());
+        vs_builder.max_volume(100.0.into());
 
         network_builder.virtual_storage_node(vs_builder);
 
@@ -656,8 +638,15 @@ mod tests {
                 .node(NodeBuilder::output("output"));
             network_builder.connect("input", "output");
 
-            let mut vs_builder = VirtualStorageNodeBuilder::new("vs", &["input".into(), "output".into()]);
-            vs_builder.factors(factors);
+            let vs_builder = VirtualStorageNodeBuilder::new(
+                "vs",
+                &["input".into(), "output".into()],
+                factors,
+                UnresolvedStorageInitialVolume::Absolute(0.0),
+                VirtualStorageReset::Never,
+                VirtualStorageResetVolume::Initial,
+                VirtualStorageActivePeriod::Always,
+            );
             network_builder.virtual_storage_node(vs_builder);
 
             let build_err = network_builder
@@ -691,12 +680,16 @@ mod tests {
         let nodes = vec!["input".into()];
         // Virtual storage node cost is high enough to prevent any flow
 
-        let mut vs_builder = VirtualStorageNodeBuilder::new("vs", &nodes);
-        vs_builder
-            .initial_volume(UnresolvedStorageInitialVolume::Proportional(1.0))
-            .reset(VirtualStorageReset::Never)
-            .cost(20.0.into())
-            .max_volume(100.0.into());
+        let mut vs_builder = VirtualStorageNodeBuilder::new(
+            "vs",
+            &nodes,
+            &[1.0],
+            UnresolvedStorageInitialVolume::Proportional(1.0),
+            VirtualStorageReset::Never,
+            VirtualStorageResetVolume::Initial,
+            VirtualStorageActivePeriod::Always,
+        );
+        vs_builder.cost(20.0.into()).max_volume(100.0.into());
 
         network_builder.virtual_storage_node(vs_builder);
 
@@ -732,10 +725,16 @@ mod tests {
         let node = network_builder.node_builder(&name).unwrap();
         node.cost_agg_func(CostAggFunc::Max);
 
-        let mut vs_builder = VirtualStorageNodeBuilder::new("vs", &["input".into()]);
+        let mut vs_builder = VirtualStorageNodeBuilder::new(
+            "vs",
+            &["input".into()],
+            &[1.0],
+            UnresolvedStorageInitialVolume::Proportional(1.0),
+            VirtualStorageReset::NumberOfMonths { months: 1 },
+            VirtualStorageResetVolume::Initial,
+            VirtualStorageActivePeriod::Always,
+        );
         vs_builder
-            .initial_volume(UnresolvedStorageInitialVolume::Proportional(1.0))
-            .reset(VirtualStorageReset::NumberOfMonths { months: 1 })
             .cost(UnresolvedMetricF64::new_parameter_before("cost"))
             .max_volume(100.0.into());
 
@@ -789,11 +788,16 @@ mod tests {
 
         // Virtual storage with contributions from input
         // Max volume is 2.5 and is assumed to start full
-        let mut vs_builder = VirtualStorageNodeBuilder::new("virtual-storage", &["input".into()]);
+        let mut vs_builder = VirtualStorageNodeBuilder::new(
+            "virtual-storage",
+            &["input".into()],
+            &[1.0],
+            UnresolvedStorageInitialVolume::Absolute(2.5),
+            VirtualStorageReset::Never,
+            VirtualStorageResetVolume::Initial,
+            VirtualStorageActivePeriod::Always,
+        );
         vs_builder
-            .factors(&[1.0])
-            .initial_volume(UnresolvedStorageInitialVolume::Absolute(2.5))
-            .reset(VirtualStorageReset::Never)
             .rolling_window(NonZeroUsize::new(5).unwrap())
             .max_volume(2.5.into());
 

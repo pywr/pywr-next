@@ -56,6 +56,11 @@ pub enum Relationship {
     },
 }
 
+impl Relationship {
+    pub const DEFAULT_MIN_ACTIVE: u64 = 0;
+    pub const DEFAULT_MAX_ACTIVE: u64 = 1;
+}
+
 // This macro generates a subset enum for the `AggregatedNode` attributes.
 // It allows for easy conversion between the enum and the `NodeAttribute` type.
 node_attribute_subset_enum! {
@@ -191,18 +196,10 @@ impl AggregatedNode {
 
                     Box::new(r)
                 }
-                Relationship::Exclusive { min_active, max_active } => {
-                    let mut r = ExclusivityBuilder::default();
-
-                    if let Some(min_active) = min_active {
-                        r.min_active(*min_active);
-                    }
-
-                    if let Some(max_active) = max_active {
-                        r.max_active(*max_active);
-                    }
-                    Box::new(r)
-                }
+                Relationship::Exclusive { min_active, max_active } => Box::new(ExclusivityBuilder::new(
+                    min_active.unwrap_or(Relationship::DEFAULT_MIN_ACTIVE),
+                    max_active.unwrap_or(Relationship::DEFAULT_MAX_ACTIVE),
+                )),
             };
 
             agg_node.relationship(r);

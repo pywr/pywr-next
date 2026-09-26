@@ -178,6 +178,12 @@ pub struct UniformDrawdownProfileParameter {
     pub residual_days: Option<ConstantValue<u64>>,
 }
 
+impl UniformDrawdownProfileParameter {
+    pub const DEFAULT_RESET_DAY: u64 = 1;
+    pub const DEFAULT_RESET_MONTH: u64 = 1;
+    pub const DEFAULT_RESIDUAL_DAYS: u64 = 0;
+}
+
 #[cfg(feature = "core")]
 impl UniformDrawdownProfileParameter {
     pub fn add_to_network(
@@ -188,23 +194,23 @@ impl UniformDrawdownProfileParameter {
     ) -> Result<(), SchemaError> {
         let reset_day = match &self.reset_day {
             Some(v) => v.load(args.tables)? as i8,
-            None => 1,
+            None => Self::DEFAULT_RESET_DAY as i8,
         };
         let reset_month = match &self.reset_month {
             Some(v) => v.load(args.tables)? as i8,
-            None => 1,
+            None => Self::DEFAULT_RESET_MONTH as i8,
         };
         let residual_days = match &self.residual_days {
             Some(v) => v.load(args.tables)? as u8,
-            None => 0,
+            None => Self::DEFAULT_RESIDUAL_DAYS as u8,
         };
 
-        let mut p = pywr_core::parameters::UniformDrawdownProfileParameterBuilder::new(
+        let p = pywr_core::parameters::UniformDrawdownProfileParameterBuilder::new(
             ParameterName::new(&self.meta.name, parent),
             reset_day,
             reset_month,
+            residual_days,
         );
-        p.residual_days(residual_days);
 
         network.parameters().f64(Box::new(p));
 
@@ -334,13 +340,19 @@ pub struct RbfProfileVariableSettings {
     pub value_lower_bounds: Option<f64>,
 }
 
+impl RbfProfileVariableSettings {
+    pub const DEFAULT_VALUE_LOWER_BOUNDS: f64 = 0.0;
+}
+
 #[cfg(feature = "core")]
 impl From<RbfProfileVariableSettings> for pywr_core::parameters::RbfProfileVariableConfig {
     fn from(settings: RbfProfileVariableSettings) -> Self {
         Self::new(
             settings.days_of_year_range,
             settings.value_upper_bounds.unwrap_or(f64::INFINITY),
-            settings.value_lower_bounds.unwrap_or(0.0),
+            settings
+                .value_lower_bounds
+                .unwrap_or(RbfProfileVariableSettings::DEFAULT_VALUE_LOWER_BOUNDS),
         )
     }
 }

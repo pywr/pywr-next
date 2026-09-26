@@ -5,6 +5,8 @@ use crate::network::LoadArgs;
 use crate::nodes::{NodeAttribute, NodeComponent};
 use crate::nodes::{NodeMeta, NodeSlot, StorageNode, StorageNodeAttribute};
 use crate::parameters::ConstantFloatVec;
+#[cfg(feature = "core")]
+use crate::parameters::{InterpolatedParameter, Polynomial1DParameter};
 use crate::{SchemaError, mermaid};
 use crate::{node_attribute_subset_enum, node_component_subset_enum};
 #[cfg(feature = "core")]
@@ -55,6 +57,10 @@ pub struct Evaporation {
     pub use_max_area: Option<bool>,
 }
 
+impl Evaporation {
+    pub const DEFAULT_USE_MAX_AREA: bool = false;
+}
+
 /// The leakage data
 #[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema, PywrVisitAll)]
 pub struct Leakage {
@@ -72,6 +78,10 @@ pub struct Rainfall {
     /// If `true` the maximum surface area will be used to calculate the rainfall volume. When
     /// `false`, the area is calculated from the bathymetric data. This defaults to `false`.
     pub use_max_area: Option<bool>,
+}
+
+impl Rainfall {
+    pub const DEFAULT_USE_MAX_AREA: bool = false;
 }
 
 // This macro generates a subset enum for the `ReservoirNode` attributes.
@@ -243,6 +253,7 @@ pub struct ReservoirNode {
 impl ReservoirNode {
     pub const DEFAULT_COMPONENT: ReservoirNodeComponent = ReservoirNodeComponent::Compensation;
     const DEFAULT_OUTPUT_SLOT: ReservoirOutputNodeSlot = ReservoirOutputNodeSlot::Storage;
+    pub const DEFAULT_CONNECT_COMPENSATION_TO_SPILL: bool = true;
 
     /// Get the node's metadata.
     pub(crate) fn meta(&self) -> &NodeMeta {
@@ -428,7 +439,9 @@ impl ReservoirNode {
         };
 
         // connect compensation and spill
-        let connect_comp = self.connect_compensation_to_spill.unwrap_or(true);
+        let connect_comp = self
+            .connect_compensation_to_spill
+            .unwrap_or(Self::DEFAULT_CONNECT_COMPENSATION_TO_SPILL);
         if connect_comp {
             if let (Some(spill), Some(comp)) = (spill_node, comp_node) {
                 network.connect(comp, spill);
@@ -455,7 +468,7 @@ impl ReservoirNode {
             if let Some(rainfall) = &self.rainfall {
                 let mut rainfall_input = pywr_core::NodeBuilder::input(self.rainfall_node_sub_name());
 
-                let use_max_area = rainfall.use_max_area.unwrap_or(false);
+                let use_max_area = rainfall.use_max_area.unwrap_or(Rainfall::DEFAULT_USE_MAX_AREA);
                 let rainfall_area_metric =
                     self.get_area_metric(network, args, "rainfall_area", bathymetry, use_max_area)?;
                 let rainfall_metric = rainfall.data.load(network, args, Some(&self.meta().name))?;
@@ -486,7 +499,7 @@ impl ReservoirNode {
             if let Some(evaporation) = &self.evaporation {
                 let mut evaporation_output = pywr_core::NodeBuilder::input(self.evaporation_node_sub_name());
 
-                let use_max_area = evaporation.use_max_area.unwrap_or(false);
+                let use_max_area = evaporation.use_max_area.unwrap_or(Evaporation::DEFAULT_USE_MAX_AREA);
                 let evaporation_area_metric =
                     self.get_area_metric(network, args, "evaporation_area", bathymetry, use_max_area)?;
 
@@ -589,6 +602,7 @@ impl ReservoirNode {
                     interpolated_area_parameter_name.clone(),
                     current_storage,
                     points,
+                    InterpolatedParameter::DEFAULT_ERROR_ON_BOUNDS,
                 );
 
                 network.parameters().f64(Box::new(interpolated_area_parameter));
@@ -601,6 +615,8 @@ impl ReservoirNode {
                     poly_area_parameter_name.clone(),
                     current_storage,
                     coeffs.clone(),
+                    Polynomial1DParameter::DEFAULT_SCALE,
+                    Polynomial1DParameter::DEFAULT_OFFSET,
                 );
 
                 network.parameters().f64(Box::new(poly_area_parameter));
