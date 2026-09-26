@@ -83,6 +83,7 @@ model_tests! {
     test_reservoir_with_river1: ("reservoir_with_river1.json", vec![("reservoir_with_river1-expected.csv", ResultsShape::Long)], vec![], vec![]),
     test_reservoir_with_river2: ("reservoir_with_river2.json", vec![("reservoir_with_river2-expected.csv", ResultsShape::Long)], vec![], vec![]),
     test_reservoir_with_spill1: ("reservoir_with_spill1.json", vec![("reservoir_with_spill1-expected.csv", ResultsShape::Long)], vec![], vec![]),
+    test_reservoir_with_evaporation1: ("reservoir_with_evaporation1.json", vec![("reservoir_with_evaporation1-expected.csv", ResultsShape::Long)], vec![], vec![]),
     test_river_loss1: ("river_loss1.json", vec![("river_loss1-expected.csv", ResultsShape::Long)], vec!["ipm-simd", "ipm-ocl-f64"], vec![]),
     test_river_gauge1: ("river_gauge1.json", vec![("river_gauge1-expected.csv", ResultsShape::Long)], vec![], vec![]),
     test_river_split_with_gauge1: ("river_split_with_gauge1.json", vec![("river_split_with_gauge1-expected.csv", ResultsShape::Long)], vec!["ipm-simd", "ipm-ocl-f64"], vec![]),
