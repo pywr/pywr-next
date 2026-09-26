@@ -869,6 +869,20 @@ pub enum ParameterBuildError {
         group: String,
     },
     #[error(
+        "Number of values ({values}) must be exactly one greater than number of control curves ({control_curves})."
+    )]
+    ControlCurveValuesLengthMismatch {
+        values: usize,
+        control_curves: usize,
+    },
+    #[error(
+        "Number of values ({values}) must be exactly two greater than number of control curves ({control_curves})."
+    )]
+    ControlCurveValuesInterpLengthMismatch {
+        values: usize,
+        control_curves: usize,
+    },
+    #[error(
         "Number of columns ({array_cols}) does not match the size ({scenarios}) of the specified scenario group '{group}'."
     )]
     ArrayNumColsForScenarioMismatch {
