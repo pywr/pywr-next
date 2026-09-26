@@ -1,5 +1,6 @@
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
+use crate::meta::NamedMeta;
 use crate::visit::{Reference, ReferenceMut, VisitReferences};
 #[cfg(feature = "core")]
 use pywr_core::recorders::{CsvLongFmtOutputBuilder, CsvWideFmtOutputBuilder, RecorderBuilder};
@@ -80,7 +81,7 @@ impl VisitReferences for CsvMetricSet {
 #[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitPaths, PywrVisitReferences)]
 pub struct CsvOutput {
-    pub name: String,
+    pub meta: NamedMeta,
     pub filename: PathBuf,
     pub format: CsvFormat,
     pub metric_set: CsvMetricSet,
@@ -102,7 +103,7 @@ impl CsvOutput {
         let recorder: Box<dyn RecorderBuilder> = match self.format {
             CsvFormat::Wide => match &self.metric_set {
                 CsvMetricSet::Single(metric_set) => {
-                    Box::new(CsvWideFmtOutputBuilder::new(&self.name, filename, metric_set))
+                    Box::new(CsvWideFmtOutputBuilder::new(&self.meta.name, filename, metric_set))
                 }
                 CsvMetricSet::Multiple(_) => {
                     return Err(SchemaError::MultipleMetricSetsNotSupported(
@@ -111,8 +112,11 @@ impl CsvOutput {
                 }
             },
             CsvFormat::Long => {
-                let mut builder =
-                    CsvLongFmtOutputBuilder::new(&self.name, filename, self.decimal_places.and_then(NonZeroU32::new));
+                let mut builder = CsvLongFmtOutputBuilder::new(
+                    &self.meta.name,
+                    filename,
+                    self.decimal_places.and_then(NonZeroU32::new),
+                );
 
                 match &self.metric_set {
                     CsvMetricSet::Single(metric_set) => {

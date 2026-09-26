@@ -617,7 +617,7 @@ mod tests {
         ],
         "metric_sets": [
             {
-                "name": "ms1",
+                "meta": { "name": "ms1" },
                 "metrics": [{ "type": "Parameter", "name": "metric-set-metric" }]
             }
         ]
@@ -763,7 +763,7 @@ mod tests {
         ],
         "metric_sets": [
             {
-                "name": "ms1",
+                "meta": { "name": "ms1" },
                 "metrics": [{ "type": "Node", "name": "metric-set-metric" }]
             }
         ]
@@ -893,15 +893,15 @@ mod tests {
         ],
         "metric_sets": [
             {
-                "name": "ms1",
+                "meta": { "name": "ms1" },
                 "metrics": [{ "type": "Parameter", "name": "metric-set-parameter" }]
             }
         ],
         "outputs": [
-            { "name": "csv-out", "type": "CSV", "format": "Long", "filename": "out.csv",
+            { "meta": { "name": "csv-out" }, "type": "CSV", "format": "Long", "filename": "out.csv",
               "metric_set": ["csv-output-metric-set-1", "csv-output-metric-set-2"] },
-            { "name": "hdf-out", "type": "HDF5", "filename": "out.h5", "metric_set": "hdf5-output-metric-set" },
-            { "name": "memory-out", "type": "Memory", "metric_set": "memory-output-metric-set" }
+            { "meta": { "name": "hdf-out" }, "type": "HDF5", "filename": "out.h5", "metric_set": "hdf5-output-metric-set" },
+            { "meta": { "name": "memory-out" }, "type": "Memory", "metric_set": "memory-output-metric-set" }
         ]
     }
     "#;

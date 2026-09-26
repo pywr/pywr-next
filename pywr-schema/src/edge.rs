@@ -7,17 +7,59 @@ use crate::nodes::NodeSlot;
 use crate::visit::{Reference, ReferenceMut, VisitReferences};
 #[cfg(feature = "core")]
 use pywr_core::{metric::UnresolvedMetricF64, network::UnresolvedEdge, node::UnresolvedNode};
-use pywr_schema_macros::skip_serializing_none;
+use pywr_schema_macros::{PywrVisitAll, skip_serializing_none};
 use schemars::JsonSchema;
+use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 
+/// Optional annotations for an edge. Edges are identified by endpoints and slots, not metadata.
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Default, JsonSchema, PywrVisitAll)]
+#[serde(deny_unknown_fields)]
+pub struct EdgeMeta {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub comment: Option<String>,
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
+    pub tags: HashMap<String, String>,
+}
+
 #[skip_serializing_none]
-#[derive(serde::Deserialize, serde::Serialize, Clone, JsonSchema, Debug, PartialEq, Eq, Hash)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, JsonSchema, Debug)]
 pub struct Edge {
+    pub meta: Option<EdgeMeta>,
     pub from_node: String,
     pub to_node: String,
     pub from_slot: Option<NodeSlot>,
     pub to_slot: Option<NodeSlot>,
+}
+
+impl Edge {
+    pub fn meta(&self) -> Option<&EdgeMeta> {
+        self.meta.as_ref()
+    }
+
+    pub fn meta_mut(&mut self) -> Option<&mut EdgeMeta> {
+        self.meta.as_mut()
+    }
+}
+
+impl PartialEq for Edge {
+    fn eq(&self, other: &Self) -> bool {
+        self.from_node == other.from_node
+            && self.to_node == other.to_node
+            && self.from_slot == other.from_slot
+            && self.to_slot == other.to_slot
+    }
+}
+
+impl Eq for Edge {}
+
+impl std::hash::Hash for Edge {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.from_node.hash(state);
+        self.to_node.hash(state);
+        self.from_slot.hash(state);
+        self.to_slot.hash(state);
+    }
 }
 
 impl TryFrom<pywr_v1_schema::edge::Edge> for Edge {
@@ -38,6 +80,7 @@ impl TryFrom<pywr_v1_schema::edge::Edge> for Edge {
             to_node: v1.to_node,
             from_slot,
             to_slot,
+            meta: None,
         })
     }
 }
@@ -140,5 +183,22 @@ impl Edge {
         };
 
         Ok(metric)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Edge;
+    use std::collections::HashSet;
+
+    #[test]
+    fn edge_metadata_is_optional_and_not_part_of_identity() {
+        let json = r#"{"from_node":"a","to_node":"b","from_slot":null,"to_slot":null}"#;
+        let plain: Edge = serde_json::from_str(json).unwrap();
+        let annotated: Edge = serde_json::from_str(r#"{"from_node":"a","to_node":"b","meta":{}}"#).unwrap();
+        assert_eq!(plain, annotated);
+        assert_eq!(HashSet::from([plain.clone()]), HashSet::from([annotated.clone()]));
+        assert!(serde_json::to_value(&plain).unwrap().get("meta").is_none());
+        assert_eq!(serde_json::to_value(&annotated).unwrap()["meta"], serde_json::json!({}));
     }
 }

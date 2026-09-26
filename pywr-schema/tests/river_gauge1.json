@@ -75,7 +75,7 @@
     ],
     "metric_sets": [
       {
-        "name": "nodes",
+        "meta": {"name": "nodes"},
         "filters": {
           "all_nodes": true
         }
@@ -83,7 +83,7 @@
     ],
     "outputs": [
       {
-        "name": "node-outputs",
+        "meta": {"name": "node-outputs"},
         "type": "CSV",
         "format": "Long",
         "filename": "river_gauge1-expected.csv",

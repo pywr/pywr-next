@@ -1,5 +1,6 @@
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
+use crate::meta::NamedMeta;
 use crate::visit::{Reference, ReferenceMut, VisitReferences};
 #[cfg(feature = "core")]
 use pywr_core::recorders::ArrowStreamOutputBuilder;
@@ -16,7 +17,7 @@ use std::path::PathBuf;
 /// are stored as `Float64` Arrow extension fields carrying Pywr metric metadata.
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitPaths)]
 pub struct ArrowStreamOutput {
-    pub name: String,
+    pub meta: NamedMeta,
     pub filename: PathBuf,
     /// The metric set to write.
     pub metric_set: String,
@@ -46,7 +47,7 @@ impl ArrowStreamOutput {
             (Some(output_directory), true) => output_directory.join(&self.filename),
             _ => self.filename.to_path_buf(),
         };
-        let recorder = ArrowStreamOutputBuilder::new(&self.name, filename, &self.metric_set, self.batch_size);
+        let recorder = ArrowStreamOutputBuilder::new(&self.meta.name, filename, &self.metric_set, self.batch_size);
         network.recorder(Box::new(recorder));
         Ok(())
     }
@@ -74,9 +75,9 @@ mod tests {
           { "meta": { "name": "demand" }, "type": "Output", "max_flow": { "type": "Literal", "value": 10 } }
         ],
         "edges": [{ "from_node": "supply", "to_node": "demand" }],
-        "metric_sets": [{ "name": "nodes", "metrics": [{ "type": "Node", "name": "demand" }] }],
+        "metric_sets": [{ "meta": { "name": "nodes" }, "metrics": [{ "type": "Node", "name": "demand" }] }],
         "outputs": [{
-          "name": "arrow-output",
+          "meta": { "name": "arrow-output" },
           "type": "ArrowStream",
           "filename": "outputs.arrow",
           "metric_set": "nodes",

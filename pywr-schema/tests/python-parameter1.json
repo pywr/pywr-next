@@ -96,7 +96,7 @@
     ],
     "metric_sets": [
       {
-        "name": "parameters",
+        "meta": {"name": "parameters"},
         "metrics": [
           {
             "type": "Parameter",
@@ -111,7 +111,7 @@
     ],
     "outputs": [
       {
-        "name": "nodes",
+        "meta": {"name": "nodes"},
         "type": "CSV",
         "format": "Long",
         "filename": "python-parameter1-expected.csv",
