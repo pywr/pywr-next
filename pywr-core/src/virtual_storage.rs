@@ -54,15 +54,20 @@ pub struct VirtualStorageNodeBuilder {
 }
 
 impl VirtualStorageNodeBuilder {
-    pub fn new(name: &str, nodes: &[UnresolvedNode]) -> Self {
+    pub fn new(
+        name: &str,
+        nodes: &[UnresolvedNode],
+        reset: VirtualStorageReset,
+        reset_volume: VirtualStorageResetVolume,
+    ) -> Self {
         let name = UnresolvedNode::new(name, None);
         Self {
             name,
             nodes: nodes.to_vec(),
             factors: None,
             initial_volume: UnresolvedStorageInitialVolume::Absolute(0.0),
-            reset: VirtualStorageReset::Never,
-            reset_volume: VirtualStorageResetVolume::Initial,
+            reset,
+            reset_volume,
             rolling_window: None,
             active_period: VirtualStorageActivePeriod::Always,
             cost: None,
@@ -108,16 +113,6 @@ impl VirtualStorageNodeBuilder {
 
     pub fn min_volume(&mut self, min_volume: UnresolvedMetricF64) -> &mut Self {
         self.min_volume = Some(min_volume);
-        self
-    }
-
-    pub fn reset(&mut self, reset: VirtualStorageReset) -> &mut Self {
-        self.reset = reset;
-        self
-    }
-
-    pub fn reset_volume(&mut self, reset_volume: VirtualStorageResetVolume) -> &mut Self {
-        self.reset_volume = reset_volume;
         self
     }
 
@@ -525,7 +520,7 @@ mod tests {
     use crate::timestep::{TimeDomainBuilder, Timestep, TimestepDuration};
     use crate::virtual_storage::{
         VirtualStorageActivePeriod, VirtualStorageNodeBuilder, VirtualStorageNodeBuilderError, VirtualStorageReset,
-        months_since_last_reset,
+        VirtualStorageResetVolume, months_since_last_reset,
     };
     use jiff::civil::date;
     use ndarray::Array;
@@ -597,12 +592,13 @@ mod tests {
                 UnresolvedNode::new("link", Some("0")),
                 UnresolvedNode::new("link", Some("1")),
             ],
+            VirtualStorageReset::Never,
+            VirtualStorageResetVolume::Initial,
         );
 
         vs_builder
             .factors(&[2.0, 1.0])
             .initial_volume(UnresolvedStorageInitialVolume::Absolute(100.0))
-            .reset(VirtualStorageReset::Never)
             .max_volume(100.0.into());
 
         network_builder.virtual_storage_node(vs_builder);
@@ -656,7 +652,12 @@ mod tests {
                 .node(NodeBuilder::output("output"));
             network_builder.connect("input", "output");
 
-            let mut vs_builder = VirtualStorageNodeBuilder::new("vs", &["input".into(), "output".into()]);
+            let mut vs_builder = VirtualStorageNodeBuilder::new(
+                "vs",
+                &["input".into(), "output".into()],
+                VirtualStorageReset::Never,
+                VirtualStorageResetVolume::Initial,
+            );
             vs_builder.factors(factors);
             network_builder.virtual_storage_node(vs_builder);
 
@@ -691,10 +692,14 @@ mod tests {
         let nodes = vec!["input".into()];
         // Virtual storage node cost is high enough to prevent any flow
 
-        let mut vs_builder = VirtualStorageNodeBuilder::new("vs", &nodes);
+        let mut vs_builder = VirtualStorageNodeBuilder::new(
+            "vs",
+            &nodes,
+            VirtualStorageReset::Never,
+            VirtualStorageResetVolume::Initial,
+        );
         vs_builder
             .initial_volume(UnresolvedStorageInitialVolume::Proportional(1.0))
-            .reset(VirtualStorageReset::Never)
             .cost(20.0.into())
             .max_volume(100.0.into());
 
@@ -732,10 +737,14 @@ mod tests {
         let node = network_builder.node_builder(&name).unwrap();
         node.cost_agg_func(CostAggFunc::Max);
 
-        let mut vs_builder = VirtualStorageNodeBuilder::new("vs", &["input".into()]);
+        let mut vs_builder = VirtualStorageNodeBuilder::new(
+            "vs",
+            &["input".into()],
+            VirtualStorageReset::NumberOfMonths { months: 1 },
+            VirtualStorageResetVolume::Initial,
+        );
         vs_builder
             .initial_volume(UnresolvedStorageInitialVolume::Proportional(1.0))
-            .reset(VirtualStorageReset::NumberOfMonths { months: 1 })
             .cost(UnresolvedMetricF64::new_parameter_before("cost"))
             .max_volume(100.0.into());
 
@@ -789,11 +798,15 @@ mod tests {
 
         // Virtual storage with contributions from input
         // Max volume is 2.5 and is assumed to start full
-        let mut vs_builder = VirtualStorageNodeBuilder::new("virtual-storage", &["input".into()]);
+        let mut vs_builder = VirtualStorageNodeBuilder::new(
+            "virtual-storage",
+            &["input".into()],
+            VirtualStorageReset::Never,
+            VirtualStorageResetVolume::Initial,
+        );
         vs_builder
             .factors(&[1.0])
             .initial_volume(UnresolvedStorageInitialVolume::Absolute(2.5))
-            .reset(VirtualStorageReset::Never)
             .rolling_window(NonZeroUsize::new(5).unwrap())
             .max_volume(2.5.into());
 

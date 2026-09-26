@@ -69,14 +69,19 @@ impl InterpolatedParameter {
         let points = xp.into_iter().zip(fp).collect::<Vec<_>>();
 
         let name = ParameterName::new(&self.meta.name, parent);
+        let error_on_bounds = self.error_on_bounds.unwrap_or(Self::DEFAULT_ERROR_ON_BOUNDS);
 
-        let mut builder = match self.phase {
-            ParameterPhase::Before => pywr_core::parameters::InterpolatedParameterBuilder::before(name, x, points),
-            ParameterPhase::After => pywr_core::parameters::InterpolatedParameterBuilder::after(name, x, points),
-            ParameterPhase::Both => pywr_core::parameters::InterpolatedParameterBuilder::both(name, x, points),
+        let builder = match self.phase {
+            ParameterPhase::Before => {
+                pywr_core::parameters::InterpolatedParameterBuilder::before(name, x, points, error_on_bounds)
+            }
+            ParameterPhase::After => {
+                pywr_core::parameters::InterpolatedParameterBuilder::after(name, x, points, error_on_bounds)
+            }
+            ParameterPhase::Both => {
+                pywr_core::parameters::InterpolatedParameterBuilder::both(name, x, points, error_on_bounds)
+            }
         };
-
-        builder.error_on_bounds(self.error_on_bounds.unwrap_or(Self::DEFAULT_ERROR_ON_BOUNDS));
 
         network.parameters().f64(Box::new(builder));
 

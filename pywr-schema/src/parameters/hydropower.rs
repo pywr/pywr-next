@@ -125,17 +125,16 @@ impl HydropowerTargetParameter {
             actual_flow,
             target,
             water_elevation,
-            elevation: Some(self.turbine_elevation.unwrap_or(Self::DEFAULT_TURBINE_ELEVATION)),
-            min_head: Some(self.min_head.unwrap_or(Self::DEFAULT_MIN_HEAD)),
+            elevation: self.turbine_elevation.unwrap_or(Self::DEFAULT_TURBINE_ELEVATION),
+            min_head: self.min_head.unwrap_or(Self::DEFAULT_MIN_HEAD),
             max_flow,
             min_flow,
-            efficiency: Some(self.efficiency.unwrap_or(Self::DEFAULT_EFFICIENCY)),
-            water_density: Some(self.water_density.unwrap_or(Self::DEFAULT_WATER_DENSITY)),
-            flow_unit_conversion: Some(self.flow_unit_conversion.unwrap_or(Self::DEFAULT_FLOW_UNIT_CONVERSION)),
-            energy_unit_conversion: Some(
-                self.energy_unit_conversion
-                    .unwrap_or(Self::DEFAULT_ENERGY_UNIT_CONVERSION),
-            ),
+            efficiency: self.efficiency.unwrap_or(Self::DEFAULT_EFFICIENCY),
+            water_density: self.water_density.unwrap_or(Self::DEFAULT_WATER_DENSITY),
+            flow_unit_conversion: self.flow_unit_conversion.unwrap_or(Self::DEFAULT_FLOW_UNIT_CONVERSION),
+            energy_unit_conversion: self
+                .energy_unit_conversion
+                .unwrap_or(Self::DEFAULT_ENERGY_UNIT_CONVERSION),
         };
         let p = pywr_core::parameters::HydropowerTargetParameterBuilder::new(
             ParameterName::new(&self.meta.name, parent),

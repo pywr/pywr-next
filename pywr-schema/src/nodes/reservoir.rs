@@ -5,6 +5,8 @@ use crate::network::LoadArgs;
 use crate::nodes::{NodeAttribute, NodeComponent};
 use crate::nodes::{NodeMeta, NodeSlot, StorageNode, StorageNodeAttribute};
 use crate::parameters::ConstantFloatVec;
+#[cfg(feature = "core")]
+use crate::parameters::{InterpolatedParameter, Polynomial1DParameter};
 use crate::{SchemaError, mermaid};
 use crate::{node_attribute_subset_enum, node_component_subset_enum};
 #[cfg(feature = "core")]
@@ -600,6 +602,7 @@ impl ReservoirNode {
                     interpolated_area_parameter_name.clone(),
                     current_storage,
                     points,
+                    InterpolatedParameter::DEFAULT_ERROR_ON_BOUNDS,
                 );
 
                 network.parameters().f64(Box::new(interpolated_area_parameter));
@@ -612,6 +615,8 @@ impl ReservoirNode {
                     poly_area_parameter_name.clone(),
                     current_storage,
                     coeffs.clone(),
+                    Polynomial1DParameter::DEFAULT_SCALE,
+                    Polynomial1DParameter::DEFAULT_OFFSET,
                 );
 
                 network.parameters().f64(Box::new(poly_area_parameter));

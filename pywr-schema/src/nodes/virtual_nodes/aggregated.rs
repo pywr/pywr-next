@@ -196,12 +196,10 @@ impl AggregatedNode {
 
                     Box::new(r)
                 }
-                Relationship::Exclusive { min_active, max_active } => {
-                    let mut r = ExclusivityBuilder::default();
-                    r.min_active(min_active.unwrap_or(Relationship::DEFAULT_MIN_ACTIVE))
-                        .max_active(max_active.unwrap_or(Relationship::DEFAULT_MAX_ACTIVE));
-                    Box::new(r)
-                }
+                Relationship::Exclusive { min_active, max_active } => Box::new(ExclusivityBuilder::new(
+                    min_active.unwrap_or(Relationship::DEFAULT_MIN_ACTIVE),
+                    max_active.unwrap_or(Relationship::DEFAULT_MAX_ACTIVE),
+                )),
             };
 
             agg_node.relationship(r);

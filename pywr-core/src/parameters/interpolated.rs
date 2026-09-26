@@ -99,12 +99,13 @@ impl InterpolatedParameterBuilder {
         name: ParameterName,
         x: UnresolvedMetricF64,
         points: Vec<(UnresolvedMetricF64, UnresolvedMetricF64)>,
+        error_on_bounds: bool,
     ) -> Self {
         Self {
             meta: ParameterMeta::new(name),
             x,
             points,
-            error_on_bounds: true,
+            error_on_bounds,
             phase: MetricConsumerPhase::Before,
         }
     }
@@ -114,12 +115,13 @@ impl InterpolatedParameterBuilder {
         name: ParameterName,
         x: UnresolvedMetricF64,
         points: Vec<(UnresolvedMetricF64, UnresolvedMetricF64)>,
+        error_on_bounds: bool,
     ) -> Self {
         Self {
             meta: ParameterMeta::new(name),
             x,
             points,
-            error_on_bounds: true,
+            error_on_bounds,
             phase: MetricConsumerPhase::After,
         }
     }
@@ -129,19 +131,15 @@ impl InterpolatedParameterBuilder {
         name: ParameterName,
         x: UnresolvedMetricF64,
         points: Vec<(UnresolvedMetricF64, UnresolvedMetricF64)>,
+        error_on_bounds: bool,
     ) -> Self {
         Self {
             meta: ParameterMeta::new(name),
             x,
             points,
-            error_on_bounds: true,
+            error_on_bounds,
             phase: MetricConsumerPhase::Both,
         }
-    }
-
-    pub fn error_on_bounds(&mut self, value: bool) -> &mut Self {
-        self.error_on_bounds = value;
-        self
     }
 }
 

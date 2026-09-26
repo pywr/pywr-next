@@ -245,7 +245,12 @@ impl VirtualStorageNode {
     ) -> Result<(), SchemaError> {
         let nodes = self.nodes_for_flow_constraints(args)?;
 
-        let mut builder = VirtualStorageNodeBuilder::new(self.meta.name.as_str(), &nodes);
+        let mut builder = VirtualStorageNodeBuilder::new(
+            self.meta.name.as_str(),
+            &nodes,
+            self.reset.clone().unwrap_or(Self::DEFAULT_RESET).try_into()?,
+            self.reset_volume.unwrap_or(Self::DEFAULT_RESET_VOLUME).into(),
+        );
 
         builder.initial_volume(self.initial_volume.into());
 
@@ -263,11 +268,6 @@ impl VirtualStorageNode {
             let value = max_volume.load(network, args, Some(&self.meta.name))?;
             builder.max_volume(value);
         }
-
-        let reset = self.reset.clone().unwrap_or(Self::DEFAULT_RESET).try_into()?;
-        builder
-            .reset(reset)
-            .reset_volume(self.reset_volume.unwrap_or(Self::DEFAULT_RESET_VOLUME).into());
 
         // Set the active period if this is a seasonal reset
         if let Some(VirtualStorageReset::Seasonal(seasonal)) = &self.reset {

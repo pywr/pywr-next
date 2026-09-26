@@ -40,22 +40,21 @@ impl Polynomial1DParameter {
     ) -> Result<(), SchemaError> {
         let metric = self.metric.load(network, args, None)?;
         let name = ParameterName::new(&self.meta.name, parent);
+        let coefficients = self.coefficients.clone();
+        let scale = self.scale.unwrap_or(Self::DEFAULT_SCALE);
+        let offset = self.offset.unwrap_or(Self::DEFAULT_OFFSET);
 
-        let mut builder = match self.phase {
+        let builder = match self.phase {
             ParameterPhase::Before => {
-                pywr_core::parameters::Polynomial1DParameterBuilder::before(name, metric, self.coefficients.clone())
+                pywr_core::parameters::Polynomial1DParameterBuilder::before(name, metric, coefficients, scale, offset)
             }
             ParameterPhase::After => {
-                pywr_core::parameters::Polynomial1DParameterBuilder::after(name, metric, self.coefficients.clone())
+                pywr_core::parameters::Polynomial1DParameterBuilder::after(name, metric, coefficients, scale, offset)
             }
             ParameterPhase::Both => {
-                pywr_core::parameters::Polynomial1DParameterBuilder::both(name, metric, self.coefficients.clone())
+                pywr_core::parameters::Polynomial1DParameterBuilder::both(name, metric, coefficients, scale, offset)
             }
         };
-
-        builder
-            .scale(self.scale.unwrap_or(Self::DEFAULT_SCALE))
-            .offset(self.offset.unwrap_or(Self::DEFAULT_OFFSET));
 
         network.parameters().f64(Box::new(builder));
 

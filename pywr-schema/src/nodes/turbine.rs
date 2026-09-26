@@ -200,14 +200,14 @@ impl TurbineNode {
             actual_flow: Some(inflow_metric),
             target: target_value,
             water_elevation,
-            elevation: Some(self.turbine_elevation),
-            min_head: Some(self.min_head),
+            elevation: self.turbine_elevation,
+            min_head: self.min_head,
             max_flow: None,
             min_flow: None,
-            efficiency: Some(self.efficiency),
-            water_density: Some(self.water_density),
-            flow_unit_conversion: Some(self.flow_unit_conversion),
-            energy_unit_conversion: Some(self.energy_unit_conversion),
+            efficiency: self.efficiency,
+            water_density: self.water_density,
+            flow_unit_conversion: self.flow_unit_conversion,
+            energy_unit_conversion: self.energy_unit_conversion,
         };
 
         let p = pywr_core::parameters::HydropowerTargetParameterBuilder::new(name.clone(), turbine_data);
