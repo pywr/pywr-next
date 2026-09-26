@@ -102,7 +102,7 @@ impl MetricSetState {
 
 #[derive(Debug, Error)]
 pub enum MetricSetSaveError {
-    #[error("Metric error: {0}")]
+    #[error("Metric error.")]
     MetricF64Error(#[from] MetricF64Error),
 }
 
@@ -212,7 +212,7 @@ impl MetricSet {
 
 #[derive(Error, Debug)]
 pub enum MetricSetBuilderError {
-    #[error("Could not resolve output f64 metric `{name}`: {source}")]
+    #[error("Could not resolve output f64 metric `{name}`.")]
     ResolveMetricF64Error {
         name: String,
         #[source]

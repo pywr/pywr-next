@@ -33,16 +33,21 @@ impl<S> ModelState<S> {
     pub fn recorder_state(&self) -> &Vec<Option<Box<dyn RecorderInternalState>>> {
         &self.recorder_state
     }
+
+    /// Get the current time-step index of the model state.
+    pub fn current_time_step_idx(&self) -> usize {
+        self.current_time_step_idx
+    }
 }
 
 /// Errors that can occur when setting up a multi-network model.
 #[derive(Debug, Error)]
 pub enum ModelSetupError {
-    #[error("Failed to setup network: {0}")]
+    #[error("Failed to setup network.")]
     NetworkSetupError(#[from] Box<NetworkSetupError>),
-    #[error("Error setting up recorder for network: {0}")]
+    #[error("Error setting up recorder for network.")]
     RecorderSetupError(#[from] Box<NetworkRecorderSetupError>),
-    #[error("Failed to setup solver for network: {0}")]
+    #[error("Failed to setup solver for network.")]
     SolverSetupError(#[from] Box<NetworkSolverSetupError>),
 }
 
@@ -51,15 +56,20 @@ pub enum ModelSetupError {
 pub enum ModelStepError {
     #[error("No more timesteps")]
     EndOfTimesteps,
-    #[error("Error stepping through network at timestep {timestep:#?}: {source}")]
+    #[error("Error stepping through network at timestep {timestep:#?}.")]
     NetworkStepError {
         timestep: Timestep,
         #[source]
         source: Box<NetworkStepError>,
     },
-    #[error("Error saving recorder for network at timestep {timestep:#?}: {source}")]
+    #[error("Error saving recorder for network at timestep {timestep:#?}.")]
     RecorderSaveError {
         timestep: Timestep,
+        #[source]
+        source: Box<NetworkRecorderSaveError>,
+    },
+    #[error("Error flushing recorder output.")]
+    RecorderFlushError {
         #[source]
         source: Box<NetworkRecorderSaveError>,
     },
@@ -68,9 +78,9 @@ pub enum ModelStepError {
 /// Errors that can occur when finalising a multi-network model.
 #[derive(Debug, Error)]
 pub enum ModelFinaliseError {
-    #[error("Error finalising network: {0}")]
+    #[error("Error finalising network.")]
     NetworkFinaliseError(#[from] NetworkFinaliseError),
-    #[error("Timing data from a different network: {source}")]
+    #[error("Timing data from a different network.")]
     TimingMismatchError {
         #[source]
         source: ParameterCollectionIdMismatchError,
@@ -79,11 +89,11 @@ pub enum ModelFinaliseError {
 
 #[derive(Debug, Error)]
 pub enum ModelRunError {
-    #[error("Error setting up model: {0}")]
+    #[error("Error setting up model.")]
     SetupError(#[from] ModelSetupError),
-    #[error("Error stepping through model: {0}")]
+    #[error("Error stepping through model.")]
     StepError(#[from] ModelStepError),
-    #[error("Error finalising model: {0}")]
+    #[error("Error finalising model.")]
     FinaliseError(#[from] ModelFinaliseError),
 }
 
@@ -95,10 +105,17 @@ pub struct ModelTimings {
 }
 
 impl ModelTimings {
-    pub fn new_with_component_timings(network: &Network) -> Self {
+    pub fn new_with_component_timings(model: &Model) -> Self {
         Self {
             run_duration: RunDuration::start(),
-            network_timings: NetworkTimings::new_with_component_timings(network),
+            network_timings: NetworkTimings::new_with_component_timings(&model.network),
+        }
+    }
+
+    pub fn new_without_component_timings() -> Self {
+        Self {
+            run_duration: RunDuration::start(),
+            network_timings: NetworkTimings::new_without_component_timings(),
         }
     }
 
@@ -124,6 +141,14 @@ impl ModelTimings {
 
     pub fn speed(&self) -> f64 {
         self.run_duration.speed()
+    }
+
+    pub fn network_timings(&self) -> &NetworkTimings {
+        &self.network_timings
+    }
+
+    pub fn network_timings_mut(&mut self) -> &mut NetworkTimings {
+        &mut self.network_timings
     }
 }
 
@@ -156,6 +181,16 @@ impl Model {
 
     pub fn network(&self) -> &Network {
         &self.network
+    }
+
+    /// Wait until asynchronous recorder output saved in previous timesteps has
+    /// been flushed.
+    pub fn flush_recorders<S>(&self, state: &mut ModelState<S>) -> Result<(), ModelStepError> {
+        self.network
+            .flush_recorders(&mut state.recorder_state)
+            .map_err(|source| ModelStepError::RecorderFlushError {
+                source: Box::new(source),
+            })
     }
 
     pub fn required_features(&self) -> HashSet<SolverFeatures> {
@@ -424,7 +459,7 @@ impl Model {
     {
         let mut state = self.setup(solver_config)?;
 
-        let mut timings = ModelTimings::new_with_component_timings(&self.network);
+        let mut timings = ModelTimings::new_with_component_timings(self);
 
         self.run_with_state(&mut state, solver_config, &mut timings)?;
 
@@ -479,7 +514,7 @@ impl Model {
     {
         // Setup the network and create the initial state
         let mut state = self.setup_multi_scenario(solver_config)?;
-        let mut timings = ModelTimings::new_with_component_timings(&self.network);
+        let mut timings = ModelTimings::new_with_component_timings(self);
         self.run_multi_scenario_with_state(&mut state, solver_config, &mut timings)?;
 
         let result = self.finalise_multi_scenario(state, timings)?;
@@ -527,7 +562,7 @@ impl Model {
 
 #[derive(Debug, Error)]
 pub enum ModelBuilderError {
-    #[error("Error building network: {0}")]
+    #[error("Error building network.")]
     NetworkBuildError(#[from] NetworkBuildError),
 }
 

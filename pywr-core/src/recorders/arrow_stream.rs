@@ -15,7 +15,7 @@ use arrow::record_batch::RecordBatch;
 use arrow_schema::extension::{EXTENSION_TYPE_METADATA_KEY, EXTENSION_TYPE_NAME_KEY, ExtensionType};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::fs::File;
+use std::fs::{File, OpenOptions};
 use std::io::{self, Write};
 use std::num::NonZeroUsize;
 use std::ops::Deref;
@@ -111,13 +111,15 @@ pub struct ArrowStreamCommit {
 /// Errors produced by the Arrow IPC stream output.
 #[derive(Debug, Error)]
 pub enum ArrowStreamError {
-    #[error("I/O error with Arrow stream at `{path}`: {source}")]
+    #[error("I/O error with Arrow stream at `{path}`.")]
     Io {
         path: PathBuf,
         #[source]
         source: io::Error,
     },
-    #[error("Arrow IPC error: {0}")]
+    #[error("Arrow stream output already exists at `{path}`")]
+    OutputAlreadyExists { path: PathBuf },
+    #[error("Arrow IPC error.")]
     Arrow(#[from] ArrowError),
     #[error("Metric set index `{index}` not found")]
     MetricSetIndexNotFound { index: MetricSetIndex },
@@ -151,6 +153,7 @@ struct PendingBatch {
 #[derive(Debug)]
 enum WorkerMessage {
     Batch(PendingBatch),
+    Flush(Sender<()>),
     Finish,
 }
 
@@ -281,6 +284,12 @@ fn worker(
                     let _ = commits.send(commit);
                 }
             }
+            WorkerMessage::Flush(response) => {
+                // Channel ordering makes this a barrier for all earlier batches.
+                // Each batch is flushed before its commit is sent, so acknowledging
+                // the barrier also guarantees commit publication.
+                let _ = response.send(());
+            }
             WorkerMessage::Finish => {
                 writer.finish()?;
                 return Ok(());
@@ -388,10 +397,22 @@ impl Recorder for ArrowStreamOutput {
                     index: self.metric_set_idx,
                 })?;
         let schema = Arc::new(make_schema(metric_set.name(), metric_set.iter_metrics().cloned()));
-        let file = File::create(&self.filename).map_err(|source| ArrowStreamError::Io {
-            path: self.filename.clone(),
-            source,
-        })?;
+        let file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&self.filename)
+            .map_err(|source| {
+                if source.kind() == io::ErrorKind::AlreadyExists {
+                    ArrowStreamError::OutputAlreadyExists {
+                        path: self.filename.clone(),
+                    }
+                } else {
+                    ArrowStreamError::Io {
+                        path: self.filename.clone(),
+                        source,
+                    }
+                }
+            })?;
         let (sender, receiver) = mpsc::channel();
         let (status_sender, status_receiver) = mpsc::channel();
         let commits = self.commits.clone();
@@ -424,6 +445,22 @@ impl Recorder for ArrowStreamOutput {
         self.append_values(scenario_indices, metric_set_states, internal)?;
         internal.pending.timestep_count += 1;
         self.queue_pending(internal, false)?;
+        Ok(())
+    }
+
+    fn flush(&self, internal_state: &mut Option<Box<dyn RecorderInternalState>>) -> Result<(), RecorderSaveError> {
+        let internal = downcast_internal_state_mut::<Internal>(internal_state);
+        Self::check_worker(internal)?;
+        self.queue_pending(internal, true)?;
+        let (response_sender, response_receiver) = mpsc::channel();
+        internal
+            .sender
+            .send(WorkerMessage::Flush(response_sender))
+            .map_err(|_| ArrowStreamError::WorkerDisconnected)?;
+        response_receiver
+            .recv()
+            .map_err(|_| ArrowStreamError::WorkerDisconnected)?;
+        Self::check_worker(internal)?;
         Ok(())
     }
 
@@ -569,6 +606,9 @@ mod tests {
                 ],
             }))
             .unwrap();
+        let (flush_sender, flush_receiver) = mpsc::channel();
+        sender.send(WorkerMessage::Flush(flush_sender)).unwrap();
+        flush_receiver.recv().unwrap();
         let commit = commit_receiver.recv().unwrap();
         assert_eq!(commit.batch_index, 0);
         assert_eq!(commit.row_count, 2);

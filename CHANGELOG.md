@@ -2,6 +2,46 @@
 
 All notable changes to this project since v2.0.0-beta will be documented in this file.
 
+## [2.0.0-beta8] - 2026-09-23
+
+### 🚀 Features
+
+- Add microlp feature to pywr-schema. (#808)
+- *(schema)* Validate edges in NetworkSchema::validate (#799)
+- *(schema)* Re-export the output field types from pywr_schema::outputs (#813)
+- *(schema)* Make AnyNonZero's tolerance public and derive Default (#814)
+- *(schema)* Derive PartialEq, Eq, Display and EnumIter for ParameterPhase (#815)
+- *(schema)* Add Node::components and derive EnumIter for component subsets (#818)
+- Support after_hook method in Python class parameters. (#807)
+- Replace polars with arrow-rs for internal timeseries handling. (#801)
+- Add Cbc to random benchmarks. (#819)
+- *(schema)* Validate parameter, table, timeseries and metric set names. (#821)
+- *(schema)* Add Node::attributes and derive EnumIter for attribute subsets (#822)
+- Rationalise the solver traits. (#820)
+- Allow referencing node-local parameters from global namespace. (#809)
+- Add built-in solver enums. (#825)
+- *(schema)* Derive Display and EnumIter for ArrowFormat, SpillNodeType and ParameterReturnValue. (#828)
+- Add ArrowStreamOutput. (#826)
+- Initial commit of Pywr runner service. (#836)
+
+### 🐛 Bug Fixes
+
+- *(schema)* Load scalar tables with three or four keys as the right variant (#817)
+- *(schema)* Visit paths in tables, virtual nodes and metric sets (#816)
+- Correct some TimeSeries references and names. (#823)
+- *(schema)* Make arrow and parquet optional under the core feature (#824)
+- Make the Cbc solver safe for multiple solves. (#812)
+- *(core)* Check a virtual storage node's factors against its nodes. (#829)
+
+### ⚡ Performance
+
+- Inform Clp about what has changed in the LP between solves. (#810)
+
+### ⚙️ Miscellaneous Tasks
+
+- Enable HTML reports for criterion. (#811)
+- Enforce cargo fmt. (#834)
+
 ## [2.0.0-beta7] - 2026-09-15
 
 ### 🚀 Features

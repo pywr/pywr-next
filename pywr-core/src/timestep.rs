@@ -156,8 +156,9 @@ pub enum TimeDomainBuilderError {
     NoTimesteps,
     #[error("Timestep duration must be a positive value.")]
     NonPositiveTimestepDuration,
-    #[error("Could not parse frequency '{source}'")]
+    #[error("Could not parse time-step frequency '{freq}'.")]
     FrequencyParseError {
+        freq: String,
         #[source]
         source: jiff::Error,
     },
@@ -187,7 +188,10 @@ impl TimeDomainBuilder {
             TimestepDuration::Frequency(freq) => {
                 let span: Span = freq
                     .parse()
-                    .map_err(|source| TimeDomainBuilderError::FrequencyParseError { source })?;
+                    .map_err(|source| TimeDomainBuilderError::FrequencyParseError {
+                        freq: freq.clone(),
+                        source,
+                    })?;
                 self.generate_timesteps_from_span(span)
             }
         }
