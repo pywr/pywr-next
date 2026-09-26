@@ -46,8 +46,8 @@ pub use control_curves::{
     ControlCurvePiecewiseInterpolatedParameter,
 };
 pub use core::{
-    ActivationFunction, ConstantParameter, ConstantScenarioParameter, DivisionParameter, MaxParameter, MinParameter,
-    NegativeMaxParameter, NegativeMinParameter, NegativeParameter, VariableSettings,
+    ActivationFunction, ActivationFunctionType, ConstantParameter, ConstantScenarioParameter, DivisionParameter,
+    MaxParameter, MinParameter, NegativeMaxParameter, NegativeMinParameter, NegativeParameter, VariableSettings,
 };
 pub use delay::{DelayIndexParameter, DelayParameter};
 pub use difference::DifferenceParameter;
@@ -60,9 +60,10 @@ pub use placeholder::PlaceholderParameter;
 pub use polynomial::Polynomial1DParameter;
 pub use profiles::{
     DailyProfileParameter, DirunalProfileParameter, MonthlyInterpDay, MonthlyProfileParameter, RadialBasisFunction,
-    RbfProfileParameter, RbfProfileVariableSettings, UniformDrawdownProfileParameter, WeeklyProfileParameter,
+    RadialBasisFunctionType, RbfProfileParameter, RbfProfileVariableSettings, UniformDrawdownProfileParameter,
+    WeeklyInterpDay, WeeklyProfileParameter,
 };
-pub use python::{PythonObject, PythonParameter, PythonReturnType};
+pub use python::{PythonObject, PythonObjectType, PythonParameter, PythonReturnType};
 use pywr_schema_macros::{PywrVisitAll, skip_serializing_none};
 use pywr_v1_schema::parameters::{
     CoreParameter, DataFrameParameter as DataFrameParameterV1, Parameter as ParameterV1,
