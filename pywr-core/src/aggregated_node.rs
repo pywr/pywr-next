@@ -15,11 +15,11 @@ use thiserror::Error;
 #[derive(Debug, PartialEq)]
 pub enum Factors {
     /// Proportional factors require that the sum of the factors is less than 1.0, and that
-    /// all factors are non-negative. The first node in the aggregated node has an implicit
+    /// all factors are positive. The first node in the aggregated node has an implicit
     /// factor of `1.0 - sum(factors)`. Therefore, there should be one less factor than nodes.
     Proportion { factors: Vec<MetricF64> },
-    /// Ratio factors require that all factors are non-negative. There should be the same
-    /// number of factors as nodes.
+    /// Ratio factors require that all factors are positive. There should be the same
+    /// number of factors as nodes, and at least one node.
     Ratio { factors: Vec<MetricF64> },
     /// Linear combination of node flows. The factors can be positive or negative, and a
     /// right-hand side (rhs) value can be provided. There should be the same number of
@@ -39,6 +39,27 @@ impl Factors {
             Self::Coefficients { factors, rhs } => {
                 factors.iter().all(MetricF64::is_constant) && rhs.as_ref().is_none_or(MetricF64::is_constant)
             }
+        }
+    }
+
+    /// Check the number of factors against the number of nodes they relate.
+    fn check_count(&self, num_nodes: usize) -> Result<(), FactorCountError> {
+        match self {
+            Self::Proportion { factors } if factors.len() + 1 != num_nodes => Err(FactorCountError::Proportion {
+                num_factors: factors.len(),
+                num_nodes,
+            }),
+            Self::Ratio { factors } if num_nodes == 0 || factors.len() != num_nodes => Err(FactorCountError::Ratio {
+                num_factors: factors.len(),
+                num_nodes,
+            }),
+            Self::Coefficients { factors, .. } if num_nodes != 2 || factors.len() != num_nodes => {
+                Err(FactorCountError::Coefficients {
+                    num_factors: factors.len(),
+                    num_nodes,
+                })
+            }
+            _ => Ok(()),
         }
     }
 }
@@ -550,6 +571,8 @@ pub enum AggregatedNodeBuilderError {
     NodeIndexNotFound { node: UnresolvedNode },
     #[error("Error building relationship.")]
     RelationshipBuildError(#[from] RelationshipBuildError),
+    #[error("Factors do not match the nodes.")]
+    FactorCountError(#[from] FactorCountError),
 }
 
 #[derive(Debug)]
@@ -644,7 +667,8 @@ impl AggregatedNodeBuilder {
     /// # Errors
     ///
     /// An [`AggregatedNodeBuilderError`] will be returned if the builder is unable to resolve
-    /// any of the metrics or node names it references.
+    /// any of the metrics or node names it references, or if the number of factors does not
+    /// match the number of nodes.
     pub fn build(&self, resolution_maps: &ResolutionMaps) -> Result<AggregatedNode, AggregatedNodeBuilderError> {
         let index = resolution_maps
             .aggregated_nodes
@@ -677,6 +701,10 @@ impl AggregatedNodeBuilder {
             .map(|r| r.build(resolution_maps))
             .transpose()?;
 
+        if let Some(Relationship::Factored(factors)) = &relationship {
+            factors.check_count(nodes.len())?;
+        }
+
         Ok(AggregatedNode {
             meta,
             flow_constraints,
@@ -684,6 +712,22 @@ impl AggregatedNodeBuilder {
             relationship,
         })
     }
+}
+
+#[derive(Debug, Error, PartialEq, Eq)]
+pub enum FactorCountError {
+    #[error(
+        "Found {num_factors} proportional factors and {num_nodes} nodes. The number of proportional factors should equal one less than the number of nodes."
+    )]
+    Proportion { num_factors: usize, num_nodes: usize },
+    #[error(
+        "Found {num_factors} ratio factors and {num_nodes} nodes. The number of ratio factors should equal the number of nodes, and there should be at least one node."
+    )]
+    Ratio { num_factors: usize, num_nodes: usize },
+    #[error(
+        "Found {num_factors} coefficient factors and {num_nodes} nodes. Coefficient factors are only implemented for two nodes, with one factor each."
+    )]
+    Coefficients { num_factors: usize, num_nodes: usize },
 }
 
 #[derive(Debug, Error)]
@@ -724,14 +768,14 @@ pub enum ProportionalFactorError {
 ///
 /// There should be one less factor than node indices. The factors correspond to each of the node
 /// indices after the first. Factor pairs relating the first index to each of the other indices are
-/// calculated. This requires the sum of the factors to be greater than 0.0 and less than 1.0.
+/// calculated. This requires each factor to be positive and their sum to be less than 1.0.
 fn get_norm_proportional_factor_pairs<'a>(
     factors: &[MetricF64],
     nodes: &'a [Vec<NodeIndex>],
     network: &Network,
     state: &State,
 ) -> Result<Vec<NodeFactorPair<'a>>, ProportionalFactorError> {
-    if factors.len() != nodes.len() - 1 {
+    if factors.len() + 1 != nodes.len() {
         return Err(ProportionalFactorError::IncorrectNumberOfFactors {
             num_factors: factors.len(),
             num_nodes: nodes.len(),
@@ -743,7 +787,7 @@ fn get_norm_proportional_factor_pairs<'a>(
         .iter()
         .map(|f| {
             let v = f.get_value(network, state)?;
-            if v < 0.0 {
+            if v <= 0.0 {
                 Err(ProportionalFactorError::NegativeOrZeroFactor { value: v })
             } else {
                 Ok(v)
@@ -789,27 +833,27 @@ pub enum ConstantProportionalFactorError {
 ///
 /// There should be one less factor than node indices. The factors correspond to each of the node
 /// indices after the first. Factor pairs relating the first index to each of the other indices are
-/// calculated. This requires the sum of the factors to be greater than 0.0 and less than 1.0. If
+/// calculated. This requires each factor to be positive and their sum to be less than 1.0. If
 /// any of the factors are not constant, the factor pairs will contain `None` values.
 fn get_const_norm_proportional_factor_pairs<'a>(
     factors: &[MetricF64],
     nodes: &'a [Vec<NodeIndex>],
     values: &ConstParameterValues,
 ) -> Result<Vec<NodeConstFactorPair<'a>>, ConstantProportionalFactorError> {
-    if factors.len() != nodes.len() - 1 {
+    if factors.len() + 1 != nodes.len() {
         return Err(ConstantProportionalFactorError::IncorrectNumberOfFactors {
             num_factors: factors.len(),
             num_nodes: nodes.len(),
         });
     }
 
-    // First get the current factor values, ensuring they are all non-negative
+    // First get the current factor values, ensuring they are all positive
     let factor_values: Vec<Option<f64>> = factors
         .iter()
         .map(|f| {
             let v = f.try_get_constant_value(values)?;
             if let Some(v) = v {
-                if v < 0.0 {
+                if v <= 0.0 {
                     Err(ConstantProportionalFactorError::NegativeOrZeroFactor { value: v })
                 } else {
                     Ok(Some(v))
@@ -884,14 +928,13 @@ pub enum RatioFactorError {
 ///
 /// The number of node indices and factors should be equal. The factors correspond to each of the
 /// node indices. Factor pairs relating the first index to each of the other indices are calculated.
-/// This requires that the factors are all non-zero.
+/// This requires that the factors are all positive.
 fn get_norm_ratio_factor_pairs<'a>(
     factors: &[MetricF64],
     nodes: &'a [Vec<NodeIndex>],
     network: &Network,
     state: &State,
 ) -> Result<Vec<NodeFactorPair<'a>>, RatioFactorError> {
-    // TODO handle error cases more gracefully
     if factors.len() != nodes.len() {
         return Err(RatioFactorError::IncorrectNumberOfFactors {
             num_factors: factors.len(),
@@ -901,7 +944,7 @@ fn get_norm_ratio_factor_pairs<'a>(
 
     let n0 = nodes[0].as_slice();
     let f0 = factors[0].get_value(network, state)?;
-    if f0 < 0.0 {
+    if f0 <= 0.0 {
         return Err(RatioFactorError::NegativeOrZeroFactor { value: f0 });
     }
 
@@ -911,6 +954,9 @@ fn get_norm_ratio_factor_pairs<'a>(
         .skip(1)
         .map(|(n1, f1)| {
             let v1 = f1.get_value(network, state)?;
+            if v1 <= 0.0 {
+                return Err(RatioFactorError::NegativeOrZeroFactor { value: v1 });
+            }
 
             Ok(NodeFactorPair::new(
                 NodeFactor::new(n0, 1.0),
@@ -957,7 +1003,7 @@ fn get_const_norm_ratio_factor_pairs<'a>(
     let f0 = factors[0].try_get_constant_value(values)?;
 
     if let Some(v0) = f0 {
-        if v0 < 0.0 {
+        if v0 <= 0.0 {
             return Err(ConstantRatioFactorError::NegativeOrZeroFactor { value: v0 });
         }
     }
@@ -970,7 +1016,7 @@ fn get_const_norm_ratio_factor_pairs<'a>(
             let v1 = f1.try_get_constant_value(values)?;
 
             if let Some(v) = v1 {
-                if v < 0.0 {
+                if v <= 0.0 {
                     return Err(ConstantRatioFactorError::NegativeOrZeroFactor { value: v });
                 }
             }
@@ -1012,7 +1058,6 @@ fn get_coefficient_factor_pairs<'a>(
     network: &Network,
     state: &State,
 ) -> Result<Vec<NodeFactorPair<'a>>, CoefficientFactorError> {
-    // TODO handle error cases more gracefully
     if factors.len() != nodes.len() {
         return Err(CoefficientFactorError::IncorrectNumberOfFactors {
             num_factors: factors.len(),
@@ -1087,15 +1132,22 @@ fn get_const_coefficient_factor_pairs<'a>(
 
 #[cfg(test)]
 mod tests {
-    use crate::aggregated_node::{AggregatedNodeBuilder, ExclusivityBuilder, RatioFactorsBuilder};
+    use crate::aggregated_node::{
+        AggregatedNodeBuilder, AggregatedNodeBuilderError, CoefficientFactorsBuilder, ConstantFactorError,
+        ConstantRatioFactorError, ExclusivityBuilder, FactorCountError, FactorError, ProportionalFactorsBuilder,
+        RatioFactorError, RatioFactorsBuilder, RelationshipBuilder,
+    };
     use crate::metric::UnresolvedMetricF64;
-    use crate::models::ModelBuilder;
-    use crate::network::NetworkBuilder;
+    use crate::models::{ModelBuilder, ModelRunError, ModelSetupError, ModelStepError};
+    use crate::network::{NetworkBuildError, NetworkBuilder, NetworkSolverSetupError, NetworkStepError};
     use crate::node::{NodeBuilder, UnresolvedNode};
     use crate::parameters::{MonthlyProfileParameterBuilder, ParameterName, UnresolvedParameterReturnValue};
     use crate::recorders::AssertionF64RecorderBuilder;
+    use crate::solvers::{ClpSolverSettings, SolverSetupError, SolverSolveError};
     use crate::test_utils::{default_domain, run_all_solvers};
+    use float_cmp::assert_approx_eq;
     use ndarray::Array2;
+    use std::collections::HashMap;
 
     /// Test the factors forcing a simple ratio of flow
     ///
@@ -1170,6 +1222,155 @@ mod tests {
         let model = ModelBuilder::new(domain, builder).build().unwrap();
 
         run_all_solvers(&model, &["ipm-simd", "ipm-ocl-f64"], &[], &[]);
+    }
+
+    /// Two inputs connected to an output, with an aggregated node over the first `num_nodes`
+    /// inputs.
+    fn agg_node_network(num_nodes: usize, relationship: Box<dyn RelationshipBuilder>) -> NetworkBuilder {
+        let mut builder = NetworkBuilder::default();
+
+        builder
+            .node(NodeBuilder::input("input0"))
+            .node(NodeBuilder::input("input1"))
+            .node(NodeBuilder::output("output"));
+        builder.connect("input0", "output");
+        builder.connect("input1", "output");
+
+        let mut agg_node = AggregatedNodeBuilder::new("agg-node");
+        for name in ["input0", "input1"].into_iter().take(num_nodes) {
+            agg_node.nodes(vec![name.into()]);
+        }
+        agg_node.relationship(relationship);
+        builder.agg_node(agg_node);
+
+        builder
+    }
+
+    /// Test that factors not matching the nodes stop the network build
+    #[test]
+    fn test_incorrect_number_of_factors() {
+        let mut proportion = ProportionalFactorsBuilder::default();
+        proportion.factor(0.2.into()).factor(0.3.into());
+        let mut ratio = RatioFactorsBuilder::default();
+        ratio.factor(2.0.into());
+        let mut coefficients = CoefficientFactorsBuilder::default();
+        coefficients.factor(1.0.into());
+
+        let cases: [(Box<dyn RelationshipBuilder>, usize, FactorCountError); 4] = [
+            (
+                Box::new(proportion),
+                2,
+                FactorCountError::Proportion {
+                    num_factors: 2,
+                    num_nodes: 2,
+                },
+            ),
+            (
+                Box::new(ratio),
+                2,
+                FactorCountError::Ratio {
+                    num_factors: 1,
+                    num_nodes: 2,
+                },
+            ),
+            (
+                Box::new(RatioFactorsBuilder::default()),
+                0,
+                FactorCountError::Ratio {
+                    num_factors: 0,
+                    num_nodes: 0,
+                },
+            ),
+            (
+                Box::new(coefficients),
+                1,
+                FactorCountError::Coefficients {
+                    num_factors: 1,
+                    num_nodes: 1,
+                },
+            ),
+        ];
+
+        for (relationship, num_nodes, expected) in cases {
+            let build_err = agg_node_network(num_nodes, relationship)
+                .build(&default_domain(), &HashMap::new())
+                .expect_err("Builder should error.");
+
+            if let NetworkBuildError::AggregatedNodeBuilderError { name, source } = &build_err
+                && let AggregatedNodeBuilderError::FactorCountError(err) = source.as_ref()
+            {
+                assert_eq!(name.to_string(), "agg-node");
+                assert_eq!(*err, expected);
+            } else {
+                panic!("Incorrect error returned, expected {expected:?}: {build_err:?}");
+            }
+        }
+    }
+
+    /// Test that a zero constant factor stops the solver setup
+    #[test]
+    fn test_zero_constant_factor() {
+        let mut relationship = RatioFactorsBuilder::default();
+        relationship.factor(2.0.into()).factor(0.0.into());
+
+        let builder = agg_node_network(2, Box::new(relationship));
+        let model = ModelBuilder::new(default_domain(), builder).build().unwrap();
+
+        let Err(setup_err) = model.setup(&ClpSolverSettings::default()) else {
+            panic!("Solver setup should error.");
+        };
+
+        if let ModelSetupError::SolverSetupError(network_err) = &setup_err
+            && let NetworkSolverSetupError::SolverSetupError(SolverSetupError::AggregatedNodeFactorError {
+                name,
+                source: ConstantFactorError::Ratio(ConstantRatioFactorError::NegativeOrZeroFactor { value }),
+                ..
+            }) = network_err.as_ref()
+        {
+            assert_eq!(name, "agg-node");
+            assert_approx_eq!(f64, *value, 0.0);
+        } else {
+            panic!("Incorrect error returned, expected NegativeOrZeroFactor: {setup_err:?}");
+        }
+    }
+
+    /// Test that a zero factor from a parameter stops the run
+    ///
+    /// The zero factor is the second, as every factor is checked, not only the first.
+    #[test]
+    fn test_zero_factor_profile() {
+        let factor_profile_name = ParameterName::new("factor-profile", None);
+
+        let mut relationship = RatioFactorsBuilder::default();
+        relationship
+            .factor(1.0.into())
+            .factor(UnresolvedMetricF64::ParameterValue {
+                name: factor_profile_name.clone(),
+                return_value: UnresolvedParameterReturnValue::Before,
+            });
+
+        let mut builder = agg_node_network(2, Box::new(relationship));
+        let factor_profile = MonthlyProfileParameterBuilder::new(factor_profile_name, [0.0; 12]);
+        builder.parameters().f64(Box::new(factor_profile));
+
+        let model = ModelBuilder::new(default_domain(), builder).build().unwrap();
+
+        let Err(run_err) = model.run(&ClpSolverSettings::default()) else {
+            panic!("Run should error.");
+        };
+
+        if let ModelRunError::StepError(ModelStepError::NetworkStepError { source, .. }) = &run_err
+            && let NetworkStepError::SolverError(SolverSolveError::AggregatedNodeFactorError {
+                name,
+                source: FactorError::Ratio(RatioFactorError::NegativeOrZeroFactor { value }),
+                ..
+            }) = source.as_ref()
+        {
+            assert_eq!(name, "agg-node");
+            assert_approx_eq!(f64, *value, 0.0);
+        } else {
+            panic!("Incorrect error returned, expected NegativeOrZeroFactor: {run_err:?}");
+        }
     }
 
     /// Test the factors forcing a simple ratio of flow that varies over time
