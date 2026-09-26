@@ -15,13 +15,13 @@ use thiserror::Error;
 pub enum VirtualStorageNodeBuilderError {
     #[error("Index not found in resolution map.")]
     IndexNotFound,
-    #[error("Could not resolve f64 metric for `{attr}` attribute: {source}")]
+    #[error("Could not resolve f64 metric for `{attr}` attribute.")]
     ResolveMetricF64Error {
         attr: String,
         #[source]
         source: MetricF64ResolutionError,
     },
-    #[error("Could not simplify f64 metric for `{attr}`: {source}")]
+    #[error("Could not simplify f64 metric for `{attr}` attribute.")]
     CouldNotSimplifyMetricF64 {
         attr: String,
         #[source]
@@ -29,7 +29,11 @@ pub enum VirtualStorageNodeBuilderError {
     },
     #[error("Reference to node not found.")]
     NodeIndexNotFound { node: UnresolvedNode },
-    #[error("Error building relationship: {0}")]
+    #[error(
+        "Found {num_factors} factors and {num_nodes} nodes. The number of factors should equal the number of nodes."
+    )]
+    IncorrectNumberOfFactors { num_factors: usize, num_nodes: usize },
+    #[error("Error building relationship.")]
     RelationshipBuildError(#[from] RelationshipBuildError),
 }
 
@@ -81,6 +85,7 @@ impl VirtualStorageNodeBuilder {
         self
     }
 
+    /// Set the factors, one for each node and in the same order.
     pub fn factors(&mut self, factors: &[f64]) -> &mut Self {
         self.factors = Some(factors.to_vec());
         self
@@ -248,6 +253,12 @@ impl VirtualStorageNodeBuilder {
 
         // Default to unit factors if none provided
         let factors = self.factors.clone().unwrap_or_else(|| vec![1.0; self.nodes.len()]);
+        if factors.len() != self.nodes.len() {
+            return Err(VirtualStorageNodeBuilderError::IncorrectNumberOfFactors {
+                num_factors: factors.len(),
+                num_nodes: self.nodes.len(),
+            });
+        }
         let nodes = self
             .nodes
             .iter()
@@ -343,11 +354,11 @@ impl VirtualStorageActivePeriod {
 
 #[derive(Debug, Error)]
 pub enum VirtualStorageError {
-    #[error("Network state error: {0}")]
+    #[error("Network state error.")]
     NetworkStateError(#[from] NetworkStateError),
-    #[error("State error: {0}")]
+    #[error("State error.")]
     StateError(#[from] StateError),
-    #[error("Simple metric error: {0}")]
+    #[error("Simple metric error.")]
     SimpleMetricError(#[from] SimpleMetricF64Error),
 }
 
@@ -505,7 +516,7 @@ fn months_since_last_reset(current: &DateTime, last_reset: &DateTime) -> i32 {
 mod tests {
     use crate::metric::UnresolvedMetricF64;
     use crate::models::ModelBuilder;
-    use crate::network::NetworkBuilder;
+    use crate::network::{NetworkBuildError, NetworkBuilder};
     use crate::node::{CostAggFunc, NodeBuilder, NodeType, UnresolvedNode, UnresolvedStorageInitialVolume};
     use crate::parameters::ControlCurveInterpolatedParameterBuilder;
     use crate::recorders::{AssertionF64RecorderBuilder, AssertionFnRecorderBuilder};
@@ -513,10 +524,12 @@ mod tests {
     use crate::test_utils::{default_domain, run_all_solvers, simple_model};
     use crate::timestep::{TimeDomainBuilder, Timestep, TimestepDuration};
     use crate::virtual_storage::{
-        VirtualStorageActivePeriod, VirtualStorageNodeBuilder, VirtualStorageReset, months_since_last_reset,
+        VirtualStorageActivePeriod, VirtualStorageNodeBuilder, VirtualStorageNodeBuilderError, VirtualStorageReset,
+        months_since_last_reset,
     };
     use jiff::civil::date;
     use ndarray::Array;
+    use std::collections::HashMap;
     use std::num::{NonZeroU64, NonZeroUsize};
 
     /// Test the calculation of number of months since last reset
@@ -631,6 +644,37 @@ mod tests {
         let model = ModelBuilder::new(domain, network_builder).build().unwrap();
         // Test all solvers
         run_all_solvers(&model, &["ipm-ocl-f64", "ipm-simd"], &[], &[]);
+    }
+
+    #[test]
+    /// Test that a list of factors shorter or longer than the list of nodes is refused
+    fn test_virtual_storage_node_incorrect_number_of_factors() {
+        for factors in [&[1.0][..], &[1.0, 1.0, 1.0]] {
+            let mut network_builder = NetworkBuilder::default();
+            network_builder
+                .node(NodeBuilder::input("input"))
+                .node(NodeBuilder::output("output"));
+            network_builder.connect("input", "output");
+
+            let mut vs_builder = VirtualStorageNodeBuilder::new("vs", &["input".into(), "output".into()]);
+            vs_builder.factors(factors);
+            network_builder.virtual_storage_node(vs_builder);
+
+            let build_err = network_builder
+                .build(&default_domain(), &HashMap::new())
+                .expect_err("Builder should error.");
+
+            if let NetworkBuildError::VirtualStorageNodeBuilderError { name, source } = &build_err
+                && let VirtualStorageNodeBuilderError::IncorrectNumberOfFactors { num_factors, num_nodes } =
+                    source.as_ref()
+            {
+                assert_eq!(name.to_string(), "vs");
+                assert_eq!(*num_factors, factors.len());
+                assert_eq!(*num_nodes, 2);
+            } else {
+                panic!("Incorrect error returned, expected IncorrectNumberOfFactors: {build_err:?}");
+            }
+        }
     }
 
     #[test]

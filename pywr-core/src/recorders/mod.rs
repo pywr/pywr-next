@@ -1,4 +1,5 @@
 mod aggregator;
+mod arrow_stream;
 mod csv;
 
 #[cfg(feature = "hdf5")]
@@ -6,6 +7,7 @@ mod hdf;
 mod memory;
 mod metric_set;
 mod py;
+mod snapshot;
 
 use crate::metric::{
     MetricConsumerPhase, MetricF64, MetricF64Error, MetricF64ResolutionError, MetricU64, MetricU64Error,
@@ -20,6 +22,10 @@ use crate::scenario::ScenarioIndex;
 use crate::state::State;
 use crate::timestep::Timestep;
 pub use aggregator::{AggregationFrequency, Aggregator, PeriodValue};
+pub use arrow_stream::{
+    ArrowStreamCommit, ArrowStreamError, ArrowStreamOutput, ArrowStreamOutputBuilder, MetricColumnExtension,
+    MetricColumnMetadata,
+};
 pub use csv::{CsvLongFmtOutput, CsvLongFmtOutputBuilder, CsvLongFmtRecord, CsvWideFmtOutput, CsvWideFmtOutputBuilder};
 use float_cmp::{ApproxEq, F64Margin, approx_eq};
 #[cfg(feature = "hdf5")]
@@ -32,6 +38,10 @@ pub use metric_set::{
 };
 use ndarray::Array2;
 use ndarray::prelude::*;
+pub use snapshot::{
+    Snapshot, SnapshotBuffer, SnapshotData, SnapshotMeta, SnapshotMetricSetItem, SnapshotMetricSetMeta,
+    SnapshotRecorder, SnapshotRecorderBuilder,
+};
 use std::any::Any;
 use std::fmt::Debug;
 use thiserror::Error;
@@ -44,7 +54,7 @@ pub struct RecorderMeta {
 }
 
 impl RecorderMeta {
-    fn new(name: &str) -> Self {
+    pub fn new(name: &str) -> Self {
         Self {
             name: name.to_string(),
             comment: "".to_string(),
@@ -55,10 +65,12 @@ impl RecorderMeta {
 /// Errors returned by recorder setup.
 #[derive(Error, Debug)]
 pub enum RecorderSetupError {
-    #[error("CSV error: {0}")]
+    #[error("Arrow stream error.")]
+    ArrowStreamError(#[from] ArrowStreamError),
+    #[error("CSV error.")]
     CSVError(#[from] CsvError),
     #[cfg(feature = "hdf5")]
-    #[error("HDF5 error: {0}")]
+    #[error("HDF5 error.")]
     HDF5Error(#[from] Hdf5Error),
     #[error("Metric set index `{index}` not found")]
     MetricSetIndexNotFound { index: MetricSetIndex },
@@ -67,28 +79,32 @@ pub enum RecorderSetupError {
 /// Errors returned by recorder saving.
 #[derive(Error, Debug)]
 pub enum RecorderSaveError {
-    #[error("F64 metric error: {0}")]
+    #[error("Arrow stream error.")]
+    ArrowStreamError(#[from] ArrowStreamError),
+    #[error("F64 metric error.")]
     MetricF64Error(#[from] MetricF64Error),
-    #[error("U64 metric error: {0}")]
+    #[error("U64 metric error.")]
     MetricU64Error(#[from] MetricU64Error),
     #[error("Metric set index `{index}` not found")]
     MetricSetIndexNotFound { index: MetricSetIndex },
-    #[error("CSV error: {0}")]
+    #[error("CSV error.")]
     CSVError(#[from] CsvError),
     #[cfg(feature = "hdf5")]
-    #[error("HDF5 error: {0}")]
+    #[error("HDF5 error.")]
     HDF5Error(#[from] Hdf5Error),
 }
 
 /// Errors returned by recorder saving.
 #[derive(Error, Debug)]
 pub enum RecorderFinaliseError {
+    #[error("Arrow stream error.")]
+    ArrowStreamError(#[from] ArrowStreamError),
     #[error("Metric set index `{index}` not found")]
     MetricSetIndexNotFound { index: MetricSetIndex },
-    #[error("CSV error: {0}")]
+    #[error("CSV error.")]
     CSVError(#[from] CsvError),
     #[cfg(feature = "hdf5")]
-    #[error("HDF5 error: {0}")]
+    #[error("HDF5 error.")]
     HDF5Error(#[from] Hdf5Error),
 }
 
@@ -97,7 +113,7 @@ pub enum RecorderFinaliseError {
 pub enum RecorderAggregationError {
     #[error("Recorder does not supported aggregation")]
     RecorderDoesNotSupportAggregation,
-    #[error("Error aggregating value for recorder `{name}`: {source}")]
+    #[error("Error aggregating value for recorder `{name}`.")]
     AggregationError {
         name: String,
         #[source]
@@ -112,8 +128,8 @@ pub enum RecorderDataFrameError {
     RecorderCannotBeConvertedToDataFrame,
 }
 
-pub trait RecorderInternalState: Any {}
-impl<T> RecorderInternalState for T where T: Any {}
+pub trait RecorderInternalState: Any + Send {}
+impl<T> RecorderInternalState for T where T: Any + Send {}
 
 /// Helper function to downcast to internal recorder state and print a helpful panic
 /// message if this fails.
@@ -251,6 +267,15 @@ pub trait Recorder: Send + Sync + Debug {
         Ok(())
     }
 
+    /// Wait until data queued by prior [`Self::save`] calls is flushed.
+    ///
+    /// Most recorders save synchronously, so the default implementation has
+    /// nothing to do. Asynchronous recorders override this to provide a
+    /// durability barrier to callers that need to publish their output.
+    fn flush(&self, _internal_state: &mut Option<Box<dyn RecorderInternalState>>) -> Result<(), RecorderSaveError> {
+        Ok(())
+    }
+
     /// Finalise the recorder, e.g. write out any remaining data and close files.
     ///
     /// This is called once after all timesteps have been processed. The internal state
@@ -268,13 +293,13 @@ pub trait Recorder: Send + Sync + Debug {
 
 #[derive(Debug, Error)]
 pub enum RecorderBuilderError {
-    #[error("Could not resolve f64 metric for `{attr}` attribute: {source}")]
+    #[error("Could not resolve f64 metric for `{attr}` attribute.")]
     ResolveMetricF64Error {
         attr: String,
         #[source]
         source: MetricF64ResolutionError,
     },
-    #[error("Could not resolve u64 metric for `{attr}` attribute: {source}")]
+    #[error("Could not resolve u64 metric for `{attr}` attribute.")]
     ResolveMetricU64Error {
         attr: String,
         #[source]

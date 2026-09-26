@@ -1,13 +1,13 @@
-use schemars::JsonSchema;
-#[cfg(feature = "core")]
-use pywr_core::parameters::ParameterName;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
+use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::network::LoadArgs;
-use crate::metric::Metric;
 use crate::parameters::{ParameterMeta, ParameterPhase};
+#[cfg(feature = "core")]
+use pywr_core::parameters::ParameterName;
 use pywr_schema_macros::PywrVisitAll;
+use schemars::JsonSchema;
 
 /// Schema for a parameter that computes the difference between two metrics, with optional minimum and maximum bounds.
 ///
@@ -29,7 +29,6 @@ use pywr_schema_macros::PywrVisitAll;
 /// ```json
 #[doc= include_str!("doc_examples/difference.json")]
 /// ```
-
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
@@ -53,7 +52,6 @@ impl DifferenceParameter {
         let name = ParameterName::new(&self.meta.name, parent);
         let a = self.a.load(network, args, None)?;
         let b = self.b.load(network, args, parent)?;
-
 
         let mut builder = match self.phase {
             ParameterPhase::Before => pywr_core::parameters::DifferenceParameterBuilder::before(name, a, b),

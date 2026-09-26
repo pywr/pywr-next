@@ -177,21 +177,41 @@ pub enum TableLoadError {}
 
 #[derive(Error, Debug)]
 pub enum TableError {
-    #[error("table not found: {0}")]
+    #[error("Table not found: {0}")]
     TableNotFound(String),
-    #[error("entry not found")]
+    #[error("Entry not found")]
     EntryNotFound,
-    #[error("wrong key size; expected: {0}; given: {1}")]
+    #[error("Wrong key size; expected: {0}; given: {1}")]
     WrongKeySize(usize, usize),
-    #[error("failed to get or parse key")]
+    #[error("Failed to get or parse key")]
     KeyParse,
-    #[error("I/O error: {0}")]
-    IO(String),
-    #[error("CSV error: {0}")]
-    Csv(String),
+    #[error("IO error on path `{path}`.")]
+    IO {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+    #[error("CSV error on path `{path}`.")]
+    Csv {
+        path: PathBuf,
+        #[source]
+        source: csv::Error,
+    },
+    #[error("Not enough header rows in table at path `{path}`. Expected {expected} rows, found {found} rows.")]
+    NotEnoughHeaderRows {
+        expected: usize,
+        found: usize,
+        path: PathBuf,
+    },
+    #[error("Row length mismatch in table at path `{path}`. Expected {expected} columns, found {found} columns.")]
+    RowLengthMismatch {
+        path: PathBuf,
+        expected: usize,
+        found: usize,
+    },
     #[error("Format not supported: {0}")]
     FormatNotSupported(String),
-    #[error("Failed to parse: {0}")]
+    #[error("Failed to parse floating point number.")]
     ParseFloatError(#[from] std::num::ParseFloatError),
     #[error("Wrong table format: {0}")]
     WrongTableFormat(String),
@@ -209,7 +229,7 @@ pub enum TableError {
     InvalidFormat(String),
     #[error("Could not convert to u64 without loss of precision. Index values must be positive whole numbers.")]
     U64ConversionError,
-    #[error("Checksum error: {0}")]
+    #[error("Checksum error.")]
     ChecksumError(#[from] ChecksumError),
     #[error("Placeholder table `{name}` cannot be loaded.")]
     PlaceholderTableNotAllowed { name: String },
@@ -257,7 +277,7 @@ impl LoadedTable {
 #[cfg(feature = "core")]
 #[derive(Error, Debug)]
 pub enum TableCollectionLoadError {
-    #[error("Failed to load table `{name}`: {source}")]
+    #[error("Failed to load table `{name}`.")]
     TableError {
         name: String,
         #[source]
@@ -270,7 +290,7 @@ pub enum TableCollectionLoadError {
 #[cfg(feature = "core")]
 #[derive(Error, Debug)]
 pub enum TableCollectionError {
-    #[error("Failed to get value from table `{name}`: {source}")]
+    #[error("Failed to get value from table `{name}`.")]
     TableError {
         name: String,
         #[source]

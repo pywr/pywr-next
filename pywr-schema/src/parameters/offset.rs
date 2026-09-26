@@ -52,23 +52,17 @@ impl OffsetParameter {
     ) -> Result<(), SchemaError> {
         let metric = self.metric.load(network, args, None)?;
         let name = ParameterName::new(&self.meta.name, parent);
-        
+
         let p = match self.phase {
-            ParameterPhase::Before => pywr_core::parameters::OffsetParameterBuilder::before(
-                name,
-                metric,
-                self.offset.load(args.tables)?,
-            ),
-            ParameterPhase::After => pywr_core::parameters::OffsetParameterBuilder::after(
-                name,
-                metric,
-                self.offset.load(args.tables)?,
-            ),
-            ParameterPhase::Both => pywr_core::parameters::OffsetParameterBuilder::both(
-                name,
-                metric,
-                self.offset.load(args.tables)?,
-            ),
+            ParameterPhase::Before => {
+                pywr_core::parameters::OffsetParameterBuilder::before(name, metric, self.offset.load(args.tables)?)
+            }
+            ParameterPhase::After => {
+                pywr_core::parameters::OffsetParameterBuilder::after(name, metric, self.offset.load(args.tables)?)
+            }
+            ParameterPhase::Both => {
+                pywr_core::parameters::OffsetParameterBuilder::both(name, metric, self.offset.load(args.tables)?)
+            }
         };
 
         network.parameters().f64(Box::new(p));

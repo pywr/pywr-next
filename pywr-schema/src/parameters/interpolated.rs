@@ -67,21 +67,9 @@ impl InterpolatedParameter {
         let name = ParameterName::new(&self.meta.name, parent);
 
         let mut builder = match self.phase {
-            ParameterPhase::Before => pywr_core::parameters::InterpolatedParameterBuilder::before(
-                name,
-                x,
-                points,
-            ),
-            ParameterPhase::After => pywr_core::parameters::InterpolatedParameterBuilder::after(
-                name,
-                x,
-                points,
-            ),
-            ParameterPhase::Both => pywr_core::parameters::InterpolatedParameterBuilder::both(
-                name,
-                x,
-                points,
-            ),
+            ParameterPhase::Before => pywr_core::parameters::InterpolatedParameterBuilder::before(name, x, points),
+            ParameterPhase::After => pywr_core::parameters::InterpolatedParameterBuilder::after(name, x, points),
+            ParameterPhase::Both => pywr_core::parameters::InterpolatedParameterBuilder::both(name, x, points),
         };
 
         builder.error_on_bounds(self.error_on_bounds.unwrap_or(true));

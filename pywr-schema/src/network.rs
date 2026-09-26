@@ -19,6 +19,7 @@ use crate::outputs::Output;
 use crate::time_series::TimeSeries;
 #[cfg(feature = "core")]
 use crate::time_series::{LoadedTimeSeriesCollection, LoadedTimeSeriesCollectionError};
+use crate::util::duplicates;
 use crate::v1::{ConversionData, TryIntoV2};
 use crate::visit::{Owner, Reference, ReferenceMut, VisitMetrics, VisitPaths, VisitReferences};
 #[cfg(all(feature = "core", feature = "pyo3"))]
@@ -39,9 +40,13 @@ use thiserror::Error;
 /// Error type for reading a [`NetworkSchema`] network from a file or string.
 #[derive(Error, Debug)]
 pub enum NetworkSchemaReadError {
-    #[error("IO error on path `{path}`: {error}")]
-    IO { path: PathBuf, error: std::io::Error },
-    #[error("JSON error: {0}")]
+    #[error("IO error on path `{path}`.")]
+    IO {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+    #[error("JSON error deserialising network.")]
     Json(#[from] serde_json::Error),
 }
 
@@ -49,7 +54,7 @@ pub enum NetworkSchemaReadError {
 #[cfg(feature = "core")]
 #[derive(Error, Debug)]
 pub enum NetworkSchemaBuildError {
-    #[error("Network schema validation failed: {source}")]
+    #[error("Network schema validation failed.")]
     Validation {
         #[source]
         source: NetworkValidationError,
@@ -58,66 +63,66 @@ pub enum NetworkSchemaBuildError {
     CircularNodeReference,
     #[error("Circular parameters reference(s) found. Unable to load the following parameters: {0:?}")]
     CircularParameterReference(Vec<String>),
-    #[error("Failed to add node `{name}` to the model: {source}")]
+    #[error("Failed to add node `{name}` to the model.")]
     AddNodeError {
         name: String,
         #[source]
         source: Box<SchemaError>,
     },
-    #[error("Failed to add virtual node `{name}` to the model: {source}")]
+    #[error("Failed to add virtual node `{name}` to the model.")]
     AddVirtualNodeError {
         name: String,
         #[source]
         source: Box<SchemaError>,
     },
-    #[error("Failed to set constraints for node `{name}`: {source}")]
+    #[error("Failed to set constraints for node `{name}`.")]
     SetNodeConstraintsError {
         name: String,
         #[source]
         source: Box<SchemaError>,
     },
-    #[error("Failed to set constraints for virtual node `{name}`: {source}")]
+    #[error("Failed to set constraints for virtual node `{name}`.")]
     SetVirtualNodeConstraintsError {
         name: String,
         #[source]
         source: Box<SchemaError>,
     },
-    #[error("Failed to add edge from `{from_node}` to `{to_node}`: {source}")]
+    #[error("Failed to add edge from `{from_node}` to `{to_node}`.")]
     AddEdgeError {
         from_node: String,
         to_node: String,
         #[source]
         source: Box<SchemaError>,
     },
-    #[error("Failed to add parameter `{name}` to the model: {source}")]
+    #[error("Failed to add parameter `{name}` to the model.")]
     AddParameterError {
         name: String,
         #[source]
         source: Box<SchemaError>,
     },
-    #[error("Failed to add local parameter from node `{parent}` with `{name}` to the model: {source}")]
+    #[error("Failed to add local parameter from node `{parent}` with `{name}` to the model.")]
     AddLocalParameterError {
         name: String,
         parent: String,
         #[source]
         source: Box<SchemaError>,
     },
-    #[error("Failed to add metric set with name `{name}` to the model: {source}")]
+    #[error("Failed to add metric set with name `{name}` to the model.")]
     AddMetricSetError {
         name: String,
         #[source]
         source: Box<SchemaError>,
     },
-    #[error("Failed to add output with name `{name}` to the model: {source}")]
+    #[error("Failed to add output with name `{name}` to the model.")]
     AddOutputError {
         name: String,
         #[source]
         source: Box<SchemaError>,
     },
-    #[error("{0}")]
+    #[error("Failed to load table data.")]
     TableLoadError(#[from] TableCollectionLoadError),
     #[cfg(feature = "core")]
-    #[error("{0}")]
+    #[error("Failed to load time-series data.")]
     LoadedTimeSeriesCollectionError(#[from] LoadedTimeSeriesCollectionError),
 }
 
@@ -357,26 +362,6 @@ impl VisitReferences for NetworkSchema {
     }
 }
 
-/// The names used by more than one of `items`, with how many use each, sorted by name.
-fn duplicate_names<T>(items: Option<&[T]>, name_of: impl Fn(&T) -> &str) -> Vec<(String, usize)> {
-    let mut counts: HashMap<&str, usize> = HashMap::new();
-
-    for item in items.into_iter().flatten() {
-        *counts.entry(name_of(item)).or_default() += 1;
-    }
-
-    let mut duplicates: Vec<(String, usize)> = counts
-        .into_iter()
-        .filter(|(_, count)| *count > 1)
-        .map(|(name, count)| (name.to_string(), count))
-        .collect();
-
-    // The hash map's order is random.
-    duplicates.sort();
-
-    duplicates
-}
-
 impl NetworkSchema {
     /// Visit every reference together with the top-level component holding it.
     pub fn visit_owned_references<F: FnMut(Owner<'_>, Reference<'_>)>(&self, visitor: &mut F) {
@@ -445,9 +430,9 @@ impl NetworkSchema {
     }
 
     pub fn from_path<P: AsRef<Path>>(path: P) -> Result<Self, NetworkSchemaReadError> {
-        let data = std::fs::read_to_string(&path).map_err(|error| NetworkSchemaReadError::IO {
+        let data = std::fs::read_to_string(&path).map_err(|source| NetworkSchemaReadError::IO {
             path: path.as_ref().to_path_buf(),
-            error,
+            source,
         })?;
         Ok(serde_json::from_str(data.as_str())?)
     }
@@ -848,7 +833,7 @@ impl NetworkSchema {
             counts.entry(virtual_node.name()).or_default().1 += 1;
         }
 
-        let mut duplicates: Vec<DuplicateNodeName> = counts
+        let mut duplicate_nodes: Vec<DuplicateNodeName> = counts
             .into_iter()
             .filter(|(_, (nodes, virtual_nodes))| nodes + virtual_nodes > 1)
             .map(|(name, (nodes, virtual_nodes))| DuplicateNodeName {
@@ -870,30 +855,42 @@ impl NetworkSchema {
             .collect();
 
         // The duplicates come out of the hash map in a random order.
-        duplicates.sort_by(|a, b| a.name.cmp(&b.name));
+        duplicate_nodes.sort_by(|a, b| a.name.cmp(&b.name));
 
-        let problems: Vec<NetworkProblem> = duplicates
+        let problems: Vec<NetworkProblem> = duplicate_nodes
             .into_iter()
             .map(NetworkProblem::DuplicateNodeName)
             .chain(
-                duplicate_names(self.parameters.as_deref(), Parameter::name)
+                duplicates(self.parameters.iter().flatten(), Parameter::name)
                     .into_iter()
-                    .map(|(name, count)| NetworkProblem::DuplicateParameterName { name, count }),
+                    .map(|(name, count)| NetworkProblem::DuplicateParameterName {
+                        name: name.to_string(),
+                        count,
+                    }),
             )
             .chain(
-                duplicate_names(self.tables.as_deref(), DataTable::name)
+                duplicates(self.tables.iter().flatten(), DataTable::name)
                     .into_iter()
-                    .map(|(name, count)| NetworkProblem::DuplicateTableName { name, count }),
+                    .map(|(name, count)| NetworkProblem::DuplicateTableName {
+                        name: name.to_string(),
+                        count,
+                    }),
             )
             .chain(
-                duplicate_names(self.time_series.as_deref(), TimeSeries::name)
+                duplicates(self.time_series.iter().flatten(), TimeSeries::name)
                     .into_iter()
-                    .map(|(name, count)| NetworkProblem::DuplicateTimeSeriesName { name, count }),
+                    .map(|(name, count)| NetworkProblem::DuplicateTimeSeriesName {
+                        name: name.to_string(),
+                        count,
+                    }),
             )
             .chain(
-                duplicate_names(self.metric_sets.as_deref(), |metric_set| metric_set.name.as_str())
+                duplicates(self.metric_sets.iter().flatten(), |metric_set| metric_set.name.as_str())
                     .into_iter()
-                    .map(|(name, count)| NetworkProblem::DuplicateMetricSetName { name, count }),
+                    .map(|(name, count)| NetworkProblem::DuplicateMetricSetName {
+                        name: name.to_string(),
+                        count,
+                    }),
             )
             .chain(invalid_edges.into_iter().map(NetworkProblem::InvalidEdge))
             .collect();

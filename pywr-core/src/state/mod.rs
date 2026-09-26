@@ -757,9 +757,9 @@ pub enum StateError {
     GeneralMultiParameterAfterValueNotFound(GeneralAfterValueIndex<MultiValue>),
     #[error("Multi-network transfer index not found: {0}")]
     MultiNetworkTransferIndexNotFound(MultiNetworkTransferIndex),
-    #[error("Network state error: {0}")]
+    #[error("Network state error.")]
     NetworkStateError(#[from] NetworkStateError),
-    #[error("Simple metric f64 error: {0}")]
+    #[error("Simple metric f64 error.")]
     SimpleMetricF64Error(#[from] SimpleMetricF64Error),
 }
 
