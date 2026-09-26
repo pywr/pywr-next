@@ -169,7 +169,7 @@ impl ThresholdParameter {
             };
 
             for v in values {
-                values_builder.metric(v.load(network, args, None)?);
+                values_builder.metric(v.load(network, args, parent)?);
             }
             network.parameters().f64(Box::new(values_builder));
         }
