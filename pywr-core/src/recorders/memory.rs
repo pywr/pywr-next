@@ -252,9 +252,8 @@ impl RecorderFinalResult for MemoryRecorderResult {
     }
 }
 
-#[derive(Debug, Default, Copy, Clone)]
+#[derive(Debug, Copy, Clone)]
 pub enum AggregationOrder {
-    #[default]
     MetricTimeScenario,
     TimeMetricScenario,
 }

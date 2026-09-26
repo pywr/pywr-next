@@ -53,10 +53,14 @@ pub struct AnyNonZero {
     pub tolerance: Option<f64>,
 }
 
+impl AnyNonZero {
+    pub const DEFAULT_TOLERANCE: f64 = 1e-6;
+}
+
 #[cfg(feature = "core")]
 impl AnyNonZero {
     fn load(&self) -> Result<pywr_core::agg_funcs::AggFuncF64, SchemaError> {
-        let tolerance = self.tolerance.unwrap_or(1e-6);
+        let tolerance = self.tolerance.unwrap_or(Self::DEFAULT_TOLERANCE);
 
         Ok(pywr_core::agg_funcs::AggFuncF64::AnyNonZero { tolerance })
     }

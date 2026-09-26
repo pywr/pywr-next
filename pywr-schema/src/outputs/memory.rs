@@ -54,6 +54,10 @@ pub struct MemoryOutput {
     pub order: Option<MemoryAggregationOrder>,
 }
 
+impl MemoryOutput {
+    pub const DEFAULT_ORDER: MemoryAggregationOrder = MemoryAggregationOrder::MetricTimeScenario;
+}
+
 /// Written out rather than derived: a derive would walk `metric_set` as a plain `String`.
 impl VisitReferences for MemoryOutput {
     fn visit_references<F: FnMut(Reference<'_>)>(&self, visitor: &mut F) {
@@ -76,7 +80,7 @@ impl MemoryOutput {
             &self.name,
             &self.metric_set,
             self.aggregation.clone().unwrap_or_default().load(data_path)?,
-            self.order.map(|o| o.into()).unwrap_or_default(),
+            self.order.unwrap_or(Self::DEFAULT_ORDER).into(),
         );
 
         network.recorder(Box::new(recorder));

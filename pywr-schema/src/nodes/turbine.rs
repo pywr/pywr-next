@@ -1,6 +1,6 @@
 use crate::metric::Metric;
 use crate::nodes::NodeMeta;
-use crate::parameters::Parameter;
+use crate::parameters::{HydropowerTargetParameter, Parameter};
 #[cfg(feature = "core")]
 use crate::{
     error::SchemaError,
@@ -19,19 +19,10 @@ use schemars::JsonSchema;
 use strum_macros::EnumIter;
 
 #[derive(
-    serde::Deserialize,
-    serde::Serialize,
-    Clone,
-    Debug,
-    strum_macros::Display,
-    JsonSchema,
-    PywrVisitAll,
-    EnumIter,
-    Default,
+    serde::Deserialize, serde::Serialize, Clone, Debug, strum_macros::Display, JsonSchema, PywrVisitAll, EnumIter,
 )]
 pub enum TargetType {
     // set flow derived from the hydropower target as a max_flow
-    #[default]
     MaxFlow,
     // set flow derived from the hydropower target as a min_flow
     MinFlow,
@@ -109,14 +100,14 @@ impl Default for TurbineNode {
             parameters: None,
             cost: None,
             target: None,
-            target_type: Some(TargetType::default()),
+            target_type: Some(Self::DEFAULT_TARGET_TYPE),
             water_elevation: None,
-            turbine_elevation: 0.0,
-            min_head: 0.0,
-            efficiency: 1.0,
-            water_density: 1000.0,
-            flow_unit_conversion: 1.0,
-            energy_unit_conversion: 1e-6,
+            turbine_elevation: HydropowerTargetParameter::DEFAULT_TURBINE_ELEVATION,
+            min_head: HydropowerTargetParameter::DEFAULT_MIN_HEAD,
+            efficiency: HydropowerTargetParameter::DEFAULT_EFFICIENCY,
+            water_density: HydropowerTargetParameter::DEFAULT_WATER_DENSITY,
+            flow_unit_conversion: HydropowerTargetParameter::DEFAULT_FLOW_UNIT_CONVERSION,
+            energy_unit_conversion: HydropowerTargetParameter::DEFAULT_ENERGY_UNIT_CONVERSION,
         }
     }
 }
@@ -124,6 +115,7 @@ impl Default for TurbineNode {
 impl TurbineNode {
     const DEFAULT_ATTRIBUTE: TurbineNodeAttribute = TurbineNodeAttribute::Outflow;
     const DEFAULT_COMPONENT: TurbineNodeComponent = TurbineNodeComponent::Outflow;
+    pub const DEFAULT_TARGET_TYPE: TargetType = TargetType::MaxFlow;
 
     pub fn default_attribute(&self) -> TurbineNodeAttribute {
         Self::DEFAULT_ATTRIBUTE
@@ -200,14 +192,14 @@ impl TurbineNode {
             actual_flow: Some(inflow_metric),
             target: target_value,
             water_elevation,
-            elevation: Some(self.turbine_elevation),
-            min_head: Some(self.min_head),
+            elevation: self.turbine_elevation,
+            min_head: self.min_head,
             max_flow: None,
             min_flow: None,
-            efficiency: Some(self.efficiency),
-            water_density: Some(self.water_density),
-            flow_unit_conversion: Some(self.flow_unit_conversion),
-            energy_unit_conversion: Some(self.energy_unit_conversion),
+            efficiency: self.efficiency,
+            water_density: self.water_density,
+            flow_unit_conversion: self.flow_unit_conversion,
+            energy_unit_conversion: self.energy_unit_conversion,
         };
 
         let p = pywr_core::parameters::HydropowerTargetParameterBuilder::new(name.clone(), turbine_data);
@@ -217,7 +209,7 @@ impl TurbineNode {
         if self.target.is_some() {
             let metric = UnresolvedMetricF64::new_parameter_before(name);
 
-            match self.target_type.clone().unwrap_or_default() {
+            match self.target_type.clone().unwrap_or(Self::DEFAULT_TARGET_TYPE) {
                 TargetType::MaxFlow => {
                     link_node.max_flow(metric);
                 }

@@ -80,49 +80,57 @@ pub struct Polynomial1DParameterBuilder {
 
 impl Polynomial1DParameterBuilder {
     /// Create a new builder for [`Polynomial1DParameter`] that is evaluated in the "before" phase.
-    pub fn before(name: ParameterName, metric: UnresolvedMetricF64, coefficients: Vec<f64>) -> Self {
+    pub fn before(
+        name: ParameterName,
+        metric: UnresolvedMetricF64,
+        coefficients: Vec<f64>,
+        scale: f64,
+        offset: f64,
+    ) -> Self {
         Self {
             meta: ParameterMeta::new(name),
             metric,
             coefficients,
-            scale: 1.0,
-            offset: 0.0,
+            scale,
+            offset,
             phase: MetricConsumerPhase::Before,
         }
     }
 
     /// Create a new builder for [`Polynomial1DParameter`] that is evaluated in the "after" phase.
-    pub fn after(name: ParameterName, metric: UnresolvedMetricF64, coefficients: Vec<f64>) -> Self {
+    pub fn after(
+        name: ParameterName,
+        metric: UnresolvedMetricF64,
+        coefficients: Vec<f64>,
+        scale: f64,
+        offset: f64,
+    ) -> Self {
         Self {
             meta: ParameterMeta::new(name),
             metric,
             coefficients,
-            scale: 1.0,
-            offset: 0.0,
+            scale,
+            offset,
             phase: MetricConsumerPhase::After,
         }
     }
 
     /// Create a new builder for [`Polynomial1DParameter`] that is evaluated in "before" and "after" phases.
-    pub fn both(name: ParameterName, metric: UnresolvedMetricF64, coefficients: Vec<f64>) -> Self {
+    pub fn both(
+        name: ParameterName,
+        metric: UnresolvedMetricF64,
+        coefficients: Vec<f64>,
+        scale: f64,
+        offset: f64,
+    ) -> Self {
         Self {
             meta: ParameterMeta::new(name),
             metric,
             coefficients,
-            scale: 1.0,
-            offset: 0.0,
+            scale,
+            offset,
             phase: MetricConsumerPhase::Both,
         }
-    }
-
-    pub fn scale(&mut self, scale: f64) -> &mut Self {
-        self.scale = scale;
-        self
-    }
-
-    pub fn offset(&mut self, offset: f64) -> &mut Self {
-        self.offset = offset;
-        self
     }
 }
 
