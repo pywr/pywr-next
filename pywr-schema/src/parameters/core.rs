@@ -103,6 +103,10 @@ pub enum ActivationFunction {
     Logistic { growth_rate: f64, max: f64 },
 }
 
+impl ActivationFunction {
+    pub const DEFAULT_OFF_VALUE: f64 = 0.0;
+}
+
 #[cfg(feature = "core")]
 impl From<ActivationFunction> for pywr_core::parameters::ActivationFunction {
     fn from(a: ActivationFunction) -> Self {
@@ -112,13 +116,13 @@ impl From<ActivationFunction> for pywr_core::parameters::ActivationFunction {
                 pywr_core::parameters::ActivationFunction::Rectifier {
                     min,
                     max,
-                    neg_value: off_value.unwrap_or(0.0),
+                    neg_value: off_value.unwrap_or(ActivationFunction::DEFAULT_OFF_VALUE),
                 }
             }
             ActivationFunction::BinaryStep { on_value, off_value } => {
                 pywr_core::parameters::ActivationFunction::BinaryStep {
                     pos_value: on_value,
-                    neg_value: off_value.unwrap_or(0.0),
+                    neg_value: off_value.unwrap_or(ActivationFunction::DEFAULT_OFF_VALUE),
                 }
             }
             ActivationFunction::Logistic { growth_rate, max } => {

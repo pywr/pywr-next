@@ -12,7 +12,10 @@ use crate::v1::{ConversionData, TryFromV1, try_convert_initial_storage, try_conv
 use crate::{ConversionError, node_attribute_subset_enum};
 #[cfg(feature = "core")]
 use pywr_core::{
-    metric::UnresolvedMetricF64, node::UnresolvedNode, timestep::TimeDomain, virtual_storage::VirtualStorageNodeBuilder,
+    metric::UnresolvedMetricF64,
+    node::UnresolvedNode,
+    timestep::TimeDomain,
+    virtual_storage::{VirtualStorageActivePeriod, VirtualStorageNodeBuilder},
 };
 use pywr_schema_macros::PywrVisitAll;
 use pywr_schema_macros::skip_serializing_none;
@@ -198,6 +201,7 @@ pub struct VirtualStorageNode {
 
 impl VirtualStorageNode {
     const DEFAULT_ATTRIBUTE: VirtualStorageNodeAttribute = VirtualStorageNodeAttribute::Volume;
+    pub const DEFAULT_FACTOR: f64 = 1.0;
     pub const DEFAULT_RESET: VirtualStorageReset = VirtualStorageReset::Never;
     pub const DEFAULT_RESET_VOLUME: VirtualStorageResetVolume = VirtualStorageResetVolume::Initial;
 
@@ -244,15 +248,31 @@ impl VirtualStorageNode {
         args: &LoadArgs,
     ) -> Result<(), SchemaError> {
         let nodes = self.nodes_for_flow_constraints(args)?;
+        let factors = self
+            .factors
+            .clone()
+            .unwrap_or_else(|| vec![Self::DEFAULT_FACTOR; nodes.len()]);
+
+        // A seasonal virtual storage is only active within its season
+        let active_period = match &self.reset {
+            Some(VirtualStorageReset::Seasonal(seasonal)) => VirtualStorageActivePeriod::Period {
+                start_day: seasonal.start_day,
+                start_month: seasonal.start_month,
+                end_day: seasonal.end_day,
+                end_month: seasonal.end_month,
+            },
+            _ => VirtualStorageActivePeriod::Always,
+        };
 
         let mut builder = VirtualStorageNodeBuilder::new(
             self.meta.name.as_str(),
             &nodes,
+            &factors,
+            self.initial_volume.into(),
             self.reset.clone().unwrap_or(Self::DEFAULT_RESET).try_into()?,
             self.reset_volume.unwrap_or(Self::DEFAULT_RESET_VOLUME).into(),
+            active_period,
         );
-
-        builder.initial_volume(self.initial_volume.into());
 
         if let Some(cost) = &self.cost {
             let value = cost.load(network, args, Some(&self.meta.name))?;
@@ -269,17 +289,6 @@ impl VirtualStorageNode {
             builder.max_volume(value);
         }
 
-        // Set the active period if this is a seasonal reset
-        if let Some(VirtualStorageReset::Seasonal(seasonal)) = &self.reset {
-            let period = pywr_core::virtual_storage::VirtualStorageActivePeriod::Period {
-                start_day: seasonal.start_day,
-                start_month: seasonal.start_month,
-                end_day: seasonal.end_day,
-                end_month: seasonal.end_month,
-            };
-            builder.active_period(period);
-        }
-
         if let Some(window) = &self.window {
             let rolling_window =
                 window
@@ -288,10 +297,6 @@ impl VirtualStorageNode {
                         name: self.meta.name.clone(),
                     })?;
             builder.rolling_window(rolling_window);
-        }
-
-        if let Some(factors) = &self.factors {
-            builder.factors(factors);
         }
 
         network.virtual_storage_node(builder);

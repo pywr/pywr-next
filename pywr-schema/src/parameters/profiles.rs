@@ -340,13 +340,19 @@ pub struct RbfProfileVariableSettings {
     pub value_lower_bounds: Option<f64>,
 }
 
+impl RbfProfileVariableSettings {
+    pub const DEFAULT_VALUE_LOWER_BOUNDS: f64 = 0.0;
+}
+
 #[cfg(feature = "core")]
 impl From<RbfProfileVariableSettings> for pywr_core::parameters::RbfProfileVariableConfig {
     fn from(settings: RbfProfileVariableSettings) -> Self {
         Self::new(
             settings.days_of_year_range,
             settings.value_upper_bounds.unwrap_or(f64::INFINITY),
-            settings.value_lower_bounds.unwrap_or(0.0),
+            settings
+                .value_lower_bounds
+                .unwrap_or(RbfProfileVariableSettings::DEFAULT_VALUE_LOWER_BOUNDS),
         )
     }
 }
