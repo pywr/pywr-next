@@ -59,6 +59,7 @@
               "name": "cost"
             },
             "type": "ControlCurve",
+            "phase": "Before",
             "storage_metric": {
               "type": "Node",
               "name": "storage1",

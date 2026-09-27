@@ -79,6 +79,7 @@
               "name": "drought level"
             },
             "type": "ControlCurveIndex",
+            "phase": "Before",
             "storage_metric": {
               "type": "Node",
               "name": "storage1",
@@ -176,6 +177,7 @@
               "name": "drought level"
             },
             "type": "ControlCurveIndex",
+            "phase": "Before",
             "storage_metric": {
               "type": "Node",
               "name": "storage2",
