@@ -1,6 +1,6 @@
 use crate::error::{ComponentConversionError, ConversionError};
 use crate::nodes::NodeMeta;
-use crate::parameters::{ConstantValue, Parameter};
+use crate::parameters::{ConstantValue, DEFAULT_DELAY, Parameter};
 use crate::v1::try_convert_node_meta;
 #[cfg(feature = "core")]
 use crate::{
@@ -14,6 +14,7 @@ use pywr_core::{metric::UnresolvedMetricF64, node::UnresolvedNode, parameters::P
 use pywr_schema_macros::{PywrVisitAll, skip_serializing_none};
 use pywr_v1_schema::nodes::DelayNode as DelayNodeV1;
 use schemars::JsonSchema;
+use std::num::NonZeroU64;
 
 // This macro generates a subset enum for the `DelayNode` attributes.
 // It allows for easy conversion between the enum and the `NodeAttribute` type.
@@ -49,14 +50,26 @@ node_component_subset_enum! {
 /// attributes and components for this node.
 ///
 #[skip_serializing_none]
-#[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct DelayNode {
     pub meta: NodeMeta,
     /// Optional local parameters.
     pub parameters: Option<Vec<Parameter>>,
-    pub delay: ConstantValue<u64>,
+    pub delay: ConstantValue<NonZeroU64>,
     pub initial_value: ConstantValue<f64>,
+}
+
+// Default cannot be derived, as `NonZeroU64` has no `Default`.
+impl Default for DelayNode {
+    fn default() -> Self {
+        Self {
+            meta: NodeMeta::default(),
+            parameters: None,
+            delay: DEFAULT_DELAY.into(),
+            initial_value: ConstantValue::default(),
+        }
+    }
 }
 
 impl DelayNode {
@@ -185,6 +198,16 @@ impl TryFrom<DelayNodeV1> for DelayNode {
                 }
             },
         } as u64;
+
+        let Some(delay) = NonZeroU64::new(delay) else {
+            return Err(Box::new(ComponentConversionError::Node {
+                name: meta.name,
+                attr: "delay".to_string(),
+                error: ConversionError::UnsupportedFeature {
+                    feature: "A delay of zero time-steps is not supported".to_string(),
+                },
+            }));
+        };
 
         let initial_value = v1.initial_flow.unwrap_or_default().into();
 

@@ -540,6 +540,9 @@ pub enum SchemaError {
         #[source]
         source: Box<TableCollectionError>,
     },
+    #[error("A zero value was loaded from table `{0}` (column: `{1:?}`, row: `{2:?}`), but a non-zero value is required.", table_ref.table, table_ref.column, table_ref.row)]
+    #[cfg(feature = "core")]
+    TableRefZero { table_ref: TableDataRef },
     #[cfg(feature = "pyo3")]
     #[error("Python error.")]
     PythonError(#[from] PyErr),

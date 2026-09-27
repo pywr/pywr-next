@@ -14,12 +14,13 @@ use crate::timestep::Timestep;
 use crate::{resolve_metric_f64, resolve_metric_u64};
 use std::collections::VecDeque;
 use std::fmt::Debug;
+use std::num::NonZeroU64;
 
 #[derive(Debug)]
 pub struct DelayParameter<M, T> {
     meta: ParameterMeta,
     metric: M,
-    delay: u64,
+    delay: NonZeroU64,
     initial_value: T,
 }
 
@@ -70,7 +71,7 @@ where
         _scenario_index: &ScenarioIndex,
     ) -> Result<Option<Box<dyn ParameterState>>, ParameterSetupError> {
         // Internally we need to store a history of previous values
-        let memory: VecDeque<T> = (0..self.delay).map(|_| self.initial_value).collect();
+        let memory: VecDeque<T> = (0..self.delay.get()).map(|_| self.initial_value).collect();
         Ok(Some(Box::new(memory)))
     }
 }
@@ -229,12 +230,12 @@ impl SimpleParameter<u64> for DelayParameter<SimpleMetricU64, u64> {
 pub struct DelayParameterBuilder<M, T> {
     meta: ParameterMeta,
     metric: M,
-    delay: u64,
+    delay: NonZeroU64,
     initial_value: T,
 }
 
 impl<M, T> DelayParameterBuilder<M, T> {
-    pub fn new(name: ParameterName, metric: M, delay: u64, initial_value: T) -> Self {
+    pub fn new(name: ParameterName, metric: M, delay: NonZeroU64, initial_value: T) -> Self {
         Self {
             meta: ParameterMeta::new(name),
             metric,
@@ -330,6 +331,7 @@ mod test {
     use crate::test_utils::{run_and_assert_parameter, run_and_assert_parameter_u64, simple_model};
     use arrow::array::{Float64Array, UInt64Array};
     use ndarray::{Array1, Array2, Axis, concatenate, s};
+    use std::num::NonZeroU64;
 
     /// Basic functional test of the delay parameter.
     #[test]
@@ -347,7 +349,7 @@ mod test {
         let parameter = DelayParameterBuilder::new(
             "test-parameter".into(),
             UnresolvedMetricF64::new_parameter_before("test-x"),
-            DELAY,
+            NonZeroU64::new(DELAY).unwrap(),
             0.0,
         );
 
@@ -386,7 +388,7 @@ mod test {
         let parameter = DelayParameterBuilder::new(
             "test-parameter".into(),
             UnresolvedMetricU64::new_parameter_before("test-x"),
-            DELAY,
+            NonZeroU64::new(DELAY).unwrap(),
             0,
         );
 

@@ -50,7 +50,7 @@ pub use core::{
     ActivationFunction, ActivationFunctionType, ConstantParameter, ConstantScenarioParameter, DivisionParameter,
     MaxParameter, MinParameter, NegativeMaxParameter, NegativeMinParameter, NegativeParameter, VariableSettings,
 };
-pub use delay::{DelayIndexParameter, DelayParameter};
+pub use delay::{DEFAULT_DELAY, DelayIndexParameter, DelayParameter};
 pub use difference::DifferenceParameter;
 pub use discount_factor::DiscountFactorParameter;
 pub use hydropower::HydropowerTargetParameter;
@@ -72,6 +72,7 @@ use pywr_v1_schema::parameters::{
 };
 pub use rolling::{RollingIndexParameter, RollingParameter};
 use schemars::JsonSchema;
+use std::num::NonZeroU64;
 use std::path::{Path, PathBuf};
 use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumString, IntoStaticStr};
 pub use tables::TablesArrayParameter;
@@ -799,6 +800,12 @@ impl From<u8> for ConstantValue<u64> {
     }
 }
 
+impl From<NonZeroU64> for ConstantValue<NonZeroU64> {
+    fn from(v: NonZeroU64) -> Self {
+        Self::Literal { value: v }
+    }
+}
+
 impl Default for ConstantValue<f64> {
     fn default() -> Self {
         0.0.into()
@@ -897,6 +904,30 @@ impl ConstantValue<u64> {
                     table_ref: tbl_ref.clone(),
                     source: Box::new(source),
                 }),
+        }
+    }
+}
+
+#[cfg(feature = "core")]
+impl ConstantValue<NonZeroU64> {
+    /// Return the value loading from a table if required.
+    ///
+    /// A table holds a plain integer, so a zero loaded from one is refused here.
+    pub fn load(&self, tables: &LoadedTableCollection) -> Result<NonZeroU64, SchemaError> {
+        match self {
+            Self::Literal { value } => Ok(*value),
+            Self::Table(tbl_ref) => {
+                let value = tables
+                    .get_scalar_u64(tbl_ref)
+                    .map_err(|source| SchemaError::TableRefLoad {
+                        table_ref: tbl_ref.clone(),
+                        source: Box::new(source),
+                    })?;
+
+                NonZeroU64::new(value).ok_or_else(|| SchemaError::TableRefZero {
+                    table_ref: tbl_ref.clone(),
+                })
+            }
         }
     }
 }

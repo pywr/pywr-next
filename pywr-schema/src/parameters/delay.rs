@@ -8,6 +8,10 @@ use crate::network::LoadArgs;
 use pywr_core::parameters::ParameterName;
 use pywr_schema_macros::PywrVisitAll;
 use schemars::JsonSchema;
+use std::num::NonZeroU64;
+
+/// The default number of time-steps to delay by.
+pub const DEFAULT_DELAY: NonZeroU64 = NonZeroU64::new(1).unwrap();
 
 /// A parameter that delays a value from the network by a number of time-steps.
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
@@ -15,7 +19,7 @@ use schemars::JsonSchema;
 pub struct DelayParameter {
     pub meta: NamedMeta,
     pub metric: Metric,
-    pub delay: u64,
+    pub delay: NonZeroU64,
     pub initial_value: f64,
 }
 
@@ -47,7 +51,7 @@ impl DelayParameter {
 pub struct DelayIndexParameter {
     pub meta: NamedMeta,
     pub metric: IndexMetric,
-    pub delay: u64,
+    pub delay: NonZeroU64,
     pub initial_value: u64,
 }
 
@@ -70,5 +74,57 @@ impl DelayIndexParameter {
         network.parameters().u64(Box::new(p));
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::nodes::DelayNode;
+    use crate::parameters::DelayParameter;
+
+    /// A delay of zero would leave the parameter's queue empty, so it must fail to load. The
+    /// delay is a plain field on the parameter and a `ConstantValue` on the node, so both
+    /// shapes are checked.
+    #[test]
+    fn zero_delay_is_refused() {
+        let parameter = r#"
+            {
+                "meta": {
+                    "name": "my-delay-param"
+                },
+                "metric": {
+                    "type": "Parameter",
+                    "name": "a-parameter"
+                },
+                "delay": DELAY,
+                "initial_value": 0.0
+            }
+            "#;
+
+        let node = r#"
+            {
+                "meta": {
+                    "name": "my-delay-node"
+                },
+                "delay": {
+                    "type": "Literal",
+                    "value": DELAY
+                },
+                "initial_value": {
+                    "type": "Literal",
+                    "value": 0.0
+                }
+            }
+            "#;
+
+        serde_json::from_str::<DelayParameter>(&parameter.replace("DELAY", "0"))
+            .expect_err("A parameter with a delay of zero should not load.");
+        serde_json::from_str::<DelayNode>(&node.replace("DELAY", "0"))
+            .expect_err("A node with a delay of zero should not load.");
+
+        serde_json::from_str::<DelayParameter>(&parameter.replace("DELAY", "1"))
+            .expect("A parameter with a delay of one should load.");
+        serde_json::from_str::<DelayNode>(&node.replace("DELAY", "1"))
+            .expect("A node with a delay of one should load.");
     }
 }
