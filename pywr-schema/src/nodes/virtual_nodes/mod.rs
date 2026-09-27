@@ -131,6 +131,15 @@ impl VirtualNode {
         }
     }
 
+    pub fn local_parameters_mut(&mut self) -> Option<&mut [Parameter]> {
+        match self {
+            VirtualNode::Aggregated(n) => n.parameters.as_deref_mut(),
+            VirtualNode::AggregatedStorage(n) => n.parameters.as_deref_mut(),
+            VirtualNode::VirtualStorage(n) => n.parameters.as_deref_mut(),
+            VirtualNode::Placeholder(_) => None,
+        }
+    }
+
     /// Get local parameter by name.
     pub fn get_local_parameter(&self, name: &str) -> Option<&Parameter> {
         self.local_parameters()

@@ -163,6 +163,18 @@ pub struct NodeMeta {
     pub position: Option<NodePosition>,
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub tags: HashMap<String, String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub provenance: Option<crate::meta::ComponentProvenance>,
+}
+
+impl crate::meta::ComponentMeta for NodeMeta {
+    fn provenance(&self) -> Option<&crate::meta::ComponentProvenance> {
+        self.provenance.as_ref()
+    }
+
+    fn set_provenance(&mut self, provenance: crate::meta::ComponentProvenance) {
+        self.provenance = Some(provenance);
+    }
 }
 
 impl NodeMeta {
@@ -188,6 +200,7 @@ impl TryFrom<NodeMetaV1> for NodeMeta {
             comment: v1.comment,
             position: v1.position.map(|p| p.into()),
             tags: crate::v1::convert_tags(v1.tags)?,
+            provenance: None,
         })
     }
 }
@@ -695,6 +708,28 @@ impl Node {
             Node::Reservoir(n) => n.storage.parameters.as_deref(),
             Node::Placeholder(_) => None,
             Node::Abstraction(n) => n.parameters.as_deref(),
+        }
+    }
+
+    pub fn local_parameters_mut(&mut self) -> Option<&mut [Parameter]> {
+        match self {
+            Node::Input(n) => n.parameters.as_deref_mut(),
+            Node::Link(n) => n.parameters.as_deref_mut(),
+            Node::Output(n) => n.parameters.as_deref_mut(),
+            Node::Storage(n) => n.parameters.as_deref_mut(),
+            Node::Catchment(n) => n.parameters.as_deref_mut(),
+            Node::RiverGauge(n) => n.parameters.as_deref_mut(),
+            Node::LossLink(n) => n.parameters.as_deref_mut(),
+            Node::River(n) => n.parameters.as_deref_mut(),
+            Node::RiverSplitWithGauge(n) => n.parameters.as_deref_mut(),
+            Node::WaterTreatmentWorks(n) => n.parameters.as_deref_mut(),
+            Node::PiecewiseLink(n) => n.parameters.as_deref_mut(),
+            Node::PiecewiseStorage(n) => n.parameters.as_deref_mut(),
+            Node::Delay(n) => n.parameters.as_deref_mut(),
+            Node::Turbine(n) => n.parameters.as_deref_mut(),
+            Node::Reservoir(n) => n.storage.parameters.as_deref_mut(),
+            Node::Placeholder(_) => None,
+            Node::Abstraction(n) => n.parameters.as_deref_mut(),
         }
     }
 

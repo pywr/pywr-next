@@ -37,6 +37,7 @@ mod test {
                 name: "placeholder".to_string(),
                 comment: None,
                 tags: Default::default(),
+                provenance: None,
             },
         };
 

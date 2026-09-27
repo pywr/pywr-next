@@ -1,5 +1,6 @@
 use crate::error::ComposeToSchemaError;
 use crate::manifest::DefinitionOverrides;
+use pywr_schema::meta::ProvenanceSource;
 use pywr_schema::{ModelSchema, NetworkMergeOptions, NetworkSchema, NetworkSchemaReadError};
 use std::path::PathBuf;
 
@@ -12,12 +13,14 @@ pub struct PositionOffset {
 pub struct ComposedModelNetworkSchema {
     network_schema: NetworkSchema,
     position_offset: Option<PositionOffset>,
+    source: ProvenanceSource,
 }
 
 /// A composed model that combines a base model with additional networks and metadata overrides.
 pub struct ComposedModelSchemas {
     name: String,
     base_model: ModelSchema,
+    base_source: ProvenanceSource,
     includes: Vec<ComposedModelNetworkSchema>,
     overrides: Option<DefinitionOverrides>,
 }
@@ -42,8 +45,11 @@ impl ComposedModelSchemas {
     /// Compose the base model with the included networks and overrides, returning a new [`ModelSchema`].
     pub fn into_model_schema(self, options: &NetworkMergeOptions) -> Result<ModelSchema, ComposeToSchemaError> {
         let mut model_schema = self.base_model;
+        model_schema.network.set_provenance(self.base_source);
 
         for network in self.includes {
+            let mut included_schema = network.network_schema;
+            included_schema.set_provenance(network.source);
             // Clone the options and apply any position offsets from the network
             let mut network_options = options.clone();
             if let Some(offset) = network.position_offset {
@@ -65,7 +71,7 @@ impl ComposedModelSchemas {
                 }
             }
 
-            model_schema.network.merge(network.network_schema, &network_options)?;
+            model_schema.network.merge(included_schema, &network_options)?;
         }
 
         if let Some(overrides) = self.overrides {
@@ -86,12 +92,14 @@ impl ComposedModelSchemas {
 pub struct ComposedNetworkPath {
     pub path: PathBuf,
     pub position_offset: Option<PositionOffset>,
+    pub source: ProvenanceSource,
 }
 
 /// A composed model that combines a base model with additional networks and metadata overrides.
 pub struct ComposedModel {
     name: String,
     base_model: PathBuf,
+    base_source: ProvenanceSource,
     includes: Vec<ComposedNetworkPath>,
     overrides: Option<DefinitionOverrides>,
 }
@@ -112,6 +120,7 @@ impl ComposedModel {
                 Ok(ComposedModelNetworkSchema {
                     network_schema,
                     position_offset: network.position_offset,
+                    source: network.source.clone(),
                 })
             })
             .collect::<Result<Vec<_>, NetworkSchemaReadError>>()?;
@@ -119,6 +128,7 @@ impl ComposedModel {
         Ok(ComposedModelSchemas {
             name: self.name.clone(),
             base_model: base_schema,
+            base_source: self.base_source.clone(),
             includes,
             overrides: self.overrides.clone(),
         })
@@ -134,15 +144,21 @@ impl ComposedModel {
 pub struct ComposedModelBuilder {
     name: String,
     base_model: PathBuf,
+    base_source: ProvenanceSource,
     includes: Vec<ComposedNetworkPath>,
     overrides: Option<DefinitionOverrides>,
 }
 
 impl ComposedModelBuilder {
-    pub fn new(name: String, base_model: PathBuf) -> Self {
+    pub fn new(name: String, base_model: PathBuf, base_file: String) -> Self {
+        let base_source = ProvenanceSource {
+            file: base_file,
+            network_set: None,
+        };
         Self {
             name,
             base_model,
+            base_source,
             includes: Vec::new(),
             overrides: None,
         }
@@ -162,6 +178,7 @@ impl ComposedModelBuilder {
         ComposedModel {
             name: self.name,
             base_model: self.base_model,
+            base_source: self.base_source,
             includes: self.includes,
             overrides: self.overrides,
         }

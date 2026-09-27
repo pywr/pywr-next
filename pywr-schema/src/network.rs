@@ -11,6 +11,7 @@ use crate::error::{
     ComponentConversionError, DuplicateNodeName, EdgeProblem, EdgeValidationError, NetworkProblem,
     NetworkValidationError,
 };
+use crate::meta::{ComponentMeta, ComponentProvenance, ProvenanceSource};
 use crate::metric::{Metric, NodeComponentReference};
 use crate::metric_sets::MetricSet;
 #[cfg(feature = "core")]
@@ -376,6 +377,41 @@ pub struct NetworkMergeOptions {
 }
 
 impl NetworkSchema {
+    /// Label definitions in this network with their source.
+    pub fn set_provenance(&mut self, source: ProvenanceSource) {
+        let provenance = ComponentProvenance::new(source);
+        for node in &mut self.nodes {
+            node.meta_mut().set_provenance(provenance.clone());
+            for param in node.local_parameters_mut().into_iter().flatten() {
+                param.meta_mut().set_provenance(provenance.clone());
+            }
+        }
+        for node in self.virtual_nodes.iter_mut().flatten() {
+            node.meta_mut().set_provenance(provenance.clone());
+            for param in node.local_parameters_mut().into_iter().flatten() {
+                param.meta_mut().set_provenance(provenance.clone());
+            }
+        }
+        for edge in &mut self.edges {
+            edge.meta.get_or_insert_default().set_provenance(provenance.clone());
+        }
+        for param in self.parameters.iter_mut().flatten() {
+            param.meta_mut().set_provenance(provenance.clone());
+        }
+        for table in self.tables.iter_mut().flatten() {
+            table.meta_mut().set_provenance(provenance.clone());
+        }
+        for ts in self.time_series.iter_mut().flatten() {
+            ts.meta_mut().set_provenance(provenance.clone());
+        }
+        for ms in self.metric_sets.iter_mut().flatten() {
+            ms.meta_mut().set_provenance(provenance.clone());
+        }
+        for output in self.outputs.iter_mut().flatten() {
+            output.meta_mut().set_provenance(provenance.clone());
+        }
+    }
+
     /// Visit every reference together with the top-level component holding it.
     pub fn visit_owned_references<F: FnMut(Owner<'_>, Reference<'_>)>(&self, visitor: &mut F) {
         for node in &self.nodes {
@@ -1264,6 +1300,12 @@ impl NetworkSchema {
                 let name = ms.name().to_string();
                 match self.get_metric_set_by_name_mut(ms.name()) {
                     Some(existing_ms) => {
+                        if let Some(incoming) = ms.meta.provenance.clone() {
+                            match &mut existing_ms.meta.provenance {
+                                Some(existing) => existing.merge(incoming),
+                                None => existing_ms.meta.provenance = Some(incoming),
+                            }
+                        }
                         // Merge the metrics of the existing metric set with the new one.
                         if let Some(existing_metrics) = &mut existing_ms.metrics {
                             if let Some(new_metrics) = ms.metrics {
@@ -1324,6 +1366,7 @@ pub enum NetworkSchemaRef {
 mod tests {
     use super::{NetworkMergeError, NetworkMergeOptions, NetworkSchema};
     use crate::error::{DuplicateNodeName, EdgeProblem, EdgeValidationError, NetworkProblem};
+    use crate::meta::{ComponentMeta, ProvenanceSource};
     use crate::nodes::{NodeSlot, NodeType, VirtualNodeType};
     use crate::visit::VisitPaths;
     use std::path::PathBuf;
@@ -2496,6 +2539,40 @@ mod tests {
         "timeseries.csv",
         "virtual-node-local-parameter.py",
     ];
+
+    #[test]
+    fn provenance_covers_all_component_metadata_without_becoming_a_data_path() {
+        let mut network = parse_network(NETWORK_WITH_PATHS);
+        let source = ProvenanceSource {
+            file: "sets/network.json".into(),
+            network_set: Some("sets".into()),
+        };
+        assert!(
+            serde_json::to_value(&network).unwrap()["nodes"][0]["meta"]
+                .get("provenance")
+                .is_none()
+        );
+        network.set_provenance(source.clone());
+        let origin = |meta: &dyn ComponentMeta| meta.provenance().unwrap().origin.clone();
+        assert_eq!(origin(network.nodes[0].meta()), source);
+        assert_eq!(origin(network.nodes[0].local_parameters().unwrap()[0].meta()), source);
+        assert_eq!(origin(network.virtual_nodes.as_ref().unwrap()[0].meta()), source);
+        assert_eq!(
+            origin(network.virtual_nodes.as_ref().unwrap()[0].local_parameters().unwrap()[0].meta()),
+            source
+        );
+        assert_eq!(origin(network.edges[0].meta().unwrap()), source);
+        assert_eq!(origin(network.parameters.as_ref().unwrap()[0].meta()), source);
+        assert_eq!(origin(network.tables.as_ref().unwrap()[0].meta()), source);
+        assert_eq!(origin(network.time_series.as_ref().unwrap()[0].meta()), source);
+        assert_eq!(origin(network.metric_sets.as_ref().unwrap()[0].meta()), source);
+        assert_eq!(origin(network.outputs.as_ref().unwrap()[0].meta()), source);
+        assert_eq!(collect_paths(&network), EXPECTED_PATHS);
+        network.visit_paths_mut(&mut |path| *path = PathBuf::from("updated"));
+        assert_eq!(origin(network.nodes[0].meta()), source);
+        let round_trip: NetworkSchema = serde_json::from_value(serde_json::to_value(network).unwrap()).unwrap();
+        assert_eq!(origin(round_trip.nodes[0].meta()), source);
+    }
 
     /// Collect every visited path, sorted, so the assertions do not depend on the walk order.
     fn collect_paths(network: &NetworkSchema) -> Vec<String> {

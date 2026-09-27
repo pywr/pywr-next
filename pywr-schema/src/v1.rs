@@ -130,6 +130,7 @@ impl TryFromV1<ParameterMetaV1> for NamedMeta {
             name,
             comment: v1.comment,
             tags,
+            provenance: None,
         })
     }
 }
@@ -149,6 +150,7 @@ impl TryFromV1<Option<ParameterMetaV1>> for NamedMeta {
                     name: format!("unnamed-{}", conversion_data.unnamed_count),
                     comment: None,
                     tags: HashMap::new(),
+                    provenance: None,
                 };
                 conversion_data.unnamed_count += 1;
                 Ok(meta)

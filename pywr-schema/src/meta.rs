@@ -2,6 +2,52 @@ use pywr_schema_macros::PywrVisitAll;
 use schemars::JsonSchema;
 use std::collections::HashMap;
 
+/// The project-relative source of a component in a composed model.
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, PartialEq, Eq, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ProvenanceSource {
+    pub file: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub network_set: Option<String>,
+}
+
+/// Origin of a definition and any sources subsequently merged into it.
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, PartialEq, Eq, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ComponentProvenance {
+    pub origin: ProvenanceSource,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub contributors: Vec<ProvenanceSource>,
+}
+
+// Provenance paths describe source files; they are not model data paths to rewrite.
+impl crate::visit::VisitPaths for ComponentProvenance {}
+impl crate::visit::VisitMetrics for ComponentProvenance {}
+impl crate::visit::VisitReferences for ComponentProvenance {}
+
+impl ComponentProvenance {
+    pub fn new(origin: ProvenanceSource) -> Self {
+        Self {
+            origin,
+            contributors: Vec::new(),
+        }
+    }
+
+    pub fn merge(&mut self, other: Self) {
+        for source in std::iter::once(other.origin).chain(other.contributors) {
+            if source != self.origin && !self.contributors.contains(&source) {
+                self.contributors.push(source);
+            }
+        }
+    }
+}
+
+/// Access to composition metadata across different component metadata layouts.
+pub trait ComponentMeta {
+    fn provenance(&self) -> Option<&ComponentProvenance>;
+    fn set_provenance(&mut self, provenance: ComponentProvenance);
+}
+
 /// Metadata shared by named network components without component-specific fields.
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Default, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
@@ -11,6 +57,18 @@ pub struct NamedMeta {
     pub comment: Option<String>,
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub tags: HashMap<String, String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub provenance: Option<ComponentProvenance>,
+}
+
+impl ComponentMeta for NamedMeta {
+    fn provenance(&self) -> Option<&ComponentProvenance> {
+        self.provenance.as_ref()
+    }
+
+    fn set_provenance(&mut self, provenance: ComponentProvenance) {
+        self.provenance = Some(provenance);
+    }
 }
 #[cfg(test)]
 mod tests {

@@ -1,6 +1,7 @@
 use crate::composition::{ComposedModel, ComposedModelBuilder, ComposedNetworkPath, PositionOffset};
 use crate::error::{ComposeModelError, ValidationError};
 use crate::manifest::DefinitionOverrides;
+use pywr_schema::meta::ProvenanceSource;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -180,7 +181,7 @@ impl ProjectManifest {
             .iter()
             .map(|set| Ok((set.name.clone(), resolve_network_set(root, set)?)))
             .collect::<Result<HashMap<_, _>, ComposeModelError>>()?;
-        definition.compose_model(base_model, &sets)
+        definition.compose_model(base_model, &self.base_model, &sets)
     }
 
     fn manifest_errors(&self) -> Vec<ProjectManifestValidationError> {
@@ -298,10 +299,11 @@ impl Definition {
     fn compose_model(
         &self,
         base_model: PathBuf,
+        base_file: &str,
         sets: &HashMap<String, ResolvedNetworkSet>,
     ) -> Result<ComposedModel, ComposeModelError> {
         let mut selected_sets = HashSet::new();
-        let mut builder = ComposedModelBuilder::new(self.name.clone(), base_model);
+        let mut builder = ComposedModelBuilder::new(self.name.clone(), base_model, base_file.to_string());
         for selection in &self.include {
             if !selected_sets.insert(&selection.set) {
                 return Err(ComposeModelError::DuplicateSelection {
@@ -356,6 +358,10 @@ impl Definition {
                 let composed_path = ComposedNetworkPath {
                     path: file.path.clone(),
                     position_offset: position_offset.map(PositionOffset::from),
+                    source: ProvenanceSource {
+                        file: set.dir.join(&file.name).to_string_lossy().into_owned(),
+                        network_set: Some(set.name.clone()),
+                    },
                 };
                 builder.add_include(composed_path);
             }
@@ -434,6 +440,7 @@ pub struct NetworkSet {
 
 struct ResolvedNetworkSet {
     name: String,
+    dir: PathBuf,
     min_files: Option<usize>,
     max_files: Option<usize>,
     files: Vec<ResolvedNetworkFile>,
@@ -577,7 +584,7 @@ fn resolve_network_set(root: &Path, set: &NetworkSet) -> Result<ResolvedNetworkS
         &format!("network set '{}' directory", set.name),
         set.dir.as_deref().unwrap_or(&set.name),
     )?;
-    let candidate = root.join(dir);
+    let candidate = root.join(&dir);
     if !candidate.exists() {
         return Err(ComposeModelError::DirectoryNotFound {
             set: set.name.clone(),
@@ -613,6 +620,7 @@ fn resolve_network_set(root: &Path, set: &NetworkSet) -> Result<ResolvedNetworkS
     files.sort_by(|left, right| left.name.cmp(&right.name));
     Ok(ResolvedNetworkSet {
         name: set.name.clone(),
+        dir,
         min_files: set.min_files,
         max_files: set.max_files,
         files,
@@ -874,6 +882,122 @@ mod test {
                 assert!(merged.network.get_node_by_name("b").is_none());
             }
         }
+    }
+
+    #[test]
+    fn composed_components_retain_sources_and_metric_set_contributors() {
+        use pywr_schema::meta::{ComponentMeta, ProvenanceSource};
+
+        let root = tempdir().unwrap();
+        let base = pywr_schema::ModelSchema {
+            network: serde_json::from_value(serde_json::json!({
+                "nodes": [{"type": "Placeholder", "meta": {"name": "replace"}},
+                          {"type": "Input", "meta": {"name": "base"}}],
+                "edges": [],
+                "metric_sets": [{"meta": {"name": "shared"},
+                                 "metrics": [{"type": "Node", "name": "base"}]}]
+            }))
+            .unwrap(),
+            ..Default::default()
+        };
+        assert!(
+            serde_json::to_value(&base).unwrap()["network"]["nodes"][0]["meta"]
+                .get("provenance")
+                .is_none()
+        );
+        std::fs::write(root.path().join("base.json"), serde_json::to_vec(&base).unwrap()).unwrap();
+        std::fs::create_dir(root.path().join("nets")).unwrap();
+        std::fs::write(
+            root.path().join("nets/a.json"),
+            serde_json::to_vec(&serde_json::json!({
+                "nodes": [{"type": "Input", "meta": {"name": "replace"},
+                           "parameters": [{"type": "Placeholder", "meta": {"name": "local"}}]}],
+                "edges": [{"from_node": "replace", "to_node": "base"}],
+                "metric_sets": [{"meta": {"name": "shared"},
+                                 "metrics": [{"type": "Node", "name": "replace"}]}]
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        std::fs::write(
+            root.path().join("nets/b.json"),
+            serde_json::to_vec(&serde_json::json!({
+                "nodes": [{"type": "Output", "meta": {"name": "included"}}],
+                "edges": [],
+                "metric_sets": [{"meta": {"name": "shared"},
+                                 "metrics": [{"type": "Node", "name": "included"}]}]
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+
+        let manifest = manifest(
+            "base.json",
+            vec![set("nets", None, None, None)],
+            vec![selection("nets", None, true)],
+        );
+        let composed = manifest
+            .compose_model(root.path(), "test")
+            .unwrap()
+            .load()
+            .unwrap()
+            .into_model_schema(&Default::default())
+            .unwrap();
+        let base_source = ProvenanceSource {
+            file: "base.json".into(),
+            network_set: None,
+        };
+        let a_source = ProvenanceSource {
+            file: "nets/a.json".into(),
+            network_set: Some("nets".into()),
+        };
+        let b_source = ProvenanceSource {
+            file: "nets/b.json".into(),
+            network_set: Some("nets".into()),
+        };
+        assert_eq!(
+            composed
+                .network
+                .get_node_by_name("base")
+                .unwrap()
+                .meta()
+                .provenance()
+                .unwrap()
+                .origin,
+            base_source
+        );
+        let replaced = composed.network.get_node_by_name("replace").unwrap();
+        assert_eq!(replaced.meta().provenance().unwrap().origin, a_source);
+        assert_eq!(
+            replaced.local_parameters().unwrap()[0]
+                .meta()
+                .provenance()
+                .unwrap()
+                .origin,
+            a_source
+        );
+        assert_eq!(
+            composed.network.edges[0].meta().unwrap().provenance().unwrap().origin,
+            a_source
+        );
+        assert_eq!(
+            composed
+                .network
+                .get_node_by_name("included")
+                .unwrap()
+                .meta()
+                .provenance()
+                .unwrap()
+                .origin,
+            b_source
+        );
+        let metric_set = &composed.network.metric_sets.as_ref().unwrap()[0];
+        assert_eq!(metric_set.metrics.as_ref().unwrap().len(), 3);
+        assert_eq!(metric_set.meta().provenance().unwrap().origin, base_source);
+        assert_eq!(
+            metric_set.meta().provenance().unwrap().contributors,
+            vec![a_source, b_source]
+        );
     }
 
     #[test]
