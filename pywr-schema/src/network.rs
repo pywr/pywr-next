@@ -863,13 +863,79 @@ impl NetworkSchema {
             .collect()
     }
 
+    /// The problems with the parameter references, each checked against the value type of the
+    /// parameter it names. A reference naming no parameter, or a placeholder, is skipped.
+    fn parameter_reference_problems(&self) -> Vec<NetworkProblem> {
+        let mut problems = Vec::new();
+
+        self.visit_owned_references(&mut |owner, reference| {
+            let (name, node, key, metric) = match reference {
+                Reference::Parameter { name, key, metric } => (name, None, key, metric),
+                Reference::LocalParameter {
+                    node,
+                    name,
+                    key,
+                    metric,
+                } => {
+                    // Without a `node` it resolves in the node or virtual node holding it.
+                    let node = node.or(match owner {
+                        Owner::Node(node) | Owner::VirtualNode(node) => Some(node),
+                        _ => None,
+                    });
+                    let Some(node) = node else { return };
+                    (name, Some(node), key, metric)
+                }
+                _ => return,
+            };
+
+            let resolved = match node {
+                Some(node) => match self.get_node_by_name(node) {
+                    Some(n) => n.get_local_parameter(name),
+                    None => self
+                        .get_virtual_node_by_name(node)
+                        .and_then(|n| n.get_local_parameter(name)),
+                },
+                None => self.get_parameter_by_name(name),
+            };
+            let Some(value_type) = resolved.and_then(Parameter::value_type) else {
+                return;
+            };
+
+            let owner = owner.to_string();
+            let parameter = name.to_string();
+            let node = node.map(str::to_string);
+
+            let problem = match (value_type.needs_key(), key) {
+                (true, None) => NetworkProblem::ParameterKeyMissing { owner, parameter, node },
+                (false, Some(key)) => NetworkProblem::ParameterKeyNotAllowed {
+                    owner,
+                    parameter,
+                    node,
+                    key: key.to_string(),
+                },
+                _ if !value_type.is_readable_by(metric) => {
+                    NetworkProblem::ParameterNotAnIndex { owner, parameter, node }
+                }
+                _ => return,
+            };
+
+            problems.push(problem);
+        });
+
+        problems
+    }
+
     /// Validate the network schema and report every problem.
     ///
-    /// This checks that the schema is unambiguous, that its edges could be made and that its
-    /// virtual nodes' members name parts their nodes build, not that the whole model can be
-    /// built; use [`NetworkSchema::add_to_network`] for the latter. See [`NetworkProblem`] for
-    /// the problems that are detected, and [`NetworkSchema::validate_edge`] for the edge rules in
-    /// particular.
+    /// The following are checked:
+    ///
+    /// - The schema is unambiguous.
+    /// - Each edge could be made; see [`NetworkSchema::validate_edge`] for the rules.
+    /// - Each virtual node's members name parts their nodes build.
+    /// - Each parameter reference suits the parameter it names.
+    ///
+    /// Whether the whole model can be built is not; use [`NetworkSchema::add_to_network`] for
+    /// that. See [`NetworkProblem`] for the problems that are detected.
     pub fn validate(&self) -> Result<(), NetworkValidationError> {
         // Count the occurrences of each name in each of the two lists.
         let mut counts: HashMap<&str, (usize, usize)> = HashMap::with_capacity(self.nodes.len());
@@ -948,6 +1014,7 @@ impl NetworkSchema {
                     .flatten()
                     .flat_map(|virtual_node| self.member_problems(virtual_node)),
             )
+            .chain(self.parameter_reference_problems())
             .collect();
 
         if problems.is_empty() {
@@ -1680,6 +1747,95 @@ mod tests {
                 "The virtual node `licence` takes the component `Loss` of the `River` node `river`, but that node does not build it. It builds: `Inflow`, `Outflow`.",
                 "The virtual node `licence` takes the component `Loss` of the `LossLink` node `loss-link`, but that node does not build it. It builds: `Inflow`, `Outflow`.",
                 "The virtual node `total` names the `Link` node `link`, but an `AggregatedStorage` node takes only storage nodes.",
+            ]
+        );
+    }
+
+    /// A network with a parameter reference for every problem, among references from both kinds
+    /// of metric that pass or are skipped.
+    const NETWORK_WITH_INVALID_PARAMETER_REFERENCES: &str = r#"
+    {
+        "nodes": [
+            {
+                "meta": { "name": "supply" },
+                "type": "Input",
+                "parameters": [
+                    { "meta": { "name": "local-flow" }, "type": "Constant", "value": { "type": "Literal", "value": 1.0 } },
+                    {
+                        "meta": { "name": "local-indexed" },
+                        "type": "IndexedArray",
+                        "phase": "Before",
+                        "metrics": [],
+                        "index_metric": { "type": "LocalParameter", "name": "local-flow" }
+                    }
+                ],
+                "max_flow": { "type": "LocalParameter", "name": "local-flow" }
+            }
+        ],
+        "edges": [],
+        "parameters": [
+            { "meta": { "name": "flow" }, "type": "Constant", "value": { "type": "Literal", "value": 1.0 } },
+            {
+                "meta": { "name": "switch" },
+                "type": "AsymmetricSwitchIndex",
+                "on_index_metric": { "type": "Constant", "value": 1 },
+                "off_index_metric": { "type": "Constant", "value": 0 }
+            },
+            {
+                "meta": { "name": "dict" },
+                "type": "Python",
+                "source": { "type": "Path", "path": "dict.py" },
+                "object": { "type": "Class", "class": "Dict" },
+                "return_type": "Dict"
+            },
+            { "meta": { "name": "placeholder" }, "type": "Placeholder" },
+            {
+                "meta": { "name": "indexed" },
+                "type": "IndexedArray",
+                "phase": "Before",
+                "metrics": [
+                    { "type": "Parameter", "name": "flow" },
+                    { "type": "Parameter", "name": "switch" },
+                    { "type": "Parameter", "name": "dict" },
+                    { "type": "Parameter", "name": "dict", "key": "a" },
+                    { "type": "Parameter", "name": "flow", "key": "a" },
+                    { "type": "Parameter", "name": "placeholder" },
+                    { "type": "Parameter", "name": "missing" }
+                ],
+                "index_metric": { "type": "Parameter", "name": "flow" }
+            },
+            {
+                "meta": { "name": "agg-index" },
+                "type": "AggregatedIndex",
+                "phase": "Before",
+                "agg_func": { "type": "Sum" },
+                "metrics": [
+                    { "type": "Parameter", "name": "switch" },
+                    { "type": "Parameter", "name": "dict", "key": "a" },
+                    { "type": "LocalParameter", "node": "supply", "name": "local-flow" },
+                    { "type": "LocalParameter", "name": "local-flow" }
+                ]
+            }
+        ]
+    }
+    "#;
+
+    /// Every parameter reference of the wrong kind is reported, in the order listed. A local
+    /// reference without a `node` resolves in the node holding it.
+    #[test]
+    fn test_validate_reports_all_invalid_parameter_references() {
+        let network = parse_network(NETWORK_WITH_INVALID_PARAMETER_REFERENCES);
+
+        let messages: Vec<String> = expect_problems(&network).iter().map(ToString::to_string).collect();
+
+        assert_eq!(
+            messages,
+            vec![
+                "The node `supply` uses the local parameter `local-flow` of `supply` as an index, but it gives a float value.",
+                "The parameter `indexed` refers to the parameter `dict` without a key, but it gives several values, one per key.",
+                "The parameter `indexed` names the key `a` of the parameter `flow`, but it gives a single value and takes no key.",
+                "The parameter `indexed` uses the parameter `flow` as an index, but it gives a float value.",
+                "The parameter `agg-index` uses the local parameter `local-flow` of `supply` as an index, but it gives a float value.",
             ]
         );
     }

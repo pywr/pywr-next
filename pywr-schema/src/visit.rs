@@ -1,5 +1,5 @@
 use crate::edge::Edge;
-use crate::metric::{IndexMetric, Metric};
+use crate::metric::{IndexMetric, Metric, MetricValueType};
 use std::collections::HashMap;
 use std::num::{NonZeroI64, NonZeroU64, NonZeroUsize};
 use std::path::{Path, PathBuf};
@@ -265,11 +265,21 @@ pub enum Reference<'a> {
     /// Resolved in the network's `edges`, on all four fields: two edges can share endpoints and
     /// differ only in slot. The endpoints are also visited as [`Reference::Node`].
     Edge(&'a Edge),
-    /// Resolved in the network's `parameters`.
-    Parameter(&'a str),
+    /// Resolved in the network's `parameters`. Its `key` and `metric` decide which parameters it
+    /// can name, as [`ParameterValueType`](crate::parameters::ParameterValueType) says.
+    Parameter {
+        name: &'a str,
+        key: Option<&'a str>,
+        metric: MetricValueType,
+    },
     /// If `node` is None it resolved in the owning node's or virtual node's own `parameters`, so
     /// the name is meaningless without the [`Owner`].
-    LocalParameter { node: Option<&'a str>, name: &'a str },
+    LocalParameter {
+        node: Option<&'a str>,
+        name: &'a str,
+        key: Option<&'a str>,
+        metric: MetricValueType,
+    },
     /// Resolved in the network's `tables`.
     Table(&'a str),
     /// Resolved in the network's `time_series`.
@@ -280,7 +290,8 @@ pub enum Reference<'a> {
     ScenarioGroup(&'a str),
 }
 
-/// The mutable form of [`Reference`], with variants corresponding one-for-one.
+/// The mutable form of [`Reference`], with variants corresponding one-for-one; a parameter
+/// reference carries only its names.
 #[derive(Debug, PartialEq)]
 pub enum ReferenceMut<'a> {
     Node(&'a mut String),
@@ -349,10 +360,16 @@ impl VisitReferences for Metric {
             Metric::Edge(edge_ref) => edge_ref.visit_references(visitor),
             Metric::Table(table_ref) => table_ref.visit_references(visitor),
             Metric::TimeSeries(ts_ref) => ts_ref.visit_references(visitor),
-            Metric::Parameter(p_ref) => visitor(Reference::Parameter(&p_ref.name)),
+            Metric::Parameter(p_ref) => visitor(Reference::Parameter {
+                name: &p_ref.name,
+                key: p_ref.key.as_deref(),
+                metric: MetricValueType::Float,
+            }),
             Metric::LocalParameter(p_ref) => visitor(Reference::LocalParameter {
                 node: p_ref.node.as_deref(),
                 name: &p_ref.name,
+                key: p_ref.key.as_deref(),
+                metric: MetricValueType::Float,
             }),
             // An inter-network transfer resolves against the multi-network model, not this one.
             Metric::Literal { .. } | Metric::InterNetworkTransfer { .. } => {}
@@ -382,10 +399,16 @@ impl VisitReferences for IndexMetric {
             IndexMetric::Node(node_ref) => node_ref.visit_references(visitor),
             IndexMetric::Table(table_ref) => table_ref.visit_references(visitor),
             IndexMetric::TimeSeries(ts_ref) => ts_ref.visit_references(visitor),
-            IndexMetric::Parameter(p_ref) => visitor(Reference::Parameter(&p_ref.name)),
+            IndexMetric::Parameter(p_ref) => visitor(Reference::Parameter {
+                name: &p_ref.name,
+                key: p_ref.key.as_deref(),
+                metric: MetricValueType::Index,
+            }),
             IndexMetric::LocalParameter(p_ref) => visitor(Reference::LocalParameter {
                 node: p_ref.node.as_deref(),
                 name: &p_ref.name,
+                key: p_ref.key.as_deref(),
+                metric: MetricValueType::Index,
             }),
             IndexMetric::Constant { .. } | IndexMetric::InterNetworkTransfer { .. } => {}
         }
@@ -948,8 +971,8 @@ mod tests {
             Reference::Node(name) => format!("Node:{name}"),
             Reference::VirtualNode(name) => format!("VirtualNode:{name}"),
             Reference::Edge(edge) => format!("Edge:{edge}"),
-            Reference::Parameter(name) => format!("Parameter:{name}"),
-            Reference::LocalParameter { node, name } => {
+            Reference::Parameter { name, .. } => format!("Parameter:{name}"),
+            Reference::LocalParameter { node, name, .. } => {
                 if let Some(node) = node {
                     format!("LocalParameter:{node}:{name}")
                 } else {

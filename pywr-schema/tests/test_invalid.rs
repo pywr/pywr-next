@@ -63,6 +63,9 @@ invalid_schema_tests! {
     // A link as a member of an aggregated storage node, which takes only storage nodes. The core
     // builder would refuse this too, but validation now refuses it first.
     agg_storage_with_flow_node: "agg-storage-with-flow-node.json", MemberNotStorage,
+    // An index metric naming a constant, which gives a float. The core builder would refuse this
+    // too, as a parameter it cannot find, but validation now refuses it first.
+    index_metric_names_float_parameter: "index-metric-names-float-parameter.json", ParameterNotAnIndex,
 }
 
 /// A group of no scenarios, which `pywr-core` would build into a model that simulates nothing.

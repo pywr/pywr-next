@@ -358,6 +358,42 @@ pub enum NetworkProblem {
         node: String,
         node_type: NodeType,
     },
+    /// An index metric naming a parameter that gives a float value.
+    #[error(
+        "The {owner} uses {} as an index, but it gives a float value.", named_parameter(.parameter, .node.as_deref())
+    )]
+    ParameterNotAnIndex {
+        owner: String,
+        parameter: String,
+        node: Option<String>,
+    },
+    /// A reference without a key naming a multi-valued parameter.
+    #[error(
+        "The {owner} refers to {} without a key, but it gives several values, one per key.", named_parameter(.parameter, .node.as_deref())
+    )]
+    ParameterKeyMissing {
+        owner: String,
+        parameter: String,
+        node: Option<String>,
+    },
+    /// A reference with a key naming a parameter that gives a single value.
+    #[error(
+        "The {owner} names the key `{key}` of {}, but it gives a single value and takes no key.", named_parameter(.parameter, .node.as_deref())
+    )]
+    ParameterKeyNotAllowed {
+        owner: String,
+        parameter: String,
+        node: Option<String>,
+        key: String,
+    },
+}
+
+/// The parameter a reference names, as a message puts it.
+fn named_parameter(parameter: &str, node: Option<&str>) -> String {
+    match node {
+        Some(node) => format!("the local parameter `{parameter}` of `{node}`"),
+        None => format!("the parameter `{parameter}`"),
+    }
 }
 
 /// Write one bullet per problem, each on its own line, under a summary written by the caller.
@@ -376,8 +412,8 @@ pub struct NetworkValidationError {
     /// on its own, or as part of a [`crate::ModelSchema`].
     pub name: Option<String>,
     /// Never empty. Duplicate names first, list by list in the order nodes, parameters, tables,
-    /// time series, metric sets, each sorted by name; then invalid edges and then invalid members
-    /// of virtual nodes, each in the order listed.
+    /// time series, metric sets, each sorted by name; then invalid edges, invalid members of
+    /// virtual nodes and parameter references of the wrong kind, each in the order listed.
     pub problems: Vec<NetworkProblem>,
 }
 
