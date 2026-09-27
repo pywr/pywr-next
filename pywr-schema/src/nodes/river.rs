@@ -18,6 +18,7 @@ use pywr_core::{
 use pywr_schema_macros::{PywrVisitAll, skip_serializing_none};
 use pywr_v1_schema::nodes::LinkNode as LinkNodeV1;
 use schemars::JsonSchema;
+use std::num::NonZeroU64;
 use strum::IntoEnumIterator;
 
 // This macro generates a subset enum for the `RiverNode` attributes.
@@ -65,7 +66,8 @@ impl From<MuskingumInitialCondition> for pywr_core::parameters::MuskingumInitial
 #[serde(tag = "type", deny_unknown_fields)]
 pub enum RoutingMethod {
     Delay {
-        delay: u64,
+        /// The number of time-steps to delay the flow by.
+        delay: NonZeroU64,
         initial_value: ConstantValue<f64>,
     },
     Muskingum {
