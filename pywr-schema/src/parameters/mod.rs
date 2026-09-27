@@ -231,6 +231,7 @@ impl Parameter {
         self.into()
     }
 
+    /// The phase(s) the parameter is calculated in.
     pub fn phase(&self) -> ParameterPhase {
         match self {
             Self::Aggregated(p) => p.phase.clone(),
@@ -247,10 +248,10 @@ impl Parameter {
             Self::MonthlyProfile(_) => ParameterPhase::Before,
             Self::WeeklyProfile(_) => ParameterPhase::Before,
             Self::UniformDrawdownProfile(_) => ParameterPhase::Before,
-            Self::Max(_) => ParameterPhase::Before,
-            Self::Min(_) => ParameterPhase::Before,
+            Self::Max(p) => p.phase.clone(),
+            Self::Min(p) => p.phase.clone(),
             Self::MultiThreshold(p) => p.phase.clone(),
-            Self::Negative(_) => ParameterPhase::Before,
+            Self::Negative(p) => p.phase.clone(),
             Self::Polynomial1D(p) => p.phase.clone(),
             Self::Threshold(p) => p.phase.clone(),
             Self::TablesArray(_) => ParameterPhase::Before,
@@ -262,10 +263,15 @@ impl Parameter {
             Self::Offset(p) => p.phase.clone(),
             Self::DiscountFactor(_) => ParameterPhase::Before,
             Self::Interpolated(p) => p.phase.clone(),
-            Self::HydropowerTarget(_) => ParameterPhase::Before,
+            // Core calculates it before with a target and after with an actual flow.
+            Self::HydropowerTarget(p) => match (p.target.is_some(), p.actual_flow.is_some()) {
+                (true, true) => ParameterPhase::Both,
+                (false, true) => ParameterPhase::After,
+                _ => ParameterPhase::Before,
+            },
             Self::RbfProfile(_) => ParameterPhase::Before,
-            Self::NegativeMax(_) => ParameterPhase::Before,
-            Self::NegativeMin(_) => ParameterPhase::Before,
+            Self::NegativeMax(p) => p.phase.clone(),
+            Self::NegativeMin(p) => p.phase.clone(),
             Self::Rolling(_) => ParameterPhase::Before,
             Self::RollingIndex(_) => ParameterPhase::Before,
             Self::Placeholder(_) => ParameterPhase::Before,
@@ -1031,7 +1037,8 @@ impl<'a> From<&'a Vec<Metric>> for DynamicFloatValueType<'a> {
 
 #[cfg(test)]
 mod tests {
-    use crate::parameters::Parameter;
+    use crate::parameters::{Parameter, ParameterPhase};
+    use serde_json::json;
     use std::fs;
     use std::path::PathBuf;
 
@@ -1051,6 +1058,24 @@ mod tests {
 
         parameter.meta_mut().name = "renamed".to_string();
         assert_eq!(parameter.name(), "renamed");
+    }
+
+    /// [`Parameter::phase`] should follow a HydropowerTarget's target and actual flow.
+    #[test]
+    fn test_hydropower_target_phase() {
+        let metric = json!({ "type": "Literal", "value": 1.0 });
+        let cases = [
+            (json!({ "target": metric }), ParameterPhase::Before),
+            (json!({ "actual_flow": metric }), ParameterPhase::After),
+            (json!({ "target": metric, "actual_flow": metric }), ParameterPhase::Both),
+        ];
+
+        for (mut data, expected) in cases {
+            data["meta"] = json!({ "name": "a-parameter" });
+            data["type"] = json!("HydropowerTarget");
+            let parameter: Parameter = serde_json::from_value(data.clone()).unwrap();
+            assert_eq!(parameter.phase(), expected, "{data}");
+        }
     }
 
     /// Test all the documentation examples successfully deserialize.
