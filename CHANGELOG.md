@@ -2,6 +2,30 @@
 
 All notable changes to this project since v2.0.0-beta will be documented in this file.
 
+## [2.0.0-beta9] - 2026-09-27
+
+### 🚀 Features
+
+- *(schema)* Validate the scenario domain and references to its groups (#827)
+- *(schema)* Do not display error sources. (#840)
+- Add PyArrow extension type for reading ArrowStreamOutput files. (#835)
+- Add parameter phase options for threshold, multithreshold and indexedarray (#764)
+- Add network step timing and speed. (#843)
+- Name optional field defaults in the schema and require them in core (#841)
+- Make all components have consistent meta data fields. (#846)
+- *(schema)* Validate virtual node members in NetworkSchema::validate (#848)
+- *(schema)* Export the node and parameter types missing from the re-exports (#849)
+- Add parameter phases to the control curve parameters (#776)
+- Refuse a delay of zero time-steps when a model loads (#850)
+
+### 🐛 Bug Fixes
+
+- *(core)* Do not display error sources. (#838)
+- *(core)* Check an aggregated node's factors and report their errors. (#839)
+- *(schema)* Apply a memory output's time and scenario funcs to the correct dimensions. (#844)
+- *(schema)* Build a reservoir's evaporation node as an output (#845)
+- Fix parameter loading with parent. (#847)
+
 ## [2.0.0-beta8] - 2026-09-23
 
 ### 🚀 Features
