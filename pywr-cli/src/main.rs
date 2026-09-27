@@ -559,7 +559,6 @@ fn run_server(mode: RunServerMode, socket_name: &str) -> Result<()> {
     Ok(())
 }
 
-
 fn run_project(
     path: &Path,
     definition: &str,
@@ -725,4 +724,3 @@ mod tests {
         assert_eq!(mode, RunServerMode::Stdio);
     }
 }
-
