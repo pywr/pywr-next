@@ -153,7 +153,7 @@
     ],
     "metric_sets": [
       {
-        "name": "nodes",
+        "meta": {"name": "nodes"},
         "filters": {
           "all_nodes": true
         }
@@ -161,7 +161,7 @@
     ],
     "outputs": [
       {
-        "name": "my-outputs",
+        "meta": {"name": "my-outputs"},
         "type": "CSV",
         "format": "Long",
         "filename": "agg-storage1-expected.csv",

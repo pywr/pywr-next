@@ -271,7 +271,7 @@
     ],
     "metric_sets": [
       {
-        "name": "drought levels",
+        "meta": {"name": "drought levels"},
         "metrics": [
           {
             "type": "Parameter",
@@ -292,7 +292,7 @@
     ],
     "outputs": [
       {
-        "name": "drought levels-outputs",
+        "meta": {"name": "drought levels-outputs"},
         "type": "CSV",
         "format": "Long",
         "filename": "local-parameter4-expected.csv",

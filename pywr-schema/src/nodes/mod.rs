@@ -63,16 +63,16 @@ use crate::network::NetworkSchema;
 use crate::parameters::Parameter;
 use crate::v1::{ConversionData, TryFromV1, TryIntoV2};
 use crate::visit::{Reference, ReferenceMut, VisitMetrics, VisitPaths, VisitReferences};
-pub use abstraction::{AbstractionNode, AbstractionNodeAttribute, AbstractionNodeComponent};
+pub use abstraction::{AbstractionNode, AbstractionNodeAttribute, AbstractionNodeComponent, AbstractionOutputNodeSlot};
 pub use attributes::NodeAttribute;
 pub use components::NodeComponent;
 pub use core::{
     CatchmentNode, CatchmentNodeAttribute, CatchmentNodeComponent, InputNode, InputNodeAttribute, InputNodeComponent,
     LinkNode, LinkNodeAttribute, LinkNodeComponent, OutputNode, OutputNodeAttribute, OutputNodeComponent,
-    SoftConstraint, StorageInitialVolume, StorageNode, StorageNodeAttribute,
+    SoftConstraint, StorageInitialVolume, StorageInitialVolumeType, StorageNode, StorageNodeAttribute,
 };
 pub use delay::{DelayNode, DelayNodeAttribute, DelayNodeComponent};
-pub use loss_link::{LossFactor, LossLinkNode, LossLinkNodeAttribute, LossLinkNodeComponent};
+pub use loss_link::{LossFactor, LossFactorType, LossLinkNode, LossLinkNodeAttribute, LossLinkNodeComponent};
 pub use piecewise_link::{
     PiecewiseLinkNode, PiecewiseLinkNodeAttribute, PiecewiseLinkNodeComponent, PiecewiseLinkStep,
 };
@@ -86,12 +86,13 @@ use pywr_v1_schema::nodes::{
 };
 pub use reservoir::{
     Bathymetry, BathymetryType, Evaporation, Leakage, Rainfall, ReservoirNode, ReservoirNodeAttribute,
-    ReservoirNodeComponent, SpillNodeType,
+    ReservoirNodeComponent, ReservoirOutputNodeSlot, SpillNodeType,
 };
 pub use river::{MuskingumInitialCondition, RiverNode, RiverNodeAttribute, RiverNodeComponent, RoutingMethod};
 pub use river_gauge::{RiverGaugeNode, RiverGaugeNodeAttribute, RiverGaugeNodeComponent};
 pub use river_split_with_gauge::{
     RiverSplit, RiverSplitWithGaugeNode, RiverSplitWithGaugeNodeAttribute, RiverSplitWithGaugeNodeComponent,
+    RiverSplitWithGaugeOutputNodeSlot,
 };
 use schemars::JsonSchema;
 pub use slots::NodeSlot;
@@ -102,8 +103,9 @@ use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumString, IntoStaticS
 pub use turbine::{TargetType, TurbineNode, TurbineNodeAttribute, TurbineNodeComponent};
 pub use virtual_nodes::{
     AggregatedNode, AggregatedNodeAttribute, AggregatedStorageNode, AggregatedStorageNodeAttribute, AnnualReset,
-    Relationship, RollingWindow, VirtualNode, VirtualNodeType, VirtualStorageNode, VirtualStorageNodeAttribute,
-    VirtualStorageReset, VirtualStorageResetVolume,
+    Relationship, RelationshipType, RollingWindow, RollingWindowType, SeasonalReset, VirtualNode, VirtualNodeType,
+    VirtualStorageNode, VirtualStorageNodeAttribute, VirtualStorageReset, VirtualStorageResetType,
+    VirtualStorageResetVolume, VirtualStorageResetVolumeType,
 };
 pub use water_treatment_works::{
     WaterTreatmentWorksNode, WaterTreatmentWorksNodeAttribute, WaterTreatmentWorksNodeComponent,
@@ -281,6 +283,29 @@ impl Node {
     pub fn is_placeholder(&self) -> bool {
         matches!(self, Self::Placeholder(_))
     }
+
+    /// Returns true if this node is a storage, as the members of an [`AggregatedStorageNode`]
+    /// must be.
+    pub fn is_storage(&self) -> bool {
+        match self {
+            Node::Storage(_) | Node::PiecewiseStorage(_) | Node::Reservoir(_) => true,
+            Node::Input(_)
+            | Node::Link(_)
+            | Node::Output(_)
+            | Node::Catchment(_)
+            | Node::RiverGauge(_)
+            | Node::LossLink(_)
+            | Node::Delay(_)
+            | Node::PiecewiseLink(_)
+            | Node::River(_)
+            | Node::RiverSplitWithGauge(_)
+            | Node::WaterTreatmentWorks(_)
+            | Node::Turbine(_)
+            | Node::Placeholder(_)
+            | Node::Abstraction(_) => false,
+        }
+    }
+
     pub fn meta(&self) -> &NodeMeta {
         match self {
             Node::Input(n) => &n.meta,
@@ -559,7 +584,8 @@ impl Node {
         }
     }
 
-    /// Returns the components that this node has.
+    /// Returns the components that nodes of this type have. See [`Node::built_components`] for
+    /// the ones this node builds.
     pub fn components(&self) -> Vec<NodeComponent> {
         match self {
             Node::Input(_) => InputNodeComponent::iter().map(Into::into).collect(),
@@ -579,6 +605,30 @@ impl Node {
             Node::Reservoir(_) => ReservoirNodeComponent::iter().map(Into::into).collect(),
             Node::Placeholder(_) => Vec::new(),
             Node::Abstraction(_) => AbstractionNodeComponent::iter().map(Into::into).collect(),
+        }
+    }
+
+    /// Returns the components this node builds, the only ones a virtual node's member can name.
+    /// A reservoir builds `Compensation` only when `compensation` is set, for example.
+    pub fn built_components(&self) -> Vec<NodeComponent> {
+        match self {
+            Node::LossLink(n) => n.built_components().map(Into::into).collect(),
+            Node::River(n) => n.built_components().map(Into::into).collect(),
+            Node::WaterTreatmentWorks(n) => n.built_components().map(Into::into).collect(),
+            Node::Reservoir(n) => n.built_components().map(Into::into).collect(),
+            Node::Input(_)
+            | Node::Link(_)
+            | Node::Output(_)
+            | Node::Catchment(_)
+            | Node::Storage(_)
+            | Node::RiverGauge(_)
+            | Node::Delay(_)
+            | Node::PiecewiseLink(_)
+            | Node::PiecewiseStorage(_)
+            | Node::RiverSplitWithGauge(_)
+            | Node::Turbine(_)
+            | Node::Placeholder(_)
+            | Node::Abstraction(_) => self.components(),
         }
     }
 
@@ -1174,6 +1224,22 @@ mod tests {
                     );
                 }
             }
+        }
+    }
+
+    /// [`Node::is_storage`] should agree with [`Node::nodes_for_storage_constraints`], so that the
+    /// two cannot drift apart.
+    #[cfg(feature = "core")]
+    #[test]
+    fn test_is_storage_matches_storage_constraints() {
+        for node_type in NodeType::iter() {
+            let node: Node = node_type.into();
+
+            assert_eq!(
+                node.is_storage(),
+                node.nodes_for_storage_constraints().is_ok(),
+                "{node_type} is_storage disagrees with its build"
+            );
         }
     }
 

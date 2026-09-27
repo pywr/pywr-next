@@ -1396,6 +1396,7 @@ mod tests {
             to_node: "missing".to_string(),
             from_slot: None,
             to_slot: None,
+            meta: None,
         });
 
         let error = schema.validate().unwrap_err();
@@ -1881,8 +1882,9 @@ mod tests {
 mod core_tests {
     use super::{ModelSchema, MultiNetworkModelSchema};
     use crate::agg_funcs::AggFunc;
+    use crate::meta::NamedMeta;
     use crate::metric::{Metric, ParameterReference};
-    use crate::parameters::{AggregatedParameter, ConstantParameter, Parameter, ParameterMeta, ParameterPhase};
+    use crate::parameters::{AggregatedParameter, ConstantParameter, Parameter, ParameterPhase};
     use ndarray::{Array1, Array2, Axis};
     use pywr_core::metric::UnresolvedMetricF64;
     use pywr_core::recorders::AssertionF64RecorderBuilder;
@@ -1931,7 +1933,7 @@ mod core_tests {
         if let Some(parameters) = &mut schema.network.parameters {
             parameters.extend(vec![
                 Parameter::Aggregated(AggregatedParameter {
-                    meta: ParameterMeta {
+                    meta: NamedMeta {
                         name: "agg1".to_string(),
                         comment: None,
                         tags: Default::default(),
@@ -1952,7 +1954,7 @@ mod core_tests {
                     ],
                 }),
                 Parameter::Constant(ConstantParameter {
-                    meta: ParameterMeta {
+                    meta: NamedMeta {
                         name: "p1".to_string(),
                         comment: None,
                         tags: Default::default(),
@@ -1961,7 +1963,7 @@ mod core_tests {
                     variable: None,
                 }),
                 Parameter::Aggregated(AggregatedParameter {
-                    meta: ParameterMeta {
+                    meta: NamedMeta {
                         name: "agg2".to_string(),
                         comment: None,
                         tags: Default::default(),
@@ -1998,7 +2000,7 @@ mod core_tests {
         if let Some(parameters) = &mut schema.network.parameters {
             parameters.extend(vec![
                 Parameter::Aggregated(AggregatedParameter {
-                    meta: ParameterMeta {
+                    meta: NamedMeta {
                         name: "agg1".to_string(),
                         comment: None,
                         tags: Default::default(),
@@ -2019,7 +2021,7 @@ mod core_tests {
                     ],
                 }),
                 Parameter::Constant(ConstantParameter {
-                    meta: ParameterMeta {
+                    meta: NamedMeta {
                         name: "p1".to_string(),
                         comment: None,
                         tags: Default::default(),
@@ -2028,7 +2030,7 @@ mod core_tests {
                     variable: None,
                 }),
                 Parameter::Constant(ConstantParameter {
-                    meta: ParameterMeta {
+                    meta: NamedMeta {
                         name: "p2".to_string(),
                         comment: None,
                         tags: Default::default(),

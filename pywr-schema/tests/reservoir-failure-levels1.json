@@ -95,7 +95,7 @@
     ],
     "metric_sets": [
       {
-        "name": "reservoir-metrics",
+        "meta": {"name": "reservoir-metrics"},
         "aggregator": {
           "freq": {
             "type": "Annual"
@@ -118,7 +118,7 @@
     ],
     "outputs": [
       {
-        "name": "reservoir-metrics",
+        "meta": {"name": "reservoir-metrics"},
         "type": "CSV",
         "format": "Long",
         "filename": "reservoir-failure-levels1-expected.csv",

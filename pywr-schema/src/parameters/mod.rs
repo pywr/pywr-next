@@ -33,6 +33,7 @@ pub use super::data_tables::TableDataRef;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
 use crate::error::{ComponentConversionError, ConversionError};
+use crate::meta::NamedMeta;
 use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::network::LoadArgs;
@@ -46,8 +47,8 @@ pub use control_curves::{
     ControlCurvePiecewiseInterpolatedParameter,
 };
 pub use core::{
-    ActivationFunction, ConstantParameter, ConstantScenarioParameter, DivisionParameter, MaxParameter, MinParameter,
-    NegativeMaxParameter, NegativeMinParameter, NegativeParameter, VariableSettings,
+    ActivationFunction, ActivationFunctionType, ConstantParameter, ConstantScenarioParameter, DivisionParameter,
+    MaxParameter, MinParameter, NegativeMaxParameter, NegativeMinParameter, NegativeParameter, VariableSettings,
 };
 pub use delay::{DelayIndexParameter, DelayParameter};
 pub use difference::DifferenceParameter;
@@ -60,31 +61,21 @@ pub use placeholder::PlaceholderParameter;
 pub use polynomial::Polynomial1DParameter;
 pub use profiles::{
     DailyProfileParameter, DirunalProfileParameter, MonthlyInterpDay, MonthlyProfileParameter, RadialBasisFunction,
-    RbfProfileParameter, RbfProfileVariableSettings, UniformDrawdownProfileParameter, WeeklyProfileParameter,
+    RadialBasisFunctionType, RbfProfileParameter, RbfProfileVariableSettings, UniformDrawdownProfileParameter,
+    WeeklyInterpDay, WeeklyProfileParameter,
 };
-pub use python::{PythonObject, PythonParameter, PythonReturnType};
-use pywr_schema_macros::{PywrVisitAll, skip_serializing_none};
+pub use python::{PythonObject, PythonObjectType, PythonParameter, PythonReturnType};
+use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::parameters::{
     CoreParameter, DataFrameParameter as DataFrameParameterV1, Parameter as ParameterV1,
     ParameterValue as ParameterValueV1, TableIndex as TableIndexV1, TableIndexEntry as TableIndexEntryV1,
 };
 pub use rolling::{RollingIndexParameter, RollingParameter};
 use schemars::JsonSchema;
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumString, IntoStaticStr};
 pub use tables::TablesArrayParameter;
 pub use thresholds::{MultiThresholdParameter, Predicate, ThresholdParameter};
-
-#[skip_serializing_none]
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
-pub struct ParameterMeta {
-    pub name: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub comment: Option<String>,
-    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
-    pub tags: HashMap<String, String>,
-}
 
 #[derive(
     serde::Deserialize, serde::Serialize, Debug, Clone, PartialEq, Eq, JsonSchema, PywrVisitAll, Display, EnumIter,
@@ -121,7 +112,7 @@ pub enum Parameter {
     Negative(NegativeParameter),
     NegativeMax(NegativeMaxParameter),
     NegativeMin(NegativeMinParameter),
-    HydropowerTarget(HydropowerTargetParameter),
+    HydropowerTarget(Box<HydropowerTargetParameter>),
     Polynomial1D(Polynomial1DParameter),
     Threshold(ThresholdParameter),
     TablesArray(TablesArrayParameter),
@@ -149,7 +140,7 @@ impl Parameter {
         matches!(self, Self::Placeholder(_))
     }
 
-    pub fn meta(&self) -> &ParameterMeta {
+    pub fn meta(&self) -> &NamedMeta {
         match self {
             Self::Constant(p) => &p.meta,
             Self::ConstantScenario(p) => &p.meta,
@@ -192,7 +183,7 @@ impl Parameter {
     }
 
     /// Get a mutable reference to the parameter's metadata.
-    pub fn meta_mut(&mut self) -> &mut ParameterMeta {
+    pub fn meta_mut(&mut self) -> &mut NamedMeta {
         match self {
             Self::Constant(p) => &mut p.meta,
             Self::ConstantScenario(p) => &mut p.meta,
@@ -712,7 +703,7 @@ impl TryFromV1<ParameterV1> for ParameterOrTimeSeriesRef {
                     Parameter::Interpolated(p.try_into_v2(parent_node, conversion_data)?).into()
                 }
                 CoreParameter::HydropowerTarget(p) => {
-                    Parameter::HydropowerTarget(p.try_into_v2(parent_node, conversion_data)?).into()
+                    Parameter::HydropowerTarget(Box::new(p.try_into_v2(parent_node, conversion_data)?)).into()
                 }
                 CoreParameter::WeeklyProfile(p) => {
                     Parameter::WeeklyProfile(p.try_into_v2(parent_node, conversion_data)?).into()

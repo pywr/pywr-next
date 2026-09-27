@@ -11,7 +11,7 @@ use crate::error::{
     ComponentConversionError, DuplicateNodeName, EdgeProblem, EdgeValidationError, NetworkProblem,
     NetworkValidationError,
 };
-use crate::metric::Metric;
+use crate::metric::{Metric, NodeComponentReference};
 use crate::metric_sets::MetricSet;
 #[cfg(feature = "core")]
 use crate::model::MultiNetworkTransfer;
@@ -386,7 +386,7 @@ impl NetworkSchema {
         }
 
         for metric_set in self.metric_sets.as_deref().into_iter().flatten() {
-            let owner = Owner::MetricSet(&metric_set.name);
+            let owner = Owner::MetricSet(metric_set.name());
             metric_set.visit_references(&mut |reference| visitor(owner, reference));
         }
 
@@ -419,7 +419,7 @@ impl NetworkSchema {
         }
 
         for metric_set in self.metric_sets.as_deref_mut().into_iter().flatten() {
-            let owner_name = metric_set.name.clone();
+            let owner_name = metric_set.name().to_string();
             metric_set.visit_references_mut(&mut |reference| visitor(Owner::MetricSet(&owner_name), reference));
         }
 
@@ -701,14 +701,14 @@ impl NetworkSchema {
 
     pub fn get_metric_set_by_name(&self, name: &str) -> Option<&MetricSet> {
         match &self.metric_sets {
-            Some(metric_sets) => metric_sets.iter().find(|ms| ms.name == name),
+            Some(metric_sets) => metric_sets.iter().find(|ms| ms.name() == name),
             None => None,
         }
     }
 
     pub fn get_metric_set_by_name_mut(&mut self, name: &str) -> Option<&mut MetricSet> {
         match &mut self.metric_sets {
-            Some(metric_sets) => metric_sets.iter_mut().find(|ms| ms.name == name),
+            Some(metric_sets) => metric_sets.iter_mut().find(|ms| ms.name() == name),
             None => None,
         }
     }
@@ -815,12 +815,61 @@ impl NetworkSchema {
         Ok(())
     }
 
+    /// The problems with `virtual_node`'s members, in the order listed. A member naming a node
+    /// that is not in `nodes`, or a placeholder, is skipped.
+    fn member_problems(&self, virtual_node: &VirtualNode) -> Vec<NetworkProblem> {
+        let (members, takes_storage): (&[NodeComponentReference], bool) = match virtual_node {
+            VirtualNode::Aggregated(n) => (&n.nodes, false),
+            VirtualNode::VirtualStorage(n) => (&n.nodes, false),
+            VirtualNode::AggregatedStorage(n) => (&n.storage_nodes, true),
+            VirtualNode::Placeholder(_) => (&[], false),
+        };
+
+        members
+            .iter()
+            .filter_map(|member| {
+                let node = self
+                    .get_node_by_name(&member.name)
+                    .filter(|node| !node.is_placeholder())?;
+
+                if takes_storage {
+                    return (!node.is_storage()).then(|| NetworkProblem::MemberNotStorage {
+                        virtual_node: virtual_node.name().to_string(),
+                        node: member.name.clone(),
+                        node_type: node.node_type(),
+                    });
+                }
+
+                let Some(default) = node.default_component() else {
+                    return Some(NetworkProblem::MemberWithoutComponents {
+                        virtual_node: virtual_node.name().to_string(),
+                        node: member.name.clone(),
+                        node_type: node.node_type(),
+                    });
+                };
+
+                let component = member.component.unwrap_or(default);
+                let built = node.built_components();
+
+                (!built.contains(&component)).then(|| NetworkProblem::MemberComponentNotBuilt {
+                    virtual_node: virtual_node.name().to_string(),
+                    node: member.name.clone(),
+                    node_type: node.node_type(),
+                    component,
+                    default: member.component.is_none(),
+                    built,
+                })
+            })
+            .collect()
+    }
+
     /// Validate the network schema and report every problem.
     ///
-    /// This checks that the schema is unambiguous and that its edges could be made, not that the
-    /// whole model can be built; use [`NetworkSchema::add_to_network`] for the latter. See
-    /// [`NetworkProblem`] for the problems that are detected, and
-    /// [`NetworkSchema::validate_edge`] for the edge rules in particular.
+    /// This checks that the schema is unambiguous, that its edges could be made and that its
+    /// virtual nodes' members name parts their nodes build, not that the whole model can be
+    /// built; use [`NetworkSchema::add_to_network`] for the latter. See [`NetworkProblem`] for
+    /// the problems that are detected, and [`NetworkSchema::validate_edge`] for the edge rules in
+    /// particular.
     pub fn validate(&self) -> Result<(), NetworkValidationError> {
         // Count the occurrences of each name in each of the two lists.
         let mut counts: HashMap<&str, (usize, usize)> = HashMap::with_capacity(self.nodes.len());
@@ -885,7 +934,7 @@ impl NetworkSchema {
                     }),
             )
             .chain(
-                duplicates(self.metric_sets.iter().flatten(), |metric_set| metric_set.name.as_str())
+                duplicates(self.metric_sets.iter().flatten(), |metric_set| metric_set.name())
                     .into_iter()
                     .map(|(name, count)| NetworkProblem::DuplicateMetricSetName {
                         name: name.to_string(),
@@ -893,6 +942,12 @@ impl NetworkSchema {
                     }),
             )
             .chain(invalid_edges.into_iter().map(NetworkProblem::InvalidEdge))
+            .chain(
+                self.virtual_nodes
+                    .iter()
+                    .flatten()
+                    .flat_map(|virtual_node| self.member_problems(virtual_node)),
+            )
             .collect();
 
         if problems.is_empty() {
@@ -992,7 +1047,7 @@ impl NetworkSchema {
             for metric_set in metric_sets {
                 metric_set.add_to_network(network_builder, &args).map_err(|source| {
                     NetworkSchemaBuildError::AddMetricSetError {
-                        name: metric_set.name.clone(),
+                        name: metric_set.name().to_string(),
                         source: Box::new(source),
                     }
                 })?;
@@ -1141,7 +1196,8 @@ impl NetworkSchema {
         // of any metric sets with the same name.
         if let Some(other_metric_sets) = other.metric_sets {
             for ms in other_metric_sets {
-                match self.get_metric_set_by_name_mut(&ms.name) {
+                let name = ms.name().to_string();
+                match self.get_metric_set_by_name_mut(ms.name()) {
                     Some(existing_ms) => {
                         // Merge the metrics of the existing metric set with the new one.
                         if let Some(existing_metrics) = &mut existing_ms.metrics {
@@ -1149,7 +1205,7 @@ impl NetworkSchema {
                                 // Check for duplicate metrics
                                 for new_metric in &new_metrics {
                                     if existing_metrics.iter().any(|m| m == new_metric) {
-                                        return Err(NetworkMergeError::DuplicateMetric(ms.name.clone()));
+                                        return Err(NetworkMergeError::DuplicateMetric(name));
                                     }
                                 }
 
@@ -1539,6 +1595,95 @@ mod tests {
         );
     }
 
+    /// A network with a member for every member problem, and members that pass: a part the node
+    /// builds, a placeholder, a node the network does not have, and an aggregated storage member
+    /// naming a component, which it ignores.
+    const NETWORK_WITH_INVALID_MEMBERS: &str = r#"
+    {
+        "nodes": [
+            {
+                "meta": { "name": "reservoir" },
+                "type": "Reservoir",
+                "initial_volume": { "type": "Proportional", "proportion": 1.0 },
+                "compensation": { "type": "Literal", "value": 1.0 },
+                "rainfall": { "data": { "type": "Literal", "value": 1.0 } }
+            },
+            {
+                "meta": { "name": "bare-reservoir" },
+                "type": "Reservoir",
+                "initial_volume": { "type": "Proportional", "proportion": 1.0 }
+            },
+            {
+                "meta": { "name": "store" },
+                "type": "Storage",
+                "initial_volume": { "type": "Proportional", "proportion": 1.0 }
+            },
+            { "meta": { "name": "works" }, "type": "WaterTreatmentWorks" },
+            { "meta": { "name": "river" }, "type": "River" },
+            { "meta": { "name": "loss-link" }, "type": "LossLink" },
+            { "meta": { "name": "link" }, "type": "Link" },
+            { "meta": { "name": "placeholder" }, "type": "Placeholder" }
+        ],
+        "edges": [],
+        "virtual_nodes": [
+            {
+                "meta": { "name": "agg" },
+                "type": "Aggregated",
+                "nodes": [
+                    { "name": "reservoir", "component": "Compensation" },
+                    { "name": "reservoir", "component": "Rainfall" },
+                    { "name": "bare-reservoir" },
+                    { "name": "link", "component": "Loss" },
+                    { "name": "store" },
+                    { "name": "placeholder" },
+                    { "name": "missing" }
+                ]
+            },
+            {
+                "meta": { "name": "licence" },
+                "type": "VirtualStorage",
+                "nodes": [
+                    { "name": "works", "component": "Loss" },
+                    { "name": "river", "component": "Loss" },
+                    { "name": "loss-link", "component": "Loss" }
+                ],
+                "initial_volume": { "type": "Proportional", "proportion": 1.0 }
+            },
+            {
+                "meta": { "name": "total" },
+                "type": "AggregatedStorage",
+                "storage_nodes": [
+                    { "name": "bare-reservoir", "component": "Rainfall" },
+                    { "name": "link" }
+                ]
+            }
+        ]
+    }
+    "#;
+
+    /// Every invalid member is reported, in the order listed. A reservoir's rainfall needs a
+    /// surface area as well.
+    #[test]
+    fn test_validate_reports_all_invalid_members() {
+        let network = parse_network(NETWORK_WITH_INVALID_MEMBERS);
+
+        let messages: Vec<String> = expect_problems(&network).iter().map(ToString::to_string).collect();
+
+        assert_eq!(
+            messages,
+            vec![
+                "The virtual node `agg` takes the component `Rainfall` of the `Reservoir` node `reservoir`, but that node does not build it. It builds: `Compensation`.",
+                "The virtual node `agg` takes the default component `Compensation` of the `Reservoir` node `bare-reservoir`, but that node does not build it. As configured, it builds no components.",
+                "The virtual node `agg` takes the component `Loss` of the `Link` node `link`, but that node does not build it. It builds: `Inflow`, `Outflow`.",
+                "The virtual node `agg` names the `Storage` node `store`, but nodes of this type have no components for it to take.",
+                "The virtual node `licence` takes the component `Loss` of the `WaterTreatmentWorks` node `works`, but that node does not build it. It builds: `Inflow`, `Outflow`.",
+                "The virtual node `licence` takes the component `Loss` of the `River` node `river`, but that node does not build it. It builds: `Inflow`, `Outflow`.",
+                "The virtual node `licence` takes the component `Loss` of the `LossLink` node `loss-link`, but that node does not build it. It builds: `Inflow`, `Outflow`.",
+                "The virtual node `total` names the `Link` node `link`, but an `AggregatedStorage` node takes only storage nodes.",
+            ]
+        );
+    }
+
     /// A duplicated name does not stop the edges being checked: both problems are reported, the
     /// duplicate first.
     #[test]
@@ -1616,9 +1761,9 @@ mod tests {
                     { "meta": { "name": "shared" }, "type": "Placeholder" }
                 ],
                 "metric_sets": [
-                    { "name": "ms", "filters": { "all_nodes": true } },
-                    { "name": "ms", "filters": { "all_virtual_nodes": true } },
-                    { "name": "shared", "filters": { "all_nodes": true } }
+                    { "meta": { "name": "ms" }, "filters": { "all_nodes": true } },
+                    { "meta": { "name": "ms" }, "filters": { "all_virtual_nodes": true } },
+                    { "meta": { "name": "shared" }, "filters": { "all_nodes": true } }
                 ]
             }
             "#,
@@ -1816,7 +1961,7 @@ mod tests {
             {
                 "nodes": [],
                 "edges": [
-                    { "from_node": "a", "to_node": "b" }
+                    { "from_node": "a", "to_node": "b", "meta": {} }
                 ]
             }
             "#,
@@ -1837,7 +1982,7 @@ mod tests {
                 "nodes": [],
                 "edges": [],
                 "metric_sets": [
-                    { "name": "main" }
+                    { "meta": { "name": "main" } }
                 ]
             }
             "#,
@@ -1849,7 +1994,7 @@ mod tests {
                 "nodes": [],
                 "edges": [],
                 "metric_sets": [
-                    { "name": "main", "metrics": [] }
+                    { "meta": { "name": "main" }, "metrics": [] }
                 ]
             }
             "#,
@@ -2107,7 +2252,7 @@ mod tests {
                 "nodes": [],
                 "edges": [],
                 "outputs": [
-                    { "type": "Placeholder", "name": "out-shared" }
+                    { "type": "Placeholder", "meta": { "name": "out-shared" } }
                 ]
             }
             "#,
@@ -2119,7 +2264,7 @@ mod tests {
                 "nodes": [],
                 "edges": [],
                 "outputs": [
-                    { "type": "Memory", "name": "out-shared", "metric_set": "ms" }
+                    { "type": "Memory", "meta": { "name": "out-shared" }, "metric_set": "ms" }
                 ]
             }
             "#,
@@ -2141,7 +2286,7 @@ mod tests {
                 "nodes": [],
                 "edges": [],
                 "outputs": [
-                    { "type": "Memory", "name": "out-shared", "metric_set": "ms" }
+                    { "type": "Memory", "meta": { "name": "out-shared" }, "metric_set": "ms" }
                 ]
             }
             "#,
@@ -2153,7 +2298,7 @@ mod tests {
                 "nodes": [],
                 "edges": [],
                 "outputs": [
-                    { "type": "Memory", "name": "out-shared", "metric_set": "ms2" }
+                    { "type": "Memory", "meta": { "name": "out-shared" }, "metric_set": "ms2" }
                 ]
             }
             "#,
@@ -2228,7 +2373,7 @@ mod tests {
         ],
         "metric_sets": [
             {
-                "name": "ms1",
+                "meta": { "name": "ms1" },
                 "metrics": [{ "type": "Node", "name": "demand" }],
                 "aggregator": {
                     "func": {
@@ -2247,7 +2392,7 @@ mod tests {
             }
         ],
         "outputs": [
-            { "name": "csv-out", "type": "CSV", "format": "Long", "filename": "output.csv", "metric_set": "ms1" }
+            { "meta": { "name": "csv-out" }, "type": "CSV", "format": "Long", "filename": "output.csv", "metric_set": "ms1" }
         ]
     }
     "#;

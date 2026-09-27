@@ -4,9 +4,10 @@ use crate::error::SchemaError;
 use crate::metric::IndexMetric;
 #[cfg(feature = "core")]
 use crate::network::LoadArgs;
-use crate::parameters::{ConversionData, ParameterMeta};
+use crate::parameters::ConversionData;
 use crate::v1::{TryFromV1, TryIntoV2, try_convert_parameter_attr};
 
+use crate::meta::NamedMeta;
 #[cfg(feature = "core")]
 use pywr_core::parameters::ParameterName;
 use pywr_schema_macros::PywrVisitAll;
@@ -16,9 +17,9 @@ use schemars::JsonSchema;
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct AsymmetricSwitchIndexParameter {
-    pub meta: ParameterMeta,
-    pub on_index_parameter: IndexMetric,
-    pub off_index_parameter: IndexMetric,
+    pub meta: NamedMeta,
+    pub on_index_metric: IndexMetric,
+    pub off_index_metric: IndexMetric,
 }
 
 #[cfg(feature = "core")]
@@ -29,8 +30,8 @@ impl AsymmetricSwitchIndexParameter {
         args: &LoadArgs,
         parent: Option<&str>,
     ) -> Result<(), SchemaError> {
-        let on_index_parameter = self.on_index_parameter.load(network, args, None)?;
-        let off_index_parameter = self.off_index_parameter.load(network, args, None)?;
+        let on_index_parameter = self.on_index_metric.load(network, args, parent)?;
+        let off_index_parameter = self.off_index_metric.load(network, args, parent)?;
 
         let p = pywr_core::parameters::AsymmetricSwitchIndexParameterBuilder::before(
             ParameterName::new(&self.meta.name, parent),
@@ -52,7 +53,7 @@ impl TryFromV1<AsymmetricSwitchIndexParameterV1> for AsymmetricSwitchIndexParame
         parent_node: Option<&str>,
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: ParameterMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
+        let meta: NamedMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
 
         let on_index_parameter = try_convert_parameter_attr(
             &meta.name,
@@ -71,8 +72,8 @@ impl TryFromV1<AsymmetricSwitchIndexParameterV1> for AsymmetricSwitchIndexParame
 
         let p = Self {
             meta,
-            on_index_parameter,
-            off_index_parameter,
+            on_index_metric: on_index_parameter,
+            off_index_metric: off_index_parameter,
         };
         Ok(p)
     }

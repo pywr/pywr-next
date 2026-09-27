@@ -1,6 +1,7 @@
 use crate::agg_funcs::AggFunc;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
+use crate::meta::NamedMeta;
 use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::metric::{EdgeReference, ParameterReferenceBuilder, ParameterReturnValue, VirtualNodeAttrReference};
@@ -180,7 +181,7 @@ impl MetricSetFilters {
 #[derive(Deserialize, Serialize, Clone, JsonSchema, PywrVisitPaths, PywrVisitReferences)]
 #[serde(deny_unknown_fields)]
 pub struct MetricSet {
-    pub name: String,
+    pub meta: NamedMeta,
     pub metrics: Option<Vec<Metric>>,
     pub aggregator: Option<MetricAggregator>,
     #[serde(default)]
@@ -188,6 +189,18 @@ pub struct MetricSet {
 }
 
 impl MetricSet {
+    pub fn name(&self) -> &str {
+        &self.meta.name
+    }
+
+    pub fn meta(&self) -> &NamedMeta {
+        &self.meta
+    }
+
+    pub fn meta_mut(&mut self) -> &mut NamedMeta {
+        &mut self.meta
+    }
+
     #[cfg(feature = "core")]
     pub fn add_to_network(
         &self,
@@ -221,10 +234,10 @@ impl MetricSet {
         };
 
         if output_metrics.is_empty() {
-            return Err(SchemaError::EmptyMetricSet(self.name.clone()));
+            return Err(SchemaError::EmptyMetricSet(self.name().to_string()));
         }
 
-        let mut metric_set = pywr_core::recorders::MetricSetBuilder::new(&self.name);
+        let mut metric_set = pywr_core::recorders::MetricSetBuilder::new(self.name());
 
         if let Some(aggregator) = &self.aggregator {
             metric_set.aggregator(aggregator.load(args.data_path)?);

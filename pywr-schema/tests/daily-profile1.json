@@ -127,7 +127,7 @@
     ],
     "metric_sets": [
       {
-        "name": "profiles",
+        "meta": {"name": "profiles"},
         "metrics": [
           {
             "type": "Parameter",
@@ -142,7 +142,7 @@
     ],
     "outputs": [
       {
-        "name": "table-values",
+        "meta": {"name": "table-values"},
         "type": "CSV",
         "format": "Long",
         "filename": "daily-profile1-expected.csv",

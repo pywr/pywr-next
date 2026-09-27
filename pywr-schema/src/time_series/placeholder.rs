@@ -1,5 +1,5 @@
 use crate::VisitPaths;
-use crate::parameters::ParameterMeta;
+use crate::meta::NamedMeta;
 use pywr_schema_macros::skip_serializing_none;
 use schemars::JsonSchema;
 
@@ -7,7 +7,7 @@ use schemars::JsonSchema;
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct PlaceholderTimeSeries {
-    pub meta: ParameterMeta,
+    pub meta: NamedMeta,
 }
 
 impl VisitPaths for PlaceholderTimeSeries {}
