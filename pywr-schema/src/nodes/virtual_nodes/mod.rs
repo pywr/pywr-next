@@ -10,6 +10,7 @@ use crate::{LoadArgs, SchemaError};
 use crate::{VisitMetrics, VisitPaths};
 pub use aggregated::{
     AggregatedNode, AggregatedNodeAttribute, AggregatedStorageNode, AggregatedStorageNodeAttribute, Relationship,
+    RelationshipType,
 };
 #[cfg(feature = "core")]
 use pywr_core::metric::UnresolvedMetricF64;
@@ -18,8 +19,8 @@ use std::path::{Path, PathBuf};
 use strum::IntoEnumIterator;
 use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumString, IntoStaticStr};
 pub use virtual_storage::{
-    AnnualReset, RollingWindow, VirtualStorageNode, VirtualStorageNodeAttribute, VirtualStorageReset,
-    VirtualStorageResetVolume,
+    AnnualReset, RollingWindow, RollingWindowType, SeasonalReset, VirtualStorageNode, VirtualStorageNodeAttribute,
+    VirtualStorageReset, VirtualStorageResetType, VirtualStorageResetVolume, VirtualStorageResetVolumeType,
 };
 
 /// Create a blank [`VirtualNode`] of the given type.
