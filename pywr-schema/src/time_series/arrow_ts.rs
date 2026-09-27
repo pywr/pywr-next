@@ -18,7 +18,7 @@ pub enum ArrowFormat {
 /// This dataset is loaded using Apache Arrow. This is done using the Rust Arrow library to load
 /// the dataset.
 #[skip_serializing_none]
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Default, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ArrowTimeSeries {
     pub meta: NamedMeta,

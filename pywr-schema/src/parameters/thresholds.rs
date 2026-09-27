@@ -20,9 +20,12 @@ use pywr_v1_schema::parameters::{
 use schemars::JsonSchema;
 use strum_macros::{Display, EnumIter};
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Copy, JsonSchema, PywrVisitAll, Display, EnumIter)]
+#[derive(
+    serde::Deserialize, serde::Serialize, Debug, Clone, Copy, Default, JsonSchema, PywrVisitAll, Display, EnumIter,
+)]
 pub enum Predicate {
     #[serde(alias = "<")]
+    #[default]
     LT,
     #[serde(alias = ">")]
     GT,

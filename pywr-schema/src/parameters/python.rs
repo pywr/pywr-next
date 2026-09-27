@@ -33,6 +33,14 @@ pub enum PythonObject {
     Function { function: String },
 }
 
+impl Default for PythonObject {
+    fn default() -> Self {
+        Self::Function {
+            function: String::default(),
+        }
+    }
+}
+
 #[cfg(all(feature = "core", feature = "pyo3"))]
 impl PythonObject {
     fn load_object(&self, module: &Bound<PyModule>) -> Result<PyObj, SchemaError> {

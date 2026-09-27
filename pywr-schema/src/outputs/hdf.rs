@@ -10,7 +10,7 @@ use schemars::JsonSchema;
 use std::path::Path;
 use std::path::PathBuf;
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitPaths)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Default, JsonSchema, PywrVisitPaths)]
 pub struct Hdf5Output {
     pub meta: NamedMeta,
     pub filename: PathBuf,

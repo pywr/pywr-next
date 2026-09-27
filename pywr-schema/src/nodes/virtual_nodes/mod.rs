@@ -14,6 +14,7 @@ pub use aggregated::{
 };
 #[cfg(feature = "core")]
 use pywr_core::metric::UnresolvedMetricF64;
+use pywr_schema_macros::{PywrFromAllOtherVariants, PywrIntoType};
 use schemars::JsonSchema;
 use std::path::{Path, PathBuf};
 use strum::IntoEnumIterator;
@@ -38,7 +39,22 @@ impl From<VirtualNodeType> for VirtualNode {
 }
 
 /// The main enum for all nodes in the model.
-#[derive(serde::Deserialize, serde::Serialize, Clone, EnumDiscriminants, Debug, JsonSchema, Display)]
+#[derive(
+    serde::Deserialize,
+    serde::Serialize,
+    Clone,
+    EnumDiscriminants,
+    Debug,
+    JsonSchema,
+    Display,
+    PywrFromAllOtherVariants,
+    PywrIntoType,
+)]
+#[pywr_from_all_other_variants(files(
+    "src/nodes/virtual_nodes/aggregated.rs",
+    "src/nodes/virtual_nodes/virtual_storage.rs",
+    "src/nodes/placeholder.rs",
+))]
 #[serde(tag = "type", deny_unknown_fields)]
 #[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
 // This creates a separate enum called `NodeType` that is available in this module.

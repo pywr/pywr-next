@@ -80,7 +80,7 @@ pub use piecewise_storage::{PiecewiseStorageNode, PiecewiseStorageNodeAttribute,
 pub use placeholder::PlaceholderNode;
 #[cfg(feature = "core")]
 use pywr_core::{metric::UnresolvedMetricF64, node::UnresolvedNode};
-use pywr_schema_macros::PywrVisitAll;
+use pywr_schema_macros::{PywrFromAllOtherVariants, PywrIntoType, PywrVisitAll};
 use pywr_v1_schema::nodes::{
     CoreNode as CoreNodeV1, Node as NodeV1, NodeMeta as NodeMetaV1, NodePosition as NodePositionV1,
 };
@@ -239,7 +239,32 @@ impl From<NodeType> for Node {
 }
 
 /// The main enum for all nodes in the model.
-#[derive(serde::Deserialize, serde::Serialize, Clone, EnumDiscriminants, Debug, JsonSchema, Display)]
+#[derive(
+    serde::Deserialize,
+    serde::Serialize,
+    Clone,
+    EnumDiscriminants,
+    Debug,
+    JsonSchema,
+    Display,
+    PywrFromAllOtherVariants,
+    PywrIntoType,
+)]
+#[pywr_from_all_other_variants(files(
+    "src/nodes/abstraction.rs",
+    "src/nodes/core.rs",
+    "src/nodes/delay.rs",
+    "src/nodes/loss_link.rs",
+    "src/nodes/piecewise_link.rs",
+    "src/nodes/piecewise_storage.rs",
+    "src/nodes/placeholder.rs",
+    "src/nodes/reservoir.rs",
+    "src/nodes/river.rs",
+    "src/nodes/river_gauge.rs",
+    "src/nodes/river_split_with_gauge.rs",
+    "src/nodes/turbine.rs",
+    "src/nodes/water_treatment_works.rs",
+))]
 #[serde(tag = "type", deny_unknown_fields)]
 #[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
 // This creates a separate enum called `NodeType` that is available in this module.
@@ -1098,6 +1123,50 @@ mod tests {
         for node_type in NodeType::iter() {
             let node: Node = node_type.into();
             assert_eq!(node.node_type(), node_type);
+        }
+    }
+
+    /// Node payloads convert into other node payloads, preserving shared fields.
+    #[test]
+    fn test_node_payload_conversions() {
+        let input = super::InputNode {
+            meta: super::NodeMeta {
+                name: "source".into(),
+                ..Default::default()
+            },
+            max_flow: Some(Metric::Literal { value: 10.0 }),
+            ..Default::default()
+        };
+        let output: super::OutputNode = input.into();
+        assert_eq!(output.meta.name, "source");
+        assert!(output.max_flow.is_some());
+
+        let delay: super::DelayNode = output.into();
+        assert_eq!(delay.meta.name, "source");
+        match delay.delay {
+            crate::parameters::ConstantValue::Literal { value } => {
+                assert_eq!(value, crate::parameters::DEFAULT_DELAY)
+            }
+            _ => panic!("expected the default delay"),
+        }
+
+        let placeholder: super::PlaceholderNode = delay.into();
+        assert_eq!(placeholder.meta.name, "source");
+    }
+
+    #[test]
+    fn test_node_into_type_all_pairs() {
+        for source_type in NodeType::iter() {
+            let mut source = Node::from(source_type);
+            source.meta_mut().name = "source".to_string();
+
+            for target_type in NodeType::iter() {
+                let converted = source.clone().into_type(target_type);
+                assert_eq!(converted.node_type(), target_type);
+                if source_type == target_type {
+                    assert_eq!(converted.name(), "source");
+                }
+            }
         }
     }
 

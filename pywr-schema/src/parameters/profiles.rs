@@ -240,19 +240,35 @@ impl TryFromV1<UniformDrawdownProfileParameterV1> for UniformDrawdownProfilePara
 
 /// Distance functions for radial basis function interpolation.
 #[derive(
-    serde::Deserialize, serde::Serialize, Debug, Copy, Clone, JsonSchema, PywrVisitAll, Display, EnumDiscriminants,
+    serde::Deserialize,
+    serde::Serialize,
+    Debug,
+    Copy,
+    Clone,
+    Default,
+    JsonSchema,
+    PywrVisitAll,
+    Display,
+    EnumDiscriminants,
 )]
 #[serde(tag = "type", deny_unknown_fields)]
 #[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
 #[strum_discriminants(name(RadialBasisFunctionType))]
 pub enum RadialBasisFunction {
+    #[default]
     Linear,
     Cubic,
     Quintic,
     ThinPlateSpline,
-    Gaussian { epsilon: Option<f64> },
-    MultiQuadric { epsilon: Option<f64> },
-    InverseMultiQuadric { epsilon: Option<f64> },
+    Gaussian {
+        epsilon: Option<f64>,
+    },
+    MultiQuadric {
+        epsilon: Option<f64>,
+    },
+    InverseMultiQuadric {
+        epsilon: Option<f64>,
+    },
 }
 
 #[cfg(feature = "core")]

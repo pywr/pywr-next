@@ -4,7 +4,7 @@ use pywr_schema_macros::skip_serializing_none;
 use schemars::JsonSchema;
 
 #[skip_serializing_none]
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Default, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct PlaceholderTimeSeries {
     pub meta: NamedMeta,

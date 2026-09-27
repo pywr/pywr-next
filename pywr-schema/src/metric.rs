@@ -868,6 +868,12 @@ pub enum MetricValueType {
     Index,
 }
 
+impl Default for IndexMetric {
+    fn default() -> Self {
+        Self::Constant { value: 0 }
+    }
+}
+
 impl From<usize> for IndexMetric {
     fn from(v: usize) -> Self {
         Self::Constant { value: v as u64 }

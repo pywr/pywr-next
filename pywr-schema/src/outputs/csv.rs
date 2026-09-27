@@ -88,6 +88,18 @@ pub struct CsvOutput {
     pub decimal_places: Option<u32>,
 }
 
+impl Default for CsvOutput {
+    fn default() -> Self {
+        Self {
+            meta: NamedMeta::default(),
+            filename: PathBuf::default(),
+            format: CsvFormat::default(),
+            metric_set: CsvMetricSet::Single(String::default()),
+            decimal_places: None,
+        }
+    }
+}
+
 #[cfg(feature = "core")]
 impl CsvOutput {
     pub fn add_to_network(
