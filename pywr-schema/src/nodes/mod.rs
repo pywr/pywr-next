@@ -63,16 +63,16 @@ use crate::network::NetworkSchema;
 use crate::parameters::Parameter;
 use crate::v1::{ConversionData, TryFromV1, TryIntoV2};
 use crate::visit::{Reference, ReferenceMut, VisitMetrics, VisitPaths, VisitReferences};
-pub use abstraction::{AbstractionNode, AbstractionNodeAttribute, AbstractionNodeComponent};
+pub use abstraction::{AbstractionNode, AbstractionNodeAttribute, AbstractionNodeComponent, AbstractionOutputNodeSlot};
 pub use attributes::NodeAttribute;
 pub use components::NodeComponent;
 pub use core::{
     CatchmentNode, CatchmentNodeAttribute, CatchmentNodeComponent, InputNode, InputNodeAttribute, InputNodeComponent,
     LinkNode, LinkNodeAttribute, LinkNodeComponent, OutputNode, OutputNodeAttribute, OutputNodeComponent,
-    SoftConstraint, StorageInitialVolume, StorageNode, StorageNodeAttribute,
+    SoftConstraint, StorageInitialVolume, StorageInitialVolumeType, StorageNode, StorageNodeAttribute,
 };
 pub use delay::{DelayNode, DelayNodeAttribute, DelayNodeComponent};
-pub use loss_link::{LossFactor, LossLinkNode, LossLinkNodeAttribute, LossLinkNodeComponent};
+pub use loss_link::{LossFactor, LossFactorType, LossLinkNode, LossLinkNodeAttribute, LossLinkNodeComponent};
 pub use piecewise_link::{
     PiecewiseLinkNode, PiecewiseLinkNodeAttribute, PiecewiseLinkNodeComponent, PiecewiseLinkStep,
 };
@@ -86,12 +86,13 @@ use pywr_v1_schema::nodes::{
 };
 pub use reservoir::{
     Bathymetry, BathymetryType, Evaporation, Leakage, Rainfall, ReservoirNode, ReservoirNodeAttribute,
-    ReservoirNodeComponent, SpillNodeType,
+    ReservoirNodeComponent, ReservoirOutputNodeSlot, SpillNodeType,
 };
 pub use river::{MuskingumInitialCondition, RiverNode, RiverNodeAttribute, RiverNodeComponent, RoutingMethod};
 pub use river_gauge::{RiverGaugeNode, RiverGaugeNodeAttribute, RiverGaugeNodeComponent};
 pub use river_split_with_gauge::{
     RiverSplit, RiverSplitWithGaugeNode, RiverSplitWithGaugeNodeAttribute, RiverSplitWithGaugeNodeComponent,
+    RiverSplitWithGaugeOutputNodeSlot,
 };
 use schemars::JsonSchema;
 pub use slots::NodeSlot;
@@ -102,8 +103,9 @@ use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumString, IntoStaticS
 pub use turbine::{TargetType, TurbineNode, TurbineNodeAttribute, TurbineNodeComponent};
 pub use virtual_nodes::{
     AggregatedNode, AggregatedNodeAttribute, AggregatedStorageNode, AggregatedStorageNodeAttribute, AnnualReset,
-    Relationship, RollingWindow, VirtualNode, VirtualNodeType, VirtualStorageNode, VirtualStorageNodeAttribute,
-    VirtualStorageReset, VirtualStorageResetVolume,
+    Relationship, RelationshipType, RollingWindow, RollingWindowType, SeasonalReset, VirtualNode, VirtualNodeType,
+    VirtualStorageNode, VirtualStorageNodeAttribute, VirtualStorageReset, VirtualStorageResetType,
+    VirtualStorageResetVolume, VirtualStorageResetVolumeType,
 };
 pub use water_treatment_works::{
     WaterTreatmentWorksNode, WaterTreatmentWorksNodeAttribute, WaterTreatmentWorksNodeComponent,
