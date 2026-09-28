@@ -28,7 +28,7 @@ pub use py::PythonTimeSeries;
 use pyo3::{PyErr, pyclass};
 #[cfg(feature = "core")]
 use pywr_core::parameters::{Array1ParameterBuilder, Array2ParameterBuilder, ParameterName};
-use pywr_schema_macros::skip_serializing_none;
+use pywr_schema_macros::{PywrFromAllOtherVariants, PywrIntoType, skip_serializing_none};
 use pywr_v1_schema::parameters::DataFrameParameter as DataFrameParameterV1;
 use schemars::JsonSchema;
 #[cfg(feature = "core")]
@@ -86,7 +86,25 @@ impl TryFrom<TimeSeriesError> for PyErr {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, Display, EnumDiscriminants)]
+#[derive(
+    serde::Deserialize,
+    serde::Serialize,
+    Debug,
+    Clone,
+    JsonSchema,
+    Display,
+    EnumDiscriminants,
+    PywrFromAllOtherVariants,
+    PywrIntoType,
+)]
+#[pywr_from_all_other_variants(files(
+    "src/time_series/arrow_ts.rs",
+    "src/time_series/pandas.rs",
+    "src/time_series/parquet_ts.rs",
+    "src/time_series/placeholder.rs",
+    "src/time_series/polars.rs",
+    "src/time_series/py.rs",
+))]
 #[serde(tag = "type")]
 #[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
 #[strum_discriminants(name(TimeSeriesType))]

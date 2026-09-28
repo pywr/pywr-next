@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 /// This dataset is loaded using Apache Parquet. This is done using the Rust Parquet library to load
 /// the dataset.
 #[skip_serializing_none]
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Default, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ParquetTimeSeries {
     pub meta: NamedMeta,

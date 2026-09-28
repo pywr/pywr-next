@@ -72,11 +72,12 @@ impl AnyNonZero {
 /// This enum defines the possible aggregation functions that can be applied to index metrics.
 /// They are mapped to the corresponding functions in the `pywr_core::parameters::AggFunc` enum
 /// when used in the core library.
-#[derive(Deserialize, Serialize, Debug, Clone, JsonSchema, PywrVisitAll, Display, EnumDiscriminants)]
+#[derive(Deserialize, Serialize, Debug, Clone, Default, JsonSchema, PywrVisitAll, Display, EnumDiscriminants)]
 #[serde(tag = "type", deny_unknown_fields)]
 #[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
 #[strum_discriminants(name(AggFuncType))]
 pub enum AggFunc {
+    #[default]
     Sum,
     Max,
     Min,
@@ -123,12 +124,13 @@ impl From<AggFuncV1> for AggFunc {
 /// This enum defines the possible aggregation functions that can be applied to index metrics.
 /// They are mapped to the corresponding functions in the `pywr_core::parameters::AggIndexFunc` enum
 /// when used in the core library.
-#[derive(Deserialize, Serialize, Debug, Clone, JsonSchema, PywrVisitAll, Display, EnumDiscriminants)]
+#[derive(Deserialize, Serialize, Debug, Clone, Default, JsonSchema, PywrVisitAll, Display, EnumDiscriminants)]
 #[serde(tag = "type", deny_unknown_fields)]
 #[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
 #[strum_discriminants(name(IndexAggFuncType))]
 pub enum IndexAggFunc {
     /// Sum of all values.
+    #[default]
     Sum,
     /// Product of all values.
     Product,

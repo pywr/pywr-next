@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 /// a PyArrow RecordBatch. The function can also take additional keyword arguments specified in the
 /// `kwargs` field. The function should be defined in a Python module specified by the `module` field.
 #[skip_serializing_none]
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Default, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct PythonTimeSeries {
     pub meta: NamedMeta,

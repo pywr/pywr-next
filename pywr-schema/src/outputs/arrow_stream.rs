@@ -25,6 +25,17 @@ pub struct ArrowStreamOutput {
     pub batch_size: NonZeroUsize,
 }
 
+impl Default for ArrowStreamOutput {
+    fn default() -> Self {
+        Self {
+            meta: NamedMeta::default(),
+            filename: PathBuf::default(),
+            metric_set: String::default(),
+            batch_size: NonZeroUsize::new(1).unwrap(),
+        }
+    }
+}
+
 /// Written out rather than derived: a derive would walk `metric_set` as a plain `String`.
 impl VisitReferences for ArrowStreamOutput {
     fn visit_references<F: FnMut(Reference<'_>)>(&self, visitor: &mut F) {

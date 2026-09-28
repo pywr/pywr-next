@@ -34,6 +34,14 @@ pub enum PythonSource {
     Path { path: PathBuf },
 }
 
+impl Default for PythonSource {
+    fn default() -> Self {
+        Self::Module {
+            module: String::default(),
+        }
+    }
+}
+
 #[cfg(all(feature = "core", feature = "pyo3"))]
 impl PythonSource {
     /// Load the Python module specified by this source.

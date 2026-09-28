@@ -6,7 +6,7 @@ use pywr_schema_macros::{PywrVisitPaths, skip_serializing_none};
 use schemars::JsonSchema;
 
 #[skip_serializing_none]
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitPaths)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Default, JsonSchema, PywrVisitPaths)]
 pub struct PlaceholderOutput {
     pub meta: NamedMeta,
 }

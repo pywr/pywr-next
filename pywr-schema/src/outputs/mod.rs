@@ -12,7 +12,7 @@ pub use arrow_stream::ArrowStreamOutput;
 pub use hdf::Hdf5Output;
 pub use memory::{MemoryAggregation, MemoryAggregationOrder, MemoryOutput};
 pub use placeholder::PlaceholderOutput;
-use pywr_schema_macros::{PywrVisitPaths, PywrVisitReferences};
+use pywr_schema_macros::{PywrFromAllOtherVariants, PywrIntoType, PywrVisitPaths, PywrVisitReferences};
 use schemars::JsonSchema;
 #[cfg(feature = "core")]
 use std::path::Path;
@@ -28,7 +28,16 @@ use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumString, IntoStaticS
     PywrVisitReferences,
     Display,
     EnumDiscriminants,
+    PywrFromAllOtherVariants,
+    PywrIntoType,
 )]
+#[pywr_from_all_other_variants(files(
+    "src/outputs/arrow_stream.rs",
+    "src/outputs/csv.rs",
+    "src/outputs/hdf.rs",
+    "src/outputs/memory.rs",
+    "src/outputs/placeholder.rs",
+))]
 #[serde(tag = "type")]
 #[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
 #[strum_discriminants(name(OutputType))]

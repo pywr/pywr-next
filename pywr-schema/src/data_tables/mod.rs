@@ -27,7 +27,9 @@ use crate::visit::{Reference, ReferenceMut, VisitReferences};
 use log::{debug, info};
 #[cfg(feature = "pyo3")]
 use pyo3::pyclass;
-use pywr_schema_macros::{PywrVisitMetrics, PywrVisitPaths, skip_serializing_none};
+use pywr_schema_macros::{
+    PywrFromAllOtherVariants, PywrIntoType, PywrVisitMetrics, PywrVisitPaths, skip_serializing_none,
+};
 use pywr_v1_schema::parameters::TableDataRef as TableDataRefV1;
 #[cfg(feature = "core")]
 use scalar::LoadedScalarTable;
@@ -47,8 +49,18 @@ pub enum DataTableValueType {
 }
 
 #[derive(
-    serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitPaths, Display, EnumDiscriminants,
+    serde::Deserialize,
+    serde::Serialize,
+    Debug,
+    Clone,
+    JsonSchema,
+    PywrVisitPaths,
+    Display,
+    EnumDiscriminants,
+    PywrFromAllOtherVariants,
+    PywrIntoType,
 )]
+#[pywr_from_all_other_variants(files("src/data_tables/mod.rs"))]
 #[serde(tag = "format")]
 #[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
 #[strum_discriminants(name(DataTableType))]
@@ -114,6 +126,18 @@ pub struct CsvDataTable {
     pub checksum: Option<Checksum>,
 }
 
+impl Default for CsvDataTable {
+    fn default() -> Self {
+        Self {
+            meta: NamedMeta::default(),
+            ty: DataTableValueType::Scalar,
+            lookup: CsvDataTableLookup::Row { cols: 1 },
+            url: PathBuf::default(),
+            checksum: None,
+        }
+    }
+}
+
 #[cfg(feature = "core")]
 impl CsvDataTable {
     fn load_f64(&self, data_path: Option<&Path>) -> Result<LoadedTable, TableError> {
@@ -151,7 +175,7 @@ impl CsvDataTable {
 }
 
 /// A placeholder for an external table of data that can be referenced
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitPaths)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Default, JsonSchema, PywrVisitPaths)]
 pub struct PlaceholderTable {
     pub meta: NamedMeta,
 }

@@ -67,7 +67,7 @@ pub use profiles::{
 pub use python::{PythonObject, PythonObjectType, PythonParameter, PythonReturnType};
 #[cfg(feature = "core")]
 use pywr_core::parameters::ParameterName;
-use pywr_schema_macros::PywrVisitAll;
+use pywr_schema_macros::{PywrFromAllOtherVariants, PywrIntoType, PywrVisitAll};
 use pywr_v1_schema::parameters::{
     CoreParameter, DataFrameParameter as DataFrameParameterV1, Parameter as ParameterV1,
     ParameterValue as ParameterValueV1, TableIndex as TableIndexV1, TableIndexEntry as TableIndexEntryV1,
@@ -81,9 +81,20 @@ pub use tables::TablesArrayParameter;
 pub use thresholds::{MultiThresholdParameter, Predicate, ThresholdParameter};
 
 #[derive(
-    serde::Deserialize, serde::Serialize, Debug, Clone, PartialEq, Eq, JsonSchema, PywrVisitAll, Display, EnumIter,
+    serde::Deserialize,
+    serde::Serialize,
+    Debug,
+    Clone,
+    Default,
+    PartialEq,
+    Eq,
+    JsonSchema,
+    PywrVisitAll,
+    Display,
+    EnumIter,
 )]
 pub enum ParameterPhase {
+    #[default]
     Before,
     After,
     Both,
@@ -113,7 +124,41 @@ impl ParameterValueType {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, EnumDiscriminants, Clone, JsonSchema, Display)]
+#[derive(
+    serde::Deserialize,
+    serde::Serialize,
+    Debug,
+    EnumDiscriminants,
+    Clone,
+    JsonSchema,
+    Display,
+    PywrFromAllOtherVariants,
+    PywrIntoType,
+)]
+#[pywr_from_all_other_variants(
+    files(
+        "src/parameters/aggregated.rs",
+        "src/parameters/asymmetric_switch.rs",
+        "src/parameters/control_curves.rs",
+        "src/parameters/core.rs",
+        "src/parameters/delay.rs",
+        "src/parameters/difference.rs",
+        "src/parameters/discount_factor.rs",
+        "src/parameters/hydropower.rs",
+        "src/parameters/indexed_array.rs",
+        "src/parameters/interpolated.rs",
+        "src/parameters/offset.rs",
+        "src/parameters/placeholder.rs",
+        "src/parameters/polynomial.rs",
+        "src/parameters/profiles.rs",
+        "src/parameters/python.rs",
+        "src/parameters/rolling.rs",
+        "src/parameters/tables.rs",
+        "src/parameters/thresholds.rs",
+    ),
+    generate_defaults,
+    delay_default = DEFAULT_DELAY,
+)]
 #[serde(tag = "type")]
 #[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
 // This creates a separate enum called `ParameterType` that is available in this module.
@@ -1072,6 +1117,12 @@ impl TryFrom<ParameterValueV1> for ConstantValue<f64> {
 pub enum ConstantFloatVec {
     Literal { values: Vec<f64> },
     Table(TableDataRef),
+}
+
+impl Default for ConstantFloatVec {
+    fn default() -> Self {
+        Self::Literal { values: Vec::new() }
+    }
 }
 
 #[cfg(feature = "core")]
