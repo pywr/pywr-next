@@ -34,7 +34,7 @@ pub use super::data_tables::TableDataRef;
 use crate::error::SchemaError;
 use crate::error::{ComponentConversionError, ConversionError};
 use crate::meta::NamedMeta;
-use crate::metric::Metric;
+use crate::metric::{Metric, MetricValueType};
 #[cfg(feature = "core")]
 use crate::network::LoadArgs;
 use crate::time_series::ConvertedTimeSeriesReference;
@@ -65,6 +65,8 @@ pub use profiles::{
     WeeklyInterpDay, WeeklyProfileParameter,
 };
 pub use python::{PythonObject, PythonObjectType, PythonParameter, PythonReturnType};
+#[cfg(feature = "core")]
+use pywr_core::parameters::ParameterName;
 use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::parameters::{
     CoreParameter, DataFrameParameter as DataFrameParameterV1, Parameter as ParameterV1,
@@ -85,6 +87,30 @@ pub enum ParameterPhase {
     Before,
     After,
     Both,
+}
+
+/// The type of value a parameter gives.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ParameterValueType {
+    Float,
+    Index,
+    Multi,
+}
+
+impl ParameterValueType {
+    /// Whether a `metric` can read the parameter: a float metric reads an index as a float, but
+    /// an index metric reads only indices.
+    pub fn is_readable_by(self, metric: MetricValueType) -> bool {
+        match self {
+            Self::Float => metric == MetricValueType::Float,
+            Self::Index | Self::Multi => true,
+        }
+    }
+
+    /// Whether a reference must give a key, which only a multi-valued parameter takes.
+    pub fn needs_key(self) -> bool {
+        self == Self::Multi
+    }
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, EnumDiscriminants, Clone, JsonSchema, Display)]
@@ -278,6 +304,59 @@ impl Parameter {
             Self::DiurnalProfile(_) => ParameterPhase::Before,
         }
     }
+
+    /// The type of value the parameter gives, or `None` for a placeholder, which builds nothing.
+    pub fn value_type(&self) -> Option<ParameterValueType> {
+        use ParameterValueType::{Float, Index, Multi};
+
+        let value_type = match self {
+            Self::AggregatedIndex(_)
+            | Self::AsymmetricSwitchIndex(_)
+            | Self::ControlCurveIndex(_)
+            | Self::DelayIndex(_)
+            | Self::RollingIndex(_) => Index,
+            // With returned metrics it gives one of them, not the index that picks it.
+            Self::Threshold(p) if p.returned_metrics.is_some() => Float,
+            Self::MultiThreshold(p) if p.returned_metrics.is_some() => Float,
+            Self::Threshold(_) | Self::MultiThreshold(_) => Index,
+            Self::Python(p) => match p.return_type {
+                PythonReturnType::Float => Float,
+                PythonReturnType::Int => Index,
+                PythonReturnType::Dict => Multi,
+            },
+            Self::Placeholder(_) => return None,
+            Self::Aggregated(_)
+            | Self::Constant(_)
+            | Self::ConstantScenario(_)
+            | Self::ControlCurvePiecewiseInterpolated(_)
+            | Self::ControlCurveInterpolated(_)
+            | Self::ControlCurve(_)
+            | Self::DailyProfile(_)
+            | Self::IndexedArray(_)
+            | Self::MonthlyProfile(_)
+            | Self::WeeklyProfile(_)
+            | Self::UniformDrawdownProfile(_)
+            | Self::Max(_)
+            | Self::Min(_)
+            | Self::Negative(_)
+            | Self::NegativeMax(_)
+            | Self::NegativeMin(_)
+            | Self::HydropowerTarget(_)
+            | Self::Polynomial1D(_)
+            | Self::TablesArray(_)
+            | Self::Delay(_)
+            | Self::Division(_)
+            | Self::Difference(_)
+            | Self::Offset(_)
+            | Self::DiscountFactor(_)
+            | Self::Interpolated(_)
+            | Self::RbfProfile(_)
+            | Self::Rolling(_)
+            | Self::DiurnalProfile(_) => Float,
+        };
+
+        Some(value_type)
+    }
 }
 
 #[cfg(feature = "core")]
@@ -326,6 +405,36 @@ impl Parameter {
             Self::Placeholder(p) => p.add_to_network(),
             Self::MultiThreshold(p) => p.add_to_network(network, args, parent),
             Self::DiurnalProfile(p) => p.add_to_network(network, args, parent),
+        }?;
+
+        // `validate` checks references against `value_type`, so it must match the build.
+        debug_assert_eq!(
+            self.added_value_type(network, parent),
+            self.value_type(),
+            "The parameter `{}`",
+            self.name()
+        );
+
+        Ok(())
+    }
+
+    /// The value type of the network's list that holds the parameter.
+    fn added_value_type(
+        &self,
+        network: &mut pywr_core::network::NetworkBuilder,
+        parent: Option<&str>,
+    ) -> Option<ParameterValueType> {
+        let name = ParameterName::new(self.name(), parent);
+        let parameters = network.parameters();
+
+        if parameters.f64.iter().any(|p| p.name() == &name) {
+            Some(ParameterValueType::Float)
+        } else if parameters.u64.iter().any(|p| p.name() == &name) {
+            Some(ParameterValueType::Index)
+        } else if parameters.multi.iter().any(|p| p.name() == &name) {
+            Some(ParameterValueType::Multi)
+        } else {
+            None
         }
     }
 }
@@ -1037,6 +1146,7 @@ impl<'a> From<&'a Vec<Metric>> for DynamicFloatValueType<'a> {
 
 #[cfg(test)]
 mod tests {
+    use crate::parameters::ParameterValueType::{Float, Index, Multi};
     use crate::parameters::{Parameter, ParameterPhase};
     use serde_json::json;
     use std::fs;
@@ -1076,6 +1186,50 @@ mod tests {
             let parameter: Parameter = serde_json::from_value(data.clone()).unwrap();
             assert_eq!(parameter.phase(), expected, "{data}");
         }
+    }
+
+    /// [`Parameter::value_type`] should follow the fields that decide a Threshold's, a
+    /// MultiThreshold's and a Python parameter's value type.
+    #[test]
+    fn test_value_type_follows_fields() {
+        let value_type =
+            |data: &serde_json::Value| serde_json::from_value::<Parameter>(data.clone()).unwrap().value_type();
+        let metric = json!({ "type": "Literal", "value": 1.0 });
+
+        let mut threshold = json!({
+            "meta": { "name": "a-parameter" },
+            "type": "Threshold",
+            "phase": "Before",
+            "metric": metric,
+            "threshold": metric,
+            "predicate": "GT"
+        });
+        assert_eq!(value_type(&threshold), Some(Index));
+        threshold["returned_metrics"] = json!([metric, metric]);
+        assert_eq!(value_type(&threshold), Some(Float));
+
+        let mut multi_threshold = json!({
+            "meta": { "name": "a-parameter" },
+            "type": "MultiThreshold",
+            "phase": "Before",
+            "metric": metric,
+            "thresholds": [metric],
+            "predicate": "GT"
+        });
+        assert_eq!(value_type(&multi_threshold), Some(Index));
+        multi_threshold["returned_metrics"] = json!([metric]);
+        assert_eq!(value_type(&multi_threshold), Some(Float));
+
+        let mut python = json!({
+            "meta": { "name": "a-parameter" },
+            "type": "Python",
+            "source": { "type": "Path", "path": "p.py" },
+            "object": { "type": "Class", "class": "P" },
+            "return_type": "Int"
+        });
+        assert_eq!(value_type(&python), Some(Index));
+        python["return_type"] = json!("Dict");
+        assert_eq!(value_type(&python), Some(Multi));
     }
 
     /// Test all the documentation examples successfully deserialize.

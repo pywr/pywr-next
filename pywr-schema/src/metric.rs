@@ -861,6 +861,13 @@ pub enum IndexMetric {
     },
 }
 
+/// The type of value a metric gives: a float for a [`Metric`], an index for an [`IndexMetric`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MetricValueType {
+    Float,
+    Index,
+}
+
 impl From<usize> for IndexMetric {
     fn from(v: usize) -> Self {
         Self::Constant { value: v as u64 }
