@@ -22,14 +22,11 @@ mod py_utils;
 pub mod time_series;
 mod util;
 mod v1;
+mod validation;
 mod visit;
 
 pub use digest::{Checksum, ChecksumError};
-pub use error::{
-    ComponentConversionError, ConversionError, DuplicateNodeName, EdgeProblem, EdgeValidationError, ModelProblem,
-    NetworkProblem, NetworkValidationError, ScenarioProblem, ScenarioValidationError, SchemaError,
-    TableReferenceProblem, ValidationError,
-};
+pub use error::{ComponentConversionError, ConversionError, SchemaError};
 pub use model::{ModelSchema, ModelSchemaReadError, MultiNetworkModelSchema};
 #[cfg(feature = "core")]
 pub use model::{ModelSchemaBuildError, MultiNetworkModelSchemaBuildError};
@@ -38,4 +35,8 @@ pub use network::{LoadArgs, NetworkSchemaBuildError};
 pub use network::{NetworkMergeError, NetworkMergeOptions, NetworkSchema, NetworkSchemaReadError, NetworkSchemaRef};
 pub use py_utils::{PythonSource, PythonSourceType, PythonSourceTypeIter};
 pub use v1::{ConversionData, TryFromV1, TryIntoV2};
+pub use validation::{
+    DuplicateNodeName, EdgeProblem, EdgeValidationError, ModelProblem, NetworkProblem, NetworkValidationError,
+    ScenarioProblem, ScenarioValidationError, TableReferenceProblem, ValidationError,
+};
 pub use visit::{Owner, Reference, ReferenceMut, VisitMetrics, VisitPaths, VisitReferences};

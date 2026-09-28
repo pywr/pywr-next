@@ -1,0 +1,1080 @@
+use super::NetworkSchema;
+use crate::data_tables::DataTable;
+use crate::edge::Edge;
+use crate::metric::NodeComponentReference;
+use crate::nodes::VirtualNode;
+use crate::parameters::Parameter;
+use crate::time_series::TimeSeries;
+use crate::util::duplicates;
+use crate::validation::{DuplicateNodeName, EdgeProblem, EdgeValidationError, NetworkProblem, NetworkValidationError};
+use crate::visit::{Owner, Reference};
+use std::collections::HashMap;
+
+impl NetworkSchema {
+    /// Validate an edge against the network
+    ///
+    /// The following conditions are checked, with the first problem found being
+    /// returned:
+    ///
+    /// - Both ends name an entry of `nodes`; a virtual node is not an edge end.
+    /// - The two ends are different nodes.
+    /// - Each slot is one that the node at that end has.
+    /// - The `from_node` can provide flow, and the `to_node` can receive it.
+    ///
+    /// All but the second are checks `pywr-core` makes only while building. The second is a
+    /// schema-level rule: a composite node such as a `Reservoir` is one node here, so
+    /// `Reservoir[Spill] -> Reservoir` is a loop, whereas `pywr-core` sees the flattened network,
+    /// where the storage and spill are separate nodes.
+    ///
+    /// An end whose name is used by more than one node resolves to the first of them.
+    pub fn validate_edge(&self, edge: &Edge) -> Result<(), EdgeProblem> {
+        let from_node = self.get_node_by_name(&edge.from_node).ok_or_else(|| {
+            match self.get_virtual_node_by_name(&edge.from_node) {
+                Some(virtual_node) => EdgeProblem::VirtualFromNode {
+                    name: edge.from_node.clone(),
+                    node_type: virtual_node.node_type(),
+                },
+                None => EdgeProblem::UnknownFromNode(edge.from_node.clone()),
+            }
+        })?;
+
+        let to_node =
+            self.get_node_by_name(&edge.to_node)
+                .ok_or_else(|| match self.get_virtual_node_by_name(&edge.to_node) {
+                    Some(virtual_node) => EdgeProblem::VirtualToNode {
+                        name: edge.to_node.clone(),
+                        node_type: virtual_node.node_type(),
+                    },
+                    None => EdgeProblem::UnknownToNode(edge.to_node.clone()),
+                })?;
+
+        if edge.from_node == edge.to_node {
+            return Err(EdgeProblem::SelfEdge(edge.from_node.clone()));
+        }
+
+        if let Some(slot) = &edge.from_slot {
+            from_node
+                .validate_output_slot(Some(slot))
+                .map_err(|_| EdgeProblem::UnknownFromSlot {
+                    name: from_node.name().to_string(),
+                    node_type: from_node.node_type(),
+                    slot: slot.clone(),
+                    valid: from_node.iter_output_slots().map(|slots| slots.collect()),
+                })?;
+        }
+
+        if let Some(slot) = &edge.to_slot {
+            to_node
+                .validate_input_slot(Some(slot))
+                .map_err(|_| EdgeProblem::UnknownToSlot {
+                    name: to_node.name().to_string(),
+                    node_type: to_node.node_type(),
+                    slot: slot.clone(),
+                    valid: to_node.iter_input_slots().map(|slots| slots.collect()),
+                })?;
+        }
+
+        if !from_node.provides_outflow() {
+            return Err(EdgeProblem::NoOutflow {
+                name: from_node.name().to_string(),
+                node_type: from_node.node_type(),
+            });
+        }
+
+        if !to_node.accepts_inflow() {
+            return Err(EdgeProblem::NoInflow {
+                name: to_node.name().to_string(),
+                node_type: to_node.node_type(),
+            });
+        }
+
+        Ok(())
+    }
+
+    /// The problems with `virtual_node`'s members, in the order listed. A member naming a node
+    /// that is not in `nodes`, or a placeholder, is skipped.
+    fn member_problems(&self, virtual_node: &VirtualNode) -> Vec<NetworkProblem> {
+        let (members, takes_storage): (&[NodeComponentReference], bool) = match virtual_node {
+            VirtualNode::Aggregated(n) => (&n.nodes, false),
+            VirtualNode::VirtualStorage(n) => (&n.nodes, false),
+            VirtualNode::AggregatedStorage(n) => (&n.storage_nodes, true),
+            VirtualNode::Placeholder(_) => (&[], false),
+        };
+
+        members
+            .iter()
+            .filter_map(|member| {
+                let node = self
+                    .get_node_by_name(&member.name)
+                    .filter(|node| !node.is_placeholder())?;
+
+                if takes_storage {
+                    return (!node.is_storage()).then(|| NetworkProblem::MemberNotStorage {
+                        virtual_node: virtual_node.name().to_string(),
+                        node: member.name.clone(),
+                        node_type: node.node_type(),
+                    });
+                }
+
+                let Some(default) = node.default_component() else {
+                    return Some(NetworkProblem::MemberWithoutComponents {
+                        virtual_node: virtual_node.name().to_string(),
+                        node: member.name.clone(),
+                        node_type: node.node_type(),
+                    });
+                };
+
+                let component = member.component.unwrap_or(default);
+                let built = node.built_components();
+
+                (!built.contains(&component)).then(|| NetworkProblem::MemberComponentNotBuilt {
+                    virtual_node: virtual_node.name().to_string(),
+                    node: member.name.clone(),
+                    node_type: node.node_type(),
+                    component,
+                    default: member.component.is_none(),
+                    built,
+                })
+            })
+            .collect()
+    }
+
+    /// The problems with the parameter references, each checked against the value type of the
+    /// parameter it names. A reference naming no parameter, or a placeholder, is skipped.
+    fn parameter_reference_problems(&self) -> Vec<NetworkProblem> {
+        let mut problems = Vec::new();
+
+        self.visit_owned_references(&mut |owner, reference| {
+            let (name, node, key, metric) = match reference {
+                Reference::Parameter { name, key, metric } => (name, None, key, metric),
+                Reference::LocalParameter {
+                    node,
+                    name,
+                    key,
+                    metric,
+                } => {
+                    // Without a `node` it resolves in the node or virtual node holding it.
+                    let node = node.or(match owner {
+                        Owner::Node(node) | Owner::VirtualNode(node) => Some(node),
+                        _ => None,
+                    });
+                    let Some(node) = node else { return };
+                    (name, Some(node), key, metric)
+                }
+                _ => return,
+            };
+
+            let resolved = match node {
+                Some(node) => match self.get_node_by_name(node) {
+                    Some(n) => n.get_local_parameter(name),
+                    None => self
+                        .get_virtual_node_by_name(node)
+                        .and_then(|n| n.get_local_parameter(name)),
+                },
+                None => self.get_parameter_by_name(name),
+            };
+            let Some(value_type) = resolved.and_then(Parameter::value_type) else {
+                return;
+            };
+
+            let owner = owner.to_string();
+            let parameter = name.to_string();
+            let node = node.map(str::to_string);
+
+            let problem = match (value_type.needs_key(), key) {
+                (true, None) => NetworkProblem::ParameterKeyMissing { owner, parameter, node },
+                (false, Some(key)) => NetworkProblem::ParameterKeyNotAllowed {
+                    owner,
+                    parameter,
+                    node,
+                    key: key.to_string(),
+                },
+                _ if !value_type.is_readable_by(metric) => {
+                    NetworkProblem::ParameterNotAnIndex { owner, parameter, node }
+                }
+                _ => return,
+            };
+
+            problems.push(problem);
+        });
+
+        problems
+    }
+
+    /// The problems with the tables pywr cannot load, then with the table references, each
+    /// checked by [`DataTable::validate_reference`]. A reference naming no table is skipped.
+    fn table_problems(&self) -> Vec<NetworkProblem> {
+        let mut problems: Vec<NetworkProblem> = self
+            .tables
+            .iter()
+            .flatten()
+            .filter_map(|table| match table {
+                DataTable::CSV(csv) if !csv.is_lookup_supported() => Some(NetworkProblem::UnsupportedTableLookup {
+                    table: csv.meta.name.clone(),
+                    value_type: csv.ty,
+                    lookup: csv.lookup.clone(),
+                }),
+                _ => None,
+            })
+            .collect();
+
+        self.visit_owned_references(&mut |owner, reference| {
+            let Reference::Table { table_ref, expected } = reference else {
+                return;
+            };
+
+            let problem = self
+                .get_table_by_name(&table_ref.table)
+                .and_then(|table| table.validate_reference(table_ref, expected).err());
+
+            if let Some(problem) = problem {
+                problems.push(NetworkProblem::InvalidTableReference {
+                    owner: owner.to_string(),
+                    table: table_ref.table.clone(),
+                    problem,
+                });
+            }
+        });
+
+        problems
+    }
+
+    /// Validate the network schema and report every problem.
+    ///
+    /// The following are checked:
+    ///
+    /// - The schema is unambiguous.
+    /// - Each edge could be made; see [`NetworkSchema::validate_edge`] for the rules.
+    /// - Each virtual node's members name parts their nodes build.
+    /// - Each parameter reference suits the parameter it names.
+    /// - Each table has a lookup pywr can load, and each table reference fits its table.
+    ///
+    /// Whether the whole model can be built is not; use [`NetworkSchema::add_to_network`] for
+    /// that. See [`NetworkProblem`] for the problems that are detected.
+    pub fn validate(&self) -> Result<(), NetworkValidationError> {
+        // Count the occurrences of each name in each of the two lists.
+        let mut counts: HashMap<&str, (usize, usize)> = HashMap::with_capacity(self.nodes.len());
+
+        for node in &self.nodes {
+            counts.entry(node.name()).or_default().0 += 1;
+        }
+
+        for virtual_node in self.virtual_nodes.as_deref().into_iter().flatten() {
+            counts.entry(virtual_node.name()).or_default().1 += 1;
+        }
+
+        let mut duplicate_nodes: Vec<DuplicateNodeName> = counts
+            .into_iter()
+            .filter(|(_, (nodes, virtual_nodes))| nodes + virtual_nodes > 1)
+            .map(|(name, (nodes, virtual_nodes))| DuplicateNodeName {
+                name: name.to_string(),
+                nodes,
+                virtual_nodes,
+            })
+            .collect();
+
+        let invalid_edges: Vec<EdgeValidationError> = self
+            .edges
+            .iter()
+            .filter_map(|edge| {
+                self.validate_edge(edge).err().map(|problem| EdgeValidationError {
+                    edge: edge.clone(),
+                    problem,
+                })
+            })
+            .collect();
+
+        // The duplicates come out of the hash map in a random order.
+        duplicate_nodes.sort_by(|a, b| a.name.cmp(&b.name));
+
+        let problems: Vec<NetworkProblem> = duplicate_nodes
+            .into_iter()
+            .map(NetworkProblem::DuplicateNodeName)
+            .chain(
+                duplicates(self.parameters.iter().flatten(), Parameter::name)
+                    .into_iter()
+                    .map(|(name, count)| NetworkProblem::DuplicateParameterName {
+                        name: name.to_string(),
+                        count,
+                    }),
+            )
+            .chain(
+                duplicates(self.tables.iter().flatten(), DataTable::name)
+                    .into_iter()
+                    .map(|(name, count)| NetworkProblem::DuplicateTableName {
+                        name: name.to_string(),
+                        count,
+                    }),
+            )
+            .chain(
+                duplicates(self.time_series.iter().flatten(), TimeSeries::name)
+                    .into_iter()
+                    .map(|(name, count)| NetworkProblem::DuplicateTimeSeriesName {
+                        name: name.to_string(),
+                        count,
+                    }),
+            )
+            .chain(
+                duplicates(self.metric_sets.iter().flatten(), |metric_set| metric_set.name())
+                    .into_iter()
+                    .map(|(name, count)| NetworkProblem::DuplicateMetricSetName {
+                        name: name.to_string(),
+                        count,
+                    }),
+            )
+            .chain(invalid_edges.into_iter().map(NetworkProblem::InvalidEdge))
+            .chain(
+                self.virtual_nodes
+                    .iter()
+                    .flatten()
+                    .flat_map(|virtual_node| self.member_problems(virtual_node)),
+            )
+            .chain(self.parameter_reference_problems())
+            .chain(self.table_problems())
+            .collect();
+
+        if problems.is_empty() {
+            Ok(())
+        } else {
+            Err(NetworkValidationError { name: None, problems })
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::network::NetworkSchema;
+    use crate::network::tests::parse_network;
+    use crate::nodes::{NodeSlot, NodeType, VirtualNodeType};
+    use crate::validation::{DuplicateNodeName, EdgeProblem, EdgeValidationError, NetworkProblem};
+
+    /// Return the problems reported by [`NetworkSchema::validate`], or panic if it succeeded.
+    fn expect_problems(network: &NetworkSchema) -> Vec<NetworkProblem> {
+        match network.validate() {
+            Err(error) => {
+                assert_eq!(error.name, None, "A network validated on its own has no name");
+                assert!(!error.problems.is_empty(), "An error must hold at least one problem");
+                error.problems
+            }
+            Ok(()) => panic!("Expected validation to fail, but it succeeded"),
+        }
+    }
+
+    /// Return the duplicates reported by [`NetworkSchema::validate`], or panic if it reported
+    /// anything else.
+    fn expect_duplicates(network: &NetworkSchema) -> Vec<DuplicateNodeName> {
+        expect_problems(network)
+            .into_iter()
+            .map(|problem| match problem {
+                NetworkProblem::DuplicateNodeName(duplicate) => duplicate,
+                other => panic!("Expected only duplicate node names, but got: {other:?}"),
+            })
+            .collect()
+    }
+
+    /// Return the invalid edges reported by [`NetworkSchema::validate`] as `(edge, problem)`
+    /// pairs, or panic if it reported anything else.
+    fn expect_invalid_edges(network: &NetworkSchema) -> Vec<(String, EdgeProblem)> {
+        expect_problems(network)
+            .into_iter()
+            .map(|problem| match problem {
+                NetworkProblem::InvalidEdge(e) => (e.edge.to_string(), e.problem),
+                other => panic!("Expected only invalid edges, but got: {other:?}"),
+            })
+            .collect()
+    }
+
+    const NETWORK_WITH_SEVERAL_DUPLICATES: &str = r#"
+    {
+        "nodes": [
+            { "meta": { "name": "zzz" }, "type": "Input" },
+            { "meta": { "name": "zzz" }, "type": "Input" },
+            { "meta": { "name": "aaa" }, "type": "Output" },
+            { "meta": { "name": "unique" }, "type": "Output" }
+        ],
+        "virtual_nodes": [
+            {
+                "meta": { "name": "aaa" },
+                "type": "Aggregated",
+                "nodes": [{ "name": "unique" }]
+            }
+        ],
+        "edges": []
+    }
+    "#;
+
+    /// Every duplicate is reported, not just the first one found. Nodes and virtual nodes are a
+    /// single name-space, so a name shared between the two lists is a duplicate too.
+    #[test]
+    fn test_validate_reports_all_duplicates() {
+        let network = parse_network(NETWORK_WITH_SEVERAL_DUPLICATES);
+
+        assert_eq!(
+            expect_duplicates(&network),
+            vec![
+                DuplicateNodeName {
+                    name: "aaa".to_string(),
+                    nodes: 1,
+                    virtual_nodes: 1,
+                },
+                DuplicateNodeName {
+                    name: "zzz".to_string(),
+                    nodes: 2,
+                    virtual_nodes: 0,
+                },
+            ]
+        );
+    }
+
+    /// A network with an edge for every [`EdgeProblem`] that does not need a virtual node, and
+    /// into both node types that cannot receive flow.
+    const NETWORK_WITH_INVALID_EDGES: &str = r#"
+    {
+        "nodes": [
+            { "meta": { "name": "supply" }, "type": "Input" },
+            { "meta": { "name": "catchment" }, "type": "Catchment" },
+            { "meta": { "name": "link" }, "type": "Link" },
+            { "meta": { "name": "demand" }, "type": "Output" }
+        ],
+        "edges": [
+            { "from_node": "link", "to_node": "supply" },
+            { "from_node": "link", "to_node": "missing" },
+            { "from_node": "absent", "to_node": "link" },
+            { "from_node": "demand", "to_node": "link" },
+            { "from_node": "link", "from_slot": { "type": "Spill" }, "to_node": "demand" },
+            { "from_node": "link", "to_node": "link" },
+            { "from_node": "link", "to_node": "demand", "to_slot": { "type": "Storage" } },
+            { "from_node": "link", "to_node": "catchment" }
+        ]
+    }
+    "#;
+
+    /// Every invalid edge is reported, in the order the edges are listed.
+    #[test]
+    fn test_validate_reports_all_invalid_edges() {
+        let network = parse_network(NETWORK_WITH_INVALID_EDGES);
+
+        assert_eq!(
+            expect_invalid_edges(&network),
+            vec![
+                (
+                    "link->supply".to_string(),
+                    EdgeProblem::NoInflow {
+                        name: "supply".to_string(),
+                        node_type: NodeType::Input,
+                    }
+                ),
+                (
+                    "link->missing".to_string(),
+                    EdgeProblem::UnknownToNode("missing".to_string())
+                ),
+                (
+                    "absent->link".to_string(),
+                    EdgeProblem::UnknownFromNode("absent".to_string())
+                ),
+                (
+                    "demand->link".to_string(),
+                    EdgeProblem::NoOutflow {
+                        name: "demand".to_string(),
+                        node_type: NodeType::Output,
+                    }
+                ),
+                (
+                    "link[Spill]->demand".to_string(),
+                    EdgeProblem::UnknownFromSlot {
+                        name: "link".to_string(),
+                        node_type: NodeType::Link,
+                        slot: NodeSlot::Spill,
+                        valid: None,
+                    }
+                ),
+                ("link->link".to_string(), EdgeProblem::SelfEdge("link".to_string())),
+                (
+                    "link->demand[Storage]".to_string(),
+                    EdgeProblem::UnknownToSlot {
+                        name: "demand".to_string(),
+                        node_type: NodeType::Output,
+                        slot: NodeSlot::Storage,
+                        valid: None,
+                    }
+                ),
+                (
+                    "link->catchment".to_string(),
+                    EdgeProblem::NoInflow {
+                        name: "catchment".to_string(),
+                        node_type: NodeType::Catchment,
+                    }
+                ),
+            ]
+        );
+    }
+
+    /// Edges connect only entries of `nodes`. A virtual node at either end is reported as the
+    /// virtual node it is, rather than as a name the network does not define.
+    #[test]
+    fn test_validate_rejects_virtual_node_as_edge_end() {
+        let network = parse_network(
+            r#"
+            {
+                "nodes": [
+                    { "meta": { "name": "supply" }, "type": "Input" },
+                    { "meta": { "name": "demand" }, "type": "Output" }
+                ],
+                "virtual_nodes": [
+                    {
+                        "meta": { "name": "licence" },
+                        "type": "Aggregated",
+                        "nodes": [{ "name": "demand" }]
+                    }
+                ],
+                "edges": [
+                    { "from_node": "supply", "to_node": "demand" },
+                    { "from_node": "licence", "to_node": "demand" },
+                    { "from_node": "supply", "to_node": "licence" }
+                ]
+            }
+            "#,
+        );
+
+        assert_eq!(
+            expect_invalid_edges(&network),
+            vec![
+                (
+                    "licence->demand".to_string(),
+                    EdgeProblem::VirtualFromNode {
+                        name: "licence".to_string(),
+                        node_type: VirtualNodeType::Aggregated,
+                    }
+                ),
+                (
+                    "supply->licence".to_string(),
+                    EdgeProblem::VirtualToNode {
+                        name: "licence".to_string(),
+                        node_type: VirtualNodeType::Aggregated,
+                    }
+                ),
+            ]
+        );
+    }
+
+    /// A node cannot connect to itself even through a slot, although the flattened network that
+    /// `pywr-core` builds would accept the edge.
+    #[test]
+    fn test_validate_rejects_self_edge_through_a_slot() {
+        let network = parse_network(
+            r#"
+            {
+                "nodes": [
+                    {
+                        "meta": { "name": "reservoir" },
+                        "type": "Reservoir",
+                        "max_volume": { "type": "Literal", "value": 100.0 },
+                        "initial_volume": { "type": "Proportional", "proportion": 1.0 },
+                        "spill": "LinkNode"
+                    }
+                ],
+                "edges": [
+                    { "from_node": "reservoir", "from_slot": { "type": "Spill" }, "to_node": "reservoir" }
+                ]
+            }
+            "#,
+        );
+
+        assert_eq!(
+            expect_invalid_edges(&network),
+            vec![(
+                "reservoir[Spill]->reservoir".to_string(),
+                EdgeProblem::SelfEdge("reservoir".to_string())
+            )]
+        );
+    }
+
+    /// A slot is checked against the node's own configuration, not just its type: a `Reservoir`
+    /// only has a `Spill` output slot when its spill is a link node.
+    #[test]
+    fn test_validate_checks_slot_against_node_configuration() {
+        let network = parse_network(
+            r#"
+            {
+                "nodes": [
+                    {
+                        "meta": { "name": "with-spill" },
+                        "type": "Reservoir",
+                        "max_volume": { "type": "Literal", "value": 100.0 },
+                        "initial_volume": { "type": "Proportional", "proportion": 1.0 },
+                        "spill": "LinkNode"
+                    },
+                    {
+                        "meta": { "name": "without-spill" },
+                        "type": "Reservoir",
+                        "max_volume": { "type": "Literal", "value": 100.0 },
+                        "initial_volume": { "type": "Proportional", "proportion": 1.0 }
+                    },
+                    { "meta": { "name": "river" }, "type": "River" }
+                ],
+                "edges": [
+                    { "from_node": "with-spill", "from_slot": { "type": "Spill" }, "to_node": "river" },
+                    { "from_node": "without-spill", "from_slot": { "type": "Spill" }, "to_node": "river" }
+                ]
+            }
+            "#,
+        );
+
+        assert_eq!(
+            expect_invalid_edges(&network),
+            vec![(
+                "without-spill[Spill]->river".to_string(),
+                EdgeProblem::UnknownFromSlot {
+                    name: "without-spill".to_string(),
+                    node_type: NodeType::Reservoir,
+                    slot: NodeSlot::Spill,
+                    valid: Some(vec![NodeSlot::Storage]),
+                }
+            )]
+        );
+    }
+
+    /// A slot problem names the slots the node does have, so that a mistyped slot can be
+    /// corrected without reading the node's definition; a node with no slots of that kind says so.
+    #[test]
+    fn test_invalid_slot_problem_lists_the_slots_the_node_has() {
+        let network = parse_network(
+            r#"
+            {
+                "nodes": [
+                    {
+                        "meta": { "name": "split" },
+                        "type": "RiverSplitWithGauge",
+                        "splits": [
+                            { "factor": { "type": "Literal", "value": 0.5 } },
+                            { "factor": { "type": "Literal", "value": 0.5 }, "slot_name": "to-supply" }
+                        ]
+                    },
+                    { "meta": { "name": "river" }, "type": "Link" },
+                    { "meta": { "name": "demand" }, "type": "Output" }
+                ],
+                "edges": [
+                    { "from_node": "split", "from_slot": { "type": "Split", "position": 5 }, "to_node": "river" },
+                    { "from_node": "river", "from_slot": { "type": "Spill" }, "to_node": "demand" }
+                ]
+            }
+            "#,
+        );
+
+        let messages: Vec<String> = expect_invalid_edges(&network)
+            .iter()
+            .map(|(_, problem)| problem.to_string())
+            .collect();
+
+        assert_eq!(
+            messages,
+            vec![
+                "The `RiverSplitWithGauge` node `split` has no output slot `Split[5]`. Its output slots are: `River`, `Split[0]`, `User[to-supply]`.",
+                "The `Link` node `river` has no output slot `Spill`. Nodes of this type have no output slots.",
+            ]
+        );
+    }
+
+    /// A network with a member for every member problem, and members that pass: a part the node
+    /// builds, a placeholder, a node the network does not have, and an aggregated storage member
+    /// naming a component, which it ignores.
+    const NETWORK_WITH_INVALID_MEMBERS: &str = r#"
+    {
+        "nodes": [
+            {
+                "meta": { "name": "reservoir" },
+                "type": "Reservoir",
+                "initial_volume": { "type": "Proportional", "proportion": 1.0 },
+                "compensation": { "type": "Literal", "value": 1.0 },
+                "rainfall": { "data": { "type": "Literal", "value": 1.0 } }
+            },
+            {
+                "meta": { "name": "bare-reservoir" },
+                "type": "Reservoir",
+                "initial_volume": { "type": "Proportional", "proportion": 1.0 }
+            },
+            {
+                "meta": { "name": "store" },
+                "type": "Storage",
+                "initial_volume": { "type": "Proportional", "proportion": 1.0 }
+            },
+            { "meta": { "name": "works" }, "type": "WaterTreatmentWorks" },
+            { "meta": { "name": "river" }, "type": "River" },
+            { "meta": { "name": "loss-link" }, "type": "LossLink" },
+            { "meta": { "name": "link" }, "type": "Link" },
+            { "meta": { "name": "placeholder" }, "type": "Placeholder" }
+        ],
+        "edges": [],
+        "virtual_nodes": [
+            {
+                "meta": { "name": "agg" },
+                "type": "Aggregated",
+                "nodes": [
+                    { "name": "reservoir", "component": "Compensation" },
+                    { "name": "reservoir", "component": "Rainfall" },
+                    { "name": "bare-reservoir" },
+                    { "name": "link", "component": "Loss" },
+                    { "name": "store" },
+                    { "name": "placeholder" },
+                    { "name": "missing" }
+                ]
+            },
+            {
+                "meta": { "name": "licence" },
+                "type": "VirtualStorage",
+                "nodes": [
+                    { "name": "works", "component": "Loss" },
+                    { "name": "river", "component": "Loss" },
+                    { "name": "loss-link", "component": "Loss" }
+                ],
+                "initial_volume": { "type": "Proportional", "proportion": 1.0 }
+            },
+            {
+                "meta": { "name": "total" },
+                "type": "AggregatedStorage",
+                "storage_nodes": [
+                    { "name": "bare-reservoir", "component": "Rainfall" },
+                    { "name": "link" }
+                ]
+            }
+        ]
+    }
+    "#;
+
+    /// Every invalid member is reported, in the order listed. A reservoir's rainfall needs a
+    /// surface area as well.
+    #[test]
+    fn test_validate_reports_all_invalid_members() {
+        let network = parse_network(NETWORK_WITH_INVALID_MEMBERS);
+
+        let messages: Vec<String> = expect_problems(&network).iter().map(ToString::to_string).collect();
+
+        assert_eq!(
+            messages,
+            vec![
+                "The virtual node `agg` takes the component `Rainfall` of the `Reservoir` node `reservoir`, but that node does not build it. It builds: `Compensation`.",
+                "The virtual node `agg` takes the default component `Compensation` of the `Reservoir` node `bare-reservoir`, but that node does not build it. As configured, it builds no components.",
+                "The virtual node `agg` takes the component `Loss` of the `Link` node `link`, but that node does not build it. It builds: `Inflow`, `Outflow`.",
+                "The virtual node `agg` names the `Storage` node `store`, but nodes of this type have no components for it to take.",
+                "The virtual node `licence` takes the component `Loss` of the `WaterTreatmentWorks` node `works`, but that node does not build it. It builds: `Inflow`, `Outflow`.",
+                "The virtual node `licence` takes the component `Loss` of the `River` node `river`, but that node does not build it. It builds: `Inflow`, `Outflow`.",
+                "The virtual node `licence` takes the component `Loss` of the `LossLink` node `loss-link`, but that node does not build it. It builds: `Inflow`, `Outflow`.",
+                "The virtual node `total` names the `Link` node `link`, but an `AggregatedStorage` node takes only storage nodes.",
+            ]
+        );
+    }
+
+    /// A network with a parameter reference for every problem, among references from both kinds
+    /// of metric that pass or are skipped.
+    const NETWORK_WITH_INVALID_PARAMETER_REFERENCES: &str = r#"
+    {
+        "nodes": [
+            {
+                "meta": { "name": "supply" },
+                "type": "Input",
+                "parameters": [
+                    { "meta": { "name": "local-flow" }, "type": "Constant", "value": { "type": "Literal", "value": 1.0 } },
+                    {
+                        "meta": { "name": "local-indexed" },
+                        "type": "IndexedArray",
+                        "phase": "Before",
+                        "metrics": [],
+                        "index_metric": { "type": "LocalParameter", "name": "local-flow" }
+                    }
+                ],
+                "max_flow": { "type": "LocalParameter", "name": "local-flow" }
+            }
+        ],
+        "edges": [],
+        "parameters": [
+            { "meta": { "name": "flow" }, "type": "Constant", "value": { "type": "Literal", "value": 1.0 } },
+            {
+                "meta": { "name": "switch" },
+                "type": "AsymmetricSwitchIndex",
+                "on_index_metric": { "type": "Constant", "value": 1 },
+                "off_index_metric": { "type": "Constant", "value": 0 }
+            },
+            {
+                "meta": { "name": "dict" },
+                "type": "Python",
+                "source": { "type": "Path", "path": "dict.py" },
+                "object": { "type": "Class", "class": "Dict" },
+                "return_type": "Dict"
+            },
+            { "meta": { "name": "placeholder" }, "type": "Placeholder" },
+            {
+                "meta": { "name": "indexed" },
+                "type": "IndexedArray",
+                "phase": "Before",
+                "metrics": [
+                    { "type": "Parameter", "name": "flow" },
+                    { "type": "Parameter", "name": "switch" },
+                    { "type": "Parameter", "name": "dict" },
+                    { "type": "Parameter", "name": "dict", "key": "a" },
+                    { "type": "Parameter", "name": "flow", "key": "a" },
+                    { "type": "Parameter", "name": "placeholder" },
+                    { "type": "Parameter", "name": "missing" }
+                ],
+                "index_metric": { "type": "Parameter", "name": "flow" }
+            },
+            {
+                "meta": { "name": "agg-index" },
+                "type": "AggregatedIndex",
+                "phase": "Before",
+                "agg_func": { "type": "Sum" },
+                "metrics": [
+                    { "type": "Parameter", "name": "switch" },
+                    { "type": "Parameter", "name": "dict", "key": "a" },
+                    { "type": "LocalParameter", "node": "supply", "name": "local-flow" },
+                    { "type": "LocalParameter", "name": "local-flow" }
+                ]
+            }
+        ]
+    }
+    "#;
+
+    /// Every parameter reference of the wrong kind is reported, in the order listed. A local
+    /// reference without a `node` resolves in the node holding it.
+    #[test]
+    fn test_validate_reports_all_invalid_parameter_references() {
+        let network = parse_network(NETWORK_WITH_INVALID_PARAMETER_REFERENCES);
+
+        let messages: Vec<String> = expect_problems(&network).iter().map(ToString::to_string).collect();
+
+        assert_eq!(
+            messages,
+            vec![
+                "The node `supply` uses the local parameter `local-flow` of `supply` as an index, but it gives a float value.",
+                "The parameter `indexed` refers to the parameter `dict` without a key, but it gives several values, one per key.",
+                "The parameter `indexed` names the key `a` of the parameter `flow`, but it gives a single value and takes no key.",
+                "The parameter `indexed` uses the parameter `flow` as an index, but it gives a float value.",
+                "The parameter `agg-index` uses the local parameter `local-flow` of `supply` as an index, but it gives a float value.",
+            ]
+        );
+    }
+
+    /// A network with every table problem, including a wrong-type reference from each type that
+    /// can hold one, among references that pass or are skipped.
+    const NETWORK_WITH_TABLE_PROBLEMS: &str = r#"
+    {
+        "nodes": [
+            {
+                "meta": { "name": "supply" },
+                "type": "Input",
+                "max_flow": { "type": "Table", "table": "arrays", "row": "a" },
+                "cost": { "type": "Table", "table": "grid", "row": "a" }
+            }
+        ],
+        "edges": [],
+        "tables": [
+            { "meta": { "name": "scalars" }, "type": "Scalar", "format": "CSV", "lookup": { "type": "Row", "cols": 1 }, "url": "scalars.csv" },
+            { "meta": { "name": "arrays" }, "type": "Array", "format": "CSV", "lookup": { "type": "Col", "rows": 1 }, "url": "arrays.csv" },
+            { "meta": { "name": "grid" }, "type": "Scalar", "format": "CSV", "lookup": { "type": "Both", "rows": 1, "cols": 1 }, "url": "grid.csv" },
+            { "meta": { "name": "array-grid" }, "type": "Array", "format": "CSV", "lookup": { "type": "Both", "rows": 1, "cols": 1 }, "url": "array-grid.csv" },
+            { "meta": { "name": "deep" }, "type": "Scalar", "format": "CSV", "lookup": { "type": "Row", "cols": 5 }, "url": "deep.csv" },
+            { "meta": { "name": "placeholder" }, "format": "Placeholder" }
+        ],
+        "parameters": [
+            { "meta": { "name": "constant" }, "type": "Constant", "value": { "type": "Table", "table": "arrays", "row": "a" } },
+            { "meta": { "name": "profile" }, "type": "MonthlyProfile", "values": { "type": "Table", "table": "scalars", "row": "a" } },
+            {
+                "meta": { "name": "indexed" },
+                "type": "IndexedArray",
+                "phase": "Before",
+                "metrics": [
+                    { "type": "Table", "table": "grid", "row": ["a", "x"] },
+                    { "type": "Table", "table": "grid", "row": "a", "column": "" },
+                    { "type": "Table", "table": "deep", "row": "a" },
+                    { "type": "Table", "table": "placeholder" },
+                    { "type": "Table", "table": "missing" }
+                ],
+                "index_metric": { "type": "Table", "table": "array-grid" }
+            }
+        ]
+    }
+    "#;
+
+    /// Every table pywr cannot load is reported, then every table reference that does not fit.
+    #[test]
+    fn test_validate_reports_all_table_problems() {
+        let network = parse_network(NETWORK_WITH_TABLE_PROBLEMS);
+
+        let messages: Vec<String> = expect_problems(&network).iter().map(ToString::to_string).collect();
+
+        assert_eq!(
+            messages,
+            vec![
+                "The table `array-grid` cannot be loaded. A table of `Array` values must have a `Row` or `Col` lookup, not `Both`.",
+                "The table `deep` cannot be loaded. A `Row` lookup's `cols`, the number of index columns, must be 1 to 4, not 5.",
+                "The node `supply` has an invalid reference to the table `arrays`. The table holds `Array` values, but `Scalar` values are read from it.",
+                "The node `supply` has an invalid reference to the table `grid`. The table's key takes 2 label(s), but the reference gives 1.",
+                "The parameter `constant` has an invalid reference to the table `arrays`. The table holds `Array` values, but `Scalar` values are read from it.",
+                "The parameter `profile` has an invalid reference to the table `scalars`. The table holds `Scalar` values, but `Array` values are read from it.",
+                "The parameter `indexed` has an invalid reference to the table `grid`. The reference contains an empty label at index 1 of its key.",
+                "The parameter `indexed` has an invalid reference to the table `array-grid`. The table holds `Array` values, but `Scalar` values are read from it.",
+            ]
+        );
+    }
+
+    /// A duplicated name does not stop the edges being checked: both problems are reported, the
+    /// duplicate first.
+    #[test]
+    fn test_validate_reports_duplicate_names_and_edges_together() {
+        let network = parse_network(
+            r#"
+            {
+                "nodes": [
+                    { "meta": { "name": "link" }, "type": "Link" },
+                    { "meta": { "name": "link" }, "type": "Link" }
+                ],
+                "edges": [
+                    { "from_node": "link", "to_node": "missing" }
+                ]
+            }
+            "#,
+        );
+
+        let problems = expect_problems(&network);
+
+        assert_eq!(
+            problems,
+            vec![
+                NetworkProblem::DuplicateNodeName(DuplicateNodeName {
+                    name: "link".to_string(),
+                    nodes: 2,
+                    virtual_nodes: 0,
+                }),
+                NetworkProblem::InvalidEdge(EdgeValidationError {
+                    edge: network.edges[0].clone(),
+                    problem: EdgeProblem::UnknownToNode("missing".to_string()),
+                }),
+            ]
+        );
+
+        assert_eq!(
+            network.validate().unwrap_err().report().to_string(),
+            "The network has 2 problem(s):\n\
+             - The name `link` is used by 2 node(s) and 0 virtual node(s), but each name must be unique.\n\
+             - The edge `link->missing` is invalid. There is no node named `missing` to connect to."
+        );
+    }
+
+    /// Every list is checked, and every duplicate is reported in the documented order. A
+    /// placeholder entry counts like any other, and a name shared across lists is not a duplicate.
+    #[test]
+    fn test_validate_reports_duplicate_names_in_every_list() {
+        let network = parse_network(
+            r#"
+            {
+                "nodes": [
+                    { "meta": { "name": "link" }, "type": "Link" },
+                    { "meta": { "name": "link" }, "type": "Link" },
+                    { "meta": { "name": "shared" }, "type": "Link" }
+                ],
+                "edges": [
+                    { "from_node": "link", "to_node": "missing" }
+                ],
+                "parameters": [
+                    { "meta": { "name": "p2" }, "type": "Constant", "value": { "type": "Literal", "value": 1.0 } },
+                    { "meta": { "name": "p1" }, "type": "Constant", "value": { "type": "Literal", "value": 1.0 } },
+                    { "meta": { "name": "p2" }, "type": "Placeholder" },
+                    { "meta": { "name": "p1" }, "type": "Constant", "value": { "type": "Literal", "value": 2.0 } },
+                    { "meta": { "name": "p2" }, "type": "Constant", "value": { "type": "Literal", "value": 3.0 } },
+                    { "meta": { "name": "shared" }, "type": "Constant", "value": { "type": "Literal", "value": 1.0 } }
+                ],
+                "tables": [
+                    { "meta": { "name": "tbl" }, "format": "Placeholder" },
+                    { "meta": { "name": "tbl" }, "type": "Scalar", "format": "CSV", "lookup": { "type": "Row", "cols": 1 }, "url": "tbl.csv" },
+                    { "meta": { "name": "shared" }, "format": "Placeholder" }
+                ],
+                "time_series": [
+                    { "meta": { "name": "ts" }, "type": "Polars", "time_col": "date", "path": "ts.csv" },
+                    { "meta": { "name": "ts" }, "type": "Placeholder" },
+                    { "meta": { "name": "shared" }, "type": "Placeholder" }
+                ],
+                "metric_sets": [
+                    { "meta": { "name": "ms" }, "filters": { "all_nodes": true } },
+                    { "meta": { "name": "ms" }, "filters": { "all_virtual_nodes": true } },
+                    { "meta": { "name": "shared" }, "filters": { "all_nodes": true } }
+                ]
+            }
+            "#,
+        );
+
+        let problems = expect_problems(&network);
+
+        assert_eq!(
+            problems,
+            vec![
+                NetworkProblem::DuplicateNodeName(DuplicateNodeName {
+                    name: "link".to_string(),
+                    nodes: 2,
+                    virtual_nodes: 0,
+                }),
+                NetworkProblem::DuplicateParameterName {
+                    name: "p1".to_string(),
+                    count: 2,
+                },
+                NetworkProblem::DuplicateParameterName {
+                    name: "p2".to_string(),
+                    count: 3,
+                },
+                NetworkProblem::DuplicateTableName {
+                    name: "tbl".to_string(),
+                    count: 2,
+                },
+                NetworkProblem::DuplicateTimeSeriesName {
+                    name: "ts".to_string(),
+                    count: 2,
+                },
+                NetworkProblem::DuplicateMetricSetName {
+                    name: "ms".to_string(),
+                    count: 2,
+                },
+                NetworkProblem::InvalidEdge(EdgeValidationError {
+                    edge: network.edges[0].clone(),
+                    problem: EdgeProblem::UnknownToNode("missing".to_string()),
+                }),
+            ]
+        );
+
+        assert_eq!(
+            network.validate().unwrap_err().report().to_string(),
+            "The network has 7 problem(s):\n\
+             - The name `link` is used by 2 node(s) and 0 virtual node(s), but each name must be unique.\n\
+             - The name `p1` is used by 2 parameters, but each name must be unique.\n\
+             - The name `p2` is used by 3 parameters, but each name must be unique.\n\
+             - The name `tbl` is used by 2 tables, but each name must be unique.\n\
+             - The name `ts` is used by 2 time series, but each name must be unique.\n\
+             - The name `ms` is used by 2 metric sets, but each name must be unique.\n\
+             - The edge `link->missing` is invalid. There is no node named `missing` to connect to."
+        );
+    }
+
+    /// However many problems there are, `Display` stays a single line, while the report lists
+    /// every one of them.
+    #[test]
+    fn test_validate_display_summarises_and_report_lists_every_problem() {
+        let count = 13;
+        let edges = (0..count)
+            .map(|i| format!(r#"{{ "from_node": "link", "to_node": "missing-{i:02}" }}"#))
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        let network = parse_network(&format!(
+            r#"{{ "nodes": [{{ "meta": {{ "name": "link" }}, "type": "Link" }}], "edges": [{edges}] }}"#
+        ));
+
+        let error = network.validate().unwrap_err();
+
+        assert_eq!(error.to_string(), "The network has 13 problem(s).");
+
+        // The summary, then one line per problem, down to the last edge listed.
+        let report = error.report().to_string();
+        let lines: Vec<&str> = report.lines().collect();
+
+        assert_eq!(lines.len(), 1 + count);
+        assert_eq!(lines[0], "The network has 13 problem(s):");
+        assert!(lines[count].contains("`missing-12`"));
+    }
+}
