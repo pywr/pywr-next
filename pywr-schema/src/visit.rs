@@ -1,3 +1,4 @@
+use crate::data_tables::{DataTableValueType, TableDataRef};
 use crate::edge::Edge;
 use crate::metric::{IndexMetric, Metric, MetricValueType};
 use std::collections::HashMap;
@@ -280,8 +281,12 @@ pub enum Reference<'a> {
         key: Option<&'a str>,
         metric: MetricValueType,
     },
-    /// Resolved in the network's `tables`.
-    Table(&'a str),
+    /// Resolved in the network's `tables`. `expected` is the type of value the reference will
+    /// read, which the table must hold.
+    Table {
+        table_ref: &'a TableDataRef,
+        expected: DataTableValueType,
+    },
     /// Resolved in the network's `time_series`.
     TimeSeries(&'a str),
     /// Resolved in the network's `metric_sets`. Only an output names one.
@@ -290,8 +295,8 @@ pub enum Reference<'a> {
     ScenarioGroup(&'a str),
 }
 
-/// The mutable form of [`Reference`], with variants corresponding one-for-one; a parameter
-/// reference carries only its names.
+/// The mutable form of [`Reference`], with variants corresponding one-for-one; a parameter or
+/// table reference carries only its names.
 #[derive(Debug, PartialEq)]
 pub enum ReferenceMut<'a> {
     Node(&'a mut String),
@@ -358,7 +363,10 @@ impl VisitReferences for Metric {
             Metric::Node(node_ref) => node_ref.visit_references(visitor),
             Metric::VirtualNode(node_ref) => node_ref.visit_references(visitor),
             Metric::Edge(edge_ref) => edge_ref.visit_references(visitor),
-            Metric::Table(table_ref) => table_ref.visit_references(visitor),
+            Metric::Table(table_ref) => visitor(Reference::Table {
+                table_ref,
+                expected: DataTableValueType::Scalar,
+            }),
             Metric::TimeSeries(ts_ref) => ts_ref.visit_references(visitor),
             Metric::Parameter(p_ref) => visitor(Reference::Parameter {
                 name: &p_ref.name,
@@ -381,7 +389,7 @@ impl VisitReferences for Metric {
             Metric::Node(node_ref) => node_ref.visit_references_mut(visitor),
             Metric::VirtualNode(node_ref) => node_ref.visit_references_mut(visitor),
             Metric::Edge(edge_ref) => edge_ref.visit_references_mut(visitor),
-            Metric::Table(table_ref) => table_ref.visit_references_mut(visitor),
+            Metric::Table(table_ref) => visitor(ReferenceMut::Table(&mut table_ref.table)),
             Metric::TimeSeries(ts_ref) => ts_ref.visit_references_mut(visitor),
             Metric::Parameter(p_ref) => visitor(ReferenceMut::Parameter(&mut p_ref.name)),
             Metric::LocalParameter(p_ref) => visitor(ReferenceMut::LocalParameter {
@@ -397,7 +405,10 @@ impl VisitReferences for IndexMetric {
     fn visit_references<F: FnMut(Reference<'_>)>(&self, visitor: &mut F) {
         match self {
             IndexMetric::Node(node_ref) => node_ref.visit_references(visitor),
-            IndexMetric::Table(table_ref) => table_ref.visit_references(visitor),
+            IndexMetric::Table(table_ref) => visitor(Reference::Table {
+                table_ref,
+                expected: DataTableValueType::Scalar,
+            }),
             IndexMetric::TimeSeries(ts_ref) => ts_ref.visit_references(visitor),
             IndexMetric::Parameter(p_ref) => visitor(Reference::Parameter {
                 name: &p_ref.name,
@@ -417,7 +428,7 @@ impl VisitReferences for IndexMetric {
     fn visit_references_mut<F: FnMut(ReferenceMut<'_>)>(&mut self, visitor: &mut F) {
         match self {
             IndexMetric::Node(node_ref) => node_ref.visit_references_mut(visitor),
-            IndexMetric::Table(table_ref) => table_ref.visit_references_mut(visitor),
+            IndexMetric::Table(table_ref) => visitor(ReferenceMut::Table(&mut table_ref.table)),
             IndexMetric::TimeSeries(ts_ref) => ts_ref.visit_references_mut(visitor),
             IndexMetric::Parameter(p_ref) => visitor(ReferenceMut::Parameter(&mut p_ref.name)),
             IndexMetric::LocalParameter(p_ref) => visitor(ReferenceMut::LocalParameter {
@@ -979,7 +990,7 @@ mod tests {
                     format!("LocalParameter:{name}")
                 }
             }
-            Reference::Table(name) => format!("Table:{name}"),
+            Reference::Table { table_ref, .. } => format!("Table:{}", table_ref.table),
             Reference::TimeSeries(name) => format!("TimeSeries:{name}"),
             Reference::MetricSet(name) => format!("MetricSet:{name}"),
             Reference::ScenarioGroup(name) => format!("ScenarioGroup:{name}"),

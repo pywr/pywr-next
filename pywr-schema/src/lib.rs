@@ -27,7 +27,8 @@ mod visit;
 pub use digest::{Checksum, ChecksumError};
 pub use error::{
     ComponentConversionError, ConversionError, DuplicateNodeName, EdgeProblem, EdgeValidationError, ModelProblem,
-    NetworkProblem, NetworkValidationError, ScenarioProblem, ScenarioValidationError, SchemaError, ValidationError,
+    NetworkProblem, NetworkValidationError, ScenarioProblem, ScenarioValidationError, SchemaError,
+    TableReferenceProblem, ValidationError,
 };
 pub use model::{ModelSchema, ModelSchemaReadError, MultiNetworkModelSchema};
 #[cfg(feature = "core")]
