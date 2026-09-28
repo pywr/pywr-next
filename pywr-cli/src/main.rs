@@ -568,9 +568,10 @@ fn run_project(
     threads: usize,
     ignore_feature_requirements: bool,
 ) {
+    let project = pywr_project::Project::open(path).unwrap();
     let data_path = data_path.or_else(|| path.parent());
-    let project = pywr_project::ProjectManifest::from_path(path).unwrap();
-    let composed_model = project.compose(path.parent().unwrap(), definition).unwrap();
+
+    let composed_model = project.compose_model(definition).unwrap();
     let composed_schemas = composed_model.load().unwrap();
     let options = pywr_schema::NetworkMergeOptions::default();
     let schema_v2 = composed_schemas.into_model_schema(&options).unwrap();

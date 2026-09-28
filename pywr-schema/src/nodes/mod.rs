@@ -181,12 +181,22 @@ impl NodeMeta {
     pub fn apply_schematic_offset(&mut self, offset: (f32, f32)) {
         if let Some(position) = &mut self.position {
             position.apply_schematic_offset(offset);
+        } else {
+            self.position = Some(NodePosition {
+                schematic: Some(offset),
+                geographic: None,
+            });
         }
     }
 
     pub fn apply_geographic_offset(&mut self, offset: (f32, f32)) {
         if let Some(position) = &mut self.position {
             position.apply_geographic_offset(offset);
+        } else {
+            self.position = Some(NodePosition {
+                schematic: None,
+                geographic: Some(offset),
+            });
         }
     }
 }

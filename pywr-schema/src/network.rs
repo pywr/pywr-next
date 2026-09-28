@@ -1139,13 +1139,14 @@ impl NetworkSchema {
                     if existing_node.is_placeholder() {
                         let orig_position = options
                             .keep_placeholder_positions
-                            .then(|| existing_node.meta().position);
+                            .then(|| existing_node.meta().position)
+                            .flatten();
 
                         *existing_node = node;
 
                         if let Some(position) = orig_position {
                             // Restore the original position if we are keeping placeholder positions
-                            existing_node.meta_mut().position = position;
+                            existing_node.meta_mut().position = Some(position);
                         } else {
                             // Otherwise, apply any position offsets if they are specified in the options
                             if let Some(offset) = options.schematic_position_offset {
@@ -1155,6 +1156,9 @@ impl NetworkSchema {
                                 existing_node.meta_mut().apply_geographic_offset(offset);
                             }
                         }
+                    } else if node.is_placeholder() {
+                        // If the incoming node is a placeholder, we can ignore it and keep the existing node
+                        continue;
                     } else {
                         return Err(NetworkMergeError::DuplicateNodeName(node.name().to_string()));
                     }
@@ -1165,7 +1169,7 @@ impl NetworkSchema {
                         return Err(NetworkMergeError::DuplicateNodeName(node.name().to_string()));
                     }
 
-                    let mut new_node = node.clone();
+                    let mut new_node = node;
 
                     if let Some(offset) = options.schematic_position_offset {
                         new_node.meta_mut().apply_schematic_offset(offset);
@@ -1188,12 +1192,13 @@ impl NetworkSchema {
                         if existing_node.is_placeholder() {
                             let orig_position = options
                                 .keep_placeholder_positions
-                                .then(|| existing_node.meta().position);
+                                .then(|| existing_node.meta().position)
+                                .flatten();
 
                             *existing_node = v_node;
 
                             if let Some(position) = orig_position {
-                                existing_node.meta_mut().position = position;
+                                existing_node.meta_mut().position = Some(position);
                             } else {
                                 // Otherwise, apply any position offsets if they are specified in the options
                                 if let Some(offset) = options.schematic_position_offset {
@@ -1203,6 +1208,9 @@ impl NetworkSchema {
                                     existing_node.meta_mut().apply_geographic_offset(offset);
                                 }
                             }
+                        } else if v_node.is_placeholder() {
+                            // If the incoming node is a placeholder, we can ignore it and keep the existing node
+                            continue;
                         } else {
                             return Err(NetworkMergeError::DuplicateNodeName(v_node.name().to_string()));
                         }
@@ -1213,7 +1221,7 @@ impl NetworkSchema {
                             return Err(NetworkMergeError::DuplicateNodeName(v_node.name().to_string()));
                         }
 
-                        let mut new_v_node = v_node.clone();
+                        let mut new_v_node = v_node;
 
                         if let Some(offset) = options.schematic_position_offset {
                             new_v_node.meta_mut().apply_schematic_offset(offset);
@@ -1246,6 +1254,9 @@ impl NetworkSchema {
                     Some(existing_param) => {
                         if existing_param.is_placeholder() {
                             *existing_param = param;
+                        } else if param.is_placeholder() {
+                            // If the incoming parameter is a placeholder, we can ignore it and keep the existing parameter
+                            continue;
                         } else {
                             return Err(NetworkMergeError::DuplicateParameterName(param.name().to_string()));
                         }
@@ -1264,6 +1275,9 @@ impl NetworkSchema {
                     Some(existing_table) => {
                         if existing_table.is_placeholder() {
                             *existing_table = table;
+                        } else if table.is_placeholder() {
+                            // If the incoming table is a placeholder, we can ignore it and keep the existing table
+                            continue;
                         } else {
                             return Err(NetworkMergeError::DuplicateTableName(table.name().to_string()));
                         }
@@ -1282,6 +1296,9 @@ impl NetworkSchema {
                     Some(existing_ts) => {
                         if existing_ts.is_placeholder() {
                             *existing_ts = ts;
+                        } else if ts.is_placeholder() {
+                            // If the incoming time series is a placeholder, we can ignore it and keep the existing time series
+                            continue;
                         } else {
                             return Err(NetworkMergeError::DuplicateTimeSeriesName(ts.name().to_string()));
                         }
@@ -1338,6 +1355,9 @@ impl NetworkSchema {
                     Some(existing_output) => {
                         if existing_output.is_placeholder() {
                             *existing_output = output;
+                        } else if output.is_placeholder() {
+                            // If the incoming output is a placeholder, we can ignore it and keep the existing output
+                            continue;
                         } else {
                             return Err(NetworkMergeError::DuplicateOutputName(output.name().to_string()));
                         }

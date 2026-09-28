@@ -50,6 +50,7 @@ pyo3 = { workspace = true, optional = true }
 pywr-core = { path = "../pywr-core", default-features = false, optional = true }
 pywr-schema-macros = { path = "../pywr-schema-macros" }
 pywr-v1-schema = { workspace = true }
+relative-path = { workspace = true }
 schemars = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

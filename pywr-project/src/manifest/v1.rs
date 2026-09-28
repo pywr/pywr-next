@@ -108,6 +108,7 @@ pub enum ProjectManifestValidationError {
 
 /// A simple project schema that defines how to build a model from multiple JSON fragments.
 #[derive(Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct ProjectManifest {
     /// Path (relative to root) to the base ModelSchema JSON.
     pub base_model: String,
@@ -244,6 +245,7 @@ impl ProjectManifest {
 }
 
 #[derive(Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct Definition {
     pub name: String,
     /// Per-network-set selections for this definition.
@@ -388,6 +390,7 @@ impl Definition {
 }
 
 #[derive(Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct DefinitionSelectionPositionOffset {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub schematic: Option<(f32, f32)>,
@@ -405,12 +408,14 @@ impl From<DefinitionSelectionPositionOffset> for PositionOffset {
 }
 
 #[derive(Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct DefinitionSelectionFileMeta {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub position_offset: Option<DefinitionSelectionPositionOffset>,
 }
 
 #[derive(Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct DefinitionSelection {
     /// Name of the network set.
     pub set: String,
@@ -426,6 +431,7 @@ pub struct DefinitionSelection {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct NetworkSet {
     pub name: String,
     /// Directory containing NetworkSchema fragments (relative to root).
