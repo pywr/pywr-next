@@ -115,9 +115,10 @@ pub enum TableReferenceProblem {
     /// The reference gives more or fewer labels than the table's key takes.
     #[error("The table's key takes {expected} label(s), but the reference gives {found}.")]
     WrongKeySize { expected: usize, found: usize },
-    /// A label that is empty.
-    #[error("The reference gives an empty label.")]
-    EmptyLabel,
+    /// A label that is empty. `index` is the first one's position in the key, which holds the
+    /// `row` labels and then the `column` labels.
+    #[error("The reference contains an empty label at index {index} of its key.")]
+    EmptyLabel { index: usize },
 }
 
 /// A problem with a model that is not about any one of its networks, found by

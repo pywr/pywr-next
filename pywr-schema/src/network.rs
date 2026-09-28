@@ -933,7 +933,7 @@ impl NetworkSchema {
             .iter()
             .flatten()
             .filter_map(|table| match table {
-                DataTable::CSV(csv) if csv.key_size().is_none() => Some(NetworkProblem::UnsupportedTableLookup {
+                DataTable::CSV(csv) if !csv.is_lookup_supported() => Some(NetworkProblem::UnsupportedTableLookup {
                     table: csv.meta.name.clone(),
                     value_type: csv.ty,
                     lookup: csv.lookup.clone(),
@@ -1910,7 +1910,7 @@ mod tests {
                 "phase": "Before",
                 "metrics": [
                     { "type": "Table", "table": "grid", "row": ["a", "x"] },
-                    { "type": "Table", "table": "scalars", "row": "" },
+                    { "type": "Table", "table": "grid", "row": "a", "column": "" },
                     { "type": "Table", "table": "deep", "row": "a" },
                     { "type": "Table", "table": "placeholder" },
                     { "type": "Table", "table": "missing" }
@@ -1937,7 +1937,7 @@ mod tests {
                 "The node `supply` has an invalid reference to the table `grid`. The table's key takes 2 label(s), but the reference gives 1.",
                 "The parameter `constant` has an invalid reference to the table `arrays`. The table holds `Array` values, but `Scalar` values are read from it.",
                 "The parameter `profile` has an invalid reference to the table `scalars`. The table holds `Scalar` values, but `Array` values are read from it.",
-                "The parameter `indexed` has an invalid reference to the table `scalars`. The reference gives an empty label.",
+                "The parameter `indexed` has an invalid reference to the table `grid`. The reference contains an empty label at index 1 of its key.",
                 "The parameter `indexed` has an invalid reference to the table `array-grid`. The table holds `Array` values, but `Scalar` values are read from it.",
             ]
         );

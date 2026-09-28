@@ -115,19 +115,22 @@ impl DataTable {
             });
         }
 
-        let Some(key_size) = csv.key_size() else {
+        if !csv.is_lookup_supported() {
+            // The issue here is an incorrect table definition, not necessarily
+            // a problem with this reference.
             return Ok(());
-        };
+        }
 
         let labels = table_ref.key();
+        let key_size = csv.key_size();
 
         if labels.len() != key_size {
             Err(TableReferenceProblem::WrongKeySize {
                 expected: key_size,
                 found: labels.len(),
             })
-        } else if labels.iter().any(|label| label.is_empty()) {
-            Err(TableReferenceProblem::EmptyLabel)
+        } else if let Some(index) = labels.iter().position(|label| label.is_empty()) {
+            Err(TableReferenceProblem::EmptyLabel { index })
         } else {
             Ok(())
         }
@@ -177,21 +180,26 @@ pub struct CsvDataTable {
 }
 
 impl CsvDataTable {
-    /// The number of labels in a key to the table, or `None` for a lookup pywr cannot load with
-    /// the table's type of values.
-    pub fn key_size(&self) -> Option<usize> {
+    /// The number of labels in a key to the table, counting a `Both` lookup's `rows` and `cols`
+    /// together.
+    pub fn key_size(&self) -> usize {
+        match self.lookup {
+            CsvDataTableLookup::Row { cols } => cols,
+            CsvDataTableLookup::Col { rows } => rows,
+            CsvDataTableLookup::Both { rows, cols } => rows + cols,
+        }
+    }
+
+    /// Whether pywr can load a table with this lookup and type of values.
+    pub fn is_lookup_supported(&self) -> bool {
         match (self.ty, &self.lookup) {
-            (_, CsvDataTableLookup::Row { cols: size } | CsvDataTableLookup::Col { rows: size })
-                if (1..=4).contains(size) =>
-            {
-                Some(*size)
+            (_, CsvDataTableLookup::Row { cols: size } | CsvDataTableLookup::Col { rows: size }) => {
+                (1..=4).contains(size)
             }
-            (DataTableValueType::Scalar, CsvDataTableLookup::Both { rows, cols })
-                if (1..=2).contains(rows) && (1..=2).contains(cols) =>
-            {
-                Some(rows + cols)
+            (DataTableValueType::Scalar, CsvDataTableLookup::Both { rows, cols }) => {
+                (1..=2).contains(rows) && (1..=2).contains(cols)
             }
-            _ => None,
+            (DataTableValueType::Array, CsvDataTableLookup::Both { .. }) => false,
         }
     }
 }
@@ -572,10 +580,10 @@ my-reservoir,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2";
         assert_eq!(values, vec![0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2]);
     }
 
-    /// [`CsvDataTable::key_size`] should give a size for exactly the lookups the loader takes. It
-    /// refuses any other before opening the file, so no file is needed.
+    /// [`CsvDataTable::is_lookup_supported`] should hold for exactly the lookups the loader takes.
+    /// It refuses any other before opening the file, so no file is needed.
     #[test]
-    fn test_key_size_follows_the_loader() {
+    fn test_is_lookup_supported_follows_the_loader() {
         let lookups = (0..=5)
             .flat_map(|n| [CsvDataTableLookup::Row { cols: n }, CsvDataTableLookup::Col { rows: n }])
             .chain((0..=3).flat_map(|rows| (0..=3).map(move |cols| CsvDataTableLookup::Both { rows, cols })));
@@ -592,7 +600,7 @@ my-reservoir,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2";
 
                 let supported = !matches!(table.load_f64(None), Err(TableError::FormatNotSupported(_)));
 
-                assert_eq!(table.key_size().is_some(), supported, "{ty} table with {lookup:?}");
+                assert_eq!(table.is_lookup_supported(), supported, "{ty} table with {lookup:?}");
             }
         }
     }
