@@ -2,6 +2,7 @@ use crate::error::ComposeToSchemaError;
 use crate::manifest::DefinitionOverrides;
 use pywr_schema::meta::ProvenanceSource;
 use pywr_schema::{ModelSchema, NetworkMergeOptions, NetworkSchema, NetworkSchemaReadError};
+use relative_path::RelativePathBuf;
 use std::path::PathBuf;
 
 #[derive(Clone, Copy, Debug)]
@@ -150,7 +151,7 @@ pub struct ComposedModelBuilder {
 }
 
 impl ComposedModelBuilder {
-    pub fn new(name: String, base_model: PathBuf, base_file: String) -> Self {
+    pub fn new(name: String, base_model: PathBuf, base_file: RelativePathBuf) -> Self {
         let base_source = ProvenanceSource {
             file: base_file,
             network_set: None,

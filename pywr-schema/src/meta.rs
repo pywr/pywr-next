@@ -1,23 +1,14 @@
 use pywr_schema_macros::PywrVisitAll;
 use relative_path::RelativePathBuf;
 use schemars::JsonSchema;
-use serde::Serialize;
 use std::collections::HashMap;
-
-fn serialize_with_relative_path<S>(path: &str, serializer: S) -> Result<S::Ok, S::Error>
-where
-    S: serde::Serializer,
-{
-    let rel_path = RelativePathBuf::from_path(path).map_err(serde::ser::Error::custom)?;
-    rel_path.serialize(serializer)
-}
 
 /// The project-relative source of a component in a composed model.
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, PartialEq, Eq, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ProvenanceSource {
-    #[serde(serialize_with = "serialize_with_relative_path")]
-    pub file: String,
+    #[schemars(with = "String")]
+    pub file: RelativePathBuf,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub network_set: Option<String>,
 }
@@ -83,8 +74,23 @@ impl ComponentMeta for NamedMeta {
 }
 #[cfg(test)]
 mod tests {
+    use super::ProvenanceSource;
     use crate::metric_sets::MetricSet;
     use crate::outputs::Output;
+
+    #[test]
+    fn provenance_file_round_trips_as_a_portable_relative_path() {
+        let source: ProvenanceSource = serde_json::from_str(r#"{"file":"nested/set/network.json"}"#).unwrap();
+        assert_eq!(source.file.as_str(), "nested/set/network.json");
+        assert_eq!(
+            serde_json::to_value(&source).unwrap()["file"],
+            "nested/set/network.json"
+        );
+        assert_eq!(
+            serde_json::from_value::<ProvenanceSource>(serde_json::to_value(&source).unwrap()).unwrap(),
+            source
+        );
+    }
 
     #[test]
     fn named_components_round_trip_metadata() {

@@ -2,6 +2,7 @@ use crate::composition::{ComposedModel, ComposedModelBuilder, ComposedNetworkPat
 use crate::error::{ComposeModelError, ValidationError};
 use crate::manifest::DefinitionOverrides;
 use pywr_schema::meta::ProvenanceSource;
+use relative_path::{RelativePath, RelativePathBuf};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -182,7 +183,8 @@ impl ProjectManifest {
             .iter()
             .map(|set| Ok((set.name.clone(), resolve_network_set(root, set)?)))
             .collect::<Result<HashMap<_, _>, ComposeModelError>>()?;
-        definition.compose_model(base_model, &self.base_model, &sets)
+        let base_file = strict_relative_path("base model", &self.base_model)?;
+        definition.compose_model(base_model, base_file, &sets)
     }
 
     fn manifest_errors(&self) -> Vec<ProjectManifestValidationError> {
@@ -301,11 +303,11 @@ impl Definition {
     fn compose_model(
         &self,
         base_model: PathBuf,
-        base_file: &str,
+        base_file: RelativePathBuf,
         sets: &HashMap<String, ResolvedNetworkSet>,
     ) -> Result<ComposedModel, ComposeModelError> {
         let mut selected_sets = HashSet::new();
-        let mut builder = ComposedModelBuilder::new(self.name.clone(), base_model, base_file.to_string());
+        let mut builder = ComposedModelBuilder::new(self.name.clone(), base_model, base_file);
         for selection in &self.include {
             if !selected_sets.insert(&selection.set) {
                 return Err(ComposeModelError::DuplicateSelection {
@@ -361,7 +363,7 @@ impl Definition {
                     path: file.path.clone(),
                     position_offset: position_offset.map(PositionOffset::from),
                     source: ProvenanceSource {
-                        file: set.dir.join(&file.name).to_string_lossy().into_owned(),
+                        file: file.source.clone(),
                         network_set: Some(set.name.clone()),
                     },
                 };
@@ -446,7 +448,6 @@ pub struct NetworkSet {
 
 struct ResolvedNetworkSet {
     name: String,
-    dir: PathBuf,
     min_files: Option<usize>,
     max_files: Option<usize>,
     files: Vec<ResolvedNetworkFile>,
@@ -455,6 +456,7 @@ struct ResolvedNetworkSet {
 struct ResolvedNetworkFile {
     name: OsString,
     path: PathBuf,
+    source: RelativePathBuf,
 }
 
 fn resolve_selection<'a>(
@@ -574,7 +576,7 @@ fn validate_constraints(
 
 fn resolve_base_model(root: &Path, base_model: &str) -> Result<PathBuf, ComposeModelError> {
     let candidate = strict_relative_path("base model", base_model)?;
-    let candidate = root.join(candidate);
+    let candidate = candidate.to_path(root);
     if !candidate.exists() {
         return Err(ComposeModelError::BaseModelNotFound { path: candidate });
     }
@@ -590,7 +592,7 @@ fn resolve_network_set(root: &Path, set: &NetworkSet) -> Result<ResolvedNetworkS
         &format!("network set '{}' directory", set.name),
         set.dir.as_deref().unwrap_or(&set.name),
     )?;
-    let candidate = root.join(&dir);
+    let candidate = dir.to_path(root);
     if !candidate.exists() {
         return Err(ComposeModelError::DirectoryNotFound {
             set: set.name.clone(),
@@ -621,32 +623,38 @@ fn resolve_network_set(root: &Path, set: &NetworkSet) -> Result<ResolvedNetworkS
             continue;
         }
         let path = canonicalize_contained(&root, &entry.path(), &format!("network set '{}' file", set.name))?;
-        files.push(ResolvedNetworkFile { name, path });
+        let filename =
+            RelativePath::from_path(Path::new(&name)).map_err(|_| ComposeModelError::InvalidRelativePath {
+                field: format!("network set '{}' file", set.name),
+                path: entry.path(),
+            })?;
+        let source = dir.join(filename);
+        files.push(ResolvedNetworkFile { name, path, source });
     }
     files.sort_by(|left, right| left.name.cmp(&right.name));
     Ok(ResolvedNetworkSet {
         name: set.name.clone(),
-        dir,
         min_files: set.min_files,
         max_files: set.max_files,
         files,
     })
 }
 
-fn strict_relative_path(field: &str, value: &str) -> Result<PathBuf, ComposeModelError> {
+fn strict_relative_path(field: &str, value: &str) -> Result<RelativePathBuf, ComposeModelError> {
     let path = Path::new(value);
     if value.is_empty()
         || value.contains('\\')
         || path
             .components()
             .any(|component| !matches!(component, Component::Normal(_)))
+        || RelativePath::from_path(path).is_err()
     {
         return Err(ComposeModelError::InvalidRelativePath {
             field: field.to_string(),
             path: path.to_path_buf(),
         });
     }
-    Ok(path.to_path_buf())
+    Ok(RelativePathBuf::from(value))
 }
 
 fn is_filename(value: &str) -> bool {
@@ -753,6 +761,7 @@ where
 #[cfg(test)]
 mod test {
     use super::*;
+    use pywr_schema::meta::ComponentMeta;
     use tempfile::tempdir;
 
     fn manifest(base_model: &str, network_sets: Vec<NetworkSet>, include: Vec<DefinitionSelection>) -> ProjectManifest {
@@ -1004,6 +1013,75 @@ mod test {
             metric_set.meta().provenance().unwrap().contributors,
             vec![a_source, b_source]
         );
+    }
+
+    #[test]
+    fn nested_network_set_provenance_round_trips_without_filesystem_separators() {
+        let root = tempdir().unwrap();
+        std::fs::create_dir_all(root.path().join("groups/nets")).unwrap();
+        std::fs::write(
+            root.path().join("base.json"),
+            serde_json::to_vec(&pywr_schema::ModelSchema::default()).unwrap(),
+        )
+        .unwrap();
+        std::fs::write(
+            root.path().join("groups/nets/a.json"),
+            r#"{"nodes":[{"type":"Input","meta":{"name":"a"}}],"edges":[]}"#,
+        )
+        .unwrap();
+        let project = manifest(
+            "base.json",
+            vec![set("nets", Some("groups/nets"), None, None)],
+            vec![selection("nets", None, true)],
+        );
+        let composed = project
+            .compose_model(root.path(), "test")
+            .unwrap()
+            .load()
+            .unwrap()
+            .into_model_schema(&Default::default())
+            .unwrap();
+        let json = serde_json::to_value(&composed).unwrap();
+        assert_eq!(
+            json["network"]["nodes"][0]["meta"]["provenance"]["origin"]["file"],
+            "groups/nets/a.json"
+        );
+        let round_trip: pywr_schema::ModelSchema = serde_json::from_value(json).unwrap();
+        assert_eq!(
+            round_trip.network.nodes[0]
+                .meta()
+                .provenance()
+                .unwrap()
+                .origin
+                .file
+                .as_str(),
+            "groups/nets/a.json"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn non_utf8_network_filename_is_rejected_instead_of_recording_lossy_provenance() {
+        use std::os::unix::ffi::OsStrExt;
+
+        let root = tempdir().unwrap();
+        touch(&root.path().join("base.json"));
+        std::fs::create_dir(root.path().join("nets")).unwrap();
+        let name = OsStr::from_bytes(b"bad\xff.json");
+        touch(&root.path().join("nets").join(name));
+        let project = manifest(
+            "base.json",
+            vec![set("nets", None, None, None)],
+            vec![selection("nets", None, true)],
+        );
+        assert!(project.validate(root.path()).unwrap().errors.iter().any(|error| matches!(
+            error,
+            ProjectManifestValidationError::InvalidRelativePath { field, .. } if field == "network set 'nets' file"
+        )));
+        assert!(matches!(
+            project.compose_model(root.path(), "test"),
+            Err(ComposeModelError::InvalidRelativePath { field, .. }) if field == "network set 'nets' file"
+        ));
     }
 
     #[test]

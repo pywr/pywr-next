@@ -13,6 +13,7 @@ categories.workspace = true
 default = []
 
 [dependencies]
+relative-path = { workspace = true }
 serde.workspace = true
 serde_json.workspace = true
 schemars.workspace = true

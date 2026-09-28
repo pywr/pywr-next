@@ -2037,6 +2037,7 @@ name = "pywr-project"
 version = "2.0.0-beta9"
 dependencies = [
  "pywr-schema",
+ "relative-path",
  "schemars",
  "serde",
  "serde_json",
