@@ -20,6 +20,7 @@ use pywr_v1_schema::nodes::LinkNode as LinkNodeV1;
 use schemars::JsonSchema;
 use std::num::NonZeroU64;
 use strum::IntoEnumIterator;
+use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumString, IntoStaticStr};
 
 // This macro generates a subset enum for the `RiverNode` attributes.
 // It allows for easy conversion between the enum and the `NodeAttribute` type.
@@ -43,8 +44,10 @@ node_component_subset_enum! {
 ///
 /// - `SteadyState`: Assumes that the inflow and outflow are equal at the first time-step.
 /// - `Specified`: Allows the user to specify the initial inflow and outflow values.
-#[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema, PywrVisitAll, strum_macros::Display)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema, PywrVisitAll, Display, EnumDiscriminants)]
 #[serde(tag = "type", deny_unknown_fields)]
+#[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
+#[strum_discriminants(name(MuskingumInitialConditionType))]
 pub enum MuskingumInitialCondition {
     SteadyState,
     Specified { inflow: f64, outflow: f64 },
@@ -62,8 +65,10 @@ impl From<MuskingumInitialCondition> for pywr_core::parameters::MuskingumInitial
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema, PywrVisitAll, strum_macros::Display)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema, PywrVisitAll, Display, EnumDiscriminants)]
 #[serde(tag = "type", deny_unknown_fields)]
+#[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
+#[strum_discriminants(name(RoutingMethodType))]
 pub enum RoutingMethod {
     Delay {
         /// The number of time-steps to delay the flow by.
