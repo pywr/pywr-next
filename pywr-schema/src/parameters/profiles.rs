@@ -703,6 +703,7 @@ mod tests {
             name: "test".to_string(),
             comment: None,
             tags: Default::default(),
+            provenance: None,
         };
         let values = ConstantFloatVec::Literal { values: vec![1.0; 366] };
         let param = DailyProfileParameter { meta, values };
@@ -724,6 +725,7 @@ mod tests {
             name: "test".to_string(),
             comment: None,
             tags: Default::default(),
+            provenance: None,
         };
 
         let values = vec![1.0; 365];
@@ -747,6 +749,7 @@ mod tests {
             name: "test".to_string(),
             comment: None,
             tags: Default::default(),
+            provenance: None,
         };
         let values = ConstantFloatVec::Literal { values: vec![1.0; 364] };
         let param = DailyProfileParameter { meta, values };

@@ -122,6 +122,32 @@ pub struct NodePosition {
     pub geographic: Option<(f32, f32)>,
 }
 
+impl NodePosition {
+    /// Apply an offset to the schematic position of the node.
+    ///
+    /// If the node does not have a schematic position, the offset will be applied to the default position of (0.0, 0.0).
+    pub fn apply_schematic_offset(&mut self, offset: (f32, f32)) {
+        if let Some((x, y)) = &mut self.schematic {
+            *x += offset.0;
+            *y += offset.1;
+        } else {
+            self.schematic = Some(offset);
+        }
+    }
+
+    /// Apply an offset to the geographic position of the node.
+    ///
+    /// If the node does not have a geographic position, the offset will be applied to the default position of (0.0, 0.0).
+    pub fn apply_geographic_offset(&mut self, offset: (f32, f32)) {
+        if let Some((lat, lon)) = &mut self.geographic {
+            *lat += offset.0;
+            *lon += offset.1;
+        } else {
+            self.geographic = Some(offset);
+        }
+    }
+}
+
 impl From<NodePositionV1> for NodePosition {
     fn from(v1: NodePositionV1) -> Self {
         Self {
@@ -140,6 +166,42 @@ pub struct NodeMeta {
     pub position: Option<NodePosition>,
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub tags: HashMap<String, String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub provenance: Option<crate::meta::ComponentProvenance>,
+}
+
+impl crate::meta::ComponentMeta for NodeMeta {
+    fn provenance(&self) -> Option<&crate::meta::ComponentProvenance> {
+        self.provenance.as_ref()
+    }
+
+    fn set_provenance(&mut self, provenance: crate::meta::ComponentProvenance) {
+        self.provenance = Some(provenance);
+    }
+}
+
+impl NodeMeta {
+    pub fn apply_schematic_offset(&mut self, offset: (f32, f32)) {
+        if let Some(position) = &mut self.position {
+            position.apply_schematic_offset(offset);
+        } else {
+            self.position = Some(NodePosition {
+                schematic: Some(offset),
+                geographic: None,
+            });
+        }
+    }
+
+    pub fn apply_geographic_offset(&mut self, offset: (f32, f32)) {
+        if let Some(position) = &mut self.position {
+            position.apply_geographic_offset(offset);
+        } else {
+            self.position = Some(NodePosition {
+                schematic: None,
+                geographic: Some(offset),
+            });
+        }
+    }
 }
 
 impl TryFrom<NodeMetaV1> for NodeMeta {
@@ -151,6 +213,7 @@ impl TryFrom<NodeMetaV1> for NodeMeta {
             comment: v1.comment,
             position: v1.position.map(|p| p.into()),
             tags: crate::v1::convert_tags(v1.tags)?,
+            provenance: None,
         })
     }
 }
@@ -658,6 +721,28 @@ impl Node {
             Node::Reservoir(n) => n.storage.parameters.as_deref(),
             Node::Placeholder(_) => None,
             Node::Abstraction(n) => n.parameters.as_deref(),
+        }
+    }
+
+    pub fn local_parameters_mut(&mut self) -> Option<&mut [Parameter]> {
+        match self {
+            Node::Input(n) => n.parameters.as_deref_mut(),
+            Node::Link(n) => n.parameters.as_deref_mut(),
+            Node::Output(n) => n.parameters.as_deref_mut(),
+            Node::Storage(n) => n.parameters.as_deref_mut(),
+            Node::Catchment(n) => n.parameters.as_deref_mut(),
+            Node::RiverGauge(n) => n.parameters.as_deref_mut(),
+            Node::LossLink(n) => n.parameters.as_deref_mut(),
+            Node::River(n) => n.parameters.as_deref_mut(),
+            Node::RiverSplitWithGauge(n) => n.parameters.as_deref_mut(),
+            Node::WaterTreatmentWorks(n) => n.parameters.as_deref_mut(),
+            Node::PiecewiseLink(n) => n.parameters.as_deref_mut(),
+            Node::PiecewiseStorage(n) => n.parameters.as_deref_mut(),
+            Node::Delay(n) => n.parameters.as_deref_mut(),
+            Node::Turbine(n) => n.parameters.as_deref_mut(),
+            Node::Reservoir(n) => n.storage.parameters.as_deref_mut(),
+            Node::Placeholder(_) => None,
+            Node::Abstraction(n) => n.parameters.as_deref_mut(),
         }
     }
 

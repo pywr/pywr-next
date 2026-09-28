@@ -13,6 +13,7 @@ members = [
     "pywr-runner-protocol", "pywr-runner-service", "pywr-runner-transport",
     "pywr-schema",
     "pywr-schema-macros",
+    "pywr-project",
 ]
 
 # IPM packages are not default because they require nightly (portable_simd).
@@ -22,6 +23,7 @@ default-members = [
     "pywr-schema",
     "pywr-cli",
     # "pywr-python",
+    "pywr-project",
 ]
 
 [workspace.package]
@@ -73,6 +75,7 @@ rand = "0.10"
 rand_chacha = "0.10"
 rand_distr = "0.6"
 rayon = "1.12"
+relative-path = { version = "2.0", features = ["serde"] }
 schemars = { version = "1.2", features = ["jiff02"] }
 serde = { version = "1", features = ["derive", ] }
 serde_json = "1.0"

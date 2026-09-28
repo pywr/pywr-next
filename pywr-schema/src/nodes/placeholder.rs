@@ -71,6 +71,7 @@ mod test {
                 comment: None,
                 position: None,
                 tags: Default::default(),
+                provenance: None,
             },
         };
 

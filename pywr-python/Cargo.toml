@@ -30,6 +30,7 @@ ipm-simd = ["pywr-core/ipm-simd", "pywr-schema/ipm-simd"]
 anyhow = { workspace = true }
 arrow = { workspace = true }
 jiff = { workspace = true }
+log = { workspace = true }
 pyo3 = { workspace = true, features = ["extension-module", "macros", "jiff-02", "abi3-py310"] }
 pyo3-log = { workspace = true }
 pywr-core = { path = "../pywr-core" }
@@ -38,4 +39,4 @@ pywr-schema = { path = "../pywr-schema" }
 pywr-v1-schema = { workspace = true }
 schemars = { workspace = true }
 serde_json = { workspace = true }
-log = { workspace = true }
+
