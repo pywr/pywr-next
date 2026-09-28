@@ -2,6 +2,19 @@
 
 All notable changes to this project since v2.0.0-beta will be documented in this file.
 
+## [2.0.0-beta10] - 2026-09-28
+
+### 🚀 Features
+
+- *(schema)* Validate parameter references against the value type of the parameter they name (#854)
+- *(schema)* Add discriminant types for RoutingMethod and MuskingumInitialCondition (#855)
+- Initial commit of pywr-project. (#767)
+- *(schema)* Validate table refs against the tables they name (#856)
+
+### 🐛 Bug Fixes
+
+- *(schema)* Return the phase of Max, Min, Negative, and HydropowerTarget params from Parameter::phase (#852)
+
 ## [2.0.0-beta9] - 2026-09-27
 
 ### 🚀 Features
