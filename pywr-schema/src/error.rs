@@ -1,3 +1,4 @@
+use crate::data_tables::{CsvDataTableLookup, DataTableValueType};
 #[cfg(feature = "core")]
 use crate::data_tables::{TableCollectionError, TableDataRef};
 use crate::digest::ChecksumError;
@@ -99,6 +100,25 @@ pub struct EdgeValidationError {
     pub edge: Edge,
     /// The first problem [`crate::NetworkSchema::validate_edge`] found with it.
     pub problem: EdgeProblem,
+}
+
+/// The reason a table reference does not fit the table it names, found by
+/// [`DataTable::validate_reference`](crate::data_tables::DataTable::validate_reference).
+#[derive(Error, Debug, Clone, PartialEq, Eq)]
+pub enum TableReferenceProblem {
+    /// The table holds arrays where a single value is read, or the other way round.
+    #[error("The table holds `{found}` values, but `{expected}` values are read from it.")]
+    WrongValueType {
+        expected: DataTableValueType,
+        found: DataTableValueType,
+    },
+    /// The reference gives more or fewer labels than the table's key takes.
+    #[error("The table's key takes {expected} label(s), but the reference gives {found}.")]
+    WrongKeySize { expected: usize, found: usize },
+    /// A label that is empty. `index` is the first one's position in the key, which holds the
+    /// `row` labels and then the `column` labels.
+    #[error("The reference contains an empty label at index {index} of its key.")]
+    EmptyLabel { index: usize },
 }
 
 /// A problem with a model that is not about any one of its networks, found by
@@ -386,6 +406,38 @@ pub enum NetworkProblem {
         node: Option<String>,
         key: String,
     },
+    /// A CSV table whose lookup pywr cannot load with its type of values.
+    #[error("The table `{table}` cannot be loaded. {}", unsupported_lookup_message(.value_type, .lookup))]
+    UnsupportedTableLookup {
+        table: String,
+        value_type: DataTableValueType,
+        lookup: CsvDataTableLookup,
+    },
+    /// A table reference that does not fit the table it names.
+    #[error("The {owner} has an invalid reference to the table `{table}`. {problem}")]
+    InvalidTableReference {
+        owner: String,
+        table: String,
+        problem: TableReferenceProblem,
+    },
+}
+
+/// Why pywr cannot load a table of `value_type` with `lookup`, for the end of a message.
+fn unsupported_lookup_message(value_type: &DataTableValueType, lookup: &CsvDataTableLookup) -> String {
+    match (value_type, lookup) {
+        (DataTableValueType::Array, CsvDataTableLookup::Both { .. }) => {
+            "A table of `Array` values must have a `Row` or `Col` lookup, not `Both`.".to_string()
+        }
+        (_, CsvDataTableLookup::Row { cols }) => {
+            format!("A `Row` lookup's `cols`, the number of index columns, must be 1 to 4, not {cols}.")
+        }
+        (_, CsvDataTableLookup::Col { rows }) => {
+            format!("A `Col` lookup's `rows`, the number of index rows, must be 1 to 4, not {rows}.")
+        }
+        (_, CsvDataTableLookup::Both { rows, cols }) => format!(
+            "A `Both` lookup's `rows` and `cols`, the numbers of index rows and columns, must each be 1 or 2, not {rows} and {cols}."
+        ),
+    }
 }
 
 /// The parameter a reference names, as a message puts it.
@@ -413,7 +465,8 @@ pub struct NetworkValidationError {
     pub name: Option<String>,
     /// Never empty. Duplicate names first, list by list in the order nodes, parameters, tables,
     /// time series, metric sets, each sorted by name; then invalid edges, invalid members of
-    /// virtual nodes and parameter references of the wrong kind, each in the order listed.
+    /// virtual nodes, parameter references of the wrong kind, tables pywr cannot load and table
+    /// references that do not fit, each in the order listed.
     pub problems: Vec<NetworkProblem>,
 }
 

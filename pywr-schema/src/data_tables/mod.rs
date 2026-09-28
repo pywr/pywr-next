@@ -20,9 +20,9 @@ mod vec;
 
 use crate::ConversionError;
 use crate::digest::{Checksum, ChecksumError};
+use crate::error::TableReferenceProblem;
 use crate::meta::NamedMeta;
 use crate::parameters::TableIndex;
-use crate::visit::{Reference, ReferenceMut, VisitReferences};
 #[cfg(feature = "core")]
 use log::{debug, info};
 #[cfg(feature = "pyo3")]
@@ -40,7 +40,19 @@ use thiserror::Error;
 #[cfg(feature = "core")]
 use vec::LoadedVecTable;
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitPaths, Display, EnumIter)]
+#[derive(
+    serde::Deserialize,
+    serde::Serialize,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    JsonSchema,
+    PywrVisitPaths,
+    Display,
+    EnumIter,
+)]
 pub enum DataTableValueType {
     Scalar,
     Array,
@@ -80,6 +92,50 @@ impl DataTable {
         matches!(self, DataTable::Placeholder(_))
     }
 
+    /// Check that `table_ref` fits this table.
+    ///
+    /// `expected` is the type of value the reference will read. Its labels are counted across `row`
+    /// and `column`, which pywr joins into one key.
+    ///
+    /// Any reference fits a placeholder, and one to a table whose lookup pywr cannot load is
+    /// checked for its value type only.
+    pub fn validate_reference(
+        &self,
+        table_ref: &TableDataRef,
+        expected: DataTableValueType,
+    ) -> Result<(), TableReferenceProblem> {
+        let DataTable::CSV(csv) = self else {
+            return Ok(());
+        };
+
+        if csv.ty != expected {
+            return Err(TableReferenceProblem::WrongValueType {
+                expected,
+                found: csv.ty,
+            });
+        }
+
+        if !csv.is_lookup_supported() {
+            // The issue here is an incorrect table definition, not necessarily
+            // a problem with this reference.
+            return Ok(());
+        }
+
+        let labels = table_ref.key();
+        let key_size = csv.key_size();
+
+        if labels.len() != key_size {
+            Err(TableReferenceProblem::WrongKeySize {
+                expected: key_size,
+                found: labels.len(),
+            })
+        } else if let Some(index) = labels.iter().position(|label| label.is_empty()) {
+            Err(TableReferenceProblem::EmptyLabel { index })
+        } else {
+            Ok(())
+        }
+    }
+
     #[cfg(feature = "core")]
     pub fn load(&self, data_path: Option<&Path>) -> Result<LoadedTable, TableError> {
         match self {
@@ -92,7 +148,16 @@ impl DataTable {
 }
 
 #[derive(
-    serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitPaths, Display, EnumDiscriminants,
+    serde::Deserialize,
+    serde::Serialize,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    JsonSchema,
+    PywrVisitPaths,
+    Display,
+    EnumDiscriminants,
 )]
 #[serde(tag = "type", deny_unknown_fields)]
 #[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
@@ -112,6 +177,31 @@ pub struct CsvDataTable {
     pub lookup: CsvDataTableLookup,
     pub url: PathBuf,
     pub checksum: Option<Checksum>,
+}
+
+impl CsvDataTable {
+    /// The number of labels in a key to the table, counting a `Both` lookup's `rows` and `cols`
+    /// together.
+    pub fn key_size(&self) -> usize {
+        match self.lookup {
+            CsvDataTableLookup::Row { cols } => cols,
+            CsvDataTableLookup::Col { rows } => rows,
+            CsvDataTableLookup::Both { rows, cols } => rows + cols,
+        }
+    }
+
+    /// Whether pywr can load a table with this lookup and type of values.
+    pub fn is_lookup_supported(&self) -> bool {
+        match (self.ty, &self.lookup) {
+            (_, CsvDataTableLookup::Row { cols: size } | CsvDataTableLookup::Col { rows: size }) => {
+                (1..=4).contains(size)
+            }
+            (DataTableValueType::Scalar, CsvDataTableLookup::Both { rows, cols }) => {
+                (1..=2).contains(rows) && (1..=2).contains(cols)
+            }
+            (DataTableValueType::Array, CsvDataTableLookup::Both { .. }) => false,
+        }
+    }
 }
 
 #[cfg(feature = "core")]
@@ -376,7 +466,8 @@ impl LoadedTableCollection {
     }
 }
 
-// `VisitReferences` is written out below: the derive would walk `table` as a plain `String`.
+// No `VisitReferences` impl on purpose: only the type holding a `TableDataRef` knows whether it
+// reads a single value or an array, so these implement `VisitReferences` themselves.
 #[skip_serializing_none]
 #[derive(
     serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitMetrics, PywrVisitPaths, PartialEq,
@@ -389,17 +480,6 @@ pub struct TableDataRef {
     pub row: Option<TableIndex>,
 }
 
-impl VisitReferences for TableDataRef {
-    fn visit_references<F: FnMut(Reference<'_>)>(&self, visitor: &mut F) {
-        visitor(Reference::Table(&self.table));
-    }
-
-    fn visit_references_mut<F: FnMut(ReferenceMut<'_>)>(&mut self, visitor: &mut F) {
-        visitor(ReferenceMut::Table(&mut self.table));
-    }
-}
-
-#[cfg(feature = "core")]
 impl TableDataRef {
     pub fn key(&self) -> Vec<&str> {
         let mut key: Vec<&str> = Vec::new();
@@ -498,6 +578,31 @@ my-reservoir,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2";
         let values: Vec<f64> = tbl.get_vec_f64(&["my-reservoir"]).unwrap().to_vec();
 
         assert_eq!(values, vec![0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2]);
+    }
+
+    /// [`CsvDataTable::is_lookup_supported`] should hold for exactly the lookups the loader takes.
+    /// It refuses any other before opening the file, so no file is needed.
+    #[test]
+    fn test_is_lookup_supported_follows_the_loader() {
+        let lookups = (0..=5)
+            .flat_map(|n| [CsvDataTableLookup::Row { cols: n }, CsvDataTableLookup::Col { rows: n }])
+            .chain((0..=3).flat_map(|rows| (0..=3).map(move |cols| CsvDataTableLookup::Both { rows, cols })));
+
+        for lookup in lookups {
+            for ty in [DataTableValueType::Scalar, DataTableValueType::Array] {
+                let table = CsvDataTable {
+                    meta: NamedMeta::default(),
+                    ty,
+                    lookup: lookup.clone(),
+                    url: PathBuf::from("missing.csv"),
+                    checksum: None,
+                };
+
+                let supported = !matches!(table.load_f64(None), Err(TableError::FormatNotSupported(_)));
+
+                assert_eq!(table.is_lookup_supported(), supported, "{ty} table with {lookup:?}");
+            }
+        }
     }
 
     /// Test all the documentation examples successfully deserialize.

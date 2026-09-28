@@ -30,6 +30,7 @@ mod thresholds;
 #[cfg(feature = "core")]
 pub use super::data_tables::LoadedTableCollection;
 pub use super::data_tables::TableDataRef;
+use crate::data_tables::DataTableValueType;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
 use crate::error::{ComponentConversionError, ConversionError};
@@ -67,7 +68,7 @@ pub use profiles::{
 pub use python::{PythonObject, PythonObjectType, PythonParameter, PythonReturnType};
 #[cfg(feature = "core")]
 use pywr_core::parameters::ParameterName;
-use pywr_schema_macros::PywrVisitAll;
+use pywr_schema_macros::{PywrVisitAll, PywrVisitMetrics, PywrVisitPaths};
 use pywr_v1_schema::parameters::{
     CoreParameter, DataFrameParameter as DataFrameParameterV1, Parameter as ParameterV1,
     ParameterValue as ParameterValueV1, TableIndex as TableIndexV1, TableIndexEntry as TableIndexEntryV1,
@@ -979,14 +980,17 @@ where
     fn visit_references<F: FnMut(Reference<'_>)>(&self, visitor: &mut F) {
         match self {
             Self::Literal { value } => value.visit_references(visitor),
-            Self::Table(v) => v.visit_references(visitor),
+            Self::Table(v) => visitor(Reference::Table {
+                table_ref: v,
+                expected: DataTableValueType::Scalar,
+            }),
         }
     }
 
     fn visit_references_mut<F: FnMut(ReferenceMut<'_>)>(&mut self, visitor: &mut F) {
         match self {
             Self::Literal { value } => value.visit_references_mut(visitor),
-            Self::Table(v) => v.visit_references_mut(visitor),
+            Self::Table(v) => visitor(ReferenceMut::Table(&mut v.table)),
         }
     }
 }
@@ -1064,7 +1068,16 @@ impl TryFrom<ParameterValueV1> for ConstantValue<f64> {
 ///
 /// This value can be a literal vector of floats or an external reference to an input table.
 #[derive(
-    serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll, Display, EnumDiscriminants, PartialEq,
+    serde::Deserialize,
+    serde::Serialize,
+    Debug,
+    Clone,
+    JsonSchema,
+    PywrVisitMetrics,
+    PywrVisitPaths,
+    Display,
+    EnumDiscriminants,
+    PartialEq,
 )]
 #[serde(tag = "type", deny_unknown_fields)]
 #[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
@@ -1072,6 +1085,24 @@ impl TryFrom<ParameterValueV1> for ConstantValue<f64> {
 pub enum ConstantFloatVec {
     Literal { values: Vec<f64> },
     Table(TableDataRef),
+}
+
+// Written out by hand: the derive cannot say that a table here must hold arrays.
+impl VisitReferences for ConstantFloatVec {
+    fn visit_references<F: FnMut(Reference<'_>)>(&self, visitor: &mut F) {
+        if let Self::Table(table_ref) = self {
+            visitor(Reference::Table {
+                table_ref,
+                expected: DataTableValueType::Array,
+            });
+        }
+    }
+
+    fn visit_references_mut<F: FnMut(ReferenceMut<'_>)>(&mut self, visitor: &mut F) {
+        if let Self::Table(table_ref) = self {
+            visitor(ReferenceMut::Table(&mut table_ref.table));
+        }
+    }
 }
 
 #[cfg(feature = "core")]

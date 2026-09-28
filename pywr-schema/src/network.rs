@@ -974,6 +974,44 @@ impl NetworkSchema {
         problems
     }
 
+    /// The problems with the tables pywr cannot load, then with the table references, each
+    /// checked by [`DataTable::validate_reference`]. A reference naming no table is skipped.
+    fn table_problems(&self) -> Vec<NetworkProblem> {
+        let mut problems: Vec<NetworkProblem> = self
+            .tables
+            .iter()
+            .flatten()
+            .filter_map(|table| match table {
+                DataTable::CSV(csv) if !csv.is_lookup_supported() => Some(NetworkProblem::UnsupportedTableLookup {
+                    table: csv.meta.name.clone(),
+                    value_type: csv.ty,
+                    lookup: csv.lookup.clone(),
+                }),
+                _ => None,
+            })
+            .collect();
+
+        self.visit_owned_references(&mut |owner, reference| {
+            let Reference::Table { table_ref, expected } = reference else {
+                return;
+            };
+
+            let problem = self
+                .get_table_by_name(&table_ref.table)
+                .and_then(|table| table.validate_reference(table_ref, expected).err());
+
+            if let Some(problem) = problem {
+                problems.push(NetworkProblem::InvalidTableReference {
+                    owner: owner.to_string(),
+                    table: table_ref.table.clone(),
+                    problem,
+                });
+            }
+        });
+
+        problems
+    }
+
     /// Validate the network schema and report every problem.
     ///
     /// The following are checked:
@@ -982,6 +1020,7 @@ impl NetworkSchema {
     /// - Each edge could be made; see [`NetworkSchema::validate_edge`] for the rules.
     /// - Each virtual node's members name parts their nodes build.
     /// - Each parameter reference suits the parameter it names.
+    /// - Each table has a lookup pywr can load, and each table reference fits its table.
     ///
     /// Whether the whole model can be built is not; use [`NetworkSchema::add_to_network`] for
     /// that. See [`NetworkProblem`] for the problems that are detected.
@@ -1064,6 +1103,7 @@ impl NetworkSchema {
                     .flat_map(|virtual_node| self.member_problems(virtual_node)),
             )
             .chain(self.parameter_reference_problems())
+            .chain(self.table_problems())
             .collect();
 
         if problems.is_empty() {
@@ -1964,6 +2004,69 @@ mod tests {
                 "The parameter `indexed` names the key `a` of the parameter `flow`, but it gives a single value and takes no key.",
                 "The parameter `indexed` uses the parameter `flow` as an index, but it gives a float value.",
                 "The parameter `agg-index` uses the local parameter `local-flow` of `supply` as an index, but it gives a float value.",
+            ]
+        );
+    }
+
+    /// A network with every table problem, including a wrong-type reference from each type that
+    /// can hold one, among references that pass or are skipped.
+    const NETWORK_WITH_TABLE_PROBLEMS: &str = r#"
+    {
+        "nodes": [
+            {
+                "meta": { "name": "supply" },
+                "type": "Input",
+                "max_flow": { "type": "Table", "table": "arrays", "row": "a" },
+                "cost": { "type": "Table", "table": "grid", "row": "a" }
+            }
+        ],
+        "edges": [],
+        "tables": [
+            { "meta": { "name": "scalars" }, "type": "Scalar", "format": "CSV", "lookup": { "type": "Row", "cols": 1 }, "url": "scalars.csv" },
+            { "meta": { "name": "arrays" }, "type": "Array", "format": "CSV", "lookup": { "type": "Col", "rows": 1 }, "url": "arrays.csv" },
+            { "meta": { "name": "grid" }, "type": "Scalar", "format": "CSV", "lookup": { "type": "Both", "rows": 1, "cols": 1 }, "url": "grid.csv" },
+            { "meta": { "name": "array-grid" }, "type": "Array", "format": "CSV", "lookup": { "type": "Both", "rows": 1, "cols": 1 }, "url": "array-grid.csv" },
+            { "meta": { "name": "deep" }, "type": "Scalar", "format": "CSV", "lookup": { "type": "Row", "cols": 5 }, "url": "deep.csv" },
+            { "meta": { "name": "placeholder" }, "format": "Placeholder" }
+        ],
+        "parameters": [
+            { "meta": { "name": "constant" }, "type": "Constant", "value": { "type": "Table", "table": "arrays", "row": "a" } },
+            { "meta": { "name": "profile" }, "type": "MonthlyProfile", "values": { "type": "Table", "table": "scalars", "row": "a" } },
+            {
+                "meta": { "name": "indexed" },
+                "type": "IndexedArray",
+                "phase": "Before",
+                "metrics": [
+                    { "type": "Table", "table": "grid", "row": ["a", "x"] },
+                    { "type": "Table", "table": "grid", "row": "a", "column": "" },
+                    { "type": "Table", "table": "deep", "row": "a" },
+                    { "type": "Table", "table": "placeholder" },
+                    { "type": "Table", "table": "missing" }
+                ],
+                "index_metric": { "type": "Table", "table": "array-grid" }
+            }
+        ]
+    }
+    "#;
+
+    /// Every table pywr cannot load is reported, then every table reference that does not fit.
+    #[test]
+    fn test_validate_reports_all_table_problems() {
+        let network = parse_network(NETWORK_WITH_TABLE_PROBLEMS);
+
+        let messages: Vec<String> = expect_problems(&network).iter().map(ToString::to_string).collect();
+
+        assert_eq!(
+            messages,
+            vec![
+                "The table `array-grid` cannot be loaded. A table of `Array` values must have a `Row` or `Col` lookup, not `Both`.",
+                "The table `deep` cannot be loaded. A `Row` lookup's `cols`, the number of index columns, must be 1 to 4, not 5.",
+                "The node `supply` has an invalid reference to the table `arrays`. The table holds `Array` values, but `Scalar` values are read from it.",
+                "The node `supply` has an invalid reference to the table `grid`. The table's key takes 2 label(s), but the reference gives 1.",
+                "The parameter `constant` has an invalid reference to the table `arrays`. The table holds `Array` values, but `Scalar` values are read from it.",
+                "The parameter `profile` has an invalid reference to the table `scalars`. The table holds `Scalar` values, but `Array` values are read from it.",
+                "The parameter `indexed` has an invalid reference to the table `grid`. The reference contains an empty label at index 1 of its key.",
+                "The parameter `indexed` has an invalid reference to the table `array-grid`. The table holds `Array` values, but `Scalar` values are read from it.",
             ]
         );
     }
