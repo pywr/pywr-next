@@ -220,11 +220,19 @@ pub enum MetricSetBuilderError {
     },
 }
 
+/// What [`MetricSetBuilder::build`] does with a metric whose parameter does not calculate the
+/// phase it asks for.
+#[derive(Debug)]
+enum IfNotCalculated {
+    Fail,
+    Drop,
+}
+
 #[derive(Debug)]
 pub struct MetricSetBuilder {
     name: String,
     aggregator: Option<Aggregator>,
-    metrics: Vec<UnresolvedOutputMetric>,
+    metrics: Vec<(UnresolvedOutputMetric, IfNotCalculated)>,
 }
 
 impl MetricSetBuilder {
@@ -245,20 +253,29 @@ impl MetricSetBuilder {
     }
 
     pub fn metric(&mut self, metric: UnresolvedOutputMetric) -> &mut Self {
-        self.metrics.push(metric);
+        self.metrics.push((metric, IfNotCalculated::Fail));
+        self
+    }
+
+    /// Add a metric that is dropped, rather than failing the build, if its parameter does not
+    /// calculate the phase it asks for.
+    pub fn metric_if_calculated(&mut self, metric: UnresolvedOutputMetric) -> &mut Self {
+        self.metrics.push((metric, IfNotCalculated::Drop));
         self
     }
 
     pub fn build(self, resolution_maps: &ResolutionMaps) -> Result<MetricSet, MetricSetBuilderError> {
-        let metrics = self
-            .metrics
-            .into_iter()
-            .map(|m| {
-                let name = m.name.clone();
-                m.resolve(resolution_maps)
-                    .map_err(|source| MetricSetBuilderError::ResolveMetricF64Error { name, source })
-            })
-            .collect::<Result<Vec<_>, _>>()?;
+        use MetricF64ResolutionError::ParameterNotRegisteredInCorrectPhase;
+
+        let mut metrics = Vec::with_capacity(self.metrics.len());
+        for (metric, if_not_calculated) in self.metrics {
+            let name = metric.name.clone();
+            match (metric.resolve(resolution_maps), if_not_calculated) {
+                (Ok(metric), _) => metrics.push(metric),
+                (Err(ParameterNotRegisteredInCorrectPhase { .. }), IfNotCalculated::Drop) => {}
+                (Err(source), _) => return Err(MetricSetBuilderError::ResolveMetricF64Error { name, source }),
+            }
+        }
 
         let ms = MetricSet {
             name: self.name,
@@ -267,5 +284,41 @@ impl MetricSetBuilder {
         };
 
         Ok(ms)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{MetricSetBuilder, UnresolvedOutputMetric};
+    use crate::metric::UnresolvedMetricF64;
+    use crate::network::NetworkBuilder;
+    use crate::parameters::ConstantParameterBuilder;
+    use crate::test_utils::default_domain;
+    use std::collections::HashMap;
+
+    /// Asking for a constant parameter's after value, which it does not calculate, drops a metric
+    /// added by `metric_if_calculated` and fails the build for one added by `metric`.
+    #[test]
+    fn test_metric_if_calculated() {
+        let output_metric = |metric| UnresolvedOutputMetric::new("p", "value", "Parameter", None, metric);
+        let build = |metric_set| {
+            let mut builder = NetworkBuilder::default();
+            builder
+                .parameters()
+                .f64(Box::new(ConstantParameterBuilder::new("p".into(), 1.0)));
+            builder.metric_set(metric_set);
+            builder.build(&default_domain(), &HashMap::new())
+        };
+
+        let mut metric_set = MetricSetBuilder::new("metric-if-calculated");
+        metric_set
+            .metric(output_metric(UnresolvedMetricF64::new_parameter_before("p")))
+            .metric_if_calculated(output_metric(UnresolvedMetricF64::new_parameter_after("p")));
+        let (network, _) = build(metric_set).unwrap();
+        assert_eq!(network.metric_sets()[0].iter_metrics().count(), 1);
+
+        let mut metric_set = MetricSetBuilder::new("metric");
+        metric_set.metric(output_metric(UnresolvedMetricF64::new_parameter_after("p")));
+        assert!(build(metric_set).is_err());
     }
 }
