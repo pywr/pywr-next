@@ -40,6 +40,7 @@ use crate::metric::{Metric, MetricValueType};
 use crate::network::LoadArgs;
 use crate::time_series::ConvertedTimeSeriesReference;
 use crate::v1::{ConversionData, TryFromV1, TryIntoV2};
+use crate::validation::ParameterProblem;
 use crate::visit::{Reference, ReferenceMut, VisitMetrics, VisitPaths, VisitReferences};
 pub use aggregated::{AggregatedIndexParameter, AggregatedParameter};
 pub use asymmetric_switch::AsymmetricSwitchIndexParameter;
@@ -357,6 +358,50 @@ impl Parameter {
         };
 
         Some(value_type)
+    }
+
+    /// Check the parameter's own fields, such as a control curve's count of values, and return
+    /// every problem found. A value in a table is not loaded, so it is not checked.
+    pub fn validate(&self) -> Result<(), Vec<ParameterProblem>> {
+        match self {
+            Self::ControlCurvePiecewiseInterpolated(p) => p.validate(),
+            Self::ControlCurveInterpolated(p) => p.validate(),
+            Self::ControlCurve(p) => p.validate(),
+            Self::DailyProfile(p) => p.validate(),
+            Self::IndexedArray(p) => p.validate(),
+            Self::MonthlyProfile(p) => p.validate(),
+            Self::WeeklyProfile(p) => p.validate(),
+            Self::UniformDrawdownProfile(p) => p.validate(),
+            Self::Division(p) => p.validate(),
+            Self::Interpolated(p) => p.validate(),
+            Self::HydropowerTarget(p) => p.validate(),
+            Self::RbfProfile(p) => p.validate(),
+            Self::DiurnalProfile(p) => p.validate(),
+            Self::Aggregated(_)
+            | Self::AggregatedIndex(_)
+            | Self::AsymmetricSwitchIndex(_)
+            | Self::Constant(_)
+            | Self::ConstantScenario(_)
+            | Self::ControlCurveIndex(_)
+            | Self::Max(_)
+            | Self::Min(_)
+            | Self::MultiThreshold(_)
+            | Self::Negative(_)
+            | Self::Polynomial1D(_)
+            | Self::Threshold(_)
+            | Self::TablesArray(_)
+            | Self::Python(_)
+            | Self::Delay(_)
+            | Self::DelayIndex(_)
+            | Self::Difference(_)
+            | Self::Offset(_)
+            | Self::DiscountFactor(_)
+            | Self::NegativeMax(_)
+            | Self::NegativeMin(_)
+            | Self::Rolling(_)
+            | Self::RollingIndex(_)
+            | Self::Placeholder(_) => Ok(()),
+        }
     }
 }
 
@@ -1261,6 +1306,136 @@ mod tests {
         assert_eq!(value_type(&python), Some(Index));
         python["return_type"] = json!("Dict");
         assert_eq!(value_type(&python), Some(Multi));
+    }
+
+    /// [`Parameter::validate`] should refuse a parameter breaking each rule, and pass one where a
+    /// rule could be too strict.
+    #[test]
+    fn test_validate_checks_each_rule() {
+        use crate::validation::ParameterProblem::*;
+        use crate::validation::PointsProblem::{LengthMismatch, NotIncreasing, TooFewPoints};
+
+        let x = |value: f64| json!({ "type": "Literal", "value": value });
+        let n = |value: u64| json!({ "type": "Literal", "value": value });
+        let values = |count: usize| json!({ "type": "Literal", "values": vec![0.0; count] });
+        let table = json!({ "type": "Table", "table": "t" });
+        let not_literal = json!({ "type": "Parameter", "name": "p" });
+        let control_curve = |kind: &str, values: serde_json::Value| json!({ "type": kind, "phase": "Before", "control_curves": [x(0.5)], "storage_metric": x(0.5), "values": values });
+        let interpolated = |xp: serde_json::Value, fp: usize| json!({ "type": "Interpolated", "phase": "Before", "x": x(0.5), "xp": xp, "fp": vec![x(0.0); fp] });
+
+        let cases = [
+            (
+                control_curve("ControlCurve", json!([x(1.0)])),
+                vec![ControlCurveValues { required: 2, found: 1 }],
+            ),
+            (
+                control_curve("ControlCurveInterpolated", json!([x(1.0), x(0.0)])),
+                vec![ControlCurveValues { required: 3, found: 2 }],
+            ),
+            (
+                control_curve("ControlCurvePiecewiseInterpolated", json!(null)),
+                vec![ControlCurveValues { required: 2, found: 0 }],
+            ),
+            (
+                interpolated(json!([x(0.0), x(1.0)]), 1),
+                vec![Interpolation(LengthMismatch { x: 2, y: 1 })],
+            ),
+            (interpolated(json!([x(0.0)]), 1), vec![Interpolation(TooFewPoints(1))]),
+            (
+                interpolated(json!([x(0.0), x(1.0), x(1.0)]), 3),
+                vec![Interpolation(NotIncreasing { index: 2 })],
+            ),
+            // Only neighbouring literals are compared.
+            (interpolated(json!([x(1.0), not_literal, x(0.5)]), 3), vec![]),
+            // 2016 is a leap year.
+            (
+                json!({ "type": "UniformDrawdownProfile", "reset_day": n(29), "reset_month": n(2) }),
+                vec![],
+            ),
+            (
+                json!({ "type": "UniformDrawdownProfile", "reset_day": n(30), "reset_month": n(2) }),
+                vec![NotADate { day: 30, month: 2 }],
+            ),
+            (
+                json!({ "type": "UniformDrawdownProfile", "reset_month": n(13) }),
+                vec![NotADate { day: 1, month: 13 }],
+            ),
+            // Core casts these with `as i8` and `as u8`, which would wrap them round.
+            (
+                json!({ "type": "UniformDrawdownProfile", "reset_day": n(257), "reset_month": n(1), "residual_days": n(256) }),
+                vec![NotADate { day: 257, month: 1 }, ResidualDaysTooLarge(256)],
+            ),
+            (
+                json!({ "type": "UniformDrawdownProfile", "reset_day": table, "reset_month": n(13) }),
+                vec![],
+            ),
+            (
+                json!({ "type": "DailyProfile", "values": values(364) }),
+                vec![ProfileValues {
+                    allowed: &[365, 366],
+                    found: 364,
+                }],
+            ),
+            (
+                json!({ "type": "MonthlyProfile", "values": values(11) }),
+                vec![ProfileValues {
+                    allowed: &[12],
+                    found: 11,
+                }],
+            ),
+            (
+                json!({ "type": "WeeklyProfile", "values": values(54) }),
+                vec![ProfileValues {
+                    allowed: &[52, 53],
+                    found: 54,
+                }],
+            ),
+            (
+                json!({ "type": "DiurnalProfile", "values": values(23) }),
+                vec![ProfileValues {
+                    allowed: &[24],
+                    found: 23,
+                }],
+            ),
+            (json!({ "type": "DailyProfile", "values": table }), vec![]),
+            (
+                json!({ "type": "RbfProfile", "points": [], "function": { "type": "Gaussian" } }),
+                vec![NoPointsForEpsilon],
+            ),
+            (
+                json!({ "type": "RbfProfile", "points": [], "function": { "type": "Gaussian", "epsilon": 1.0 } }),
+                vec![],
+            ),
+            (
+                json!({ "type": "Division", "phase": "Before", "numerator": x(1.0), "denominator": x(0.0) }),
+                vec![ZeroDenominator],
+            ),
+            (
+                json!({ "type": "IndexedArray", "phase": "Before", "metrics": [], "index_metric": not_literal }),
+                vec![NoMetrics],
+            ),
+            (
+                json!({ "type": "IndexedArray", "phase": "Before", "metrics": [x(0.0), x(0.0)], "index_metric": { "type": "Constant", "value": 2 } }),
+                vec![IndexOutOfRange { index: 2, count: 2 }],
+            ),
+            (json!({ "type": "HydropowerTarget" }), vec![NoTargetOrActualFlow]),
+            (
+                json!({ "type": "HydropowerTarget", "actual_flow": x(1.0), "min_flow": x(0.0), "max_flow": x(2.0) }),
+                vec![FlowBoundWithoutTarget("min_flow"), FlowBoundWithoutTarget("max_flow")],
+            ),
+            (
+                json!({ "type": "HydropowerTarget", "target": x(1.0), "min_flow": x(0.0), "max_flow": x(2.0) }),
+                vec![],
+            ),
+        ];
+
+        for (mut data, problems) in cases {
+            data["meta"] = json!({ "name": "a-parameter" });
+            let parameter: Parameter = serde_json::from_value(data.clone()).unwrap();
+
+            let expected = if problems.is_empty() { Ok(()) } else { Err(problems) };
+            assert_eq!(parameter.validate(), expected, "{data}");
+        }
     }
 
     /// Test all the documentation examples successfully deserialize.

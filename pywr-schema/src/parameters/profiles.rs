@@ -6,6 +6,8 @@ use crate::meta::NamedMeta;
 use crate::network::LoadArgs;
 use crate::parameters::{ConstantFloatVec, ConstantValue, ConversionData};
 use crate::v1::{TryFromV1, TryIntoV2, try_convert_values};
+use crate::validation::ParameterProblem;
+use jiff::civil::Date;
 #[cfg(feature = "core")]
 use pywr_core::parameters::{ParameterName, WeeklyProfileError, WeeklyProfileValues};
 use pywr_schema_macros::{PywrVisitAll, skip_serializing_none};
@@ -18,6 +20,20 @@ use pywr_v1_schema::parameters::{
 use schemars::JsonSchema;
 use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumString, IntoStaticStr};
 
+/// Check that a profile's literal `values` number one of `allowed`. Values in a table are not
+/// checked.
+fn check_profile_length(values: &ConstantFloatVec, allowed: &'static [usize]) -> Result<(), Vec<ParameterProblem>> {
+    match values {
+        ConstantFloatVec::Literal { values } if !allowed.contains(&values.len()) => {
+            Err(vec![ParameterProblem::ProfileValues {
+                allowed,
+                found: values.len(),
+            }])
+        }
+        _ => Ok(()),
+    }
+}
+
 /// A parameter that defines a daily profile over a year.
 ///
 /// The values array should contain 366 values, one for each day of the year. If the array contains
@@ -28,6 +44,12 @@ use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumString, IntoStaticS
 pub struct DailyProfileParameter {
     pub meta: NamedMeta,
     pub values: ConstantFloatVec,
+}
+
+impl DailyProfileParameter {
+    pub fn validate(&self) -> Result<(), Vec<ParameterProblem>> {
+        check_profile_length(&self.values, &[365, 366])
+    }
 }
 
 #[cfg(feature = "core")]
@@ -108,6 +130,12 @@ pub struct MonthlyProfileParameter {
     pub interp_day: Option<MonthlyInterpDay>,
 }
 
+impl MonthlyProfileParameter {
+    pub fn validate(&self) -> Result<(), Vec<ParameterProblem>> {
+        check_profile_length(&self.values, &[12])
+    }
+}
+
 #[cfg(feature = "core")]
 impl MonthlyProfileParameter {
     pub fn add_to_network(
@@ -183,6 +211,41 @@ impl UniformDrawdownProfileParameter {
     pub const DEFAULT_RESET_DAY: u64 = 1;
     pub const DEFAULT_RESET_MONTH: u64 = 1;
     pub const DEFAULT_RESIDUAL_DAYS: u64 = 0;
+
+    /// Check that `reset_day` and `reset_month`, or their defaults, make a date, and that
+    /// `residual_days` fits the `u8` core takes. A value in a table is not checked.
+    pub fn validate(&self) -> Result<(), Vec<ParameterProblem>> {
+        let literal_or_default = |value: &Option<ConstantValue<u64>>, default| match value {
+            None => Some(default),
+            Some(ConstantValue::Literal { value }) => Some(*value),
+            Some(ConstantValue::Table(_)) => None,
+        };
+
+        let mut problems = Vec::new();
+
+        if let (Some(day), Some(month)) = (
+            literal_or_default(&self.reset_day, Self::DEFAULT_RESET_DAY),
+            literal_or_default(&self.reset_month, Self::DEFAULT_RESET_MONTH),
+        ) {
+            // Core finds the day in 2016, a leap year, so 29 February is a date.
+            let is_date = match (i8::try_from(day), i8::try_from(month)) {
+                (Ok(day), Ok(month)) => Date::new(2016, month, day).is_ok(),
+                _ => false,
+            };
+
+            if !is_date {
+                problems.push(ParameterProblem::NotADate { day, month });
+            }
+        }
+
+        if let Some(ConstantValue::Literal { value }) = self.residual_days {
+            if u8::try_from(value).is_err() {
+                problems.push(ParameterProblem::ResidualDaysTooLarge(value));
+            }
+        }
+
+        if problems.is_empty() { Ok(()) } else { Err(problems) }
+    }
 }
 
 #[cfg(feature = "core")]
@@ -391,6 +454,25 @@ pub struct RbfProfileParameter {
     pub variable: Option<RbfProfileVariableSettings>,
 }
 
+impl RbfProfileParameter {
+    /// Check that there are `points` to estimate `epsilon` from, when a function needs one and
+    /// none is given.
+    pub fn validate(&self) -> Result<(), Vec<ParameterProblem>> {
+        let estimates_epsilon = matches!(
+            self.function,
+            RadialBasisFunction::Gaussian { epsilon: None }
+                | RadialBasisFunction::MultiQuadric { epsilon: None }
+                | RadialBasisFunction::InverseMultiQuadric { epsilon: None }
+        );
+
+        if estimates_epsilon && self.points.is_empty() {
+            Err(vec![ParameterProblem::NoPointsForEpsilon])
+        } else {
+            Ok(())
+        }
+    }
+}
+
 #[cfg(feature = "core")]
 impl RbfProfileParameter {
     pub fn add_to_network(
@@ -594,6 +676,12 @@ pub struct WeeklyProfileParameter {
     pub interp_day: Option<WeeklyInterpDay>,
 }
 
+impl WeeklyProfileParameter {
+    pub fn validate(&self) -> Result<(), Vec<ParameterProblem>> {
+        check_profile_length(&self.values, &[52, 53])
+    }
+}
+
 #[cfg(feature = "core")]
 impl WeeklyProfileParameter {
     pub fn add_to_network(
@@ -660,6 +748,12 @@ impl TryFromV1<WeeklyProfileParameterV1> for WeeklyProfileParameter {
 pub struct DirunalProfileParameter {
     pub meta: NamedMeta,
     pub values: ConstantFloatVec,
+}
+
+impl DirunalProfileParameter {
+    pub fn validate(&self) -> Result<(), Vec<ParameterProblem>> {
+        check_profile_length(&self.values, &[24])
+    }
 }
 
 #[cfg(feature = "core")]

@@ -8,6 +8,7 @@ use crate::metric::{Metric, NodeAttrReference};
 use crate::network::LoadArgs;
 use crate::parameters::{ConversionData, ParameterPhase};
 use crate::v1::{TryFromV1, TryIntoV2, try_convert_parameter_attr};
+use crate::validation::{ParameterProblem, check_interpolation_points};
 #[cfg(feature = "core")]
 use pywr_core::parameters::ParameterName;
 use pywr_schema_macros::{PywrVisitAll, skip_serializing_none};
@@ -36,6 +37,21 @@ pub struct InterpolatedParameter {
 
 impl InterpolatedParameter {
     pub const DEFAULT_ERROR_ON_BOUNDS: bool = true;
+
+    /// Check that `xp` and `fp` can be interpolated between.
+    pub fn validate(&self) -> Result<(), Vec<ParameterProblem>> {
+        let xp: Vec<Option<f64>> = self
+            .xp
+            .iter()
+            .map(|x| match x {
+                Metric::Literal { value } => Some(*value),
+                _ => None,
+            })
+            .collect();
+
+        check_interpolation_points(&xp, self.fp.len())
+            .map_err(|problems| problems.into_iter().map(ParameterProblem::Interpolation).collect())
+    }
 }
 
 #[cfg(feature = "core")]

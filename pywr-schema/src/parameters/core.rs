@@ -7,6 +7,7 @@ use crate::metric::Metric;
 use crate::network::LoadArgs;
 use crate::parameters::{ConstantFloatVec, ConstantValue, ConversionData, ParameterPhase};
 use crate::v1::{TryFromV1, TryIntoV2, try_convert_parameter_attr, try_convert_values};
+use crate::validation::ParameterProblem;
 use crate::visit::{Reference, ReferenceMut, VisitReferences};
 #[cfg(feature = "core")]
 use pywr_core::parameters::ParameterName;
@@ -370,6 +371,15 @@ pub struct DivisionParameter {
     pub phase: ParameterPhase,
     pub numerator: Metric,
     pub denominator: Metric,
+}
+
+impl DivisionParameter {
+    pub fn validate(&self) -> Result<(), Vec<ParameterProblem>> {
+        match self.denominator {
+            Metric::Literal { value: 0.0 } => Err(vec![ParameterProblem::ZeroDenominator]),
+            _ => Ok(()),
+        }
+    }
 }
 
 #[cfg(feature = "core")]

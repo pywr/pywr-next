@@ -115,6 +115,74 @@ pub enum TableReferenceProblem {
     EmptyLabel { index: usize },
 }
 
+/// Why a list of points cannot be interpolated between.
+#[derive(Error, Debug, Clone, PartialEq, Eq)]
+pub enum PointsProblem {
+    #[error("There are {x} x value(s) but {y} y value(s), and each point needs one of each.")]
+    LengthMismatch { x: usize, y: usize },
+    #[error("There are {0} point(s), but interpolating needs at least two.")]
+    TooFewPoints(usize),
+    /// The first x value that is not greater than the one before it.
+    #[error("The x values must strictly increase, but the one at index {index} does not.")]
+    NotIncreasing { index: usize },
+}
+
+/// Check interpolation points from their x values, `None` where one is not a literal, and their
+/// number of y values. Only adjacent literal x values are compared, as core compares them.
+pub(crate) fn check_interpolation_points(x: &[Option<f64>], y_count: usize) -> Result<(), Vec<PointsProblem>> {
+    let mut problems = Vec::new();
+
+    if x.len() != y_count {
+        problems.push(PointsProblem::LengthMismatch { x: x.len(), y: y_count });
+    } else if y_count < 2 {
+        problems.push(PointsProblem::TooFewPoints(y_count));
+    }
+
+    if let Some(index) = x
+        .windows(2)
+        .position(|pair| matches!(pair, [Some(a), Some(b)] if b <= a))
+    {
+        problems.push(PointsProblem::NotIncreasing { index: index + 1 });
+    }
+
+    if problems.is_empty() { Ok(()) } else { Err(problems) }
+}
+
+/// A problem with a parameter's own fields, found by
+/// [`Parameter::validate`](crate::parameters::Parameter::validate).
+#[derive(Error, Debug, Clone, PartialEq, Eq)]
+pub enum ParameterProblem {
+    #[error("`values` has {found} entry(s), but the control curves require {required}.")]
+    ControlCurveValues { required: usize, found: usize },
+    #[error("The points in `xp` and `fp` cannot be interpolated between. {0}")]
+    Interpolation(PointsProblem),
+    /// The day and month given, or their defaults.
+    #[error("`reset_day` {day} and `reset_month` {month} do not make a date.")]
+    NotADate { day: u64, month: u64 },
+    #[error("`residual_days` is {0}, but it can be at most 255.")]
+    ResidualDaysTooLarge(u64),
+    #[error("`values` has {found} entry(s), but the profile takes {}.", counts_message(.allowed))]
+    ProfileValues { allowed: &'static [usize], found: usize },
+    #[error("`points` is empty, so `epsilon` cannot be estimated from them.")]
+    NoPointsForEpsilon,
+    #[error("`denominator` is 0.")]
+    ZeroDenominator,
+    #[error("`metrics` is empty, so there is nothing to index.")]
+    NoMetrics,
+    #[error("`index_metric` is {index}, but `metrics` has only {count} entry(s).")]
+    IndexOutOfRange { index: u64, count: usize },
+    #[error("Neither `target` nor `actual_flow` is set, so it is never calculated.")]
+    NoTargetOrActualFlow,
+    /// `min_flow` or `max_flow`, which bound only a `target`.
+    #[error("`{0}` is set, but it applies only with a `target`.")]
+    FlowBoundWithoutTarget(&'static str),
+}
+
+/// Counts for a message, such as "12" or "365 or 366".
+fn counts_message(counts: &[usize]) -> String {
+    counts.iter().map(ToString::to_string).collect::<Vec<_>>().join(" or ")
+}
+
 /// A problem with a model that is not about any one of its networks, found by
 /// [`crate::model::TimeDomain::validate`].
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
@@ -374,7 +442,7 @@ pub enum NetworkProblem {
     },
     /// An index metric naming a parameter that gives a float value.
     #[error(
-        "The {owner} uses {} as an index, but it gives a float value.", named_parameter(.parameter, .node.as_deref())
+        "The {owner} uses the {} as an index, but it gives a float value.", named_parameter(.parameter, .node.as_deref())
     )]
     ParameterNotAnIndex {
         owner: String,
@@ -383,7 +451,7 @@ pub enum NetworkProblem {
     },
     /// A reference without a key naming a multi-valued parameter.
     #[error(
-        "The {owner} refers to {} without a key, but it gives several values, one per key.", named_parameter(.parameter, .node.as_deref())
+        "The {owner} refers to the {} without a key, but it gives several values, one per key.", named_parameter(.parameter, .node.as_deref())
     )]
     ParameterKeyMissing {
         owner: String,
@@ -392,7 +460,7 @@ pub enum NetworkProblem {
     },
     /// A reference with a key naming a parameter that gives a single value.
     #[error(
-        "The {owner} names the key `{key}` of {}, but it gives a single value and takes no key.", named_parameter(.parameter, .node.as_deref())
+        "The {owner} names the key `{key}` of the {}, but it gives a single value and takes no key.", named_parameter(.parameter, .node.as_deref())
     )]
     ParameterKeyNotAllowed {
         owner: String,
@@ -414,6 +482,15 @@ pub enum NetworkProblem {
         table: String,
         problem: TableReferenceProblem,
     },
+    /// A parameter whose own fields are invalid, found by
+    /// [`Parameter::validate`](crate::parameters::Parameter::validate).
+    #[error("The {} is invalid. {problem}", named_parameter(.parameter, .node.as_deref()))]
+    InvalidParameter {
+        parameter: String,
+        /// The node or virtual node holding it, for a local parameter.
+        node: Option<String>,
+        problem: ParameterProblem,
+    },
 }
 
 /// Why pywr cannot load a table of `value_type` with `lookup`, for the end of a message.
@@ -434,11 +511,11 @@ fn unsupported_lookup_message(value_type: &DataTableValueType, lookup: &CsvDataT
     }
 }
 
-/// The parameter a reference names, as a message puts it.
+/// How a message names a parameter, after "the".
 fn named_parameter(parameter: &str, node: Option<&str>) -> String {
     match node {
-        Some(node) => format!("the local parameter `{parameter}` of `{node}`"),
-        None => format!("the parameter `{parameter}`"),
+        Some(node) => format!("local parameter `{parameter}` of `{node}`"),
+        None => format!("parameter `{parameter}`"),
     }
 }
 
@@ -459,8 +536,9 @@ pub struct NetworkValidationError {
     pub name: Option<String>,
     /// Never empty. Duplicate names first, list by list in the order nodes, parameters, tables,
     /// time series, metric sets, each sorted by name; then invalid edges, invalid members of
-    /// virtual nodes, parameter references of the wrong kind, tables pywr cannot load and table
-    /// references that do not fit, each in the order listed.
+    /// virtual nodes, parameter references of the wrong kind, tables pywr cannot load, table
+    /// references that do not fit, and parameters whose own fields are invalid, the network's
+    /// before the local ones, each in the order listed.
     pub problems: Vec<NetworkProblem>,
 }
 

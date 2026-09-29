@@ -7,6 +7,7 @@ use crate::network::LoadArgs;
 use crate::nodes::NodeAttribute;
 use crate::parameters::{ConversionData, ParameterPhase};
 use crate::v1::{TryFromV1, TryIntoV2, try_convert_control_curves, try_convert_parameter_attr};
+use crate::validation::ParameterProblem;
 
 use crate::meta::NamedMeta;
 #[cfg(feature = "core")]
@@ -20,6 +21,15 @@ use pywr_v1_schema::parameters::{
 };
 use schemars::JsonSchema;
 
+/// Check that a control curve parameter has the number of values its control curves require.
+fn check_value_count(required: usize, found: usize) -> Result<(), Vec<ParameterProblem>> {
+    if found == required {
+        Ok(())
+    } else {
+        Err(vec![ParameterProblem::ControlCurveValues { required, found }])
+    }
+}
+
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct ControlCurveInterpolatedParameter {
@@ -28,6 +38,13 @@ pub struct ControlCurveInterpolatedParameter {
     pub control_curves: Vec<Metric>,
     pub storage_metric: Metric,
     pub values: Vec<Metric>,
+}
+
+impl ControlCurveInterpolatedParameter {
+    /// Check that `values` has one entry per zone edge: two more than the control curves.
+    pub fn validate(&self) -> Result<(), Vec<ParameterProblem>> {
+        check_value_count(self.control_curves.len() + 2, self.values.len())
+    }
 }
 
 #[cfg(feature = "core")]
@@ -282,6 +299,13 @@ pub struct ControlCurveParameter {
     pub values: Vec<Metric>,
 }
 
+impl ControlCurveParameter {
+    /// Check that `values` has one entry per zone: one more than the control curves.
+    pub fn validate(&self) -> Result<(), Vec<ParameterProblem>> {
+        check_value_count(self.control_curves.len() + 1, self.values.len())
+    }
+}
+
 #[cfg(feature = "core")]
 impl ControlCurveParameter {
     pub fn add_to_network(
@@ -389,6 +413,12 @@ pub struct ControlCurvePiecewiseInterpolatedParameter {
 impl ControlCurvePiecewiseInterpolatedParameter {
     pub const DEFAULT_MINIMUM: f64 = 0.0;
     pub const DEFAULT_MAXIMUM: f64 = 1.0;
+
+    /// Check that `values` has one pair per zone: one more than the control curves. Unset, it
+    /// has none.
+    pub fn validate(&self) -> Result<(), Vec<ParameterProblem>> {
+        check_value_count(self.control_curves.len() + 1, self.values.as_ref().map_or(0, Vec::len))
+    }
 }
 
 #[cfg(feature = "core")]

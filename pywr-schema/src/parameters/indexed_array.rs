@@ -7,6 +7,7 @@ use crate::metric::{IndexMetric, Metric};
 use crate::network::LoadArgs;
 use crate::parameters::{ConversionData, ParameterPhase};
 use crate::v1::{TryFromV1, TryIntoV2, try_convert_parameter_attr};
+use crate::validation::ParameterProblem;
 #[cfg(feature = "core")]
 use pywr_core::parameters::ParameterName;
 use pywr_schema_macros::PywrVisitAll;
@@ -21,6 +22,24 @@ pub struct IndexedArrayParameter {
     #[serde(alias = "params")]
     pub metrics: Vec<Metric>,
     pub index_metric: IndexMetric,
+}
+
+impl IndexedArrayParameter {
+    /// Check that `metrics` is not empty, and has an entry for a literal `index_metric`.
+    pub fn validate(&self) -> Result<(), Vec<ParameterProblem>> {
+        let count = self.metrics.len();
+
+        if count == 0 {
+            return Err(vec![ParameterProblem::NoMetrics]);
+        }
+
+        match self.index_metric {
+            IndexMetric::Constant { value } if value >= count as u64 => {
+                Err(vec![ParameterProblem::IndexOutOfRange { index: value, count }])
+            }
+            _ => Ok(()),
+        }
+    }
 }
 
 #[cfg(feature = "core")]
