@@ -1894,6 +1894,7 @@ mod core_tests {
     use pywr_core::{solvers::ClpSolverSettings, test_utils::run_all_solvers};
     use std::fs::read_to_string;
     use std::path::PathBuf;
+    use tempfile::TempDir;
 
     fn model_str() -> String {
         read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/simple1.json")).unwrap()
@@ -1903,7 +1904,8 @@ mod core_tests {
     fn test_simple1_run() {
         let data = model_str();
         let schema: ModelSchema = serde_json::from_str(&data).unwrap();
-        let mut model_builder = schema.create_model_builder(None, None).unwrap();
+        let temp_dir = TempDir::new().unwrap();
+        let mut model_builder = schema.create_model_builder(None, Some(temp_dir.path())).unwrap();
 
         let network_builder = model_builder.network_builder();
 

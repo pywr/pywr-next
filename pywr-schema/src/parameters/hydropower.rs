@@ -7,6 +7,7 @@ use crate::metric::Metric;
 use crate::network::LoadArgs;
 use crate::parameters::ConversionData;
 use crate::v1::{TryFromV1, TryIntoV2, try_convert_parameter_attr};
+use crate::validation::ParameterProblem;
 #[cfg(feature = "core")]
 use pywr_core::parameters::{HydropowerTargetData, ParameterName};
 use pywr_schema_macros::{PywrVisitAll, skip_serializing_none};
@@ -90,6 +91,25 @@ impl HydropowerTargetParameter {
     pub const DEFAULT_WATER_DENSITY: f64 = 1000.0;
     pub const DEFAULT_FLOW_UNIT_CONVERSION: f64 = 1.0;
     pub const DEFAULT_ENERGY_UNIT_CONVERSION: f64 = 1e-6;
+
+    /// Check that the parameter has a flow to calculate from, and bounds only a `target`.
+    pub fn validate(&self) -> Result<(), Vec<ParameterProblem>> {
+        let mut problems = Vec::new();
+
+        if self.target.is_none() {
+            if self.actual_flow.is_none() {
+                problems.push(ParameterProblem::NoTargetOrActualFlow);
+            }
+            if self.min_flow.is_some() {
+                problems.push(ParameterProblem::FlowBoundWithoutTarget("min_flow"));
+            }
+            if self.max_flow.is_some() {
+                problems.push(ParameterProblem::FlowBoundWithoutTarget("max_flow"));
+            }
+        }
+
+        if problems.is_empty() { Ok(()) } else { Err(problems) }
+    }
 }
 
 #[cfg(feature = "core")]

@@ -37,6 +37,6 @@ pub use py_utils::{PythonSource, PythonSourceType, PythonSourceTypeIter};
 pub use v1::{ConversionData, TryFromV1, TryIntoV2};
 pub use validation::{
     DuplicateNodeName, EdgeProblem, EdgeValidationError, ModelProblem, NetworkProblem, NetworkValidationError,
-    ScenarioProblem, ScenarioValidationError, TableReferenceProblem, ValidationError,
+    ParameterProblem, PointsProblem, ScenarioProblem, ScenarioValidationError, TableReferenceProblem, ValidationError,
 };
 pub use visit::{Owner, Reference, ReferenceMut, VisitMetrics, VisitPaths, VisitReferences};

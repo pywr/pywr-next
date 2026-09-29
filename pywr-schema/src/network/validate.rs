@@ -239,6 +239,35 @@ impl NetworkSchema {
         problems
     }
 
+    /// The problems [`Parameter::validate`] finds, the network's parameters before the local ones.
+    fn parameter_problems(&self) -> Vec<NetworkProblem> {
+        let mut problems = Vec::new();
+
+        let mut validate = |node: Option<&str>, parameters: Option<&[Parameter]>| {
+            for parameter in parameters.unwrap_or_default() {
+                if let Err(found) = parameter.validate() {
+                    problems.extend(found.into_iter().map(|problem| NetworkProblem::InvalidParameter {
+                        parameter: parameter.name().to_string(),
+                        node: node.map(str::to_string),
+                        problem,
+                    }));
+                }
+            }
+        };
+
+        validate(None, self.parameters.as_deref());
+
+        for node in &self.nodes {
+            validate(Some(node.name()), node.local_parameters());
+        }
+
+        for node in self.virtual_nodes.iter().flatten() {
+            validate(Some(node.name()), node.local_parameters());
+        }
+
+        problems
+    }
+
     /// Validate the network schema and report every problem.
     ///
     /// The following are checked:
@@ -248,6 +277,7 @@ impl NetworkSchema {
     /// - Each virtual node's members name parts their nodes build.
     /// - Each parameter reference suits the parameter it names.
     /// - Each table has a lookup pywr can load, and each table reference fits its table.
+    /// - Each parameter's own fields; see [`Parameter::validate`] for the rules.
     ///
     /// Whether the whole model can be built is not; use [`NetworkSchema::add_to_network`] for
     /// that. See [`NetworkProblem`] for the problems that are detected.
@@ -331,6 +361,7 @@ impl NetworkSchema {
             )
             .chain(self.parameter_reference_problems())
             .chain(self.table_problems())
+            .chain(self.parameter_problems())
             .collect();
 
         if problems.is_empty() {
@@ -778,7 +809,7 @@ mod tests {
                         "meta": { "name": "local-indexed" },
                         "type": "IndexedArray",
                         "phase": "Before",
-                        "metrics": [],
+                        "metrics": [{ "type": "Literal", "value": 1.0 }],
                         "index_metric": { "type": "LocalParameter", "name": "local-flow" }
                     }
                 ],
@@ -912,6 +943,68 @@ mod tests {
                 "The parameter `profile` has an invalid reference to the table `scalars`. The table holds `Scalar` values, but `Array` values are read from it.",
                 "The parameter `indexed` has an invalid reference to the table `grid`. The reference contains an empty label at index 1 of its key.",
                 "The parameter `indexed` has an invalid reference to the table `array-grid`. The table holds `Array` values, but `Scalar` values are read from it.",
+            ]
+        );
+    }
+
+    /// A network with a parameter breaking each kind of rule.
+    const NETWORK_WITH_INVALID_PARAMETERS: &str = r#"
+    {
+        "nodes": [
+            {
+                "meta": { "name": "supply" },
+                "type": "Input",
+                "parameters": [
+                    {
+                        "meta": { "name": "drawdown" },
+                        "type": "UniformDrawdownProfile",
+                        "reset_day": { "type": "Literal", "value": 30 },
+                        "reset_month": { "type": "Literal", "value": 2 }
+                    }
+                ]
+            }
+        ],
+        "edges": [],
+        "parameters": [
+            {
+                "meta": { "name": "curve" },
+                "type": "ControlCurve",
+                "phase": "Before",
+                "control_curves": [{ "type": "Literal", "value": 0.5 }],
+                "storage_metric": { "type": "Literal", "value": 0.5 },
+                "values": [{ "type": "Literal", "value": 1.0 }]
+            },
+            {
+                "meta": { "name": "interpolated" },
+                "type": "Interpolated",
+                "phase": "Before",
+                "x": { "type": "Literal", "value": 0.5 },
+                "xp": [{ "type": "Literal", "value": 0.0 }, { "type": "Literal", "value": 1.0 }],
+                "fp": [{ "type": "Literal", "value": 0.0 }]
+            },
+            {
+                "meta": { "name": "profile" },
+                "type": "DailyProfile",
+                "values": { "type": "Literal", "values": [1.0, 2.0, 3.0] }
+            }
+        ]
+    }
+    "#;
+
+    /// Every parameter with invalid fields is reported, the network's before the local ones.
+    #[test]
+    fn test_validate_reports_all_invalid_parameters() {
+        let network = parse_network(NETWORK_WITH_INVALID_PARAMETERS);
+
+        let messages: Vec<String> = expect_problems(&network).iter().map(ToString::to_string).collect();
+
+        assert_eq!(
+            messages,
+            vec![
+                "The parameter `curve` is invalid. `values` has 1 entry(s), but the control curves require 2.",
+                "The parameter `interpolated` is invalid. The points in `xp` and `fp` cannot be interpolated between. There are 2 x value(s) but 1 y value(s), and each point needs one of each.",
+                "The parameter `profile` is invalid. `values` has 3 entry(s), but the profile takes 365 or 366.",
+                "The local parameter `drawdown` of `supply` is invalid. `reset_day` 30 and `reset_month` 2 do not make a date.",
             ]
         );
     }
