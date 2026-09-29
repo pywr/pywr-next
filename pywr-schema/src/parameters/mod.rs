@@ -364,42 +364,42 @@ impl Parameter {
     /// every problem found. A value in a table is not loaded, so it is not checked.
     pub fn validate(&self) -> Result<(), Vec<ParameterProblem>> {
         match self {
+            Self::Aggregated(p) => p.validate(),
+            Self::AggregatedIndex(p) => p.validate(),
             Self::ControlCurvePiecewiseInterpolated(p) => p.validate(),
             Self::ControlCurveInterpolated(p) => p.validate(),
+            Self::ControlCurveIndex(p) => p.validate(),
             Self::ControlCurve(p) => p.validate(),
             Self::DailyProfile(p) => p.validate(),
             Self::IndexedArray(p) => p.validate(),
             Self::MonthlyProfile(p) => p.validate(),
             Self::WeeklyProfile(p) => p.validate(),
             Self::UniformDrawdownProfile(p) => p.validate(),
+            Self::MultiThreshold(p) => p.validate(),
+            Self::Polynomial1D(p) => p.validate(),
             Self::Division(p) => p.validate(),
+            Self::Difference(p) => p.validate(),
+            Self::DiscountFactor(p) => p.validate(),
             Self::Interpolated(p) => p.validate(),
             Self::HydropowerTarget(p) => p.validate(),
             Self::RbfProfile(p) => p.validate(),
+            Self::Rolling(p) => p.validate(),
+            Self::RollingIndex(p) => p.validate(),
             Self::DiurnalProfile(p) => p.validate(),
-            Self::Aggregated(_)
-            | Self::AggregatedIndex(_)
-            | Self::AsymmetricSwitchIndex(_)
+            Self::AsymmetricSwitchIndex(_)
             | Self::Constant(_)
             | Self::ConstantScenario(_)
-            | Self::ControlCurveIndex(_)
             | Self::Max(_)
             | Self::Min(_)
-            | Self::MultiThreshold(_)
             | Self::Negative(_)
-            | Self::Polynomial1D(_)
             | Self::Threshold(_)
             | Self::TablesArray(_)
             | Self::Python(_)
             | Self::Delay(_)
             | Self::DelayIndex(_)
-            | Self::Difference(_)
             | Self::Offset(_)
-            | Self::DiscountFactor(_)
             | Self::NegativeMax(_)
             | Self::NegativeMin(_)
-            | Self::Rolling(_)
-            | Self::RollingIndex(_)
             | Self::Placeholder(_) => Ok(()),
         }
     }
@@ -1426,6 +1426,62 @@ mod tests {
             (
                 json!({ "type": "HydropowerTarget", "target": x(1.0), "min_flow": x(0.0), "max_flow": x(2.0) }),
                 vec![],
+            ),
+            (
+                json!({ "type": "HydropowerTarget", "target": x(1.0), "efficiency": 0.0, "energy_unit_conversion": -1.0 }),
+                vec![NotPositive("efficiency"), NotPositive("energy_unit_conversion")],
+            ),
+            (
+                json!({ "type": "RbfProfile", "points": [[1, 1.0], [100, 2.0]], "function": { "type": "Gaussian", "epsilon": 0.0 } }),
+                vec![ZeroEpsilon],
+            ),
+            // Core repeats each point 365 days before and after.
+            (
+                json!({ "type": "RbfProfile", "points": [[10, 1.0], [10, 2.0], [375, 3.0]], "function": { "type": "Linear" } }),
+                vec![
+                    PointsCoincide { first: 0, second: 1 },
+                    PointsCoincide { first: 0, second: 2 },
+                    PointsCoincide { first: 1, second: 2 },
+                ],
+            ),
+            (
+                json!({ "type": "Aggregated", "phase": "Before", "agg_func": { "type": "AnyNonZero", "tolerance": -1.0 }, "metrics": [] }),
+                vec![NegativeTolerance, NoMetrics],
+            ),
+            (
+                json!({ "type": "AggregatedIndex", "phase": "Before", "agg_func": { "type": "Sum" }, "metrics": [] }),
+                vec![NoMetrics],
+            ),
+            (
+                json!({ "type": "Rolling", "metric": x(1.0), "window_size": 0, "initial_value": 0.0, "agg_func": { "type": "Mean" } }),
+                vec![ZeroWindowSize],
+            ),
+            (
+                json!({ "type": "RollingIndex", "metric": { "type": "Constant", "value": 1 }, "window_size": 3, "min_values": 4, "initial_value": 0, "agg_func": { "type": "Max" } }),
+                vec![MinValuesAboveWindow {
+                    min_values: 4,
+                    window_size: 3,
+                }],
+            ),
+            (
+                json!({ "type": "Difference", "phase": "Before", "a": x(1.0), "b": x(0.0), "min": x(2.0), "max": x(1.0) }),
+                vec![MinAboveMax],
+            ),
+            (
+                json!({ "type": "DiscountFactor", "discount_rate": x(-1.0), "base_year": 2020 }),
+                vec![DiscountRateTooLow],
+            ),
+            (
+                json!({ "type": "MultiThreshold", "phase": "Before", "metric": x(1.0), "thresholds": [x(0.5)], "predicate": "GT", "returned_metrics": [x(0.0), x(1.0), x(2.0)] }),
+                vec![ReturnedMetricsCount { required: 2, found: 3 }],
+            ),
+            (
+                json!({ "type": "ControlCurveIndex", "phase": "Before", "control_curves": [], "storage_metric": x(0.5) }),
+                vec![NoControlCurves],
+            ),
+            (
+                json!({ "type": "Polynomial1D", "phase": "Before", "metric": x(1.0), "coefficients": [] }),
+                vec![NoCoefficients],
             ),
         ];
 

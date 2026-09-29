@@ -165,9 +165,15 @@ pub enum ParameterProblem {
     ProfileValues { allowed: &'static [usize], found: usize },
     #[error("`points` is empty, so `epsilon` cannot be estimated from them.")]
     NoPointsForEpsilon,
+    #[error("`epsilon` is 0.")]
+    ZeroEpsilon,
+    #[error(
+        "The points at index {first} and {second} fall on the same day of the year, so they cannot be interpolated between."
+    )]
+    PointsCoincide { first: usize, second: usize },
     #[error("`denominator` is 0.")]
     ZeroDenominator,
-    #[error("`metrics` is empty, so there is nothing to index.")]
+    #[error("`metrics` is empty.")]
     NoMetrics,
     #[error("`index_metric` is {index}, but `metrics` has only {count} entry(s).")]
     IndexOutOfRange { index: u64, count: usize },
@@ -176,6 +182,25 @@ pub enum ParameterProblem {
     /// `min_flow` or `max_flow`, which bound only a `target`.
     #[error("`{0}` is set, but it applies only with a `target`.")]
     FlowBoundWithoutTarget(&'static str),
+    /// A constant of a hydropower calculation, such as `efficiency`.
+    #[error("`{0}` must be above 0.")]
+    NotPositive(&'static str),
+    #[error("`window_size` is 0.")]
+    ZeroWindowSize,
+    #[error("`min_values` is {min_values}, but the window holds only {window_size}, so it never fills.")]
+    MinValuesAboveWindow { min_values: u64, window_size: u64 },
+    #[error("The `AnyNonZero` `tolerance` must not be negative.")]
+    NegativeTolerance,
+    #[error("`min` is above `max`.")]
+    MinAboveMax,
+    #[error("`discount_rate` must be above -1.")]
+    DiscountRateTooLow,
+    #[error("`returned_metrics` has {found} entry(s), but the thresholds require {required}.")]
+    ReturnedMetricsCount { required: usize, found: usize },
+    #[error("`control_curves` is empty.")]
+    NoControlCurves,
+    #[error("`coefficients` is empty.")]
+    NoCoefficients,
 }
 
 /// Counts for a message, such as "12" or "365 or 366".
@@ -183,9 +208,20 @@ fn counts_message(counts: &[usize]) -> String {
     counts.iter().map(ToString::to_string).collect::<Vec<_>>().join(" or ")
 }
 
+/// Why a storage's initial volume is outside its bounds.
+#[derive(Error, Debug, Clone, PartialEq, Eq)]
+pub enum InitialVolumeProblem {
+    #[error("The initial volume is below `min_volume`.")]
+    BelowMin,
+    #[error("The initial volume is above `max_volume`.")]
+    AboveMax,
+}
+
 /// A problem with a node's own fields, found by [`Node::validate`](crate::nodes::Node::validate).
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
 pub enum NodeProblem {
+    #[error("{0}")]
+    InitialVolume(InitialVolumeProblem),
     /// The field, `rainfall` or `evaporation`.
     #[error("`{0}` is set, but it needs a `surface_area`.")]
     NoSurfaceArea(&'static str),
@@ -208,6 +244,8 @@ pub enum NodeProblem {
 /// [`VirtualNode::validate`](crate::nodes::VirtualNode::validate).
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
 pub enum VirtualNodeProblem {
+    #[error("{0}")]
+    InitialVolume(InitialVolumeProblem),
     #[error("`{day_field}` {day} and `{month_field}` {month} do not make a date.")]
     NotADate {
         day_field: &'static str,
@@ -215,6 +253,18 @@ pub enum VirtualNodeProblem {
         day: i8,
         month: i8,
     },
+    #[error(
+        "The `Proportion` relationship has {factors} factor(s) for {members} member(s), but needs one fewer factor than members."
+    )]
+    ProportionFactorCount { factors: usize, members: usize },
+    #[error(
+        "The `Ratio` relationship has {factors} factor(s) for {members} member(s), but needs one factor per member, and at least one member."
+    )]
+    RatioFactorCount { factors: usize, members: usize },
+    #[error(
+        "The `Coefficients` relationship has {factors} factor(s) for {members} member(s), but needs exactly two members, with a factor each."
+    )]
+    CoefficientsFactorCount { factors: usize, members: usize },
 }
 
 /// A problem with a model that is not about any one of its networks, found by

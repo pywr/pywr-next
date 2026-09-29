@@ -8,6 +8,7 @@ use crate::metric::{Metric, NodeAttrReference};
 use crate::network::LoadArgs;
 use crate::parameters::{ConversionData, ParameterPhase};
 use crate::v1::{TryFromV1, TryIntoV2, try_convert_parameter_attr};
+use crate::validation::ParameterProblem;
 #[cfg(feature = "core")]
 use pywr_core::{metric::UnresolvedMetricU64, parameters::ParameterName};
 use pywr_schema_macros::{PywrVisitAll, skip_serializing_none};
@@ -355,6 +356,22 @@ pub struct MultiThresholdParameter {
     /// If true, the threshold comparison remains at the highest position ever reached.
     #[serde(default)]
     pub ratchet: bool,
+}
+
+impl MultiThresholdParameter {
+    /// Check that `returned_metrics`, when set, has one entry per position: one more than the
+    /// thresholds.
+    pub fn validate(&self) -> Result<(), Vec<ParameterProblem>> {
+        let required = self.thresholds.len() + 1;
+
+        match &self.returned_metrics {
+            Some(returned) if returned.len() != required => Err(vec![ParameterProblem::ReturnedMetricsCount {
+                required,
+                found: returned.len(),
+            }]),
+            _ => Ok(()),
+        }
+    }
 }
 
 #[cfg(feature = "core")]

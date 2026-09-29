@@ -766,13 +766,13 @@ impl Node {
             | Node::WaterTreatmentWorks(WaterTreatmentWorksNode { loss_factor, .. }) => {
                 loss_factor.as_ref().map_or(Ok(()), LossFactor::validate)
             }
+            Node::Storage(n) => n.validate(),
             Node::PiecewiseStorage(n) => n.validate(),
             Node::RiverSplitWithGauge(n) => n.validate(),
             Node::Reservoir(n) => n.validate(),
             Node::Input(_)
             | Node::Link(_)
             | Node::Output(_)
-            | Node::Storage(_)
             | Node::Catchment(_)
             | Node::RiverGauge(_)
             | Node::Delay(_)
@@ -1215,6 +1215,7 @@ mod tests {
     /// pass one where a rule could be too strict.
     #[test]
     fn test_validate_checks_each_rule() {
+        use crate::validation::InitialVolumeProblem;
         use crate::validation::NodeProblem::*;
         use serde_json::json;
 
@@ -1253,7 +1254,7 @@ mod tests {
             // Equal curves make an empty store, and only neighbouring literals are compared.
             (
                 NodeType::PiecewiseStorage,
-                json!({ "steps": steps(vec![x(0.5), x(0.5), not_literal, x(0.25)]) }),
+                json!({ "steps": steps(vec![x(0.5), x(0.5), not_literal.clone(), x(0.25)]) }),
                 vec![],
             ),
             (
@@ -1289,6 +1290,33 @@ mod tests {
                 NodeType::River,
                 json!({ "loss_factor": { "type": "Net", "factor": x(-0.1) } }),
                 vec![NegativeNetLossFactor],
+            ),
+            // An unset `max_volume` is `f64::MAX`, which a proportion above 1 exceeds.
+            (
+                NodeType::Storage,
+                json!({ "initial_volume": { "type": "Proportional", "proportion": 1.5 } }),
+                vec![InitialVolume(InitialVolumeProblem::AboveMax)],
+            ),
+            (
+                NodeType::Storage,
+                json!({ "min_volume": x(10.0), "initial_volume": { "type": "Absolute", "volume": 5.0 } }),
+                vec![InitialVolume(InitialVolumeProblem::BelowMin)],
+            ),
+            // A bound from a metric is not compared.
+            (
+                NodeType::Storage,
+                json!({ "max_volume": not_literal, "initial_volume": { "type": "Absolute", "volume": 150.0 } }),
+                vec![],
+            ),
+            (
+                NodeType::PiecewiseStorage,
+                json!({ "max_volume": x(100.0), "initial_volume": { "type": "Absolute", "volume": 150.0 } }),
+                vec![InitialVolume(InitialVolumeProblem::AboveMax)],
+            ),
+            (
+                NodeType::Reservoir,
+                json!({ "max_volume": x(100.0), "initial_volume": { "type": "Absolute", "volume": 150.0 } }),
+                vec![InitialVolume(InitialVolumeProblem::AboveMax)],
             ),
         ];
 

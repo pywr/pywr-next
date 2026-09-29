@@ -6,6 +6,7 @@ use crate::metric::{IndexMetric, Metric, NodeAttrReference};
 #[cfg(feature = "core")]
 use crate::network::LoadArgs;
 use crate::v1::TryIntoV2;
+use crate::validation::ParameterProblem;
 use crate::{ComponentConversionError, ConversionData, ConversionError, TryFromV1};
 #[cfg(feature = "core")]
 use pywr_core::parameters::ParameterName;
@@ -30,6 +31,34 @@ pub struct RollingParameter {
     pub initial_value: f64,
     pub min_values: Option<u64>,
     pub agg_func: AggFunc,
+}
+
+/// Check that the window holds a value, and can hold `min_values` of them.
+fn check_window(window_size: u64, min_values: Option<u64>) -> Result<(), Vec<ParameterProblem>> {
+    let mut problems = Vec::new();
+
+    if window_size == 0 {
+        problems.push(ParameterProblem::ZeroWindowSize);
+    }
+    if let Some(min_values) = min_values.filter(|min_values| *min_values > window_size) {
+        problems.push(ParameterProblem::MinValuesAboveWindow {
+            min_values,
+            window_size,
+        });
+    }
+
+    if problems.is_empty() { Ok(()) } else { Err(problems) }
+}
+
+impl RollingParameter {
+    pub fn validate(&self) -> Result<(), Vec<ParameterProblem>> {
+        let mut problems = check_window(self.window_size, self.min_values)
+            .err()
+            .unwrap_or_default();
+        problems.extend(self.agg_func.validate().err().unwrap_or_default());
+
+        if problems.is_empty() { Ok(()) } else { Err(problems) }
+    }
 }
 
 #[cfg(feature = "core")]
@@ -73,6 +102,12 @@ pub struct RollingIndexParameter {
     pub initial_value: u64,
     pub min_values: Option<u64>,
     pub agg_func: IndexAggFunc,
+}
+
+impl RollingIndexParameter {
+    pub fn validate(&self) -> Result<(), Vec<ParameterProblem>> {
+        check_window(self.window_size, self.min_values)
+    }
 }
 
 #[cfg(feature = "core")]

@@ -455,21 +455,36 @@ pub struct RbfProfileParameter {
 }
 
 impl RbfProfileParameter {
-    /// Check that there are `points` to estimate `epsilon` from, when a function needs one and
-    /// none is given.
+    /// Check that core can fit the profile: an `epsilon` it can use or estimate, and points that
+    /// don't coincide.
     pub fn validate(&self) -> Result<(), Vec<ParameterProblem>> {
-        let estimates_epsilon = matches!(
-            self.function,
-            RadialBasisFunction::Gaussian { epsilon: None }
-                | RadialBasisFunction::MultiQuadric { epsilon: None }
-                | RadialBasisFunction::InverseMultiQuadric { epsilon: None }
-        );
+        let mut problems = Vec::new();
 
-        if estimates_epsilon && self.points.is_empty() {
-            Err(vec![ParameterProblem::NoPointsForEpsilon])
-        } else {
-            Ok(())
+        match self.function {
+            RadialBasisFunction::Gaussian { epsilon }
+            | RadialBasisFunction::MultiQuadric { epsilon }
+            | RadialBasisFunction::InverseMultiQuadric { epsilon } => match epsilon {
+                None if self.points.is_empty() => problems.push(ParameterProblem::NoPointsForEpsilon),
+                // Every entry of the matrix would be 1, so it cannot be solved.
+                Some(0.0) => problems.push(ParameterProblem::ZeroEpsilon),
+                _ => {}
+            },
+            RadialBasisFunction::Linear
+            | RadialBasisFunction::Cubic
+            | RadialBasisFunction::Quintic
+            | RadialBasisFunction::ThinPlateSpline => {}
         }
+
+        // Points 0, 365 or 730 days apart give the matrix equal rows, so it cannot be solved.
+        for (first, (day, _)) in self.points.iter().enumerate() {
+            for (second, (other, _)) in self.points.iter().enumerate().skip(first + 1) {
+                if matches!(day.abs_diff(*other), 0 | 365 | 730) {
+                    problems.push(ParameterProblem::PointsCoincide { first, second });
+                }
+            }
+        }
+
+        if problems.is_empty() { Ok(()) } else { Err(problems) }
     }
 }
 

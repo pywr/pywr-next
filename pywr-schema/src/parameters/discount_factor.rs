@@ -7,6 +7,7 @@ use crate::metric::Metric;
 use crate::network::LoadArgs;
 use crate::parameters::ConversionData;
 use crate::v1::{TryFromV1, TryIntoV2};
+use crate::validation::ParameterProblem;
 #[cfg(feature = "core")]
 use pywr_core::parameters::ParameterName;
 use pywr_schema_macros::PywrVisitAll;
@@ -20,6 +21,16 @@ pub struct DiscountFactorParameter {
     pub meta: NamedMeta,
     pub discount_rate: Metric,
     pub base_year: i16,
+}
+
+impl DiscountFactorParameter {
+    /// Check that a literal `discount_rate` is above -1: core divides by `(1 + rate)^year`.
+    pub fn validate(&self) -> Result<(), Vec<ParameterProblem>> {
+        match self.discount_rate {
+            Metric::Literal { value } if value <= -1.0 => Err(vec![ParameterProblem::DiscountRateTooLow]),
+            _ => Ok(()),
+        }
+    }
 }
 
 #[cfg(feature = "core")]

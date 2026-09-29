@@ -4,6 +4,7 @@ use crate::node_attribute_subset_enum;
 use crate::nodes::NodeMeta;
 use crate::parameters::Parameter;
 use crate::v1::{ConversionData, TryFromV1, try_convert_node_attr, try_convert_node_meta, try_convert_parameter_attr};
+use crate::validation::VirtualNodeProblem;
 #[cfg(feature = "core")]
 use crate::{error::SchemaError, network::LoadArgs, nodes::NodeAttribute};
 #[cfg(feature = "core")]
@@ -122,6 +123,33 @@ impl AggregatedNode {
 
     pub fn default_attribute(&self) -> AggregatedNodeAttribute {
         Self::DEFAULT_ATTRIBUTE
+    }
+
+    /// Check that the relationship has as many factors as core requires for the members.
+    pub fn validate(&self) -> Result<(), Vec<VirtualNodeProblem>> {
+        let members = self.nodes.len();
+
+        match &self.relationship {
+            Some(Relationship::Proportion { factors }) if factors.len() + 1 != members => {
+                Err(vec![VirtualNodeProblem::ProportionFactorCount {
+                    factors: factors.len(),
+                    members,
+                }])
+            }
+            Some(Relationship::Ratio { factors }) if members == 0 || factors.len() != members => {
+                Err(vec![VirtualNodeProblem::RatioFactorCount {
+                    factors: factors.len(),
+                    members,
+                }])
+            }
+            Some(Relationship::Coefficients { factors, .. }) if members != 2 || factors.len() != members => {
+                Err(vec![VirtualNodeProblem::CoefficientsFactorCount {
+                    factors: factors.len(),
+                    members,
+                }])
+            }
+            _ => Ok(()),
+        }
     }
 }
 

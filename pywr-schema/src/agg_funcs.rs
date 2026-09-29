@@ -3,6 +3,7 @@ use crate::SchemaError;
 use crate::py_utils::PythonSource;
 #[cfg(all(feature = "core", feature = "pyo3"))]
 use crate::py_utils::{try_load_optional_py_args, try_load_optional_py_kwargs};
+use crate::validation::ParameterProblem;
 #[cfg(all(feature = "core", feature = "pyo3"))]
 use pyo3::{Python, types::PyAnyMethods};
 use pywr_schema_macros::PywrVisitAll;
@@ -85,6 +86,18 @@ pub enum AggFunc {
     CountNonZero,
     AnyNonZero(AnyNonZero),
     Python(PythonAggFunc),
+}
+
+impl AggFunc {
+    /// Check that an `AnyNonZero` tolerance is not negative, which would count every value as non-zero.
+    pub fn validate(&self) -> Result<(), Vec<ParameterProblem>> {
+        match self {
+            Self::AnyNonZero(AnyNonZero {
+                tolerance: Some(tolerance),
+            }) if *tolerance < 0.0 => Err(vec![ParameterProblem::NegativeTolerance]),
+            _ => Ok(()),
+        }
+    }
 }
 
 #[cfg(feature = "core")]
