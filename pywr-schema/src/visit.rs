@@ -1,6 +1,6 @@
 use crate::data_tables::{DataTableValueType, TableDataRef};
 use crate::edge::Edge;
-use crate::metric::{IndexMetric, Metric, MetricValueType};
+use crate::metric::{IndexMetric, Metric, MetricValueType, ParameterReturnValue};
 use std::collections::HashMap;
 use std::num::{NonZeroI64, NonZeroU64, NonZeroUsize};
 use std::path::{Path, PathBuf};
@@ -267,11 +267,14 @@ pub enum Reference<'a> {
     /// differ only in slot. The endpoints are also visited as [`Reference::Node`].
     Edge(&'a Edge),
     /// Resolved in the network's `parameters`. Its `key` and `metric` decide which parameters it
-    /// can name, as [`ParameterValueType`](crate::parameters::ParameterValueType) says.
+    /// can name, as [`ParameterValueType`](crate::parameters::ParameterValueType) says. Its
+    /// `return_value`, Before when unset, decides the phase the parameter must be calculated in,
+    /// as [`ParameterPhase::calculates`](crate::parameters::ParameterPhase::calculates) says.
     Parameter {
         name: &'a str,
         key: Option<&'a str>,
         metric: MetricValueType,
+        return_value: ParameterReturnValue,
     },
     /// If `node` is None it resolved in the owning node's or virtual node's own `parameters`, so
     /// the name is meaningless without the [`Owner`].
@@ -280,6 +283,7 @@ pub enum Reference<'a> {
         name: &'a str,
         key: Option<&'a str>,
         metric: MetricValueType,
+        return_value: ParameterReturnValue,
     },
     /// Resolved in the network's `tables`. `expected` is the type of value the reference will
     /// read, which the table must hold.
@@ -372,12 +376,14 @@ impl VisitReferences for Metric {
                 name: &p_ref.name,
                 key: p_ref.key.as_deref(),
                 metric: MetricValueType::Float,
+                return_value: p_ref.return_value.unwrap_or_default(),
             }),
             Metric::LocalParameter(p_ref) => visitor(Reference::LocalParameter {
                 node: p_ref.node.as_deref(),
                 name: &p_ref.name,
                 key: p_ref.key.as_deref(),
                 metric: MetricValueType::Float,
+                return_value: p_ref.return_value.unwrap_or_default(),
             }),
             // An inter-network transfer resolves against the multi-network model, not this one.
             Metric::Literal { .. } | Metric::InterNetworkTransfer { .. } => {}
@@ -414,12 +420,14 @@ impl VisitReferences for IndexMetric {
                 name: &p_ref.name,
                 key: p_ref.key.as_deref(),
                 metric: MetricValueType::Index,
+                return_value: p_ref.return_value.unwrap_or_default(),
             }),
             IndexMetric::LocalParameter(p_ref) => visitor(Reference::LocalParameter {
                 node: p_ref.node.as_deref(),
                 name: &p_ref.name,
                 key: p_ref.key.as_deref(),
                 metric: MetricValueType::Index,
+                return_value: p_ref.return_value.unwrap_or_default(),
             }),
             IndexMetric::Constant { .. } | IndexMetric::InterNetworkTransfer { .. } => {}
         }

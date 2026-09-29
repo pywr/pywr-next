@@ -2,7 +2,9 @@
 
 use crate::data_tables::{CsvDataTableLookup, DataTableValueType};
 use crate::edge::Edge;
+use crate::metric::ParameterReturnValue;
 use crate::nodes::{NodeComponent, NodeSlot, NodeType, VirtualNodeType};
+use crate::parameters::ParameterPhase;
 use jiff::civil::DateTime;
 use thiserror::Error;
 
@@ -551,6 +553,17 @@ pub enum NetworkProblem {
         parameter: String,
         node: Option<String>,
         key: String,
+    },
+    /// A reference asking a parameter for a value it does not calculate.
+    #[error(
+        "The {owner} asks {} for its `{return_value}` value, but it is calculated only in the `{phase}` phase.", named_parameter(.parameter, .node.as_deref())
+    )]
+    ParameterValueNotCalculated {
+        owner: String,
+        parameter: String,
+        node: Option<String>,
+        return_value: ParameterReturnValue,
+        phase: ParameterPhase,
     },
     /// A CSV table whose lookup pywr cannot load with its type of values.
     #[error("The table `{table}` cannot be loaded. {}", unsupported_lookup_message(.value_type, .lookup))]

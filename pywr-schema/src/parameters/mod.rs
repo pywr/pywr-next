@@ -35,7 +35,7 @@ use crate::data_tables::DataTableValueType;
 use crate::error::SchemaError;
 use crate::error::{ComponentConversionError, ConversionError};
 use crate::meta::NamedMeta;
-use crate::metric::{Metric, MetricValueType};
+use crate::metric::{Metric, MetricValueType, ParameterReturnValue};
 #[cfg(feature = "core")]
 use crate::network::LoadArgs;
 use crate::time_series::ConvertedTimeSeriesReference;
@@ -89,6 +89,21 @@ pub enum ParameterPhase {
     Before,
     After,
     Both,
+}
+
+impl ParameterPhase {
+    /// Whether a parameter in this phase calculates the value `return_value` asks for. `Both`
+    /// counts as calculated, since whether core gives it depends on how it builds the parameter
+    /// and where it is read.
+    pub fn calculates(&self, return_value: ParameterReturnValue) -> bool {
+        match return_value {
+            ParameterReturnValue::Before => matches!(self, Self::Before | Self::Both),
+            ParameterReturnValue::After | ParameterReturnValue::AfterOrElseInitial => {
+                matches!(self, Self::After | Self::Both)
+            }
+            ParameterReturnValue::Both => true,
+        }
+    }
 }
 
 /// The type of value a parameter gives.
@@ -259,9 +274,10 @@ impl Parameter {
         self.into()
     }
 
-    /// The phase(s) the parameter is calculated in.
-    pub fn phase(&self) -> ParameterPhase {
-        match self {
+    /// The phase(s) the parameter is calculated in, or `None` for a Python class, whose methods
+    /// decide its phases when it is built.
+    pub fn phase(&self) -> Option<ParameterPhase> {
+        let phase = match self {
             Self::Aggregated(p) => p.phase.clone(),
             Self::AggregatedIndex(p) => p.phase.clone(),
             Self::AsymmetricSwitchIndex(_) => ParameterPhase::Before,
@@ -283,7 +299,10 @@ impl Parameter {
             Self::Polynomial1D(p) => p.phase.clone(),
             Self::Threshold(p) => p.phase.clone(),
             Self::TablesArray(_) => ParameterPhase::Before,
-            Self::Python(_) => ParameterPhase::Before,
+            Self::Python(p) => match p.object {
+                PythonObject::Class { .. } => return None,
+                PythonObject::Function { .. } => ParameterPhase::Before,
+            },
             Self::Delay(_) => ParameterPhase::Before,
             Self::DelayIndex(_) => ParameterPhase::Before,
             Self::Division(p) => p.phase.clone(),
@@ -304,7 +323,9 @@ impl Parameter {
             Self::RollingIndex(_) => ParameterPhase::Before,
             Self::Placeholder(_) => ParameterPhase::Before,
             Self::DiurnalProfile(_) => ParameterPhase::Before,
-        }
+        };
+
+        Some(phase)
     }
 
     /// The type of value the parameter gives, or `None` for a placeholder, which builds nothing.
@@ -1260,7 +1281,7 @@ mod tests {
             data["meta"] = json!({ "name": "a-parameter" });
             data["type"] = json!("HydropowerTarget");
             let parameter: Parameter = serde_json::from_value(data.clone()).unwrap();
-            assert_eq!(parameter.phase(), expected, "{data}");
+            assert_eq!(parameter.phase(), Some(expected), "{data}");
         }
     }
 
