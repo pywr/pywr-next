@@ -20,9 +20,9 @@ mod vec;
 
 use crate::ConversionError;
 use crate::digest::{Checksum, ChecksumError};
-use crate::error::TableReferenceProblem;
 use crate::meta::NamedMeta;
 use crate::parameters::TableIndex;
+use crate::validation::TableReferenceProblem;
 #[cfg(feature = "core")]
 use log::{debug, info};
 #[cfg(feature = "pyo3")]

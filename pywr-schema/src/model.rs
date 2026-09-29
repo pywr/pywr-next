@@ -1,14 +1,17 @@
 #[cfg(feature = "core")]
 use crate::data_tables::LoadedTableCollection;
-use crate::error::{ComponentConversionError, ModelProblem, ScenarioProblem, ValidationError};
+use crate::error::ComponentConversionError;
 #[cfg(feature = "core")]
-use crate::error::{ScenarioValidationError, SchemaError};
+use crate::error::SchemaError;
 use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::network::{LoadArgs, NetworkSchemaBuildError, NetworkSchemaReadError};
 #[cfg(feature = "core")]
 use crate::time_series::LoadedTimeSeriesCollection;
 use crate::util::duplicates;
+#[cfg(feature = "core")]
+use crate::validation::ScenarioValidationError;
+use crate::validation::{ModelProblem, ScenarioProblem, ValidationError};
 use crate::visit::{Owner, Reference, ReferenceMut, VisitMetrics, VisitPaths, VisitReferences};
 use crate::{ConversionError, NetworkSchema, NetworkSchemaRef};
 use jiff::Span;
@@ -1214,8 +1217,8 @@ impl MultiNetworkModelSchema {
 mod tests {
     use super::{ModelSchema, MultiNetworkModelSchema, ScenarioDomain};
     use crate::edge::Edge;
-    use crate::error::{EdgeProblem, ModelProblem, NetworkProblem, ScenarioProblem, ValidationError};
     use crate::model::{TimeDomain, Timestep};
+    use crate::validation::{EdgeProblem, ModelProblem, NetworkProblem, ScenarioProblem, ValidationError};
     use crate::visit::VisitPaths;
     use jiff::civil::date;
     use std::fs;
