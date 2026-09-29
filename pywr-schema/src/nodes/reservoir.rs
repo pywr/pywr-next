@@ -7,6 +7,7 @@ use crate::nodes::{NodeMeta, NodeSlot, StorageNode, StorageNodeAttribute};
 use crate::parameters::ConstantFloatVec;
 #[cfg(feature = "core")]
 use crate::parameters::{InterpolatedParameter, Polynomial1DParameter};
+use crate::validation::NodeProblem;
 use crate::{SchemaError, mermaid};
 use crate::{node_attribute_subset_enum, node_component_subset_enum};
 #[cfg(feature = "core")]
@@ -264,6 +265,22 @@ impl ReservoirNode {
     /// Get a mutable reference to the node's metadata.
     pub(crate) fn meta_mut(&mut self) -> &mut NodeMeta {
         &mut self.storage.meta
+    }
+
+    /// Check that `rainfall` and `evaporation` have a `surface_area`.
+    pub fn validate(&self) -> Result<(), Vec<NodeProblem>> {
+        let mut problems = Vec::new();
+
+        if self.surface_area.is_none() {
+            if self.rainfall.is_some() {
+                problems.push(NodeProblem::NoSurfaceArea("rainfall"));
+            }
+            if self.evaporation.is_some() {
+                problems.push(NodeProblem::NoSurfaceArea("evaporation"));
+            }
+        }
+
+        if problems.is_empty() { Ok(()) } else { Err(problems) }
     }
 
     pub fn iter_output_slots(&self) -> impl Iterator<Item = ReservoirOutputNodeSlot> + '_ {

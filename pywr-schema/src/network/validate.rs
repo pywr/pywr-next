@@ -239,6 +239,23 @@ impl NetworkSchema {
         problems
     }
 
+    /// The problems [`Node::validate`](crate::nodes::Node::validate) finds.
+    fn node_problems(&self) -> Vec<NetworkProblem> {
+        self.nodes
+            .iter()
+            .flat_map(|node| {
+                node.validate()
+                    .err()
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(|problem| NetworkProblem::InvalidNode {
+                        node: node.name().to_string(),
+                        problem,
+                    })
+            })
+            .collect()
+    }
+
     /// The problems [`Parameter::validate`] finds, the network's parameters before the local ones.
     fn parameter_problems(&self) -> Vec<NetworkProblem> {
         let mut problems = Vec::new();
@@ -277,7 +294,8 @@ impl NetworkSchema {
     /// - Each virtual node's members name parts their nodes build.
     /// - Each parameter reference suits the parameter it names.
     /// - Each table has a lookup pywr can load, and each table reference fits its table.
-    /// - Each parameter's own fields; see [`Parameter::validate`] for the rules.
+    /// - Each node's and each parameter's own fields; see
+    ///   [`Node::validate`](crate::nodes::Node::validate) and [`Parameter::validate`] for the rules.
     ///
     /// Whether the whole model can be built is not; use [`NetworkSchema::add_to_network`] for
     /// that. See [`NetworkProblem`] for the problems that are detected.
@@ -361,6 +379,7 @@ impl NetworkSchema {
             )
             .chain(self.parameter_reference_problems())
             .chain(self.table_problems())
+            .chain(self.node_problems())
             .chain(self.parameter_problems())
             .collect();
 
@@ -791,6 +810,8 @@ mod tests {
                 "The virtual node `licence` takes the component `Loss` of the `River` node `river`, but that node does not build it. It builds: `Inflow`, `Outflow`.",
                 "The virtual node `licence` takes the component `Loss` of the `LossLink` node `loss-link`, but that node does not build it. It builds: `Inflow`, `Outflow`.",
                 "The virtual node `total` names the `Link` node `link`, but an `AggregatedStorage` node takes only storage nodes.",
+                // The rainfall that `reservoir` does not build is also a problem with the node.
+                "The node `reservoir` is invalid. `rainfall` is set, but it needs a `surface_area`.",
             ]
         );
     }
@@ -947,8 +968,8 @@ mod tests {
         );
     }
 
-    /// A network with a parameter breaking each kind of rule.
-    const NETWORK_WITH_INVALID_PARAMETERS: &str = r#"
+    /// A network with a node and a parameter breaking each kind of rule.
+    const NETWORK_WITH_INVALID_COMPONENTS: &str = r#"
     {
         "nodes": [
             {
@@ -962,6 +983,11 @@ mod tests {
                         "reset_month": { "type": "Literal", "value": 2 }
                     }
                 ]
+            },
+            {
+                "meta": { "name": "loss" },
+                "type": "LossLink",
+                "loss_factor": { "type": "Gross", "factor": { "type": "Literal", "value": 1.0 } }
             }
         ],
         "edges": [],
@@ -991,16 +1017,18 @@ mod tests {
     }
     "#;
 
-    /// Every parameter with invalid fields is reported, the network's before the local ones.
+    /// Every node and parameter with invalid fields is reported: the nodes, then the network's
+    /// parameters, then the local ones.
     #[test]
-    fn test_validate_reports_all_invalid_parameters() {
-        let network = parse_network(NETWORK_WITH_INVALID_PARAMETERS);
+    fn test_validate_reports_all_invalid_components() {
+        let network = parse_network(NETWORK_WITH_INVALID_COMPONENTS);
 
         let messages: Vec<String> = expect_problems(&network).iter().map(ToString::to_string).collect();
 
         assert_eq!(
             messages,
             vec![
+                "The node `loss` is invalid. A `Gross` `loss_factor` must be from 0 up to 1, 1 excluded.",
                 "The parameter `curve` is invalid. `values` has 1 entry(s), but the control curves require 2.",
                 "The parameter `interpolated` is invalid. The points in `xp` and `fp` cannot be interpolated between. There are 2 x value(s) but 1 y value(s), and each point needs one of each.",
                 "The parameter `profile` is invalid. `values` has 3 entry(s), but the profile takes 365 or 366.",

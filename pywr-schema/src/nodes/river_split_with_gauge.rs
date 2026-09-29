@@ -7,7 +7,9 @@ use crate::network::LoadArgs;
 use crate::nodes::{NodeAttribute, NodeComponent};
 use crate::nodes::{NodeMeta, NodeSlot};
 use crate::parameters::Parameter;
+use crate::util::duplicates;
 use crate::v1::{ConversionData, TryFromV1, try_convert_node_attr, try_convert_node_meta};
+use crate::validation::NodeProblem;
 use crate::{ConversionError, TryIntoV2, mermaid, node_attribute_subset_enum, node_component_subset_enum};
 #[cfg(feature = "core")]
 use pywr_core::{aggregated_node::ProportionalFactorsBuilder, metric::UnresolvedMetricF64, node::UnresolvedNode};
@@ -137,6 +139,28 @@ impl RiverSplitWithGaugeNode {
 
     pub fn default_component(&self) -> RiverSplitWithGaugeNodeComponent {
         Self::DEFAULT_COMPONENT
+    }
+
+    /// Check that each split's literal `factor` is between 0 and 1, both excluded, as core's
+    /// proportional factor requires, and that no two splits share a slot name.
+    pub fn validate(&self) -> Result<(), Vec<NodeProblem>> {
+        let mut problems: Vec<NodeProblem> = self
+            .splits
+            .iter()
+            .enumerate()
+            .filter(|(_, split)| matches!(split.factor, Metric::Literal { value } if value <= 0.0 || value >= 1.0))
+            .map(|(split, _)| NodeProblem::SplitFactorOutOfRange { split })
+            .collect();
+
+        let slot_names = self.splits.iter().filter_map(|split| split.slot_name.as_ref());
+        problems.extend(duplicates(slot_names, String::as_str).into_iter().map(|(slot, count)| {
+            NodeProblem::DuplicateSlotName {
+                slot: slot.to_string(),
+                count,
+            }
+        }));
+
+        if problems.is_empty() { Ok(()) } else { Err(problems) }
     }
 }
 

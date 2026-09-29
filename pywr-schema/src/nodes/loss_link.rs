@@ -3,6 +3,7 @@ use crate::metric::Metric;
 use crate::nodes::NodeMeta;
 use crate::parameters::Parameter;
 use crate::v1::{ConversionData, TryFromV1, try_convert_node_attr, try_convert_node_meta};
+use crate::validation::NodeProblem;
 #[cfg(feature = "core")]
 use crate::{
     error::SchemaError,
@@ -35,6 +36,22 @@ use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumString, IntoStaticS
 pub enum LossFactor {
     Gross { factor: Metric },
     Net { factor: Metric },
+}
+
+impl LossFactor {
+    /// Check that a literal factor is one core's proportion or ratio accepts. A zero adds no
+    /// loss, so it is allowed.
+    pub fn validate(&self) -> Result<(), Vec<NodeProblem>> {
+        match self {
+            Self::Gross {
+                factor: Metric::Literal { value },
+            } if *value < 0.0 || *value >= 1.0 => Err(vec![NodeProblem::GrossLossFactorOutOfRange]),
+            Self::Net {
+                factor: Metric::Literal { value },
+            } if *value < 0.0 => Err(vec![NodeProblem::NegativeNetLossFactor]),
+            _ => Ok(()),
+        }
+    }
 }
 
 #[cfg(feature = "core")]
