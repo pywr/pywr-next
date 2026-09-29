@@ -1,6 +1,7 @@
 use crate::metric::Metric;
 use crate::nodes::{NodeMeta, StorageInitialVolume};
 use crate::parameters::Parameter;
+use crate::validation::NodeProblem;
 #[cfg(feature = "core")]
 use crate::{
     error::SchemaError,
@@ -73,6 +74,35 @@ impl PiecewiseStorageNode {
 
     pub fn default_attribute(&self) -> PiecewiseStorageNodeAttribute {
         Self::DEFAULT_ATTRIBUTE
+    }
+
+    /// Check that the steps' literal control curves are from 0 to 1 and never decrease, since
+    /// core sizes each store as the volume between its curve and the one below.
+    pub fn validate(&self) -> Result<(), Vec<NodeProblem>> {
+        let curves: Vec<Option<f64>> = self
+            .steps
+            .iter()
+            .map(|step| match step.control_curve {
+                Metric::Literal { value } => Some(value),
+                _ => None,
+            })
+            .collect();
+
+        let mut problems: Vec<NodeProblem> = curves
+            .iter()
+            .enumerate()
+            .filter(|(_, curve)| matches!(curve, Some(value) if !(0.0..=1.0).contains(value)))
+            .map(|(step, _)| NodeProblem::ControlCurveOutOfRange { step })
+            .collect();
+
+        if let Some(index) = curves
+            .windows(2)
+            .position(|pair| matches!(pair, [Some(below), Some(curve)] if curve < below))
+        {
+            problems.push(NodeProblem::ControlCurveDecreases { step: index + 1 });
+        }
+
+        if problems.is_empty() { Ok(()) } else { Err(problems) }
     }
 }
 

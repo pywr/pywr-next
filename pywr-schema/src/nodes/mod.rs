@@ -62,6 +62,7 @@ use crate::network::LoadArgs;
 use crate::network::NetworkSchema;
 use crate::parameters::Parameter;
 use crate::v1::{ConversionData, TryFromV1, TryIntoV2};
+use crate::validation::NodeProblem;
 use crate::visit::{Reference, ReferenceMut, VisitMetrics, VisitPaths, VisitReferences};
 pub use abstraction::{AbstractionNode, AbstractionNodeAttribute, AbstractionNodeComponent, AbstractionOutputNodeSlot};
 pub use attributes::NodeAttribute;
@@ -751,6 +752,32 @@ impl Node {
         self.local_parameters()
             .and_then(|params| params.iter().find(|p| p.name() == name))
     }
+
+    /// Check the node's own fields and return every problem found. A value in a
+    /// table is not loaded, so it is not checked.
+    pub fn validate(&self) -> Result<(), Vec<NodeProblem>> {
+        match self {
+            Node::LossLink(LossLinkNode { loss_factor, .. })
+            | Node::River(RiverNode { loss_factor, .. })
+            | Node::WaterTreatmentWorks(WaterTreatmentWorksNode { loss_factor, .. }) => {
+                loss_factor.as_ref().map_or(Ok(()), LossFactor::validate)
+            }
+            Node::PiecewiseStorage(n) => n.validate(),
+            Node::RiverSplitWithGauge(n) => n.validate(),
+            Node::Reservoir(n) => n.validate(),
+            Node::Input(_)
+            | Node::Link(_)
+            | Node::Output(_)
+            | Node::Storage(_)
+            | Node::Catchment(_)
+            | Node::RiverGauge(_)
+            | Node::Delay(_)
+            | Node::PiecewiseLink(_)
+            | Node::Turbine(_)
+            | Node::Placeholder(_)
+            | Node::Abstraction(_) => Ok(()),
+        }
+    }
 }
 
 #[cfg(feature = "core")]
@@ -1179,6 +1206,99 @@ mod tests {
     use std::fs;
     use std::path::PathBuf;
     use strum::IntoEnumIterator;
+
+    /// [`Node::validate`] should pass every default node, refuse a node breaking each rule, and
+    /// pass one where a rule could be too strict.
+    #[test]
+    fn test_validate_checks_each_rule() {
+        use crate::validation::NodeProblem::*;
+        use serde_json::json;
+
+        for node_type in NodeType::iter() {
+            let node: Node = node_type.into();
+            assert_eq!(node.validate(), Ok(()), "a default {node_type}");
+        }
+
+        let x = |value: f64| json!({ "type": "Literal", "value": value });
+        let not_literal = json!({ "type": "Parameter", "name": "p" });
+        let steps = |curves: Vec<serde_json::Value>| {
+            json!(
+                curves
+                    .into_iter()
+                    .map(|curve| json!({ "control_curve": curve }))
+                    .collect::<Vec<_>>()
+            )
+        };
+
+        let cases = [
+            (
+                NodeType::Reservoir,
+                json!({ "rainfall": { "data": x(1.0) }, "evaporation": { "data": x(1.0) } }),
+                vec![NoSurfaceArea("rainfall"), NoSurfaceArea("evaporation")],
+            ),
+            (
+                NodeType::PiecewiseStorage,
+                json!({ "steps": steps(vec![x(-0.1), x(1.5)]) }),
+                vec![ControlCurveOutOfRange { step: 0 }, ControlCurveOutOfRange { step: 1 }],
+            ),
+            (
+                NodeType::PiecewiseStorage,
+                json!({ "steps": steps(vec![x(0.5), x(0.25)]) }),
+                vec![ControlCurveDecreases { step: 1 }],
+            ),
+            // Equal curves make an empty store, and only neighbouring literals are compared.
+            (
+                NodeType::PiecewiseStorage,
+                json!({ "steps": steps(vec![x(0.5), x(0.5), not_literal, x(0.25)]) }),
+                vec![],
+            ),
+            (
+                NodeType::RiverSplitWithGauge,
+                json!({ "splits": [{ "factor": x(0.0) }, { "factor": x(1.0) }, { "factor": x(0.5) }] }),
+                vec![SplitFactorOutOfRange { split: 0 }, SplitFactorOutOfRange { split: 1 }],
+            ),
+            (
+                NodeType::RiverSplitWithGauge,
+                json!({ "splits": [{ "factor": x(0.5), "slot_name": "a" }, { "factor": x(0.25), "slot_name": "a" }] }),
+                vec![DuplicateSlotName {
+                    slot: "a".to_string(),
+                    count: 2,
+                }],
+            ),
+            (
+                NodeType::LossLink,
+                json!({ "loss_factor": { "type": "Gross", "factor": x(1.0) } }),
+                vec![GrossLossFactorOutOfRange],
+            ),
+            // A zero adds no loss, and a net loss can exceed the flow.
+            (
+                NodeType::LossLink,
+                json!({ "loss_factor": { "type": "Gross", "factor": x(0.0) } }),
+                vec![],
+            ),
+            (
+                NodeType::LossLink,
+                json!({ "loss_factor": { "type": "Net", "factor": x(2.0) } }),
+                vec![],
+            ),
+            (
+                NodeType::River,
+                json!({ "loss_factor": { "type": "Net", "factor": x(-0.1) } }),
+                vec![NegativeNetLossFactor],
+            ),
+        ];
+
+        for (node_type, fields, problems) in cases {
+            let mut data = serde_json::to_value(Node::from(node_type)).unwrap();
+            for (field, value) in fields.as_object().unwrap() {
+                data[field] = value.clone();
+            }
+            let node: Node = serde_json::from_value(data.clone()).unwrap();
+
+            let expected = if problems.is_empty() { Ok(()) } else { Err(problems) };
+            assert_eq!(node.validate(), expected, "{data}");
+        }
+    }
 
     /// Every [`NodeType`] should convert to the [`Node`] variant it discriminates.
     #[test]

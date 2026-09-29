@@ -183,6 +183,27 @@ fn counts_message(counts: &[usize]) -> String {
     counts.iter().map(ToString::to_string).collect::<Vec<_>>().join(" or ")
 }
 
+/// A problem with a node's own fields, found by [`Node::validate`](crate::nodes::Node::validate).
+#[derive(Error, Debug, Clone, PartialEq, Eq)]
+pub enum NodeProblem {
+    /// The field, `rainfall` or `evaporation`.
+    #[error("`{0}` is set, but it needs a `surface_area`.")]
+    NoSurfaceArea(&'static str),
+    #[error("The `control_curve` of the step at index {step} must be from 0 to 1.")]
+    ControlCurveOutOfRange { step: usize },
+    /// The first control curve below the one before it.
+    #[error("The `control_curve` of the step at index {step} is below the one before it.")]
+    ControlCurveDecreases { step: usize },
+    #[error("The `factor` of the split at index {split} must be between 0 and 1, both excluded.")]
+    SplitFactorOutOfRange { split: usize },
+    #[error("The slot name `{slot}` is used by {count} splits, but each must be unique.")]
+    DuplicateSlotName { slot: String, count: usize },
+    #[error("A `Gross` `loss_factor` must be from 0 up to 1, 1 excluded.")]
+    GrossLossFactorOutOfRange,
+    #[error("A `Net` `loss_factor` must not be negative.")]
+    NegativeNetLossFactor,
+}
+
 /// A problem with a model that is not about any one of its networks, found by
 /// [`crate::model::TimeDomain::validate`].
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
@@ -482,6 +503,9 @@ pub enum NetworkProblem {
         table: String,
         problem: TableReferenceProblem,
     },
+    /// A node whose own fields are invalid, found by [`Node::validate`](crate::nodes::Node::validate).
+    #[error("The node `{node}` is invalid. {problem}")]
+    InvalidNode { node: String, problem: NodeProblem },
     /// A parameter whose own fields are invalid, found by
     /// [`Parameter::validate`](crate::parameters::Parameter::validate).
     #[error("The {} is invalid. {problem}", named_parameter(.parameter, .node.as_deref()))]
@@ -534,11 +558,7 @@ pub struct NetworkValidationError {
     /// The network's name in a [`crate::MultiNetworkModelSchema`]. `None` for a network validated
     /// on its own, or as part of a [`crate::ModelSchema`].
     pub name: Option<String>,
-    /// Never empty. Duplicate names first, list by list in the order nodes, parameters, tables,
-    /// time series, metric sets, each sorted by name; then invalid edges, invalid members of
-    /// virtual nodes, parameter references of the wrong kind, tables pywr cannot load, table
-    /// references that do not fit, and parameters whose own fields are invalid, the network's
-    /// before the local ones, each in the order listed.
+    /// Never empty, and in the order [`crate::NetworkSchema::validate`] lists its checks.
     pub problems: Vec<NetworkProblem>,
 }
 
