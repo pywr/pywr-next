@@ -9,7 +9,9 @@ use crate::nodes::NodeMeta;
 use crate::nodes::core::StorageInitialVolume;
 use crate::parameters::Parameter;
 use crate::v1::{ConversionData, TryFromV1, try_convert_initial_storage, try_convert_node_attr, try_convert_node_meta};
+use crate::validation::VirtualNodeProblem;
 use crate::{ConversionError, node_attribute_subset_enum};
+use jiff::civil::Date;
 #[cfg(feature = "core")]
 use pywr_core::{
     metric::UnresolvedMetricF64,
@@ -69,6 +71,37 @@ pub enum VirtualStorageReset {
         months: u8,
     },
     Seasonal(SeasonalReset),
+}
+
+impl VirtualStorageReset {
+    /// Check that each day and month make a date. Core matches them against each time-step's
+    /// date, so one that never comes means the store never resets.
+    pub fn validate(&self) -> Result<(), Vec<VirtualNodeProblem>> {
+        let mut problems = Vec::new();
+
+        let mut check = |day_field, month_field, day, month| {
+            // A leap year, so 29 February, which comes every four years, is a date.
+            if Date::new(2016, month, day).is_err() {
+                problems.push(VirtualNodeProblem::NotADate {
+                    day_field,
+                    month_field,
+                    day,
+                    month,
+                });
+            }
+        };
+
+        match self {
+            Self::Annual(annual) => check("day", "month", annual.day, annual.month),
+            Self::Seasonal(season) => {
+                check("start_day", "start_month", season.start_day, season.start_month);
+                check("end_day", "end_month", season.end_day, season.end_month);
+            }
+            Self::Never | Self::Monthly { .. } => {}
+        }
+
+        if problems.is_empty() { Ok(()) } else { Err(problems) }
+    }
 }
 
 #[cfg(feature = "core")]
