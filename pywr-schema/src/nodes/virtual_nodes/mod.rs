@@ -4,6 +4,7 @@ mod virtual_storage;
 use crate::metric::Metric;
 use crate::nodes::{NodeAttribute, NodeComponent, NodeMeta, NodePosition, PlaceholderNode};
 use crate::parameters::Parameter;
+use crate::validation::VirtualNodeProblem;
 use crate::visit::{Reference, ReferenceMut, VisitReferences};
 #[cfg(feature = "core")]
 use crate::{LoadArgs, SchemaError};
@@ -145,6 +146,14 @@ impl VirtualNode {
         self.local_parameters()
             .and_then(|params| params.iter().find(|p| p.name() == name))
     }
+
+    /// Check the virtual node's own fields and return every problem found.
+    pub fn validate(&self) -> Result<(), Vec<VirtualNodeProblem>> {
+        match self {
+            VirtualNode::VirtualStorage(n) => n.reset.as_ref().map_or(Ok(()), VirtualStorageReset::validate),
+            VirtualNode::Aggregated(_) | VirtualNode::AggregatedStorage(_) | VirtualNode::Placeholder(_) => Ok(()),
+        }
+    }
 }
 
 #[cfg(feature = "core")]
@@ -239,6 +248,51 @@ mod tests {
     use std::fs;
     use std::path::PathBuf;
     use strum::IntoEnumIterator;
+
+    /// [`VirtualNode::validate`] should pass every default virtual node, and refuse a reset date
+    /// that never comes.
+    #[test]
+    fn test_validate_checks_each_rule() {
+        use crate::validation::VirtualNodeProblem::NotADate;
+        use serde_json::json;
+
+        for node_type in VirtualNodeType::iter() {
+            let node: VirtualNode = node_type.into();
+            assert_eq!(node.validate(), Ok(()), "a default {node_type}");
+        }
+
+        let not_a_date = |day_field, month_field, day, month| NotADate {
+            day_field,
+            month_field,
+            day,
+            month,
+        };
+
+        let cases = [
+            // 29 February comes every four years.
+            (json!({ "type": "Annual", "day": 29, "month": 2 }), vec![]),
+            (
+                json!({ "type": "Annual", "day": 30, "month": 2 }),
+                vec![not_a_date("day", "month", 30, 2)],
+            ),
+            (
+                json!({ "type": "Seasonal", "start_day": 0, "start_month": 1, "end_day": 1, "end_month": 13 }),
+                vec![
+                    not_a_date("start_day", "start_month", 0, 1),
+                    not_a_date("end_day", "end_month", 1, 13),
+                ],
+            ),
+        ];
+
+        for (reset, problems) in cases {
+            let mut data = serde_json::to_value(VirtualNode::from(VirtualNodeType::VirtualStorage)).unwrap();
+            data["reset"] = reset;
+            let node: VirtualNode = serde_json::from_value(data.clone()).unwrap();
+
+            let expected = if problems.is_empty() { Ok(()) } else { Err(problems) };
+            assert_eq!(node.validate(), expected, "{data}");
+        }
+    }
 
     /// Every [`VirtualNodeType`] should convert to the [`VirtualNode`] variant it discriminates.
     #[test]

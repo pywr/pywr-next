@@ -38,6 +38,6 @@ pub use v1::{ConversionData, TryFromV1, TryIntoV2};
 pub use validation::{
     DuplicateNodeName, EdgeProblem, EdgeValidationError, ModelProblem, NetworkProblem, NetworkValidationError,
     NodeProblem, ParameterProblem, PointsProblem, ScenarioProblem, ScenarioValidationError, TableReferenceProblem,
-    ValidationError,
+    ValidationError, VirtualNodeProblem,
 };
 pub use visit::{Owner, Reference, ReferenceMut, VisitMetrics, VisitPaths, VisitReferences};

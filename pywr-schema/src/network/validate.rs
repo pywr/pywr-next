@@ -256,6 +256,25 @@ impl NetworkSchema {
             .collect()
     }
 
+    /// The problems [`VirtualNode::validate`] finds.
+    fn virtual_node_problems(&self) -> Vec<NetworkProblem> {
+        self.virtual_nodes
+            .iter()
+            .flatten()
+            .flat_map(|virtual_node| {
+                virtual_node
+                    .validate()
+                    .err()
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(|problem| NetworkProblem::InvalidVirtualNode {
+                        virtual_node: virtual_node.name().to_string(),
+                        problem,
+                    })
+            })
+            .collect()
+    }
+
     /// The problems [`Parameter::validate`] finds, the network's parameters before the local ones.
     fn parameter_problems(&self) -> Vec<NetworkProblem> {
         let mut problems = Vec::new();
@@ -294,8 +313,9 @@ impl NetworkSchema {
     /// - Each virtual node's members name parts their nodes build.
     /// - Each parameter reference suits the parameter it names.
     /// - Each table has a lookup pywr can load, and each table reference fits its table.
-    /// - Each node's and each parameter's own fields; see
-    ///   [`Node::validate`](crate::nodes::Node::validate) and [`Parameter::validate`] for the rules.
+    /// - Each node's, virtual node's and parameter's own fields; see
+    ///   [`Node::validate`](crate::nodes::Node::validate), [`VirtualNode::validate`] and
+    ///   [`Parameter::validate`] for the rules.
     ///
     /// Whether the whole model can be built is not; use [`NetworkSchema::add_to_network`] for
     /// that. See [`NetworkProblem`] for the problems that are detected.
@@ -380,6 +400,7 @@ impl NetworkSchema {
             .chain(self.parameter_reference_problems())
             .chain(self.table_problems())
             .chain(self.node_problems())
+            .chain(self.virtual_node_problems())
             .chain(self.parameter_problems())
             .collect();
 
@@ -968,7 +989,7 @@ mod tests {
         );
     }
 
-    /// A network with a node and a parameter breaking each kind of rule.
+    /// A network with a node, a virtual node and a parameter breaking each kind of rule.
     const NETWORK_WITH_INVALID_COMPONENTS: &str = r#"
     {
         "nodes": [
@@ -988,6 +1009,15 @@ mod tests {
                 "meta": { "name": "loss" },
                 "type": "LossLink",
                 "loss_factor": { "type": "Gross", "factor": { "type": "Literal", "value": 1.0 } }
+            }
+        ],
+        "virtual_nodes": [
+            {
+                "meta": { "name": "licence" },
+                "type": "VirtualStorage",
+                "nodes": [],
+                "initial_volume": { "type": "Proportional", "proportion": 1.0 },
+                "reset": { "type": "Annual", "day": 30, "month": 2 }
             }
         ],
         "edges": [],
@@ -1017,8 +1047,8 @@ mod tests {
     }
     "#;
 
-    /// Every node and parameter with invalid fields is reported: the nodes, then the network's
-    /// parameters, then the local ones.
+    /// Every component with invalid fields is reported: the nodes, the virtual nodes, the
+    /// network's parameters, then the local ones.
     #[test]
     fn test_validate_reports_all_invalid_components() {
         let network = parse_network(NETWORK_WITH_INVALID_COMPONENTS);
@@ -1029,6 +1059,7 @@ mod tests {
             messages,
             vec![
                 "The node `loss` is invalid. A `Gross` `loss_factor` must be from 0 up to 1, 1 excluded.",
+                "The virtual node `licence` is invalid. `day` 30 and `month` 2 do not make a date.",
                 "The parameter `curve` is invalid. `values` has 1 entry(s), but the control curves require 2.",
                 "The parameter `interpolated` is invalid. The points in `xp` and `fp` cannot be interpolated between. There are 2 x value(s) but 1 y value(s), and each point needs one of each.",
                 "The parameter `profile` is invalid. `values` has 3 entry(s), but the profile takes 365 or 366.",

@@ -204,6 +204,19 @@ pub enum NodeProblem {
     NegativeNetLossFactor,
 }
 
+/// A problem with a virtual node's own fields, found by
+/// [`VirtualNode::validate`](crate::nodes::VirtualNode::validate).
+#[derive(Error, Debug, Clone, PartialEq, Eq)]
+pub enum VirtualNodeProblem {
+    #[error("`{day_field}` {day} and `{month_field}` {month} do not make a date.")]
+    NotADate {
+        day_field: &'static str,
+        month_field: &'static str,
+        day: i8,
+        month: i8,
+    },
+}
+
 /// A problem with a model that is not about any one of its networks, found by
 /// [`crate::model::TimeDomain::validate`].
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
@@ -506,6 +519,13 @@ pub enum NetworkProblem {
     /// A node whose own fields are invalid, found by [`Node::validate`](crate::nodes::Node::validate).
     #[error("The node `{node}` is invalid. {problem}")]
     InvalidNode { node: String, problem: NodeProblem },
+    /// A virtual node whose own fields are invalid, found by
+    /// [`VirtualNode::validate`](crate::nodes::VirtualNode::validate).
+    #[error("The virtual node `{virtual_node}` is invalid. {problem}")]
+    InvalidVirtualNode {
+        virtual_node: String,
+        problem: VirtualNodeProblem,
+    },
     /// A parameter whose own fields are invalid, found by
     /// [`Parameter::validate`](crate::parameters::Parameter::validate).
     #[error("The {} is invalid. {problem}", named_parameter(.parameter, .node.as_deref()))]
