@@ -1,7 +1,7 @@
 use super::NetworkSchema;
 use crate::data_tables::DataTable;
 use crate::edge::Edge;
-use crate::metric::NodeComponentReference;
+use crate::metric::{MetricValueType, NodeComponentReference};
 use crate::nodes::VirtualNode;
 use crate::parameters::Parameter;
 use crate::time_series::TimeSeries;
@@ -137,6 +137,81 @@ impl NetworkSchema {
                 })
             })
             .collect()
+    }
+
+    /// The problems with the metrics reading a node or virtual node: an attribute its type does
+    /// not have, or a node read as an index. A reference naming no node, or a placeholder, is
+    /// skipped, as is one reading the default attribute, which a node always has.
+    fn node_reference_problems(&self) -> Vec<NetworkProblem> {
+        let mut problems = Vec::new();
+
+        self.visit_owned_references(&mut |owner, reference| {
+            let problem = match reference {
+                Reference::Node {
+                    name,
+                    metric: Some(MetricValueType::Index),
+                    ..
+                } => {
+                    if self.get_node_by_name(name).is_none_or(|node| node.is_placeholder()) {
+                        return;
+                    }
+
+                    NetworkProblem::NodeNotAnIndex {
+                        owner: owner.to_string(),
+                        node: name.to_string(),
+                    }
+                }
+                Reference::Node {
+                    name,
+                    attribute: Some(attribute),
+                    metric: Some(MetricValueType::Float),
+                } => {
+                    let Some(node) = self.get_node_by_name(name).filter(|node| !node.is_placeholder()) else {
+                        return;
+                    };
+                    let supported = node.attributes();
+                    if supported.contains(&attribute) {
+                        return;
+                    }
+
+                    NetworkProblem::NodeAttributeNotSupported {
+                        owner: owner.to_string(),
+                        node: name.to_string(),
+                        node_type: node.node_type(),
+                        attribute,
+                        supported,
+                    }
+                }
+                Reference::VirtualNode {
+                    name,
+                    attribute: Some(attribute),
+                } => {
+                    let Some(virtual_node) = self
+                        .get_virtual_node_by_name(name)
+                        .filter(|virtual_node| !virtual_node.is_placeholder())
+                    else {
+                        return;
+                    };
+                    let supported = virtual_node.attributes();
+                    if supported.contains(&attribute) {
+                        return;
+                    }
+
+                    NetworkProblem::VirtualNodeAttributeNotSupported {
+                        owner: owner.to_string(),
+                        virtual_node: name.to_string(),
+                        node_type: virtual_node.node_type(),
+                        attribute,
+                        supported,
+                    }
+                }
+                _ => return,
+            };
+
+            problems.push(problem);
+        });
+
+        problems
     }
 
     /// The problems with the parameter references, each checked against the value type of the
@@ -311,6 +386,8 @@ impl NetworkSchema {
     /// - The schema is unambiguous.
     /// - Each edge could be made; see [`NetworkSchema::validate_edge`] for the rules.
     /// - Each virtual node's members name parts their nodes build.
+    /// - Each metric reading a node or virtual node reads an attribute it has, and no index
+    ///   metric names a node.
     /// - Each parameter reference suits the parameter it names.
     /// - Each table has a lookup pywr can load, and each table reference fits its table.
     /// - Each node's, virtual node's and parameter's own fields; see
@@ -397,6 +474,7 @@ impl NetworkSchema {
                     .flatten()
                     .flat_map(|virtual_node| self.member_problems(virtual_node)),
             )
+            .chain(self.node_reference_problems())
             .chain(self.parameter_reference_problems())
             .chain(self.table_problems())
             .chain(self.node_problems())
@@ -833,6 +911,81 @@ mod tests {
                 "The virtual node `total` names the `Link` node `link`, but an `AggregatedStorage` node takes only storage nodes.",
                 // The rainfall that `reservoir` does not build is also a problem with the node.
                 "The node `reservoir` is invalid. `rainfall` is set, but it needs a `surface_area`.",
+            ]
+        );
+    }
+
+    /// A network with a metric for every node reference problem, among ones that pass or are
+    /// skipped: a default attribute, a placeholder and a node the network does not have.
+    const NETWORK_WITH_INVALID_NODE_REFERENCES: &str = r#"
+    {
+        "nodes": [
+            {
+                "meta": { "name": "supply" },
+                "type": "Input",
+                "max_flow": { "type": "Node", "name": "store", "attribute": "Inflow" }
+            },
+            {
+                "meta": { "name": "store" },
+                "type": "Storage",
+                "initial_volume": { "type": "Proportional", "proportion": 1.0 }
+            },
+            { "meta": { "name": "link" }, "type": "Link" },
+            { "meta": { "name": "placeholder" }, "type": "Placeholder" }
+        ],
+        "edges": [],
+        "virtual_nodes": [
+            {
+                "meta": { "name": "licence" },
+                "type": "VirtualStorage",
+                "nodes": [],
+                "initial_volume": { "type": "Proportional", "proportion": 1.0 }
+            },
+            { "meta": { "name": "virtual-placeholder" }, "type": "Placeholder" }
+        ],
+        "parameters": [
+            {
+                "meta": { "name": "total" },
+                "type": "Aggregated",
+                "phase": "Before",
+                "agg_func": { "type": "Sum" },
+                "metrics": [
+                    { "type": "Node", "name": "link", "attribute": "Outflow" },
+                    { "type": "Node", "name": "link", "attribute": "Volume" },
+                    { "type": "Node", "name": "store" },
+                    { "type": "VirtualNode", "name": "licence", "attribute": "Volume" },
+                    { "type": "VirtualNode", "name": "licence", "attribute": "Inflow" },
+                    { "type": "VirtualNode", "name": "virtual-placeholder", "attribute": "Inflow" },
+                    { "type": "Node", "name": "placeholder", "attribute": "Volume" },
+                    { "type": "Node", "name": "missing", "attribute": "Volume" }
+                ]
+            },
+            {
+                "meta": { "name": "indexed" },
+                "type": "IndexedArray",
+                "phase": "Before",
+                "metrics": [{ "type": "Literal", "value": 1.0 }],
+                "index_metric": { "type": "Node", "name": "link" }
+            }
+        ]
+    }
+    "#;
+
+    /// Every metric reading an attribute its node does not have, and every index metric naming a
+    /// node, is reported, in the order listed.
+    #[test]
+    fn test_validate_reports_all_invalid_node_references() {
+        let network = parse_network(NETWORK_WITH_INVALID_NODE_REFERENCES);
+
+        let messages: Vec<String> = expect_problems(&network).iter().map(ToString::to_string).collect();
+
+        assert_eq!(
+            messages,
+            vec![
+                "The node `supply` reads the attribute `Inflow` of the `Storage` node `store`, but nodes of this type do not have it. Their attributes are: `Volume`, `ProportionalVolume`, `MaxVolume`.",
+                "The parameter `total` reads the attribute `Volume` of the `Link` node `link`, but nodes of this type do not have it. Their attributes are: `Inflow`, `Outflow`.",
+                "The parameter `total` reads the attribute `Inflow` of the `VirtualStorage` virtual node `licence`, but virtual nodes of this type do not have it. Their attributes are: `Volume`, `ProportionalVolume`.",
+                "The parameter `indexed` uses the node `link` as an index, but nodes give only float values.",
             ]
         );
     }

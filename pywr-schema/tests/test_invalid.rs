@@ -69,6 +69,9 @@ invalid_schema_tests! {
     // A monthly profile reading its values from a table of scalars. The core builder would refuse
     // this too, when it asks the table for an array, but validation now refuses it first.
     profile_reads_scalar_table: "profile-reads-scalar-table.json", InvalidTableReference,
+    // An index metric naming a node, which gives only floats. The core builder would panic on
+    // this, but validation now refuses it first.
+    index_metric_names_node: "index-metric-names-node.json", NodeNotAnIndex,
 }
 
 /// A group of no scenarios, which `pywr-core` would build into a model that simulates nothing.

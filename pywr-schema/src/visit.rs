@@ -1,6 +1,7 @@
 use crate::data_tables::{DataTableValueType, TableDataRef};
 use crate::edge::Edge;
 use crate::metric::{IndexMetric, Metric, MetricValueType};
+use crate::nodes::NodeAttribute;
 use std::collections::HashMap;
 use std::num::{NonZeroI64, NonZeroU64, NonZeroUsize};
 use std::path::{Path, PathBuf};
@@ -259,10 +260,20 @@ impl VisitPaths for serde_json::Value {}
 /// A reference to a schema component by name.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Reference<'a> {
-    /// Resolved in the network's `nodes`.
-    Node(&'a str),
-    /// Resolved in the network's `virtual_nodes`.
-    VirtualNode(&'a str),
+    /// Resolved in the network's `nodes`. `metric` is the type of value read from it, `None` where
+    /// it is only named, such as by an edge; `attribute` is the attribute read, `None` for the
+    /// default.
+    Node {
+        name: &'a str,
+        attribute: Option<NodeAttribute>,
+        metric: Option<MetricValueType>,
+    },
+    /// Resolved in the network's `virtual_nodes`. Only a float metric names one; `attribute` is the
+    /// attribute read, `None` for the default.
+    VirtualNode {
+        name: &'a str,
+        attribute: Option<NodeAttribute>,
+    },
     /// Resolved in the network's `edges`, on all four fields: two edges can share endpoints and
     /// differ only in slot. The endpoints are also visited as [`Reference::Node`].
     Edge(&'a Edge),
@@ -295,8 +306,8 @@ pub enum Reference<'a> {
     ScenarioGroup(&'a str),
 }
 
-/// The mutable form of [`Reference`], with variants corresponding one-for-one; a parameter or
-/// table reference carries only its names.
+/// The mutable form of [`Reference`], with variants corresponding one-for-one; a node, virtual
+/// node, parameter or table reference carries only its names.
 #[derive(Debug, PartialEq)]
 pub enum ReferenceMut<'a> {
     Node(&'a mut String),
@@ -360,8 +371,15 @@ pub trait VisitReferences {
 impl VisitReferences for Metric {
     fn visit_references<F: FnMut(Reference<'_>)>(&self, visitor: &mut F) {
         match self {
-            Metric::Node(node_ref) => node_ref.visit_references(visitor),
-            Metric::VirtualNode(node_ref) => node_ref.visit_references(visitor),
+            Metric::Node(node_ref) => visitor(Reference::Node {
+                name: &node_ref.name,
+                attribute: node_ref.attribute,
+                metric: Some(MetricValueType::Float),
+            }),
+            Metric::VirtualNode(node_ref) => visitor(Reference::VirtualNode {
+                name: &node_ref.name,
+                attribute: node_ref.attribute,
+            }),
             Metric::Edge(edge_ref) => edge_ref.visit_references(visitor),
             Metric::Table(table_ref) => visitor(Reference::Table {
                 table_ref,
@@ -386,8 +404,8 @@ impl VisitReferences for Metric {
 
     fn visit_references_mut<F: FnMut(ReferenceMut<'_>)>(&mut self, visitor: &mut F) {
         match self {
-            Metric::Node(node_ref) => node_ref.visit_references_mut(visitor),
-            Metric::VirtualNode(node_ref) => node_ref.visit_references_mut(visitor),
+            Metric::Node(node_ref) => visitor(ReferenceMut::Node(&mut node_ref.name)),
+            Metric::VirtualNode(node_ref) => visitor(ReferenceMut::VirtualNode(&mut node_ref.name)),
             Metric::Edge(edge_ref) => edge_ref.visit_references_mut(visitor),
             Metric::Table(table_ref) => visitor(ReferenceMut::Table(&mut table_ref.table)),
             Metric::TimeSeries(ts_ref) => ts_ref.visit_references_mut(visitor),
@@ -404,7 +422,11 @@ impl VisitReferences for Metric {
 impl VisitReferences for IndexMetric {
     fn visit_references<F: FnMut(Reference<'_>)>(&self, visitor: &mut F) {
         match self {
-            IndexMetric::Node(node_ref) => node_ref.visit_references(visitor),
+            IndexMetric::Node(node_ref) => visitor(Reference::Node {
+                name: &node_ref.name,
+                attribute: node_ref.attribute,
+                metric: Some(MetricValueType::Index),
+            }),
             IndexMetric::Table(table_ref) => visitor(Reference::Table {
                 table_ref,
                 expected: DataTableValueType::Scalar,
@@ -427,7 +449,7 @@ impl VisitReferences for IndexMetric {
 
     fn visit_references_mut<F: FnMut(ReferenceMut<'_>)>(&mut self, visitor: &mut F) {
         match self {
-            IndexMetric::Node(node_ref) => node_ref.visit_references_mut(visitor),
+            IndexMetric::Node(node_ref) => visitor(ReferenceMut::Node(&mut node_ref.name)),
             IndexMetric::Table(table_ref) => visitor(ReferenceMut::Table(&mut table_ref.table)),
             IndexMetric::TimeSeries(ts_ref) => ts_ref.visit_references_mut(visitor),
             IndexMetric::Parameter(p_ref) => visitor(ReferenceMut::Parameter(&mut p_ref.name)),
@@ -979,8 +1001,8 @@ mod tests {
     /// Render a reference as "Kind:name", so a failure names the kind as well as the location.
     fn describe(reference: Reference<'_>) -> String {
         match reference {
-            Reference::Node(name) => format!("Node:{name}"),
-            Reference::VirtualNode(name) => format!("VirtualNode:{name}"),
+            Reference::Node { name, .. } => format!("Node:{name}"),
+            Reference::VirtualNode { name, .. } => format!("VirtualNode:{name}"),
             Reference::Edge(edge) => format!("Edge:{edge}"),
             Reference::Parameter { name, .. } => format!("Parameter:{name}"),
             Reference::LocalParameter { node, name, .. } => {

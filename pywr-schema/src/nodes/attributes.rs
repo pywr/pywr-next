@@ -6,7 +6,7 @@ use strum_macros::{Display, EnumIter};
 ///
 ///
 #[derive(
-    serde::Deserialize, serde::Serialize, Debug, Clone, Copy, Display, JsonSchema, PywrVisitAll, PartialEq, EnumIter,
+    serde::Deserialize, serde::Serialize, Debug, Clone, Copy, Display, JsonSchema, PywrVisitAll, PartialEq, Eq, EnumIter,
 )]
 pub enum NodeAttribute {
     Inflow,
