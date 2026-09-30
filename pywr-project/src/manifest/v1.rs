@@ -28,6 +28,12 @@ impl ProjectManifestValidationError {
                 write!(f, ":")?;
                 for problem in &self.0.problems {
                     write!(f, "\n- {problem}")?;
+                    // Make sure to include the source chain of any underlying errors, if present.
+                    let mut source = std::error::Error::source(problem);
+                    while let Some(error) = source {
+                        write!(f, " {error}")?;
+                        source = error.source();
+                    }
                 }
                 Ok(())
             }
