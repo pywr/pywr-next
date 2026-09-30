@@ -732,7 +732,7 @@ fn scenario_problems<'a>(
                 if !groups.contains(group) {
                     problems.push(ScenarioProblem::UnknownGroupReference {
                         network: network_name.map(ToString::to_string),
-                        owner: owner.to_string(),
+                        owner: owner.into(),
                         group: group.to_string(),
                     });
                 }
@@ -1218,7 +1218,9 @@ mod tests {
     use super::{ModelSchema, MultiNetworkModelSchema, ScenarioDomain};
     use crate::edge::Edge;
     use crate::model::{TimeDomain, Timestep};
-    use crate::validation::{EdgeProblem, ModelProblem, NetworkProblem, ScenarioProblem, ValidationError};
+    use crate::validation::{
+        EdgeProblem, ModelProblem, NetworkProblem, ProblemOwner, ScenarioProblem, ValidationError,
+    };
     use crate::visit::VisitPaths;
     use jiff::civil::date;
     use std::fs;
@@ -1813,7 +1815,7 @@ mod tests {
                 error.scenarios,
                 vec![ScenarioProblem::UnknownGroupReference {
                     network: None,
-                    owner: "parameter `inflow`".to_string(),
+                    owner: ProblemOwner::Parameter("inflow".to_string()),
                     group: "climate".to_string(),
                 }]
             );
@@ -1865,7 +1867,7 @@ mod tests {
                 },
                 ScenarioProblem::UnknownGroupReference {
                     network: Some("north".to_string()),
-                    owner: "parameter `inflow`".to_string(),
+                    owner: ProblemOwner::Parameter("inflow".to_string()),
                     group: "weather".to_string(),
                 },
             ]
