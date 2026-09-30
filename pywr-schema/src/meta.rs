@@ -48,6 +48,7 @@ impl ComponentProvenance {
 pub trait ComponentMeta {
     fn provenance(&self) -> Option<&ComponentProvenance>;
     fn set_provenance(&mut self, provenance: ComponentProvenance);
+    fn clear_provenance(&mut self);
 }
 
 /// Metadata shared by named network components without component-specific fields.
@@ -70,6 +71,10 @@ impl ComponentMeta for NamedMeta {
 
     fn set_provenance(&mut self, provenance: ComponentProvenance) {
         self.provenance = Some(provenance);
+    }
+
+    fn clear_provenance(&mut self) {
+        self.provenance = None;
     }
 }
 #[cfg(test)]

@@ -179,6 +179,10 @@ impl crate::meta::ComponentMeta for NodeMeta {
     fn set_provenance(&mut self, provenance: crate::meta::ComponentProvenance) {
         self.provenance = Some(provenance);
     }
+
+    fn clear_provenance(&mut self) {
+        self.provenance = None;
+    }
 }
 
 impl NodeMeta {
