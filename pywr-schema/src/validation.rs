@@ -3,7 +3,7 @@
 use crate::data_tables::{CsvDataTableLookup, DataTableValueType};
 use crate::edge::Edge;
 use crate::metric::ParameterReturnValue;
-use crate::nodes::{NodeComponent, NodeSlot, NodeType, VirtualNodeType};
+use crate::nodes::{NodeAttribute, NodeComponent, NodeSlot, NodeType, VirtualNodeType};
 use crate::parameters::ParameterPhase;
 use jiff::civil::DateTime;
 use thiserror::Error;
@@ -468,6 +468,12 @@ fn component_list_message(built: &[NodeComponent]) -> String {
     }
 }
 
+/// The attributes nodes of a type have, for the end of a message about one they do not.
+fn attribute_list_message(attributes: &[NodeAttribute]) -> String {
+    let attributes: Vec<String> = attributes.iter().map(|attribute| format!("`{attribute}`")).collect();
+    format!("Their attributes are: {}.", attributes.join(", "))
+}
+
 /// A problem with one network, found by [`crate::NetworkSchema::validate`].
 ///
 /// A name must be unique within its list, not across lists: `nodes` and `virtual_nodes` share one
@@ -526,6 +532,33 @@ pub enum NetworkProblem {
         node: String,
         node_type: NodeType,
     },
+    /// A metric reading an attribute its node's type does not have.
+    #[error(
+        "The {owner} reads the attribute `{attribute}` of the `{node_type}` node `{node}`, but nodes of this type do not have it. {}", attribute_list_message(.supported)
+    )]
+    NodeAttributeNotSupported {
+        owner: String,
+        node: String,
+        node_type: NodeType,
+        attribute: NodeAttribute,
+        /// The attributes nodes of this type do have.
+        supported: Vec<NodeAttribute>,
+    },
+    /// A metric reading an attribute its virtual node's type does not have.
+    #[error(
+        "The {owner} reads the attribute `{attribute}` of the `{node_type}` virtual node `{virtual_node}`, but virtual nodes of this type do not have it. {}", attribute_list_message(.supported)
+    )]
+    VirtualNodeAttributeNotSupported {
+        owner: String,
+        virtual_node: String,
+        node_type: VirtualNodeType,
+        attribute: NodeAttribute,
+        /// The attributes virtual nodes of this type do have.
+        supported: Vec<NodeAttribute>,
+    },
+    /// An index metric naming a node, which gives only float values.
+    #[error("The {owner} uses the node `{node}` as an index, but nodes give only float values.")]
+    NodeNotAnIndex { owner: String, node: String },
     /// An index metric naming a parameter that gives a float value.
     #[error(
         "The {owner} uses the {} as an index, but it gives a float value.", named_parameter(.parameter, .node.as_deref())
