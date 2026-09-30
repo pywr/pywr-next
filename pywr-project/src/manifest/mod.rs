@@ -1,7 +1,7 @@
 pub mod v1;
 
 use crate::composition::ComposedModel;
-use crate::error::{ComposeModelError, ProjectManifestReadError, ValidationError};
+use crate::error::{ComposeModelError, ProjectManifestReadError};
 use pywr_schema::model::{ScenarioDomain, TimeDomain};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -15,18 +15,41 @@ pub enum ProjectManifest {
     V1(v1::ProjectManifest),
 }
 
+/// A validation error for a project manifest.
+///
+/// This is a wrapper around the version-specific validation errors, so that the version of the
+/// manifest can be determined from the error type.
 #[derive(Debug)]
-pub enum ProjectManifestValidationReport {
-    V1(v1::ProjectManifestValidationReport),
+pub enum ProjectManifestValidationError {
+    V1(v1::ProjectManifestValidationError),
 }
 
-impl ProjectManifestValidationReport {
-    pub fn is_valid(&self) -> bool {
+impl ProjectManifestValidationError {
+    /// A multi-line report with a summary followed by one line for each problem.
+    pub fn report(&self) -> impl std::fmt::Display {
+        struct Report<'a>(&'a ProjectManifestValidationError);
+
+        impl std::fmt::Display for Report<'_> {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                match self.0 {
+                    ProjectManifestValidationError::V1(report) => report.report().fmt(f),
+                }
+            }
+        }
+
+        Report(self)
+    }
+}
+
+impl std::fmt::Display for ProjectManifestValidationError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::V1(report) => report.is_valid(),
+            Self::V1(report) => report.fmt(f),
         }
     }
 }
+
+impl std::error::Error for ProjectManifestValidationError {}
 
 impl ProjectManifest {
     pub fn from_path<P: AsRef<Path>>(path: P) -> Result<Self, ProjectManifestReadError> {
@@ -37,9 +60,9 @@ impl ProjectManifest {
         Ok(serde_json::from_str(data.as_str())?)
     }
 
-    pub fn validate(&self, root: &Path) -> Result<ProjectManifestValidationReport, ValidationError> {
+    pub fn validate(&self, root: &Path) -> Result<(), ProjectManifestValidationError> {
         match self {
-            ProjectManifest::V1(manifest) => manifest.validate(root).map(ProjectManifestValidationReport::V1),
+            ProjectManifest::V1(manifest) => manifest.validate(root).map_err(ProjectManifestValidationError::V1),
         }
     }
 
