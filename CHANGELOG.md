@@ -2,6 +2,28 @@
 
 All notable changes to this project since v2.0.0-beta will be documented in this file.
 
+## [2.0.0-beta11] - 2026-09-30
+
+### 🚀 Features
+
+- *(schema)* Validate a param's fields in NetworkSchema::validate (#864)
+- *(schema)* Validate a node's fields in NetworkSchema::validate (#866)
+- *(schema)* Validate a virtual node's fields in NetworkSchema::validate (#867)
+- Add clear provenance method to ComponentMeta trait. (#869)
+- *(schema)* Validate field values that core can't run correctly (#870)
+- *(schema)* Validate node refs against the attributes of the node they name (#872)
+- *(schema)* Validate param references against the phase of the param they name (#873)
+- *(schema)* Hold a problem's owner as a ProblemOwner, not a string (#875)
+- Implement Display and report for project manifest validation. (#871)
+
+### 🐛 Bug Fixes
+
+- Record the phases a param calculates with the all_parameters filter (#858)
+
+### 🚜 Refactor
+
+- *(schema)* Move validation problems to validation.rs and split network.rs into a module (#863)
+
 ## [2.0.0-beta10] - 2026-09-28
 
 ### 🚀 Features
