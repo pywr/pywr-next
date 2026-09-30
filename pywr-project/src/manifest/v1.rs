@@ -1,5 +1,5 @@
 use crate::composition::{ComposedModel, ComposedModelBuilder, ComposedNetworkPath, PositionOffset};
-use crate::error::{ComposeModelError, ValidationError};
+use crate::error::ComposeModelError;
 use crate::manifest::DefinitionOverrides;
 use pywr_schema::meta::ProvenanceSource;
 use relative_path::{RelativePath, RelativePathBuf};
@@ -12,14 +12,10 @@ use thiserror::Error;
 
 #[derive(Debug, Default)]
 pub struct ProjectManifestValidationReport {
-    pub errors: Vec<ProjectManifestValidationError>,
+    pub problems: Vec<ProjectManifestProblem>,
 }
 
 impl ProjectManifestValidationReport {
-    pub fn is_valid(&self) -> bool {
-        self.errors.is_empty()
-    }
-
     /// A multi-line report with a summary followed by one line for each problem.
     pub fn report(&self) -> impl std::fmt::Display {
         struct Report<'a>(&'a ProjectManifestValidationReport);
@@ -28,7 +24,7 @@ impl ProjectManifestValidationReport {
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
                 self.0.write_summary(f)?;
                 write!(f, ":")?;
-                for error in &self.0.errors {
+                for error in &self.0.problems {
                     write!(f, "\n- {error}")?;
                 }
                 Ok(())
@@ -39,7 +35,7 @@ impl ProjectManifestValidationReport {
     }
 
     fn write_summary(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "The project manifest has {} problem(s)", self.errors.len())
+        write!(f, "The project manifest has {} problem(s)", self.problems.len())
     }
 }
 
@@ -51,7 +47,9 @@ impl std::fmt::Display for ProjectManifestValidationReport {
 }
 
 #[derive(Error, Debug)]
-pub enum ProjectManifestValidationError {
+pub enum ProjectManifestProblem {
+    #[error("Definition not found: {definition}")]
+    DefinitionNotFound { definition: String },
     #[error("The name `{set}` is used by {count} network sets, but each name must be unique.")]
     DuplicateNetworkSet { set: String, count: usize },
     #[error("The name `{definition}` is used by {count} definitions, but each name must be unique.")]
@@ -160,7 +158,7 @@ pub struct ProjectManifest {
 
 impl ProjectManifest {
     /// Validate the project manifest and return a report of all structural errors found.
-    pub fn validate(&self, root: &Path) -> Result<ProjectManifestValidationReport, ValidationError> {
+    pub fn validate(&self, root: &Path) -> Result<(), ProjectManifestValidationReport> {
         let mut errors = self.manifest_errors();
         let sets = self.resolve_network_sets(root, &mut errors);
         let base_model = self.resolve_base_model(root, &mut errors);
@@ -171,27 +169,35 @@ impl ProjectManifest {
 
         // Resolving here exercises the same path policy used by composition even if there are no definitions.
         let _ = base_model;
-        Ok(ProjectManifestValidationReport { errors })
+        if !errors.is_empty() {
+            Err(ProjectManifestValidationReport { problems: errors })
+        } else {
+            Ok(())
+        }
     }
 
     /// Validate a definition against the project manifest.
-    pub fn validate_model(
-        &self,
-        root: &Path,
-        definition_name: &str,
-    ) -> Result<ProjectManifestValidationReport, ValidationError> {
-        let definition = self
-            .definitions
-            .iter()
-            .find(|d| d.name == definition_name)
-            .ok_or_else(|| ValidationError::DefinitionNotFound {
-                definition: definition_name.to_string(),
-            })?;
-        let mut errors = self.manifest_errors();
-        let sets = self.resolve_network_sets(root, &mut errors);
-        self.resolve_base_model(root, &mut errors);
-        definition.validate(&sets, &mut errors);
-        Ok(ProjectManifestValidationReport { errors })
+    pub fn validate_model(&self, root: &Path, definition_name: &str) -> Result<(), ProjectManifestValidationReport> {
+        let errors = match self.definitions.iter().find(|d| d.name == definition_name) {
+            Some(definition) => {
+                let mut errors = self.manifest_errors();
+                let sets = self.resolve_network_sets(root, &mut errors);
+                self.resolve_base_model(root, &mut errors);
+                definition.validate(&sets, &mut errors);
+                errors
+            }
+            None => {
+                vec![ProjectManifestProblem::DefinitionNotFound {
+                    definition: definition_name.to_string(),
+                }]
+            }
+        };
+
+        if !errors.is_empty() {
+            Err(ProjectManifestValidationReport { problems: errors })
+        } else {
+            Ok(())
+        }
     }
 
     /// Compose a model from the base model and the specified definition.
@@ -224,18 +230,18 @@ impl ProjectManifest {
         definition.compose_model(base_model, base_file, &sets)
     }
 
-    fn manifest_errors(&self) -> Vec<ProjectManifestValidationError> {
+    fn manifest_errors(&self) -> Vec<ProjectManifestProblem> {
         let mut errors = Vec::new();
         add_duplicate_errors(
             &self.network_sets,
             |set| &set.name,
-            |name, count| ProjectManifestValidationError::DuplicateNetworkSet { set: name, count },
+            |name, count| ProjectManifestProblem::DuplicateNetworkSet { set: name, count },
             &mut errors,
         );
         add_duplicate_errors(
             &self.definitions,
             |definition| &definition.name,
-            |name, count| ProjectManifestValidationError::DuplicateDefinition {
+            |name, count| ProjectManifestProblem::DuplicateDefinition {
                 definition: name,
                 count,
             },
@@ -244,7 +250,7 @@ impl ProjectManifest {
         for set in &self.network_sets {
             if let (Some(min_files), Some(max_files)) = (set.min_files, set.max_files) {
                 if min_files > max_files {
-                    errors.push(ProjectManifestValidationError::InvalidFileConstraints {
+                    errors.push(ProjectManifestProblem::InvalidFileConstraints {
                         set: set.name.clone(),
                         min_files,
                         max_files,
@@ -255,7 +261,7 @@ impl ProjectManifest {
         errors
     }
 
-    fn resolve_base_model(&self, root: &Path, errors: &mut Vec<ProjectManifestValidationError>) -> Option<PathBuf> {
+    fn resolve_base_model(&self, root: &Path, errors: &mut Vec<ProjectManifestProblem>) -> Option<PathBuf> {
         match resolve_base_model(root, &self.base_model) {
             Ok(path) => Some(path),
             Err(error) => {
@@ -268,7 +274,7 @@ impl ProjectManifest {
     fn resolve_network_sets(
         &self,
         root: &Path,
-        errors: &mut Vec<ProjectManifestValidationError>,
+        errors: &mut Vec<ProjectManifestProblem>,
     ) -> HashMap<String, ResolvedNetworkSet> {
         let mut resolved = HashMap::new();
         for set in &self.network_sets {
@@ -295,14 +301,14 @@ pub struct Definition {
 }
 
 impl Definition {
-    fn validate(&self, sets: &HashMap<String, ResolvedNetworkSet>, errors: &mut Vec<ProjectManifestValidationError>) {
+    fn validate(&self, sets: &HashMap<String, ResolvedNetworkSet>, errors: &mut Vec<ProjectManifestProblem>) {
         let mut counts = HashMap::new();
         for selection in &self.include {
             *counts.entry(selection.set.clone()).or_insert(0) += 1;
         }
         for (set, count) in &counts {
             if *count > 1 {
-                errors.push(ProjectManifestValidationError::DuplicateSet {
+                errors.push(ProjectManifestProblem::DuplicateSet {
                     definition: self.name.clone(),
                     set: set.clone(),
                     count: *count,
@@ -315,7 +321,7 @@ impl Definition {
                 Some(selection) => {
                     let selected = resolve_selection(self, selection, set, errors);
                     for file in unused_file_meta_keys(selection, &selected) {
-                        errors.push(ProjectManifestValidationError::UnusedFileMeta {
+                        errors.push(ProjectManifestProblem::UnusedFileMeta {
                             definition: self.name.clone(),
                             set: set.name.clone(),
                             file: file.to_string(),
@@ -329,7 +335,7 @@ impl Definition {
         }
         for selection in &self.include {
             if !sets.contains_key(&selection.set) {
-                errors.push(ProjectManifestValidationError::SetNotFound {
+                errors.push(ProjectManifestProblem::SetNotFound {
                     definition: self.name.clone(),
                     set: selection.set.clone(),
                 });
@@ -500,7 +506,7 @@ fn resolve_selection<'a>(
     definition: &Definition,
     selection: &DefinitionSelection,
     set: &'a ResolvedNetworkSet,
-    errors: &mut Vec<ProjectManifestValidationError>,
+    errors: &mut Vec<ProjectManifestProblem>,
 ) -> Vec<&'a ResolvedNetworkFile> {
     if selection.include_all.unwrap_or(false) {
         return set.files.iter().collect();
@@ -509,13 +515,13 @@ fn resolve_selection<'a>(
     let mut names = HashSet::new();
     for file in selection.files.as_deref().unwrap_or_default() {
         if !is_filename(file) {
-            errors.push(ProjectManifestValidationError::InvalidFilePath {
+            errors.push(ProjectManifestProblem::InvalidFilePath {
                 definition: definition.name.clone(),
                 set: set.name.clone(),
                 file: file.clone(),
             });
         } else if !names.insert(file) {
-            errors.push(ProjectManifestValidationError::DuplicateFile {
+            errors.push(ProjectManifestProblem::DuplicateFile {
                 definition: definition.name.clone(),
                 set: set.name.clone(),
                 file: file.clone(),
@@ -523,7 +529,7 @@ fn resolve_selection<'a>(
         } else if let Some(resolved) = set.files.iter().find(|candidate| candidate.name == OsStr::new(file)) {
             result.push(resolved);
         } else {
-            errors.push(ProjectManifestValidationError::FileNotFound {
+            errors.push(ProjectManifestProblem::FileNotFound {
                 definition: definition.name.clone(),
                 set: set.name.clone(),
                 file: file.clone(),
@@ -587,11 +593,11 @@ fn validate_constraints(
     definition: &Definition,
     set: &ResolvedNetworkSet,
     count: usize,
-    errors: &mut Vec<ProjectManifestValidationError>,
+    errors: &mut Vec<ProjectManifestProblem>,
 ) {
     if let Some(min_files) = set.min_files {
         if count < min_files {
-            errors.push(ProjectManifestValidationError::MinFilesNotMet {
+            errors.push(ProjectManifestProblem::MinFilesNotMet {
                 definition: definition.name.clone(),
                 set: set.name.clone(),
                 min_files,
@@ -601,7 +607,7 @@ fn validate_constraints(
     }
     if let Some(max_files) = set.max_files {
         if count > max_files {
-            errors.push(ProjectManifestValidationError::MaxFilesExceeded {
+            errors.push(ProjectManifestProblem::MaxFilesExceeded {
                 definition: definition.name.clone(),
                 set: set.name.clone(),
                 max_files,
@@ -703,15 +709,15 @@ fn is_filename(value: &str) -> bool {
 }
 
 fn canonicalize_contained(root: &Path, candidate: &Path, field: &str) -> Result<PathBuf, ComposeModelError> {
-    let canonical_root = root.canonicalize().map_err(|source| ComposeModelError::DirectoryRead {
-        set: field.to_string(),
-        path: root.to_path_buf(),
-        source,
-    })?;
+    let canonical_root = root
+        .canonicalize()
+        .map_err(|source| ComposeModelError::UnableToCanonicalizePath {
+            path: root.to_path_buf(),
+            source,
+        })?;
     let resolved_path = candidate
         .canonicalize()
-        .map_err(|source| ComposeModelError::DirectoryRead {
-            set: field.to_string(),
+        .map_err(|source| ComposeModelError::UnableToCanonicalizePath {
             path: candidate.to_path_buf(),
             source,
         })?;
@@ -727,34 +733,32 @@ fn canonicalize_contained(root: &Path, candidate: &Path, field: &str) -> Result<
 }
 
 trait ValidationConversion {
-    fn into_validation_error(self) -> ProjectManifestValidationError;
+    fn into_validation_error(self) -> ProjectManifestProblem;
 }
 impl ValidationConversion for ComposeModelError {
-    fn into_validation_error(self) -> ProjectManifestValidationError {
+    fn into_validation_error(self) -> ProjectManifestProblem {
         match self {
             ComposeModelError::InvalidRelativePath { field, path } => {
-                ProjectManifestValidationError::InvalidRelativePath { field, path }
+                ProjectManifestProblem::InvalidRelativePath { field, path }
             }
             ComposeModelError::PathEscapesRoot {
                 field,
                 path,
                 root,
                 resolved_path,
-            } => ProjectManifestValidationError::PathEscapesRoot {
+            } => ProjectManifestProblem::PathEscapesRoot {
                 field,
                 path,
                 root,
                 resolved_path,
             },
-            ComposeModelError::BaseModelNotFound { path } => ProjectManifestValidationError::BaseModelNotFound { path },
-            ComposeModelError::BaseModelNotAFile { path } => ProjectManifestValidationError::BaseModelNotAFile { path },
+            ComposeModelError::BaseModelNotFound { path } => ProjectManifestProblem::BaseModelNotFound { path },
+            ComposeModelError::BaseModelNotAFile { path } => ProjectManifestProblem::BaseModelNotAFile { path },
             ComposeModelError::DirectoryNotFound { set, path } => {
-                ProjectManifestValidationError::DirectoryNotFound { set, dir: path }
+                ProjectManifestProblem::DirectoryNotFound { set, dir: path }
             }
-            ComposeModelError::NotADirectory { set, path } => {
-                ProjectManifestValidationError::NotADirectory { set, dir: path }
-            }
-            ComposeModelError::DirectoryRead { set, path, source } => ProjectManifestValidationError::DirectoryRead {
+            ComposeModelError::NotADirectory { set, path } => ProjectManifestProblem::NotADirectory { set, dir: path },
+            ComposeModelError::DirectoryRead { set, path, source } => ProjectManifestProblem::DirectoryRead {
                 set,
                 dir: path,
                 error: source,
@@ -779,10 +783,10 @@ where
     Ok(())
 }
 
-fn add_duplicate_errors<T, F, E>(items: &[T], key: F, error: E, errors: &mut Vec<ProjectManifestValidationError>)
+fn add_duplicate_errors<T, F, E>(items: &[T], key: F, error: E, errors: &mut Vec<ProjectManifestProblem>)
 where
     F: Fn(&T) -> &String,
-    E: Fn(String, usize) -> ProjectManifestValidationError,
+    E: Fn(String, usize) -> ProjectManifestProblem,
 {
     let mut counts = HashMap::new();
     for item in items {
@@ -809,12 +813,12 @@ mod test {
         assert_eq!(empty.report().to_string(), "The project manifest has 0 problem(s):");
 
         let report = ProjectManifestValidationReport {
-            errors: vec![
-                ProjectManifestValidationError::DuplicateNetworkSet {
+            problems: vec![
+                ProjectManifestProblem::DuplicateNetworkSet {
                     set: "nets".into(),
                     count: 2,
                 },
-                ProjectManifestValidationError::BaseModelNotFound {
+                ProjectManifestProblem::BaseModelNotFound {
                     path: PathBuf::from("base.json"),
                 },
             ],
@@ -825,7 +829,7 @@ mod test {
             "The project manifest has 2 problem(s):\n- The name `nets` is used by 2 network sets, but each name must be unique.\n- The base model `base.json` was not found."
         );
 
-        let public_report = super::super::ProjectManifestValidationReport::V1(report);
+        let public_report = super::super::ProjectManifestValidationError::V1(report);
         assert_eq!(public_report.to_string(), "The project manifest has 2 problem(s).");
         assert_eq!(
             public_report.report().to_string(),
@@ -835,7 +839,7 @@ mod test {
 
     #[test]
     fn directory_read_validation_error_preserves_source() {
-        let error = ProjectManifestValidationError::DirectoryRead {
+        let error = ProjectManifestProblem::DirectoryRead {
             set: "nets".into(),
             dir: PathBuf::from("nets"),
             error: std::io::Error::other("unreadable"),
@@ -909,12 +913,12 @@ mod test {
                 vec![with_offset(selection, unused)],
             );
             for report in [
-                project.validate(root.path()).unwrap(),
-                project.validate_model(root.path(), "test").unwrap(),
+                project.validate(root.path()).unwrap_err(),
+                project.validate_model(root.path(), "test").unwrap_err(),
             ] {
-                assert!(report.errors.iter().any(|error| matches!(
+                assert!(report.problems.iter().any(|error| matches!(
                     error,
-                    ProjectManifestValidationError::UnusedFileMeta { definition, set, file }
+                    ProjectManifestProblem::UnusedFileMeta { definition, set, file }
                         if definition == "test" && set == "nets" && file == unused
                 )));
             }
@@ -954,7 +958,7 @@ mod test {
                     "a.json",
                 )],
             );
-            assert!(project.validate(root.path()).unwrap().is_valid());
+            assert!(project.validate(root.path()).is_ok());
             let composed = project.compose_model(root.path(), "test").unwrap();
             let options = pywr_schema::NetworkMergeOptions {
                 schematic_position_offset: Some((1.0, 1.0)),
@@ -1157,10 +1161,17 @@ mod test {
             vec![set("nets", None, None, None)],
             vec![selection("nets", None, true)],
         );
-        assert!(project.validate(root.path()).unwrap().errors.iter().any(|error| matches!(
-            error,
-            ProjectManifestValidationError::InvalidRelativePath { field, .. } if field == "network set 'nets' file"
-        )));
+        assert!(
+            project
+                .validate(root.path())
+                .unwrap_err()
+                .problems
+                .iter()
+                .any(|error| matches!(
+                    error,
+                    ProjectManifestProblem::InvalidRelativePath { field, .. } if field == "network set 'nets' file"
+                ))
+        );
         assert!(matches!(
             project.compose_model(root.path(), "test"),
             Err(ComposeModelError::InvalidRelativePath { field, .. }) if field == "network set 'nets' file"
@@ -1177,12 +1188,12 @@ mod test {
             vec![set("nets", None, Some(1), None)],
             vec![selection("nets", Some(vec!["missing.json"]), false)],
         );
-        let report = manifest.validate(root.path()).unwrap();
+        let report = manifest.validate(root.path()).unwrap_err();
         assert!(matches!(
-            report.errors.as_slice(),
+            report.problems.as_slice(),
             [
-                ProjectManifestValidationError::FileNotFound { .. },
-                ProjectManifestValidationError::MinFilesNotMet { actual_files: 0, .. }
+                ProjectManifestProblem::FileNotFound { .. },
+                ProjectManifestProblem::MinFilesNotMet { actual_files: 0, .. }
             ]
         ));
     }
@@ -1195,9 +1206,11 @@ mod test {
             vec![set("nets", Some("../nets"), None, None)],
             vec![selection("nets", Some(vec!["../outside.json"]), false)],
         );
-        let report = manifest.validate(root.path()).unwrap();
-        assert!(report.errors.iter().any(|error| matches!(error, ProjectManifestValidationError::InvalidRelativePath { field, .. } if field == "base model")));
-        assert!(report.errors.iter().any(|error| matches!(error, ProjectManifestValidationError::InvalidRelativePath { field, .. } if field.contains("network set 'nets' directory"))));
+        let report = manifest.validate(root.path()).unwrap_err();
+        assert!(report.problems.iter().any(
+            |error| matches!(error, ProjectManifestProblem::InvalidRelativePath { field, .. } if field == "base model")
+        ));
+        assert!(report.problems.iter().any(|error| matches!(error, ProjectManifestProblem::InvalidRelativePath { field, .. } if field.contains("network set 'nets' directory"))));
     }
 
     #[test]
@@ -1221,10 +1234,10 @@ mod test {
             vec![selection("nets", Some(vec!["../outside.json"]), false)],
         );
 
-        let report = manifest.validate(root.path()).unwrap();
-        assert!(report.errors.iter().any(|error| matches!(
+        let report = manifest.validate(root.path()).unwrap_err();
+        assert!(report.problems.iter().any(|error| matches!(
             error,
-            ProjectManifestValidationError::InvalidFilePath { file, .. } if file == "../outside.json"
+            ProjectManifestProblem::InvalidFilePath { file, .. } if file == "../outside.json"
         )));
         assert!(matches!(
             manifest.compose_model(root.path(), "test"),
@@ -1286,12 +1299,12 @@ mod test {
             vec![set("nets", None, None, None)],
             vec![selection("nets", None, true)],
         );
-        let report = manifest.validate(root.path()).unwrap();
+        let report = manifest.validate(root.path()).unwrap_err();
         assert!(
             report
-                .errors
+                .problems
                 .iter()
-                .any(|error| matches!(error, ProjectManifestValidationError::PathEscapesRoot { .. }))
+                .any(|error| matches!(error, ProjectManifestProblem::PathEscapesRoot { .. }))
         );
         assert!(matches!(
             manifest.compose_model(root.path(), "test"),
@@ -1320,24 +1333,24 @@ mod test {
                 },
             ],
         };
-        let report = manifest.validate(root.path()).unwrap();
+        let report = manifest.validate(root.path()).unwrap_err();
         assert!(
             report
-                .errors
+                .problems
                 .iter()
-                .any(|error| matches!(error, ProjectManifestValidationError::DuplicateNetworkSet { .. }))
+                .any(|error| matches!(error, ProjectManifestProblem::DuplicateNetworkSet { .. }))
         );
         assert!(
             report
-                .errors
+                .problems
                 .iter()
-                .any(|error| matches!(error, ProjectManifestValidationError::DuplicateDefinition { .. }))
+                .any(|error| matches!(error, ProjectManifestProblem::DuplicateDefinition { .. }))
         );
         assert!(
             report
-                .errors
+                .problems
                 .iter()
-                .any(|error| matches!(error, ProjectManifestValidationError::InvalidFileConstraints { .. }))
+                .any(|error| matches!(error, ProjectManifestProblem::InvalidFileConstraints { .. }))
         );
     }
 }

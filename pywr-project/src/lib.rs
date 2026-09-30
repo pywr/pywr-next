@@ -7,6 +7,6 @@ pub use composition::{
     ComposedModel, ComposedModelBuilder, ComposedModelNetworkSchema, ComposedModelSchemas, ComposedNetworkPath,
     PositionOffset,
 };
-pub use error::{ComposeModelError, ComposeToSchemaError, ProjectError, ProjectManifestReadError, ValidationError};
-pub use manifest::{DefinitionOverrides, ProjectManifest, ProjectManifestValidationReport, v1};
+pub use error::{ComposeModelError, ComposeToSchemaError, ProjectError, ProjectManifestReadError};
+pub use manifest::{DefinitionOverrides, ProjectManifest, ProjectManifestValidationError, v1};
 pub use project::Project;
