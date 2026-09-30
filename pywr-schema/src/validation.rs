@@ -556,7 +556,7 @@ pub enum NetworkProblem {
     },
     /// A reference asking a parameter for a value it does not calculate.
     #[error(
-        "The {owner} asks {} for its `{return_value}` value, but it is calculated only in the `{phase}` phase.", named_parameter(.parameter, .node.as_deref())
+        "The {owner} asks the {} for its `{return_value}` value, but it is calculated only in the `{phase}` phase.", named_parameter(.parameter, .node.as_deref())
     )]
     ParameterValueNotCalculated {
         owner: String,
