@@ -8,9 +8,7 @@ use crate::metric::{EdgeReference, ParameterReferenceBuilder, ParameterReturnVal
 #[cfg(feature = "core")]
 use crate::network::LoadArgs;
 #[cfg(feature = "core")]
-use crate::parameters::{Parameter, ParameterPhase, PythonReturnType};
-#[cfg(feature = "core")]
-use pywr_core::recorders::UnresolvedOutputMetric;
+use crate::parameters::{Parameter, PythonReturnType};
 use pywr_schema_macros::{PywrVisitPaths, PywrVisitReferences, skip_serializing_none};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -87,7 +85,8 @@ impl MetricAggregator {
 /// Filters that allow multiple metrics to be added to a metric set.
 ///
 /// The filters allow the default metrics for all nodes, virtual nodes, parameters and/or edges in
-/// a model to be added to a metric set.
+/// a model to be added to a metric set. A parameter adds each value it calculates, before and/or
+/// after.
 #[derive(Deserialize, Serialize, Clone, JsonSchema, Default, PywrVisitPaths, PywrVisitReferences)]
 #[serde(deny_unknown_fields)]
 pub struct MetricSetFilters {
@@ -136,23 +135,11 @@ impl MetricSetFilters {
                         }
                     }
 
-                    // Make sure we create a reference to the correct phase(s) that the parameter
-                    // will produce a value in.
-                    let (add_before, add_after) = match parameter.phase() {
-                        ParameterPhase::Before => (true, false),
-                        ParameterPhase::After => (false, true),
-                        ParameterPhase::Both => (true, true),
-                    };
-
-                    if add_before {
+                    // Which phases a parameter calculates is only known once it is built (e.g.
+                    // from a Python class's methods), so ask for both.
+                    for return_value in [ParameterReturnValue::Before, ParameterReturnValue::After] {
                         let mut p_ref_builder = ParameterReferenceBuilder::new(parameter.name());
-                        p_ref_builder.return_value(ParameterReturnValue::Before);
-                        metrics.push(Metric::Parameter(p_ref_builder.build()));
-                    }
-
-                    if add_after {
-                        let mut p_ref_builder = ParameterReferenceBuilder::new(parameter.name());
-                        p_ref_builder.return_value(ParameterReturnValue::After);
+                        p_ref_builder.return_value(return_value);
                         metrics.push(Metric::Parameter(p_ref_builder.build()));
                     }
                 }
@@ -215,25 +202,19 @@ impl MetricSet {
             .map(|m| m.load_as_output(network, args, None))
             .collect::<Result<Vec<_>, _>>()?;
 
-        let output_metrics = match &self.metrics {
-            Some(metrics) => {
-                let mut output_metrics: Vec<UnresolvedOutputMetric> = metrics
-                    .iter()
-                    .map(|m| m.load_as_output(network, args, None))
-                    .collect::<Result<_, _>>()?;
+        let named_metrics = self
+            .metrics
+            .iter()
+            .flatten()
+            .map(|m| m.load_as_output(network, args, None))
+            .collect::<Result<Vec<_>, _>>()?;
 
-                for output_metric in metrics_from_filters.into_iter() {
-                    if !output_metrics.contains(&output_metric) {
-                        output_metrics.push(output_metric);
-                    }
-                }
+        let metrics_from_filters: Vec<_> = metrics_from_filters
+            .into_iter()
+            .filter(|m| !named_metrics.contains(m))
+            .collect();
 
-                output_metrics
-            }
-            None => metrics_from_filters,
-        };
-
-        if output_metrics.is_empty() {
+        if named_metrics.is_empty() && metrics_from_filters.is_empty() {
             return Err(SchemaError::EmptyMetricSet(self.name().to_string()));
         }
 
@@ -243,8 +224,13 @@ impl MetricSet {
             metric_set.aggregator(aggregator.load(args.data_path)?);
         }
 
-        for m in output_metrics {
+        for m in named_metrics {
             metric_set.metric(m);
+        }
+
+        // A filter's metric may ask for a phase its parameter does not calculate.
+        for m in metrics_from_filters {
+            metric_set.metric_if_calculated(m);
         }
 
         network.metric_set(metric_set);
