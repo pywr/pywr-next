@@ -105,8 +105,16 @@ impl TryFrom<pywr_v1_schema::edge::Edge> for Edge {
 /// [`EdgeReference`](crate::metric::EdgeReference) yields a [`Reference::Edge`].
 impl VisitReferences for Edge {
     fn visit_references<F: FnMut(Reference<'_>)>(&self, visitor: &mut F) {
-        visitor(Reference::Node(&self.from_node));
-        visitor(Reference::Node(&self.to_node));
+        visitor(Reference::Node {
+            name: &self.from_node,
+            attribute: None,
+            metric: None,
+        });
+        visitor(Reference::Node {
+            name: &self.to_node,
+            attribute: None,
+            metric: None,
+        });
     }
 
     fn visit_references_mut<F: FnMut(ReferenceMut<'_>)>(&mut self, visitor: &mut F) {

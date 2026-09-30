@@ -364,16 +364,6 @@ impl From<String> for NodeAttrReference {
     }
 }
 
-impl VisitReferences for NodeAttrReference {
-    fn visit_references<F: FnMut(Reference<'_>)>(&self, visitor: &mut F) {
-        visitor(Reference::Node(&self.name));
-    }
-
-    fn visit_references_mut<F: FnMut(ReferenceMut<'_>)>(&mut self, visitor: &mut F) {
-        visitor(ReferenceMut::Node(&mut self.name));
-    }
-}
-
 /// A reference to a node with an optional attribute.
 #[skip_serializing_none]
 #[derive(
@@ -464,17 +454,6 @@ impl From<String> for VirtualNodeAttrReference {
     }
 }
 
-/// A virtual node shares a name-space with a node but resolves in a separate list.
-impl VisitReferences for VirtualNodeAttrReference {
-    fn visit_references<F: FnMut(Reference<'_>)>(&self, visitor: &mut F) {
-        visitor(Reference::VirtualNode(&self.name));
-    }
-
-    fn visit_references_mut<F: FnMut(ReferenceMut<'_>)>(&mut self, visitor: &mut F) {
-        visitor(ReferenceMut::VirtualNode(&mut self.name));
-    }
-}
-
 /// A reference to a node with an optional component.
 #[derive(
     serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitMetrics, PywrVisitPaths, PartialEq,
@@ -499,7 +478,11 @@ impl From<String> for NodeComponentReference {
 /// Held by the virtual nodes' node lists, so it names a *node* despite being reached through one.
 impl VisitReferences for NodeComponentReference {
     fn visit_references<F: FnMut(Reference<'_>)>(&self, visitor: &mut F) {
-        visitor(Reference::Node(&self.name));
+        visitor(Reference::Node {
+            name: &self.name,
+            attribute: None,
+            metric: None,
+        });
     }
 
     fn visit_references_mut<F: FnMut(ReferenceMut<'_>)>(&mut self, visitor: &mut F) {
