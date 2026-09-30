@@ -214,19 +214,26 @@ impl NetworkSchema {
         problems
     }
 
-    /// The problems with the parameter references, each checked against the value type of the
-    /// parameter it names. A reference naming no parameter, or a placeholder, is skipped.
+    /// The problems with the parameter references, each checked against the value type and phase
+    /// of the parameter it names. A reference naming no parameter, or a placeholder, is skipped,
+    /// as is the phase of a Python class.
     fn parameter_reference_problems(&self) -> Vec<NetworkProblem> {
         let mut problems = Vec::new();
 
         self.visit_owned_references(&mut |owner, reference| {
-            let (name, node, key, metric) = match reference {
-                Reference::Parameter { name, key, metric } => (name, None, key, metric),
+            let (name, node, key, metric, return_value) = match reference {
+                Reference::Parameter {
+                    name,
+                    key,
+                    metric,
+                    return_value,
+                } => (name, None, key, metric, return_value),
                 Reference::LocalParameter {
                     node,
                     name,
                     key,
                     metric,
+                    return_value,
                 } => {
                     // Without a `node` it resolves in the node or virtual node holding it.
                     let node = node.or(match owner {
@@ -234,7 +241,7 @@ impl NetworkSchema {
                         _ => None,
                     });
                     let Some(node) = node else { return };
-                    (name, Some(node), key, metric)
+                    (name, Some(node), key, metric, return_value)
                 }
                 _ => return,
             };
@@ -267,7 +274,16 @@ impl NetworkSchema {
                 _ if !value_type.is_readable_by(metric) => {
                     NetworkProblem::ParameterNotAnIndex { owner, parameter, node }
                 }
-                _ => return,
+                _ => match resolved.and_then(Parameter::phase) {
+                    Some(phase) if !phase.calculates(return_value) => NetworkProblem::ParameterValueNotCalculated {
+                        owner,
+                        parameter,
+                        node,
+                        return_value,
+                        phase,
+                    },
+                    _ => return,
+                },
             };
 
             problems.push(problem);
@@ -1075,6 +1091,88 @@ mod tests {
                 "The parameter `indexed` names the key `a` of the parameter `flow`, but it gives a single value and takes no key.",
                 "The parameter `indexed` uses the parameter `flow` as an index, but it gives a float value.",
                 "The parameter `agg-index` uses the local parameter `local-flow` of `supply` as an index, but it gives a float value.",
+            ]
+        );
+    }
+
+    /// A network whose references ask parameters for values they do not calculate, among ones
+    /// that pass or are not checked.
+    const NETWORK_WITH_PARAMETER_VALUES_NOT_CALCULATED: &str = r#"
+    {
+        "nodes": [
+            {
+                "meta": { "name": "supply" },
+                "type": "Input",
+                "parameters": [
+                    {
+                        "meta": { "name": "local-after" },
+                        "type": "Aggregated",
+                        "phase": "After",
+                        "agg_func": { "type": "Sum" },
+                        "metrics": [{ "type": "Literal", "value": 1.0 }]
+                    }
+                ],
+                "max_flow": { "type": "LocalParameter", "name": "local-after" },
+                "cost": { "type": "Parameter", "name": "constant", "return_value": "After" }
+            }
+        ],
+        "edges": [],
+        "parameters": [
+            { "meta": { "name": "constant" }, "type": "Constant", "value": { "type": "Literal", "value": 1.0 } },
+            {
+                "meta": { "name": "after" },
+                "type": "Aggregated",
+                "phase": "After",
+                "agg_func": { "type": "Sum" },
+                "metrics": [{ "type": "Literal", "value": 1.0 }]
+            },
+            {
+                "meta": { "name": "class" },
+                "type": "Python",
+                "source": { "type": "Path", "path": "custom.py" },
+                "object": { "type": "Class", "class": "Custom" }
+            },
+            {
+                "meta": { "name": "function" },
+                "type": "Python",
+                "source": { "type": "Path", "path": "custom.py" },
+                "object": { "type": "Function", "function": "custom" }
+            },
+            {
+                "meta": { "name": "total" },
+                "type": "Aggregated",
+                "phase": "After",
+                "agg_func": { "type": "Sum" },
+                "metrics": [
+                    { "type": "Parameter", "name": "after" },
+                    { "type": "Parameter", "name": "constant", "return_value": "AfterOrElseInitial" },
+                    { "type": "Parameter", "name": "function", "return_value": "After" },
+                    { "type": "Parameter", "name": "class", "return_value": "After" },
+                    { "type": "Parameter", "name": "constant", "return_value": "Both" },
+                    { "type": "Parameter", "name": "after", "return_value": "After" }
+                ]
+            }
+        ]
+    }
+    "#;
+
+    /// Every reference asking a parameter for a value it does not calculate is reported, in the
+    /// order listed, whether the value is set or the default. A Python class's phase is decided
+    /// when it is built and `Both` is not checked, so neither is reported.
+    #[test]
+    fn test_validate_reports_all_parameter_values_not_calculated() {
+        let network = parse_network(NETWORK_WITH_PARAMETER_VALUES_NOT_CALCULATED);
+
+        let messages: Vec<String> = expect_problems(&network).iter().map(ToString::to_string).collect();
+
+        assert_eq!(
+            messages,
+            vec![
+                "The node `supply` asks the local parameter `local-after` of `supply` for its `Before` value, but it is calculated only in the `After` phase.",
+                "The node `supply` asks the parameter `constant` for its `After` value, but it is calculated only in the `Before` phase.",
+                "The parameter `total` asks the parameter `after` for its `Before` value, but it is calculated only in the `After` phase.",
+                "The parameter `total` asks the parameter `constant` for its `AfterOrElseInitial` value, but it is calculated only in the `Before` phase.",
+                "The parameter `total` asks the parameter `function` for its `After` value, but it is calculated only in the `Before` phase.",
             ]
         );
     }

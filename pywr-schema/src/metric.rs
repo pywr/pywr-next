@@ -492,7 +492,7 @@ impl VisitReferences for NodeComponentReference {
 
 /// The type of value to return from a parameter.
 #[derive(
-    Deserialize, Serialize, Clone, Copy, Debug, Display, JsonSchema, PartialEq, EnumDiscriminants, EnumIter, Default,
+    Deserialize, Serialize, Clone, Copy, Debug, Display, JsonSchema, PartialEq, Eq, EnumDiscriminants, EnumIter, Default,
 )]
 pub enum ParameterReturnValue {
     #[default]

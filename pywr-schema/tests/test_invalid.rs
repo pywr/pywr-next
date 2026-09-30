@@ -66,6 +66,10 @@ invalid_schema_tests! {
     // An index metric naming a constant, which gives a float. The core builder would refuse this
     // too, as a parameter it cannot find, but validation now refuses it first.
     index_metric_names_float_parameter: "index-metric-names-float-parameter.json", ParameterNotAnIndex,
+    // A node asking a constant for its after value, which it does not calculate. The core builder
+    // would refuse this too, as a parameter not registered in that phase, but validation now
+    // refuses it first.
+    node_asks_constant_for_after_value: "node-asks-constant-for-after-value.json", ParameterValueNotCalculated,
     // A monthly profile reading its values from a table of scalars. The core builder would refuse
     // this too, when it asks the table for an array, but validation now refuses it first.
     profile_reads_scalar_table: "profile-reads-scalar-table.json", InvalidTableReference,
