@@ -8,6 +8,7 @@ use crate::metric::{IndexMetric, Metric};
 use crate::network::LoadArgs;
 use crate::parameters::{ConversionData, ParameterPhase};
 use crate::v1::{TryFromV1, TryIntoV2, try_convert_parameter_attr};
+use crate::validation::ParameterProblem;
 #[cfg(feature = "core")]
 use pywr_core::parameters::ParameterName;
 use pywr_schema_macros::PywrVisitAll;
@@ -47,6 +48,17 @@ pub struct AggregatedParameter {
     pub phase: ParameterPhase,
     pub agg_func: AggFunc,
     pub metrics: Vec<Metric>,
+}
+
+impl AggregatedParameter {
+    pub fn validate(&self) -> Result<(), Vec<ParameterProblem>> {
+        let mut problems = self.agg_func.validate().err().unwrap_or_default();
+        if self.metrics.is_empty() {
+            problems.push(ParameterProblem::NoMetrics);
+        }
+
+        if problems.is_empty() { Ok(()) } else { Err(problems) }
+    }
 }
 
 #[cfg(feature = "core")]
@@ -115,6 +127,14 @@ pub struct AggregatedIndexParameter {
 impl AggregatedIndexParameter {
     pub fn node_references(&self) -> HashMap<&str, &str> {
         HashMap::new()
+    }
+
+    pub fn validate(&self) -> Result<(), Vec<ParameterProblem>> {
+        if self.metrics.is_empty() {
+            Err(vec![ParameterProblem::NoMetrics])
+        } else {
+            Ok(())
+        }
     }
 }
 

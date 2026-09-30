@@ -3,6 +3,7 @@ use crate::metric::Metric;
 use crate::nodes::NodeMeta;
 use crate::parameters::Parameter;
 use crate::v1::{ConversionData, TryFromV1, try_convert_initial_storage, try_convert_node_attr, try_convert_node_meta};
+use crate::validation::{InitialVolumeProblem, NodeProblem};
 #[cfg(feature = "core")]
 use crate::{
     error::SchemaError,
@@ -867,6 +868,35 @@ impl Default for StorageInitialVolume {
     }
 }
 
+impl StorageInitialVolume {
+    /// Check the volume against its literal bounds, taking an unset one as core's default. A
+    /// bound from a metric is not compared.
+    pub fn validate(
+        &self,
+        min_volume: Option<&Metric>,
+        max_volume: Option<&Metric>,
+    ) -> Result<(), InitialVolumeProblem> {
+        let bound = |metric: Option<&Metric>, unset: f64| match metric {
+            None => Some(unset),
+            Some(Metric::Literal { value }) => Some(*value),
+            Some(_) => None,
+        };
+        let min = bound(min_volume, 0.0);
+        let max = bound(max_volume, f64::MAX);
+
+        let volume = match self {
+            Self::Absolute { volume } => Some(*volume),
+            Self::Proportional { proportion } => max.map(|max| proportion * max),
+        };
+
+        match volume {
+            Some(volume) if min.is_some_and(|min| volume < min) => Err(InitialVolumeProblem::BelowMin),
+            Some(volume) if max.is_some_and(|max| volume > max) => Err(InitialVolumeProblem::AboveMax),
+            _ => Ok(()),
+        }
+    }
+}
+
 #[cfg(feature = "core")]
 impl From<StorageInitialVolume> for UnresolvedStorageInitialVolume {
     fn from(v: StorageInitialVolume) -> Self {
@@ -922,6 +952,12 @@ impl StorageNode {
 
     pub fn default_attribute(&self) -> StorageNodeAttribute {
         Self::DEFAULT_ATTRIBUTE
+    }
+
+    pub fn validate(&self) -> Result<(), Vec<NodeProblem>> {
+        self.initial_volume
+            .validate(self.min_volume.as_ref(), self.max_volume.as_ref())
+            .map_err(|problem| vec![NodeProblem::InitialVolume(problem)])
     }
 }
 

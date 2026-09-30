@@ -5,6 +5,7 @@ use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::network::LoadArgs;
 use crate::parameters::ParameterPhase;
+use crate::validation::ParameterProblem;
 #[cfg(feature = "core")]
 use pywr_core::parameters::ParameterName;
 use pywr_schema_macros::PywrVisitAll;
@@ -40,6 +41,18 @@ pub struct DifferenceParameter {
     pub b: Metric,
     pub min: Option<Metric>,
     pub max: Option<Metric>,
+}
+
+impl DifferenceParameter {
+    /// Check that a literal `min` is not above a literal `max`, which would clamp every result.
+    pub fn validate(&self) -> Result<(), Vec<ParameterProblem>> {
+        match (&self.min, &self.max) {
+            (Some(Metric::Literal { value: min }), Some(Metric::Literal { value: max })) if min > max => {
+                Err(vec![ParameterProblem::MinAboveMax])
+            }
+            _ => Ok(()),
+        }
+    }
 }
 
 #[cfg(feature = "core")]

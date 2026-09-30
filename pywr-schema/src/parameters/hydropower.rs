@@ -92,7 +92,8 @@ impl HydropowerTargetParameter {
     pub const DEFAULT_FLOW_UNIT_CONVERSION: f64 = 1.0;
     pub const DEFAULT_ENERGY_UNIT_CONVERSION: f64 = 1e-6;
 
-    /// Check that the parameter has a flow to calculate from, and bounds only a `target`.
+    /// Check that the parameter has a flow to calculate from, bounds only a `target`, and that
+    /// its constants are above 0: core divides by them, and a negative flow is an error.
     pub fn validate(&self) -> Result<(), Vec<ParameterProblem>> {
         let mut problems = Vec::new();
 
@@ -105,6 +106,18 @@ impl HydropowerTargetParameter {
             }
             if self.max_flow.is_some() {
                 problems.push(ParameterProblem::FlowBoundWithoutTarget("max_flow"));
+            }
+        }
+
+        let constants = [
+            ("efficiency", self.efficiency),
+            ("water_density", self.water_density),
+            ("flow_unit_conversion", self.flow_unit_conversion),
+            ("energy_unit_conversion", self.energy_unit_conversion),
+        ];
+        for (field, value) in constants {
+            if value.is_some_and(|value| value <= 0.0) {
+                problems.push(ParameterProblem::NotPositive(field));
             }
         }
 

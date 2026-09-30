@@ -76,9 +76,19 @@ impl PiecewiseStorageNode {
         Self::DEFAULT_ATTRIBUTE
     }
 
-    /// Check that the steps' literal control curves are from 0 to 1 and never decrease, since
-    /// core sizes each store as the volume between its curve and the one below.
+    /// Check the initial volume, and that the steps' literal control curves are from 0 to 1 and
+    /// never decrease, since core sizes each store as the volume between its curve and the one
+    /// below.
     pub fn validate(&self) -> Result<(), Vec<NodeProblem>> {
+        let mut problems = Vec::new();
+
+        if let Err(problem) = self
+            .initial_volume
+            .validate(self.min_volume.as_ref(), Some(&self.max_volume))
+        {
+            problems.push(NodeProblem::InitialVolume(problem));
+        }
+
         let curves: Vec<Option<f64>> = self
             .steps
             .iter()
@@ -88,12 +98,13 @@ impl PiecewiseStorageNode {
             })
             .collect();
 
-        let mut problems: Vec<NodeProblem> = curves
-            .iter()
-            .enumerate()
-            .filter(|(_, curve)| matches!(curve, Some(value) if !(0.0..=1.0).contains(value)))
-            .map(|(step, _)| NodeProblem::ControlCurveOutOfRange { step })
-            .collect();
+        problems.extend(
+            curves
+                .iter()
+                .enumerate()
+                .filter(|(_, curve)| matches!(curve, Some(value) if !(0.0..=1.0).contains(value)))
+                .map(|(step, _)| NodeProblem::ControlCurveOutOfRange { step }),
+        );
 
         if let Some(index) = curves
             .windows(2)

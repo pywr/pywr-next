@@ -8,6 +8,7 @@ use crate::network::LoadArgs;
 use crate::nodes::NodeAttribute;
 use crate::parameters::{ConversionData, ParameterPhase};
 use crate::v1::{TryFromV1, TryIntoV2};
+use crate::validation::ParameterProblem;
 #[cfg(feature = "core")]
 use pywr_core::parameters::ParameterName;
 use pywr_schema_macros::{PywrVisitAll, skip_serializing_none};
@@ -29,6 +30,15 @@ pub struct Polynomial1DParameter {
 impl Polynomial1DParameter {
     pub const DEFAULT_SCALE: f64 = 1.0;
     pub const DEFAULT_OFFSET: f64 = 0.0;
+
+    /// Check that there are `coefficients`; with none, the polynomial is always 0.
+    pub fn validate(&self) -> Result<(), Vec<ParameterProblem>> {
+        if self.coefficients.is_empty() {
+            Err(vec![ParameterProblem::NoCoefficients])
+        } else {
+            Ok(())
+        }
+    }
 }
 
 #[cfg(feature = "core")]

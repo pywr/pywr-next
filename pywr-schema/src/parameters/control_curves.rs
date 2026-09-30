@@ -175,6 +175,17 @@ pub struct ControlCurveIndexParameter {
     pub storage_metric: Metric,
 }
 
+impl ControlCurveIndexParameter {
+    /// Check that there are `control_curves`; with none, the index is always 0.
+    pub fn validate(&self) -> Result<(), Vec<ParameterProblem>> {
+        if self.control_curves.is_empty() {
+            Err(vec![ParameterProblem::NoControlCurves])
+        } else {
+            Ok(())
+        }
+    }
+}
+
 #[cfg(feature = "core")]
 impl ControlCurveIndexParameter {
     pub fn add_to_network(

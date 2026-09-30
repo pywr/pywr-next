@@ -150,8 +150,9 @@ impl VirtualNode {
     /// Check the virtual node's own fields and return every problem found.
     pub fn validate(&self) -> Result<(), Vec<VirtualNodeProblem>> {
         match self {
-            VirtualNode::VirtualStorage(n) => n.reset.as_ref().map_or(Ok(()), VirtualStorageReset::validate),
-            VirtualNode::Aggregated(_) | VirtualNode::AggregatedStorage(_) | VirtualNode::Placeholder(_) => Ok(()),
+            VirtualNode::Aggregated(n) => n.validate(),
+            VirtualNode::VirtualStorage(n) => n.validate(),
+            VirtualNode::AggregatedStorage(_) | VirtualNode::Placeholder(_) => Ok(()),
         }
     }
 }
@@ -249,11 +250,12 @@ mod tests {
     use std::path::PathBuf;
     use strum::IntoEnumIterator;
 
-    /// [`VirtualNode::validate`] should pass every default virtual node, and refuse a reset date
-    /// that never comes.
+    /// [`VirtualNode::validate`] should pass every default virtual node, refuse one breaking each
+    /// rule, and pass one where a rule could be too strict.
     #[test]
     fn test_validate_checks_each_rule() {
-        use crate::validation::VirtualNodeProblem::NotADate;
+        use crate::validation::InitialVolumeProblem;
+        use crate::validation::VirtualNodeProblem::*;
         use serde_json::json;
 
         for node_type in VirtualNodeType::iter() {
@@ -267,26 +269,67 @@ mod tests {
             day,
             month,
         };
+        let x = |value: f64| json!({ "type": "Literal", "value": value });
+        let members = |count: usize| {
+            json!(
+                (0..count)
+                    .map(|i| json!({ "name": format!("n{i}") }))
+                    .collect::<Vec<_>>()
+            )
+        };
 
         let cases = [
             // 29 February comes every four years.
-            (json!({ "type": "Annual", "day": 29, "month": 2 }), vec![]),
             (
-                json!({ "type": "Annual", "day": 30, "month": 2 }),
+                VirtualNodeType::VirtualStorage,
+                json!({ "reset": { "type": "Annual", "day": 29, "month": 2 } }),
+                vec![],
+            ),
+            (
+                VirtualNodeType::VirtualStorage,
+                json!({ "reset": { "type": "Annual", "day": 30, "month": 2 } }),
                 vec![not_a_date("day", "month", 30, 2)],
             ),
             (
-                json!({ "type": "Seasonal", "start_day": 0, "start_month": 1, "end_day": 1, "end_month": 13 }),
+                VirtualNodeType::VirtualStorage,
+                json!({ "reset": { "type": "Seasonal", "start_day": 0, "start_month": 1, "end_day": 1, "end_month": 13 } }),
                 vec![
                     not_a_date("start_day", "start_month", 0, 1),
                     not_a_date("end_day", "end_month", 1, 13),
                 ],
             ),
+            (
+                VirtualNodeType::VirtualStorage,
+                json!({ "max_volume": x(100.0), "initial_volume": { "type": "Absolute", "volume": 150.0 } }),
+                vec![InitialVolume(InitialVolumeProblem::AboveMax)],
+            ),
+            (
+                VirtualNodeType::Aggregated,
+                json!({ "nodes": members(2), "relationship": { "type": "Proportion", "factors": [x(0.5)] } }),
+                vec![],
+            ),
+            (
+                VirtualNodeType::Aggregated,
+                json!({ "nodes": members(2), "relationship": { "type": "Proportion", "factors": [x(0.5), x(0.5)] } }),
+                vec![ProportionFactorCount { factors: 2, members: 2 }],
+            ),
+            (
+                VirtualNodeType::Aggregated,
+                json!({ "nodes": members(0), "relationship": { "type": "Ratio", "factors": [] } }),
+                vec![RatioFactorCount { factors: 0, members: 0 }],
+            ),
+            (
+                VirtualNodeType::Aggregated,
+                json!({ "nodes": members(3), "relationship": { "type": "Coefficients", "factors": [x(1.0), x(1.0), x(1.0)] } }),
+                vec![CoefficientsFactorCount { factors: 3, members: 3 }],
+            ),
         ];
 
-        for (reset, problems) in cases {
-            let mut data = serde_json::to_value(VirtualNode::from(VirtualNodeType::VirtualStorage)).unwrap();
-            data["reset"] = reset;
+        for (node_type, fields, problems) in cases {
+            let mut data = serde_json::to_value(VirtualNode::from(node_type)).unwrap();
+            for (field, value) in fields.as_object().unwrap() {
+                data[field] = value.clone();
+            }
             let node: VirtualNode = serde_json::from_value(data.clone()).unwrap();
 
             let expected = if problems.is_empty() { Ok(()) } else { Err(problems) };

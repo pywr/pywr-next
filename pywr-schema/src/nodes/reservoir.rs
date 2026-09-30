@@ -267,9 +267,9 @@ impl ReservoirNode {
         &mut self.storage.meta
     }
 
-    /// Check that `rainfall` and `evaporation` have a `surface_area`.
+    /// Check the storage's fields, and that `rainfall` and `evaporation` have a `surface_area`.
     pub fn validate(&self) -> Result<(), Vec<NodeProblem>> {
-        let mut problems = Vec::new();
+        let mut problems = self.storage.validate().err().unwrap_or_default();
 
         if self.surface_area.is_none() {
             if self.rainfall.is_some() {

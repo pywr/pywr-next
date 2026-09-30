@@ -249,6 +249,22 @@ impl VirtualStorageNode {
     pub fn default_attribute(&self) -> VirtualStorageNodeAttribute {
         Self::DEFAULT_ATTRIBUTE
     }
+
+    pub fn validate(&self) -> Result<(), Vec<VirtualNodeProblem>> {
+        let mut problems = Vec::new();
+
+        if let Err(problem) = self
+            .initial_volume
+            .validate(self.min_volume.as_ref(), self.max_volume.as_ref())
+        {
+            problems.push(VirtualNodeProblem::InitialVolume(problem));
+        }
+        if let Some(Err(reset_problems)) = self.reset.as_ref().map(VirtualStorageReset::validate) {
+            problems.extend(reset_problems);
+        }
+
+        if problems.is_empty() { Ok(()) } else { Err(problems) }
+    }
 }
 
 #[cfg(feature = "core")]
