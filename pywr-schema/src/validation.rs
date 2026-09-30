@@ -5,6 +5,7 @@ use crate::edge::Edge;
 use crate::metric::ParameterReturnValue;
 use crate::nodes::{NodeAttribute, NodeComponent, NodeSlot, NodeType, VirtualNodeType};
 use crate::parameters::ParameterPhase;
+use crate::visit::Owner;
 use jiff::civil::DateTime;
 use thiserror::Error;
 
@@ -284,9 +285,53 @@ pub enum ModelProblem {
     NonPositiveFrequency { freq: String },
 }
 
+/// An owned [`Owner`], for a problem to name the component holding the reference it is about.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ProblemOwner {
+    Node(String),
+    VirtualNode(String),
+    Edge(Edge),
+    Parameter(String),
+    MetricSet(String),
+    Output(String),
+}
+
+impl ProblemOwner {
+    pub fn as_owner(&self) -> Owner<'_> {
+        match self {
+            Self::Node(name) => Owner::Node(name),
+            Self::VirtualNode(name) => Owner::VirtualNode(name),
+            Self::Edge(edge) => Owner::Edge(edge),
+            Self::Parameter(name) => Owner::Parameter(name),
+            Self::MetricSet(name) => Owner::MetricSet(name),
+            Self::Output(name) => Owner::Output(name),
+        }
+    }
+}
+
+impl From<Owner<'_>> for ProblemOwner {
+    fn from(owner: Owner<'_>) -> Self {
+        match owner {
+            Owner::Node(name) => Self::Node(name.to_string()),
+            Owner::VirtualNode(name) => Self::VirtualNode(name.to_string()),
+            Owner::Edge(edge) => Self::Edge(edge.clone()),
+            Owner::Parameter(name) => Self::Parameter(name.to_string()),
+            Owner::MetricSet(name) => Self::MetricSet(name.to_string()),
+            Owner::Output(name) => Self::Output(name.to_string()),
+        }
+    }
+}
+
+/// As [`Owner`] displays itself.
+impl std::fmt::Display for ProblemOwner {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.as_owner().fmt(f)
+    }
+}
+
 /// The subject of a message about a reference, naming the network holding it when the model has
 /// more than one.
-fn reference_subject(network: Option<&str>, owner: &str) -> String {
+fn reference_subject(network: Option<&str>, owner: &ProblemOwner) -> String {
     match network {
         Some(network) => format!("The {owner} in the network `{network}`"),
         None => format!("The {owner}"),
@@ -411,8 +456,8 @@ pub enum ScenarioProblem {
         /// The network holding the reference, for a [`crate::MultiNetworkModelSchema`]. `None`
         /// for a [`crate::ModelSchema`], which has only one network.
         network: Option<String>,
-        /// The component holding it, as an [`Owner`](crate::visit::Owner) displays itself.
-        owner: String,
+        /// The component holding it.
+        owner: ProblemOwner,
         /// The group it names.
         group: String,
     },
@@ -537,7 +582,7 @@ pub enum NetworkProblem {
         "The {owner} reads the attribute `{attribute}` of the `{node_type}` node `{node}`, but nodes of this type do not have it. {}", attribute_list_message(.supported)
     )]
     NodeAttributeNotSupported {
-        owner: String,
+        owner: ProblemOwner,
         node: String,
         node_type: NodeType,
         attribute: NodeAttribute,
@@ -549,7 +594,7 @@ pub enum NetworkProblem {
         "The {owner} reads the attribute `{attribute}` of the `{node_type}` virtual node `{virtual_node}`, but virtual nodes of this type do not have it. {}", attribute_list_message(.supported)
     )]
     VirtualNodeAttributeNotSupported {
-        owner: String,
+        owner: ProblemOwner,
         virtual_node: String,
         node_type: VirtualNodeType,
         attribute: NodeAttribute,
@@ -558,13 +603,13 @@ pub enum NetworkProblem {
     },
     /// An index metric naming a node, which gives only float values.
     #[error("The {owner} uses the node `{node}` as an index, but nodes give only float values.")]
-    NodeNotAnIndex { owner: String, node: String },
+    NodeNotAnIndex { owner: ProblemOwner, node: String },
     /// An index metric naming a parameter that gives a float value.
     #[error(
         "The {owner} uses the {} as an index, but it gives a float value.", named_parameter(.parameter, .node.as_deref())
     )]
     ParameterNotAnIndex {
-        owner: String,
+        owner: ProblemOwner,
         parameter: String,
         node: Option<String>,
     },
@@ -573,7 +618,7 @@ pub enum NetworkProblem {
         "The {owner} refers to the {} without a key, but it gives several values, one per key.", named_parameter(.parameter, .node.as_deref())
     )]
     ParameterKeyMissing {
-        owner: String,
+        owner: ProblemOwner,
         parameter: String,
         node: Option<String>,
     },
@@ -582,7 +627,7 @@ pub enum NetworkProblem {
         "The {owner} names the key `{key}` of the {}, but it gives a single value and takes no key.", named_parameter(.parameter, .node.as_deref())
     )]
     ParameterKeyNotAllowed {
-        owner: String,
+        owner: ProblemOwner,
         parameter: String,
         node: Option<String>,
         key: String,
@@ -592,7 +637,7 @@ pub enum NetworkProblem {
         "The {owner} asks the {} for its `{return_value}` value, but it is calculated only in the `{phase}` phase.", named_parameter(.parameter, .node.as_deref())
     )]
     ParameterValueNotCalculated {
-        owner: String,
+        owner: ProblemOwner,
         parameter: String,
         node: Option<String>,
         return_value: ParameterReturnValue,
@@ -608,7 +653,7 @@ pub enum NetworkProblem {
     /// A table reference that does not fit the table it names.
     #[error("The {owner} has an invalid reference to the table `{table}`. {problem}")]
     InvalidTableReference {
-        owner: String,
+        owner: ProblemOwner,
         table: String,
         problem: TableReferenceProblem,
     },

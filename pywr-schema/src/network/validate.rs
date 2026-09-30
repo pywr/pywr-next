@@ -6,7 +6,9 @@ use crate::nodes::VirtualNode;
 use crate::parameters::Parameter;
 use crate::time_series::TimeSeries;
 use crate::util::duplicates;
-use crate::validation::{DuplicateNodeName, EdgeProblem, EdgeValidationError, NetworkProblem, NetworkValidationError};
+use crate::validation::{
+    DuplicateNodeName, EdgeProblem, EdgeValidationError, NetworkProblem, NetworkValidationError, ProblemOwner,
+};
 use crate::visit::{Owner, Reference};
 use std::collections::HashMap;
 
@@ -157,7 +159,7 @@ impl NetworkSchema {
                     }
 
                     NetworkProblem::NodeNotAnIndex {
-                        owner: owner.to_string(),
+                        owner: owner.into(),
                         node: name.to_string(),
                     }
                 }
@@ -175,7 +177,7 @@ impl NetworkSchema {
                     }
 
                     NetworkProblem::NodeAttributeNotSupported {
-                        owner: owner.to_string(),
+                        owner: owner.into(),
                         node: name.to_string(),
                         node_type: node.node_type(),
                         attribute,
@@ -198,7 +200,7 @@ impl NetworkSchema {
                     }
 
                     NetworkProblem::VirtualNodeAttributeNotSupported {
-                        owner: owner.to_string(),
+                        owner: owner.into(),
                         virtual_node: name.to_string(),
                         node_type: virtual_node.node_type(),
                         attribute,
@@ -259,7 +261,7 @@ impl NetworkSchema {
                 return;
             };
 
-            let owner = owner.to_string();
+            let owner = ProblemOwner::from(owner);
             let parameter = name.to_string();
             let node = node.map(str::to_string);
 
@@ -320,7 +322,7 @@ impl NetworkSchema {
 
             if let Some(problem) = problem {
                 problems.push(NetworkProblem::InvalidTableReference {
-                    owner: owner.to_string(),
+                    owner: owner.into(),
                     table: table_ref.table.clone(),
                     problem,
                 });
