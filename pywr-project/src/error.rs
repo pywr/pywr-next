@@ -35,7 +35,7 @@ pub enum ComposeToSchemaError {
 }
 
 /// Errors that may occur during validation of a project manifest, or during resolution of a
-/// project manifest into a [`ComposeModel`].
+/// project manifest into a `ComposedModel`.
 #[derive(Error, Debug)]
 pub enum ManifestResolutionError {
     #[error("The path `{}` for {field} must be a non-empty strict relative path.", .path.display())]
@@ -62,8 +62,9 @@ pub enum ManifestResolutionError {
         #[source]
         source: io::Error,
     },
-    #[error("The network path `{}` could not be canonicalized.", .path.display())]
+    #[error("The path `{}` for {field} could not be canonicalized.", .path.display())]
     UnableToCanonicalizePath {
+        field: String,
         path: PathBuf,
         #[source]
         source: io::Error,
@@ -73,8 +74,6 @@ pub enum ManifestResolutionError {
 /// Errors that may occur during composition of a [`ComposeModel`] from a project manifest.
 #[derive(Error, Debug)]
 pub enum ComposeModelError {
-    #[error("The path `{}` for {field} must be a non-empty strict relative path.", .path.display())]
-    InvalidRelativePath { field: String, path: PathBuf },
     #[error("The definition `{definition}` was not found in the project manifest.")]
     DefinitionNotFound { definition: String },
     #[error("The network set `{set}` was not found in the project manifest.")]
@@ -105,7 +104,6 @@ pub enum ComposeModelError {
         max_files: usize,
         actual_files: usize,
     },
-
     #[error("The file `{file}` was not found in network set `{set}`.")]
     FileNotFound { set: String, file: String },
     #[error("The file `{file}` is selected more than once in network set `{set}`.")]
@@ -141,12 +139,13 @@ mod tests {
         assert_eq!(error.source().unwrap().to_string(), "private cause");
 
         let error = ManifestResolutionError::UnableToCanonicalizePath {
+            field: "my-set".to_string(),
             path: PathBuf::from("nets/a.json"),
             source: io::Error::other("private cause"),
         };
         assert_eq!(
             error.to_string(),
-            "The network path `nets/a.json` could not be canonicalized."
+            "The path `nets/a.json` for my-set could not be canonicalized."
         );
         assert_eq!(error.source().unwrap().to_string(), "private cause");
     }

@@ -16,14 +16,17 @@ pub enum ProjectManifest {
 }
 
 /// A validation error for a project manifest.
+///
+/// This is a wrapper around the version-specific validation errors, so that the version of the
+/// manifest can be determined from the error type.
 #[derive(Debug)]
 pub enum ProjectManifestValidationError {
-    V1(v1::ProjectManifestValidationReport),
+    V1(v1::ProjectManifestValidationError),
 }
 
 impl ProjectManifestValidationError {
     /// A multi-line report with a summary followed by one line for each problem.
-    pub fn report(&self) -> impl std::fmt::Display + '_ {
+    pub fn report(&self) -> impl std::fmt::Display {
         struct Report<'a>(&'a ProjectManifestValidationError);
 
         impl std::fmt::Display for Report<'_> {
@@ -45,6 +48,8 @@ impl std::fmt::Display for ProjectManifestValidationError {
         }
     }
 }
+
+impl std::error::Error for ProjectManifestValidationError {}
 
 impl ProjectManifest {
     pub fn from_path<P: AsRef<Path>>(path: P) -> Result<Self, ProjectManifestReadError> {
