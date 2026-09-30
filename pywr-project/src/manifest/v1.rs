@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::ffi::{OsStr, OsString};
 use std::path::{Component, Path, PathBuf};
+use thiserror::Error;
 
 #[derive(Debug, Default)]
 pub struct ProjectManifestValidationReport {
@@ -18,91 +19,127 @@ impl ProjectManifestValidationReport {
     pub fn is_valid(&self) -> bool {
         self.errors.is_empty()
     }
+
+    /// A multi-line report with a summary followed by one line for each problem.
+    pub fn report(&self) -> impl std::fmt::Display {
+        struct Report<'a>(&'a ProjectManifestValidationReport);
+
+        impl std::fmt::Display for Report<'_> {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                self.0.write_summary(f)?;
+                write!(f, ":")?;
+                for error in &self.0.errors {
+                    write!(f, "\n- {error}")?;
+                }
+                Ok(())
+            }
+        }
+
+        Report(self)
+    }
+
+    fn write_summary(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "The project manifest has {} problem(s)", self.errors.len())
+    }
 }
 
-#[derive(Debug)]
+impl std::fmt::Display for ProjectManifestValidationReport {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.write_summary(f)?;
+        write!(f, ".")
+    }
+}
+
+#[derive(Error, Debug)]
 pub enum ProjectManifestValidationError {
-    DuplicateNetworkSet {
-        set: String,
-        count: usize,
-    },
-    DuplicateDefinition {
-        definition: String,
-        count: usize,
-    },
+    #[error("The name `{set}` is used by {count} network sets, but each name must be unique.")]
+    DuplicateNetworkSet { set: String, count: usize },
+    #[error("The name `{definition}` is used by {count} definitions, but each name must be unique.")]
+    DuplicateDefinition { definition: String, count: usize },
+    #[error(
+        "The definition `{definition}` selects the network set `{set}` {count} times, but it may select each set at most once."
+    )]
     DuplicateSet {
         definition: String,
         set: String,
         count: usize,
     },
-    SetNotFound {
-        definition: String,
-        set: String,
-    },
+    #[error("The definition `{definition}` selects the network set `{set}`, which does not exist.")]
+    SetNotFound { definition: String, set: String },
+    #[error("The definition `{definition}` selects the file `{file}`, which was not found in network set `{set}`.")]
     FileNotFound {
         definition: String,
         set: String,
         file: String,
     },
+    #[error("The definition `{definition}` selects the file `{file}` more than once in network set `{set}`.")]
     DuplicateFile {
         definition: String,
         set: String,
         file: String,
     },
+    #[error(
+        "The definition `{definition}` gives metadata for file `{file}` in network set `{set}`, but that file is not selected."
+    )]
     UnusedFileMeta {
         definition: String,
         set: String,
         file: String,
     },
+    #[error(
+        "The definition `{definition}` selects the invalid filename `{file}` in network set `{set}`; filenames must be single path components."
+    )]
     InvalidFilePath {
         definition: String,
         set: String,
         file: String,
     },
+    #[error(
+        "The definition `{definition}` selects {actual_files} file(s) from network set `{set}`, but at least {min_files} are required."
+    )]
     MinFilesNotMet {
         definition: String,
         set: String,
         min_files: usize,
         actual_files: usize,
     },
+    #[error(
+        "The definition `{definition}` selects {actual_files} file(s) from network set `{set}`, but at most {max_files} are allowed."
+    )]
     MaxFilesExceeded {
         definition: String,
         set: String,
         max_files: usize,
         actual_files: usize,
     },
+    #[error("The network set `{set}` has `min_files` {min_files}, which exceeds `max_files` {max_files}.")]
     InvalidFileConstraints {
         set: String,
         min_files: usize,
         max_files: usize,
     },
-    BaseModelNotFound {
-        path: PathBuf,
-    },
-    BaseModelNotAFile {
-        path: PathBuf,
-    },
-    DirectoryNotFound {
-        set: String,
-        dir: PathBuf,
-    },
-    NotADirectory {
-        set: String,
-        dir: PathBuf,
-    },
-    InvalidRelativePath {
-        field: String,
-        path: PathBuf,
-    },
+    #[error("The base model `{}` was not found.", .path.display())]
+    BaseModelNotFound { path: PathBuf },
+    #[error("The base model `{}` is not a regular file.", .path.display())]
+    BaseModelNotAFile { path: PathBuf },
+    #[error("The directory `{}` for network set `{set}` was not found.", .dir.display())]
+    DirectoryNotFound { set: String, dir: PathBuf },
+    #[error("The path `{}` for network set `{set}` is not a directory.", .dir.display())]
+    NotADirectory { set: String, dir: PathBuf },
+    #[error("The path `{}` for {field} must be a non-empty strict relative path.", .path.display())]
+    InvalidRelativePath { field: String, path: PathBuf },
+    #[error("The path `{}` for {field} escapes its allowed root `{}`: it resolves to `{}`.", .path.display(), .root.display(), .resolved_path.display())]
     PathEscapesRoot {
         field: String,
         path: PathBuf,
         root: PathBuf,
         resolved_path: PathBuf,
     },
+    #[error("Failed to read directory `{}` for network set `{set}`: {error}", .dir.display())]
     DirectoryRead {
         set: String,
         dir: PathBuf,
+        #[source]
         error: std::io::Error,
     },
 }
@@ -762,7 +799,53 @@ where
 mod test {
     use super::*;
     use pywr_schema::meta::ComponentMeta;
+    use std::error::Error as _;
     use tempfile::tempdir;
+
+    #[test]
+    fn validation_report_formats_summary_and_all_problems() {
+        let empty = ProjectManifestValidationReport::default();
+        assert_eq!(empty.to_string(), "The project manifest has 0 problem(s).");
+        assert_eq!(empty.report().to_string(), "The project manifest has 0 problem(s):");
+
+        let report = ProjectManifestValidationReport {
+            errors: vec![
+                ProjectManifestValidationError::DuplicateNetworkSet {
+                    set: "nets".into(),
+                    count: 2,
+                },
+                ProjectManifestValidationError::BaseModelNotFound {
+                    path: PathBuf::from("base.json"),
+                },
+            ],
+        };
+        assert_eq!(report.to_string(), "The project manifest has 2 problem(s).");
+        assert_eq!(
+            report.report().to_string(),
+            "The project manifest has 2 problem(s):\n- The name `nets` is used by 2 network sets, but each name must be unique.\n- The base model `base.json` was not found."
+        );
+
+        let public_report = super::super::ProjectManifestValidationReport::V1(report);
+        assert_eq!(public_report.to_string(), "The project manifest has 2 problem(s).");
+        assert_eq!(
+            public_report.report().to_string(),
+            "The project manifest has 2 problem(s):\n- The name `nets` is used by 2 network sets, but each name must be unique.\n- The base model `base.json` was not found."
+        );
+    }
+
+    #[test]
+    fn directory_read_validation_error_preserves_source() {
+        let error = ProjectManifestValidationError::DirectoryRead {
+            set: "nets".into(),
+            dir: PathBuf::from("nets"),
+            error: std::io::Error::other("unreadable"),
+        };
+        assert_eq!(
+            error.to_string(),
+            "Failed to read directory `nets` for network set `nets`: unreadable"
+        );
+        assert_eq!(error.source().unwrap().to_string(), "unreadable");
+    }
 
     fn manifest(base_model: &str, network_sets: Vec<NetworkSet>, include: Vec<DefinitionSelection>) -> ProjectManifest {
         ProjectManifest {

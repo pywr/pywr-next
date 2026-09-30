@@ -26,6 +26,29 @@ impl ProjectManifestValidationReport {
             Self::V1(report) => report.is_valid(),
         }
     }
+
+    /// A multi-line report with a summary followed by one line for each problem.
+    pub fn report(&self) -> impl std::fmt::Display + '_ {
+        struct Report<'a>(&'a ProjectManifestValidationReport);
+
+        impl std::fmt::Display for Report<'_> {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                match self.0 {
+                    ProjectManifestValidationReport::V1(report) => report.report().fmt(f),
+                }
+            }
+        }
+
+        Report(self)
+    }
+}
+
+impl std::fmt::Display for ProjectManifestValidationReport {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::V1(report) => report.fmt(f),
+        }
+    }
 }
 
 impl ProjectManifest {
