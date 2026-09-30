@@ -15,6 +15,7 @@ pub enum ProjectManifest {
     V1(v1::ProjectManifest),
 }
 
+/// A validation error for a project manifest.
 #[derive(Debug)]
 pub enum ProjectManifestValidationError {
     V1(v1::ProjectManifestValidationReport),

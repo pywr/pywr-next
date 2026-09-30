@@ -34,38 +34,10 @@ pub enum ComposeToSchemaError {
     NetworkMerge(#[from] NetworkMergeError),
 }
 
+/// Errors that may occur during validation of a project manifest, or during resolution of a
+/// project manifest into a [`ComposeModel`].
 #[derive(Error, Debug)]
-pub enum ComposeModelError {
-    #[error("The definition `{definition}` was not found in the project manifest.")]
-    DefinitionNotFound { definition: String },
-    #[error("The network set `{set}` was not found in the project manifest.")]
-    SetNotFound { set: String },
-    #[error("The name `{set}` is used by more than one network set, but each name must be unique.")]
-    DuplicateNetworkSet { set: String },
-    #[error("The name `{definition}` is used by more than one definition, but each name must be unique.")]
-    DuplicateDefinition { definition: String },
-    #[error("The network set `{set}` is selected more than once, but each set may be selected at most once.")]
-    DuplicateSelection { set: String },
-    #[error("The network set `{set}` has `min_files` {min_files}, which exceeds `max_files` {max_files}.")]
-    InvalidFileConstraints {
-        set: String,
-        min_files: usize,
-        max_files: usize,
-    },
-    #[error(
-        "The network set `{set}` requires at least {min_files} selected file(s), but {actual_files} were selected."
-    )]
-    MinFilesNotMet {
-        set: String,
-        min_files: usize,
-        actual_files: usize,
-    },
-    #[error("The network set `{set}` allows at most {max_files} selected file(s), but {actual_files} were selected.")]
-    MaxFilesExceeded {
-        set: String,
-        max_files: usize,
-        actual_files: usize,
-    },
+pub enum ManifestResolutionError {
     #[error("The path `{}` for {field} must be a non-empty strict relative path.", .path.display())]
     InvalidRelativePath { field: String, path: PathBuf },
     #[error("The path `{}` for {field} escapes its allowed root `{}`: it resolves to `{}`.", .path.display(), .root.display(), .resolved_path.display())]
@@ -96,12 +68,52 @@ pub enum ComposeModelError {
         #[source]
         source: io::Error,
     },
+}
+
+/// Errors that may occur during composition of a [`ComposeModel`] from a project manifest.
+#[derive(Error, Debug)]
+pub enum ComposeModelError {
+    #[error("The path `{}` for {field} must be a non-empty strict relative path.", .path.display())]
+    InvalidRelativePath { field: String, path: PathBuf },
+    #[error("The definition `{definition}` was not found in the project manifest.")]
+    DefinitionNotFound { definition: String },
+    #[error("The network set `{set}` was not found in the project manifest.")]
+    SetNotFound { set: String },
+    #[error("The name `{set}` is used by more than one network set, but each name must be unique.")]
+    DuplicateNetworkSet { set: String },
+    #[error("The name `{definition}` is used by more than one definition, but each name must be unique.")]
+    DuplicateDefinition { definition: String },
+    #[error("The network set `{set}` is selected more than once, but each set may be selected at most once.")]
+    DuplicateSelection { set: String },
+    #[error("The network set `{set}` has `min_files` {min_files}, which exceeds `max_files` {max_files}.")]
+    InvalidFileConstraints {
+        set: String,
+        min_files: usize,
+        max_files: usize,
+    },
+    #[error(
+        "The network set `{set}` requires at least {min_files} selected file(s), but {actual_files} were selected."
+    )]
+    MinFilesNotMet {
+        set: String,
+        min_files: usize,
+        actual_files: usize,
+    },
+    #[error("The network set `{set}` allows at most {max_files} selected file(s), but {actual_files} were selected.")]
+    MaxFilesExceeded {
+        set: String,
+        max_files: usize,
+        actual_files: usize,
+    },
+
     #[error("The file `{file}` was not found in network set `{set}`.")]
     FileNotFound { set: String, file: String },
     #[error("The file `{file}` is selected more than once in network set `{set}`.")]
     DuplicateFile { set: String, file: String },
     #[error("The metadata for file `{file}` in network set `{set}` does not match a selected file.")]
     UnusedFileMeta { set: String, file: String },
+    #[error(transparent)]
+    Resolution(#[from] ManifestResolutionError),
 }
 
 #[cfg(test)]
@@ -128,7 +140,7 @@ mod tests {
         );
         assert_eq!(error.source().unwrap().to_string(), "private cause");
 
-        let error = ComposeModelError::UnableToCanonicalizePath {
+        let error = ManifestResolutionError::UnableToCanonicalizePath {
             path: PathBuf::from("nets/a.json"),
             source: io::Error::other("private cause"),
         };

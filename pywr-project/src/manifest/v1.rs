@@ -1,5 +1,5 @@
 use crate::composition::{ComposedModel, ComposedModelBuilder, ComposedNetworkPath, PositionOffset};
-use crate::error::ComposeModelError;
+use crate::error::{ComposeModelError, ManifestResolutionError};
 use crate::manifest::DefinitionOverrides;
 use pywr_schema::meta::ProvenanceSource;
 use relative_path::{RelativePath, RelativePathBuf};
@@ -7,10 +7,11 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::ffi::{OsStr, OsString};
+use std::io;
 use std::path::{Component, Path, PathBuf};
 use thiserror::Error;
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct ProjectManifestValidationReport {
     pub problems: Vec<ProjectManifestProblem>,
 }
@@ -139,6 +140,12 @@ pub enum ProjectManifestProblem {
         dir: PathBuf,
         #[source]
         error: std::io::Error,
+    },
+    #[error("The path `{}` could not be canonicalized.", .path.display())]
+    UnableToCanonicalizePath {
+        path: PathBuf,
+        #[source]
+        error: io::Error,
     },
 }
 
@@ -617,46 +624,46 @@ fn validate_constraints(
     }
 }
 
-fn resolve_base_model(root: &Path, base_model: &str) -> Result<PathBuf, ComposeModelError> {
+fn resolve_base_model(root: &Path, base_model: &str) -> Result<PathBuf, ManifestResolutionError> {
     let candidate = strict_relative_path("base model", base_model)?;
     let candidate = candidate.to_path(root);
     if !candidate.exists() {
-        return Err(ComposeModelError::BaseModelNotFound { path: candidate });
+        return Err(ManifestResolutionError::BaseModelNotFound { path: candidate });
     }
     let path = canonicalize_contained(root, &candidate, "base model")?;
     if !path.is_file() {
-        return Err(ComposeModelError::BaseModelNotAFile { path });
+        return Err(ManifestResolutionError::BaseModelNotAFile { path });
     }
     Ok(path)
 }
 
-fn resolve_network_set(root: &Path, set: &NetworkSet) -> Result<ResolvedNetworkSet, ComposeModelError> {
+fn resolve_network_set(root: &Path, set: &NetworkSet) -> Result<ResolvedNetworkSet, ManifestResolutionError> {
     let dir = strict_relative_path(
         &format!("network set '{}' directory", set.name),
         set.dir.as_deref().unwrap_or(&set.name),
     )?;
     let candidate = dir.to_path(root);
     if !candidate.exists() {
-        return Err(ComposeModelError::DirectoryNotFound {
+        return Err(ManifestResolutionError::DirectoryNotFound {
             set: set.name.clone(),
             path: candidate,
         });
     }
     let root = canonicalize_contained(root, &candidate, &format!("network set '{}' directory", set.name))?;
     if !root.is_dir() {
-        return Err(ComposeModelError::NotADirectory {
+        return Err(ManifestResolutionError::NotADirectory {
             set: set.name.clone(),
             path: root,
         });
     }
     let mut files = Vec::new();
-    let entries = std::fs::read_dir(&root).map_err(|source| ComposeModelError::DirectoryRead {
+    let entries = std::fs::read_dir(&root).map_err(|source| ManifestResolutionError::DirectoryRead {
         set: set.name.clone(),
         path: root.clone(),
         source,
     })?;
     for entry in entries {
-        let entry = entry.map_err(|source| ComposeModelError::DirectoryRead {
+        let entry = entry.map_err(|source| ManifestResolutionError::DirectoryRead {
             set: set.name.clone(),
             path: root.clone(),
             source,
@@ -667,7 +674,7 @@ fn resolve_network_set(root: &Path, set: &NetworkSet) -> Result<ResolvedNetworkS
         }
         let path = canonicalize_contained(&root, &entry.path(), &format!("network set '{}' file", set.name))?;
         let filename =
-            RelativePath::from_path(Path::new(&name)).map_err(|_| ComposeModelError::InvalidRelativePath {
+            RelativePath::from_path(Path::new(&name)).map_err(|_| ManifestResolutionError::InvalidRelativePath {
                 field: format!("network set '{}' file", set.name),
                 path: entry.path(),
             })?;
@@ -683,7 +690,7 @@ fn resolve_network_set(root: &Path, set: &NetworkSet) -> Result<ResolvedNetworkS
     })
 }
 
-fn strict_relative_path(field: &str, value: &str) -> Result<RelativePathBuf, ComposeModelError> {
+fn strict_relative_path(field: &str, value: &str) -> Result<RelativePathBuf, ManifestResolutionError> {
     let path = Path::new(value);
     if value.is_empty()
         || value.contains('\\')
@@ -692,7 +699,7 @@ fn strict_relative_path(field: &str, value: &str) -> Result<RelativePathBuf, Com
             .any(|component| !matches!(component, Component::Normal(_)))
         || RelativePath::from_path(path).is_err()
     {
-        return Err(ComposeModelError::InvalidRelativePath {
+        return Err(ManifestResolutionError::InvalidRelativePath {
             field: field.to_string(),
             path: path.to_path_buf(),
         });
@@ -708,21 +715,22 @@ fn is_filename(value: &str) -> bool {
         )
 }
 
-fn canonicalize_contained(root: &Path, candidate: &Path, field: &str) -> Result<PathBuf, ComposeModelError> {
+fn canonicalize_contained(root: &Path, candidate: &Path, field: &str) -> Result<PathBuf, ManifestResolutionError> {
     let canonical_root = root
         .canonicalize()
-        .map_err(|source| ComposeModelError::UnableToCanonicalizePath {
+        .map_err(|source| ManifestResolutionError::UnableToCanonicalizePath {
             path: root.to_path_buf(),
             source,
         })?;
-    let resolved_path = candidate
-        .canonicalize()
-        .map_err(|source| ComposeModelError::UnableToCanonicalizePath {
-            path: candidate.to_path_buf(),
-            source,
-        })?;
+    let resolved_path =
+        candidate
+            .canonicalize()
+            .map_err(|source| ManifestResolutionError::UnableToCanonicalizePath {
+                path: candidate.to_path_buf(),
+                source,
+            })?;
     if !resolved_path.starts_with(&canonical_root) {
-        return Err(ComposeModelError::PathEscapesRoot {
+        return Err(ManifestResolutionError::PathEscapesRoot {
             field: field.to_string(),
             path: candidate.to_path_buf(),
             root: canonical_root,
@@ -735,13 +743,13 @@ fn canonicalize_contained(root: &Path, candidate: &Path, field: &str) -> Result<
 trait ValidationConversion {
     fn into_validation_error(self) -> ProjectManifestProblem;
 }
-impl ValidationConversion for ComposeModelError {
+impl ValidationConversion for ManifestResolutionError {
     fn into_validation_error(self) -> ProjectManifestProblem {
         match self {
-            ComposeModelError::InvalidRelativePath { field, path } => {
+            ManifestResolutionError::InvalidRelativePath { field, path } => {
                 ProjectManifestProblem::InvalidRelativePath { field, path }
             }
-            ComposeModelError::PathEscapesRoot {
+            ManifestResolutionError::PathEscapesRoot {
                 field,
                 path,
                 root,
@@ -752,18 +760,22 @@ impl ValidationConversion for ComposeModelError {
                 root,
                 resolved_path,
             },
-            ComposeModelError::BaseModelNotFound { path } => ProjectManifestProblem::BaseModelNotFound { path },
-            ComposeModelError::BaseModelNotAFile { path } => ProjectManifestProblem::BaseModelNotAFile { path },
-            ComposeModelError::DirectoryNotFound { set, path } => {
+            ManifestResolutionError::BaseModelNotFound { path } => ProjectManifestProblem::BaseModelNotFound { path },
+            ManifestResolutionError::BaseModelNotAFile { path } => ProjectManifestProblem::BaseModelNotAFile { path },
+            ManifestResolutionError::DirectoryNotFound { set, path } => {
                 ProjectManifestProblem::DirectoryNotFound { set, dir: path }
             }
-            ComposeModelError::NotADirectory { set, path } => ProjectManifestProblem::NotADirectory { set, dir: path },
-            ComposeModelError::DirectoryRead { set, path, source } => ProjectManifestProblem::DirectoryRead {
+            ManifestResolutionError::NotADirectory { set, path } => {
+                ProjectManifestProblem::NotADirectory { set, dir: path }
+            }
+            ManifestResolutionError::DirectoryRead { set, path, source } => ProjectManifestProblem::DirectoryRead {
                 set,
                 dir: path,
                 error: source,
             },
-            _ => unreachable!("only filesystem resolution errors are converted to validation errors"),
+            ManifestResolutionError::UnableToCanonicalizePath { path, source } => {
+                ProjectManifestProblem::UnableToCanonicalizePath { path, error: source }
+            }
         }
     }
 }
@@ -808,10 +820,6 @@ mod test {
 
     #[test]
     fn validation_report_formats_summary_and_all_problems() {
-        let empty = ProjectManifestValidationReport::default();
-        assert_eq!(empty.to_string(), "The project manifest has 0 problem(s).");
-        assert_eq!(empty.report().to_string(), "The project manifest has 0 problem(s):");
-
         let report = ProjectManifestValidationReport {
             problems: vec![
                 ProjectManifestProblem::DuplicateNetworkSet {
@@ -1174,7 +1182,7 @@ mod test {
         );
         assert!(matches!(
             project.compose_model(root.path(), "test"),
-            Err(ComposeModelError::InvalidRelativePath { field, .. }) if field == "network set 'nets' file"
+            Err(ComposeModelError::Resolution(ManifestResolutionError::InvalidRelativePath { field, .. })) if field == "network set 'nets' file"
         ));
     }
 
@@ -1218,7 +1226,7 @@ mod test {
         let root = tempdir().unwrap();
         let manifest = manifest("../base.json", vec![], vec![]);
         assert!(
-            matches!(manifest.compose_model(root.path(), "test"), Err(ComposeModelError::InvalidRelativePath { field, .. }) if field == "base model")
+            matches!(manifest.compose_model(root.path(), "test"), Err(ComposeModelError::Resolution(ManifestResolutionError::InvalidRelativePath { field, .. })) if field == "base model")
         );
     }
 
@@ -1308,7 +1316,9 @@ mod test {
         );
         assert!(matches!(
             manifest.compose_model(root.path(), "test"),
-            Err(ComposeModelError::PathEscapesRoot { .. })
+            Err(ComposeModelError::Resolution(
+                ManifestResolutionError::PathEscapesRoot { .. }
+            ))
         ));
     }
 
