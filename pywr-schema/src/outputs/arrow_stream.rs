@@ -116,9 +116,9 @@ mod tests {
         let mut reader = StreamReader::try_new_buffered(std::fs::File::open(path).unwrap(), None).unwrap();
         let first_batch = reader.next().unwrap().unwrap();
         assert_eq!(first_batch.num_rows(), 2);
-        assert_eq!(first_batch.schema().fields().len(), 5);
+        assert_eq!(first_batch.schema().fields().len(), 3);
         assert_eq!(
-            first_batch.schema().field(4).metadata().get("ARROW:extension:name"),
+            first_batch.schema().field(2).metadata().get("ARROW:extension:name"),
             Some(&"org.pywr.metric".to_string())
         );
         assert_eq!(reader.next().unwrap().unwrap().num_rows(), 1);

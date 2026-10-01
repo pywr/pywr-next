@@ -348,8 +348,8 @@ impl Recorder for MemoryRecorder {
         let result = MemoryRecorderResult {
             meta: self.meta.clone(),
             scenario_indices: scenario_indices.to_vec(),
-            metric_names: metric_set.iter_metrics().map(|m| m.name().to_string()).collect(),
-            metric_attrs: metric_set.iter_metrics().map(|m| m.attribute().to_string()).collect(),
+            metric_names: metric_set.metrics().iter().map(|m| m.name().to_string()).collect(),
+            metric_attrs: metric_set.metrics().iter().map(|m| m.attribute().to_string()).collect(),
             data: internal_state.data,
             aggregation: self.aggregation.clone(),
             order: self.order,

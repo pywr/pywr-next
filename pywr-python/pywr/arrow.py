@@ -18,26 +18,54 @@ class MetricColumnMetadata:
     metric_set: str
     name: str
     attribute: str
-    ty: str
+    type: str
+    simulation_id: int
+    simulation_indices: list[int]
+    scenario_labels: list[str]
     sub_type: str | None = None
 
     @classmethod
     def from_dict(cls, value: dict[str, Any]) -> MetricColumnMetadata:
-        required_fields = ("metric_set", "name", "attribute", "ty")
+        required_fields = (
+            "metric_set",
+            "name",
+            "attribute",
+            "type",
+            "simulation_id",
+            "simulation_indices",
+            "scenario_labels",
+        )
         missing = [field for field in required_fields if field not in value]
         if missing:
             raise ValueError(
                 f"Pywr metric metadata is missing required field(s): {', '.join(missing)}"
             )
 
-        for field in required_fields:
+        for field in ["metric_set", "name", "attribute", "type"]:
             if not isinstance(value[field], str):
                 raise TypeError(
                     f"Pywr metric metadata field {field!r} must be a string"
                 )
+
         if value.get("sub_type") is not None and not isinstance(value["sub_type"], str):
             raise TypeError(
                 "Pywr metric metadata field 'sub_type' must be a string or null"
+            )
+        if not isinstance(value["simulation_id"], int):
+            raise TypeError(
+                "Pywr metric metadata field 'simulation_id' must be an integer"
+            )
+        if not isinstance(value["simulation_indices"], list) or not all(
+            isinstance(i, int) for i in value["simulation_indices"]
+        ):
+            raise TypeError(
+                "Pywr metric metadata field 'simulation_indices' must be a list of integers"
+            )
+        if not isinstance(value["scenario_labels"], list) or not all(
+            isinstance(i, str) for i in value["scenario_labels"]
+        ):
+            raise TypeError(
+                "Pywr metric metadata field 'scenario_labels' must be a list of strings"
             )
 
         return cls(
@@ -94,7 +122,7 @@ def register_metric_extension_type() -> None:
     try:
         pa.register_extension_type(
             MetricColumnExtensionType(
-                MetricColumnMetadata("", "", "", ""),
+                MetricColumnMetadata("", "", "", "", 0, [], []),
             )
         )
     except pa.ArrowKeyError:

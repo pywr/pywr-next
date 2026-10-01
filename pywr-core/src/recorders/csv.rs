@@ -104,7 +104,7 @@ impl Recorder for CsvWideFmtOutput {
                     index: self.metric_set_idx,
                 })?;
 
-        for metric in metric_set.iter_metrics() {
+        for metric in metric_set.metrics() {
             let name = metric.name().to_string();
             let attribute = metric.attribute().to_string();
 
@@ -268,7 +268,7 @@ impl CsvLongFmtOutput {
                         .get_metric_set(*metric_set_idx)
                         .ok_or(CsvError::MetricSetIndexNotFound { index: *metric_set_idx })?;
 
-                    for (metric, value) in metric_set.iter_metrics().zip(current_values.iter()) {
+                    for (metric, value) in metric_set.metrics().iter().zip(current_values.iter()) {
                         let name = metric.name().to_string();
                         let attribute = metric.attribute().to_string();
 

@@ -13,7 +13,10 @@ def test_metric_extension_metadata_round_trips_through_ipc_stream():
         metric_set="outputs",
         name="reservoir",
         attribute="volume",
-        ty="node",
+        type="node",
+        simulation_id=0,
+        simulation_indices=[0],
+        scenario_labels=["a"],
         sub_type="storage",
     )
     extension = MetricColumnExtensionType(metadata)
@@ -43,7 +46,7 @@ def test_metric_extension_metadata_round_trips_through_ipc_stream():
 
 
 def test_metric_extension_serialization_and_validation():
-    metadata = MetricColumnMetadata("nodes", "demand", "outflow", "node")
+    metadata = MetricColumnMetadata("nodes", "demand", "outflow", "node", 0, [0], ["a"])
     extension = MetricColumnExtensionType(metadata)
 
     assert (

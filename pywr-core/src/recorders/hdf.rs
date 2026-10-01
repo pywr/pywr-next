@@ -126,7 +126,7 @@ impl Recorder for HDF5Recorder {
 
         let mut datasets = Vec::new();
 
-        for metric in metric_set.iter_metrics() {
+        for metric in metric_set.metrics() {
             let ds = require_metric_dataset(root_grp, shape, metric)?;
             datasets.push(ds);
         }
@@ -152,7 +152,7 @@ impl Recorder for HDF5Recorder {
                 index: self.metric_set_idx,
             })?;
 
-        for (dataset, metric) in internal.datasets.iter_mut().zip(metric_set.iter_metrics()) {
+        for (dataset, metric) in internal.datasets.iter_mut().zip(metric_set.metrics()) {
             // Combine all the values for metric across all of the scenarios
             let values = scenario_indices
                 .iter()

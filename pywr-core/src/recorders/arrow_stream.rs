@@ -5,14 +5,16 @@ use super::{
 };
 use crate::models::ModelDomain;
 use crate::network::{MetricSetIndex, Network, ResolutionMaps};
-use crate::scenario::ScenarioIndex;
+use crate::scenario::{ScenarioDomain, ScenarioIndex};
 use crate::state::State;
-use arrow::array::{ArrayRef, Float64Array, StringArray, TimestampMillisecondArray, UInt64Array};
+use arrow::array::{ArrayRef, Float64Array, TimestampMillisecondArray};
 use arrow::datatypes::{DataType, Field, Schema, TimeUnit};
 use arrow::error::ArrowError;
 use arrow::ipc::writer::StreamWriter;
 use arrow::record_batch::RecordBatch;
+use arrow_schema::Metadata;
 use arrow_schema::extension::{EXTENSION_TYPE_METADATA_KEY, EXTENSION_TYPE_NAME_KEY, ExtensionType};
+use jiff::civil::DateTime;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs::{File, OpenOptions};
@@ -34,8 +36,12 @@ pub struct MetricColumnMetadata {
     pub metric_set: String,
     pub name: String,
     pub attribute: String,
+    #[serde(rename = "type")]
     pub ty: String,
     pub sub_type: Option<String>,
+    pub simulation_id: usize,
+    pub simulation_indices: Vec<usize>,
+    pub scenario_labels: Vec<String>,
 }
 
 /// Arrow extension type used for Pywr metric columns.
@@ -139,9 +145,7 @@ pub enum ArrowStreamError {
 struct ArrowStreamRow {
     time_start: i64,
     time_end: i64,
-    simulation_id: u64,
-    label: String,
-    values: Vec<f64>,
+    values: Vec<Option<f64>>,
 }
 
 #[derive(Debug, Default)]
@@ -186,43 +190,59 @@ impl<W: Write> Write for CountingWriter<W> {
     }
 }
 
-fn make_schema(metric_set_name: &str, metrics: impl Iterator<Item = OutputMetric>) -> Schema {
+fn make_schema(metric_set_name: &str, scenario_domain: &ScenarioDomain, metrics: &[OutputMetric]) -> Schema {
     let mut fields = vec![
         Field::new("time_start", DataType::Timestamp(TimeUnit::Millisecond, None), false),
         Field::new("time_end", DataType::Timestamp(TimeUnit::Millisecond, None), false),
-        Field::new("simulation_id", DataType::UInt64, false),
-        Field::new("label", DataType::Utf8, false),
     ];
     let mut used_names = HashMap::<String, usize>::new();
 
-    for metric in metrics {
-        let base_name = format!("{}.{}", metric_set_name, metric.fully_qualified_name());
-        let count = used_names.entry(base_name.clone()).or_default();
-        let column_name = if *count == 0 {
-            base_name
-        } else {
-            format!("{base_name}_{count}")
-        };
-        *count += 1;
-        let metadata = MetricColumnMetadata {
-            metric_set: metric_set_name.to_string(),
-            name: metric.name().to_string(),
-            attribute: metric.attribute().to_string(),
-            ty: metric.ty().to_string(),
-            sub_type: metric.sub_type().map(ToString::to_string),
-        };
-        fields.push(MetricColumnExtension::new(metadata).field(column_name));
+    for s in scenario_domain.indices() {
+        for metric in metrics {
+            let base_name = format!(
+                "{}.{}.{:04}",
+                metric_set_name,
+                metric.fully_qualified_name(),
+                s.simulation_id()
+            );
+            let count = used_names.entry(base_name.clone()).or_default();
+            let column_name = if *count == 0 {
+                base_name
+            } else {
+                format!("{base_name}_{count}")
+            };
+            *count += 1;
+            let metadata = MetricColumnMetadata {
+                metric_set: metric_set_name.to_string(),
+                name: metric.name().to_string(),
+                attribute: metric.attribute().to_string(),
+                ty: metric.ty().to_string(),
+                sub_type: metric.sub_type().map(ToString::to_string),
+                simulation_id: s.simulation_id(),
+                simulation_indices: s.simulation_indices().to_vec(),
+                scenario_labels: s.labels().to_vec(),
+            };
+            fields.push(MetricColumnExtension::new(metadata).field(column_name));
+        }
     }
-    Schema::new(fields)
+
+    // Create metadata containing scenario group information
+    let mut metadata = Metadata::new();
+    metadata.insert("PYWR_VERSION", env!("CARGO_PKG_VERSION"));
+
+    for (i, group) in scenario_domain.groups().iter().enumerate() {
+        metadata.insert(format!("PYWR_SCENARIO_GROUP_{i:02}_NAME"), group.name());
+        metadata.insert(format!("PYWR_SCENARIO_GROUP_{i:02}_SIZE"), group.size().to_string());
+    }
+
+    Schema::new_with_metadata(fields, metadata)
 }
 
 fn record_batch(schema: Arc<Schema>, pending: PendingBatch) -> Result<RecordBatch, ArrowStreamError> {
-    let metric_count = schema.fields().len() - 4;
+    let metric_count = schema.fields().len() - 2; // Exclude time_start and time_end
     let row_count = pending.rows.len();
     let mut starts = Vec::with_capacity(row_count);
     let mut ends = Vec::with_capacity(row_count);
-    let mut simulation_ids = Vec::with_capacity(row_count);
-    let mut labels = Vec::with_capacity(row_count);
     let mut values = (0..metric_count)
         .map(|_| Vec::with_capacity(row_count))
         .collect::<Vec<_>>();
@@ -236,8 +256,6 @@ fn record_batch(schema: Arc<Schema>, pending: PendingBatch) -> Result<RecordBatc
         }
         starts.push(row.time_start);
         ends.push(row.time_end);
-        simulation_ids.push(row.simulation_id);
-        labels.push(row.label);
         for (column, value) in values.iter_mut().zip(row.values) {
             column.push(value);
         }
@@ -246,8 +264,6 @@ fn record_batch(schema: Arc<Schema>, pending: PendingBatch) -> Result<RecordBatc
     let mut columns: Vec<ArrayRef> = vec![
         Arc::new(TimestampMillisecondArray::from(starts)),
         Arc::new(TimestampMillisecondArray::from(ends)),
-        Arc::new(UInt64Array::from(simulation_ids)),
-        Arc::new(StringArray::from(labels)),
     ];
     columns.extend(
         values
@@ -307,6 +323,7 @@ struct Internal {
     sender: Sender<WorkerMessage>,
     status_receiver: Receiver<WorkerStatus>,
     worker: Option<JoinHandle<Result<(), ArrowStreamError>>>,
+    metric_count: usize,
 }
 
 /// Output one metric set as a batched Arrow IPC stream on a worker thread.
@@ -343,37 +360,56 @@ impl ArrowStreamOutput {
 
     fn append_values(
         &self,
-        scenario_indices: &[ScenarioIndex],
         metric_set_states: &[Vec<MetricSetState>],
         internal: &mut Internal,
     ) -> Result<(), ArrowStreamError> {
-        for (scenario_index, scenario_states) in scenario_indices.iter().zip(metric_set_states) {
-            let metric_set_state =
-                scenario_states
-                    .get(*self.metric_set_idx.deref())
-                    .ok_or(ArrowStreamError::MetricSetIndexNotFound {
-                        index: self.metric_set_idx,
-                    })?;
-            let Some(values) = metric_set_state.current_values() else {
-                continue;
+        let mut time_start_end: Option<(DateTime, DateTime)> = None;
+        let mut all_values: Vec<Option<f64>> = Vec::with_capacity(internal.metric_count * metric_set_states.len());
+
+        for scenario_states in metric_set_states.iter() {
+            let values = scenario_states
+                .get(*self.metric_set_idx.deref())
+                .ok_or(ArrowStreamError::MetricSetIndexNotFound {
+                    index: self.metric_set_idx,
+                })?
+                .current_values();
+            match values {
+                None => {
+                    // If the metric set is missing for this scenario, fill in `None` values for all metrics.
+                    all_values.extend(std::iter::repeat_n(None, internal.metric_count));
+                }
+                Some(values) => {
+                    if let Some((start, end)) = time_start_end {
+                        if values.iter().any(|value| value.start != start || value.end() != end) {
+                            return Err(ArrowStreamError::InconsistentPeriods);
+                        }
+                    } else {
+                        let first = values
+                            .first()
+                            .ok_or(ArrowStreamError::MetricCount { expected: 1, actual: 0 })?;
+
+                        if values
+                            .iter()
+                            .any(|value| value.start != first.start || value.end() != first.end())
+                        {
+                            return Err(ArrowStreamError::InconsistentPeriods);
+                        }
+
+                        time_start_end = Some((first.start, first.end()));
+                    }
+
+                    all_values.extend(values.iter().map(|value| Some(value.value)));
+                }
             };
-            let first = values
-                .first()
-                .ok_or(ArrowStreamError::MetricCount { expected: 1, actual: 0 })?;
-            if values
-                .iter()
-                .any(|value| value.start != first.start || value.end() != first.end())
-            {
-                return Err(ArrowStreamError::InconsistentPeriods);
-            }
+        }
+
+        if let Some((start, end)) = time_start_end {
             internal.pending.rows.push(ArrowStreamRow {
-                time_start: jiff_datetime_to_arrow_timestamp_ms(&first.start)
+                time_start: jiff_datetime_to_arrow_timestamp_ms(&start)
                     .map_err(|error| ArrowStreamError::WorkerFailed(error.to_string()))?,
-                time_end: jiff_datetime_to_arrow_timestamp_ms(&first.end())
+                time_end: jiff_datetime_to_arrow_timestamp_ms(&end)
                     .map_err(|error| ArrowStreamError::WorkerFailed(error.to_string()))?,
-                simulation_id: scenario_index.simulation_id() as u64,
-                label: scenario_index.label(),
-                values: values.iter().map(|value| value.value).collect(),
+                values: all_values,
             });
         }
         Ok(())
@@ -387,7 +423,7 @@ impl Recorder for ArrowStreamOutput {
 
     fn setup(
         &self,
-        _domain: &ModelDomain,
+        domain: &ModelDomain,
         network: &Network,
     ) -> Result<Option<Box<dyn RecorderInternalState>>, RecorderSetupError> {
         let metric_set =
@@ -396,7 +432,8 @@ impl Recorder for ArrowStreamOutput {
                 .ok_or(ArrowStreamError::MetricSetIndexNotFound {
                     index: self.metric_set_idx,
                 })?;
-        let schema = Arc::new(make_schema(metric_set.name(), metric_set.iter_metrics().cloned()));
+
+        let schema = Arc::new(make_schema(metric_set.name(), domain.scenarios(), metric_set.metrics()));
         let file = OpenOptions::new()
             .write(true)
             .create_new(true)
@@ -428,13 +465,14 @@ impl Recorder for ArrowStreamOutput {
             sender,
             status_receiver,
             worker: Some(worker),
+            metric_count: metric_set.metrics().len(),
         })))
     }
 
     fn save(
         &self,
         _timestep: &Timestep,
-        scenario_indices: &[ScenarioIndex],
+        _scenario_indices: &[ScenarioIndex],
         _network: &Network,
         _state: &[State],
         metric_set_states: &[Vec<MetricSetState>],
@@ -442,7 +480,7 @@ impl Recorder for ArrowStreamOutput {
     ) -> Result<(), RecorderSaveError> {
         let internal = downcast_internal_state_mut::<Internal>(internal_state);
         Self::check_worker(internal)?;
-        self.append_values(scenario_indices, metric_set_states, internal)?;
+        self.append_values(metric_set_states, internal)?;
         internal.pending.timestep_count += 1;
         self.queue_pending(internal, false)?;
         Ok(())
@@ -467,13 +505,13 @@ impl Recorder for ArrowStreamOutput {
     fn finalise(
         &self,
         _network: &Network,
-        scenario_indices: &[ScenarioIndex],
+        _scenario_indices: &[ScenarioIndex],
         metric_set_states: &[Vec<MetricSetState>],
         internal_state: Option<Box<dyn RecorderInternalState>>,
     ) -> Result<Option<Box<dyn RecorderFinalResult>>, RecorderFinaliseError> {
         let mut internal = downcast_internal_state::<Internal>(internal_state);
         Self::check_worker(&internal)?;
-        self.append_values(scenario_indices, metric_set_states, &mut internal)?;
+        self.append_values(metric_set_states, &mut internal)?;
         self.queue_pending(&mut internal, true)?;
         internal
             .sender
@@ -552,6 +590,9 @@ mod tests {
             attribute: "volume".to_string(),
             ty: "node".to_string(),
             sub_type: Some("storage".to_string()),
+            simulation_id: 0,
+            simulation_indices: vec![0],
+            scenario_labels: vec!["0".to_string()],
         };
         let field = MetricColumnExtension::new(metadata.clone()).field("reservoir");
         assert_eq!(
@@ -568,14 +609,15 @@ mod tests {
         let schema = Arc::new(Schema::new(vec![
             Field::new("time_start", DataType::Timestamp(TimeUnit::Millisecond, None), false),
             Field::new("time_end", DataType::Timestamp(TimeUnit::Millisecond, None), false),
-            Field::new("simulation_id", DataType::UInt64, false),
-            Field::new("label", DataType::Utf8, false),
             MetricColumnExtension::new(MetricColumnMetadata {
                 metric_set: "outputs".to_string(),
                 name: "flow".to_string(),
                 attribute: "outflow".to_string(),
                 ty: "node".to_string(),
                 sub_type: None,
+                simulation_id: 0,
+                simulation_indices: vec![0],
+                scenario_labels: vec!["0".to_string()],
             })
             .field("flow"),
         ]));
@@ -592,16 +634,12 @@ mod tests {
                     ArrowStreamRow {
                         time_start: 0,
                         time_end: 1,
-                        simulation_id: 0,
-                        label: "a".to_string(),
-                        values: vec![1.0],
+                        values: vec![Some(1.0)],
                     },
                     ArrowStreamRow {
                         time_start: 1,
                         time_end: 2,
-                        simulation_id: 0,
-                        label: "a".to_string(),
-                        values: vec![2.0],
+                        values: vec![Some(2.0)],
                     },
                 ],
             }))

@@ -119,8 +119,8 @@ impl MetricSet {
     pub fn name(&self) -> &str {
         &self.name
     }
-    pub fn iter_metrics(&self) -> impl Iterator<Item = &OutputMetric> + '_ {
-        self.metrics.iter()
+    pub fn metrics(&self) -> &[OutputMetric] {
+        &self.metrics
     }
 
     /// Setup a new [`MetricSetState`] for this [`MetricSet`].
@@ -315,7 +315,7 @@ mod tests {
             .metric(output_metric(UnresolvedMetricF64::new_parameter_before("p")))
             .metric_if_calculated(output_metric(UnresolvedMetricF64::new_parameter_after("p")));
         let (network, _) = build(metric_set).unwrap();
-        assert_eq!(network.metric_sets()[0].iter_metrics().count(), 1);
+        assert_eq!(network.metric_sets()[0].metrics().len(), 1);
 
         let mut metric_set = MetricSetBuilder::new("metric");
         metric_set.metric(output_metric(UnresolvedMetricF64::new_parameter_after("p")));
