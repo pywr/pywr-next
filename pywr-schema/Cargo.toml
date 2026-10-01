@@ -59,5 +59,9 @@ strum = { workspace = true }
 strum_macros = { workspace = true }
 thiserror = { workspace = true }
 
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+# Gives back parquet's default `zstd`, which the workspace leaves out for wasm.
+parquet = { workspace = true, optional = true, features = ["zstd"] }
+
 [dev-dependencies]
 tempfile = { workspace = true }

@@ -51,6 +51,8 @@ digest = "0.11"
 digest-io = "0.1"
 env_logger = "0.11"
 float-cmp = "0.10"
+# Named only so the wasm builds can turn on its `wasm_js` feature.
+getrandom = "0.4"
 hdf5-metno = { version = "0.15", features = ["static", "zlib"] }
 highs-sys = "1.14"
 heck = "0.5"
@@ -66,7 +68,9 @@ nalgebra = "0.35"
 nalgebra-sparse = "0.12"
 num = "0.4"
 ocl = "0.19"
-parquet = { version = "60.0", features = ["arrow"] }
+# Parquet's defaults without `zstd`, which needs a C compiler and so can't build for wasm.
+# Native targets add it back in pywr-schema.
+parquet = { version = "60.0", default-features = false, features = ["arrow", "base64", "brotli", "flate2-zlib-rs", "lz4", "simdutf8", "snap"] }
 pyo3 = { version = "0.29" }
 pyo3-log = "0.13"
 pywr-v1-schema = "0.25"

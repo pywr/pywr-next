@@ -55,6 +55,10 @@ serde_json = { workspace = true }
 thiserror = { workspace = true }
 wide = { workspace = true, optional = true }
 
+[target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dependencies]
+# rand draws its seeds through getrandom, which needs the JavaScript host in the browser.
+getrandom = { workspace = true, features = ["wasm_js"] }
+
 [dev-dependencies]
 criterion = { workspace = true, features = ["html_reports"] }
 
