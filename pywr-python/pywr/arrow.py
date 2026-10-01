@@ -71,7 +71,9 @@ class ScenarioMetadata:
         if not isinstance(value["simulation_indices"], list) or any(
             type(index) is not int or index < 0 for index in value["simulation_indices"]
         ):
-            raise TypeError("Pywr scenario simulation_indices must be a list of nonnegative integers")
+            raise TypeError(
+                "Pywr scenario simulation_indices must be a list of nonnegative integers"
+            )
         if not isinstance(value["scenario_labels"], list) or any(
             not isinstance(label, str) for label in value["scenario_labels"]
         ):
@@ -115,7 +117,10 @@ def _metadata_list(schema: pa.Schema, key: bytes) -> list[dict[str, Any]]:
 
 def get_scenarios(schema: pa.Schema) -> list[ScenarioMetadata]:
     """Read the ordered scenario table from a Pywr Arrow schema."""
-    return [ScenarioMetadata.from_dict(item) for item in _metadata_list(schema, b"PYWR_SCENARIOS")]
+    return [
+        ScenarioMetadata.from_dict(item)
+        for item in _metadata_list(schema, b"PYWR_SCENARIOS")
+    ]
 
 
 def get_scenario_groups(schema: pa.Schema) -> list[ScenarioGroupMetadata]:
@@ -214,8 +219,10 @@ def scenario_to_pandas(table: pa.Table, scenario: int):
             raise TypeError(f"Column {name!r} is not a Pywr metric extension")
         if column.type.storage_type.list_size != len(scenarios):
             raise ValueError(f"Column {name!r} scenario count differs from metadata")
-        matrix = column.storage.flatten().to_numpy(zero_copy_only=False).reshape(
-            -1, len(scenarios)
+        matrix = (
+            column.storage.flatten()
+            .to_numpy(zero_copy_only=False)
+            .reshape(-1, len(scenarios))
         )
         frame[name] = pd.Series(matrix[:, scenario], index=frame.index)
     return frame

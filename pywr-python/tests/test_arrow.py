@@ -32,7 +32,11 @@ def test_metric_extension_metadata_round_trips_through_ipc_stream():
         },
     )
     schema = pa.schema(
-        [pa.field("time_start", pa.timestamp("ms")), pa.field("time_end", pa.timestamp("ms")), field],
+        [
+            pa.field("time_start", pa.timestamp("ms")),
+            pa.field("time_end", pa.timestamp("ms")),
+            field,
+        ],
         metadata={
             b"PYWR_SCENARIOS": b'[{"simulation_id":0,"simulation_indices":[0],"scenario_labels":["a"]},'
             b'{"simulation_id":1,"simulation_indices":[1],"scenario_labels":["b"]}]',
@@ -89,7 +93,9 @@ def test_metric_extension_serialization_and_validation():
     with pytest.raises(TypeError, match="float64 storage"):
         MetricColumnExtensionType.__arrow_ext_deserialize__(pa.int64(), b"{}")
     with pytest.raises(ValueError, match="missing required"):
-        MetricColumnExtensionType.__arrow_ext_deserialize__(extension.storage_type, b"{}")
+        MetricColumnExtensionType.__arrow_ext_deserialize__(
+            extension.storage_type, b"{}"
+        )
 
 
 def test_metric_extension_registration_is_idempotent():
