@@ -128,7 +128,8 @@ impl Recorder for SnapshotRecorder {
             metric_set_indices.insert(metric_set.name().to_string(), i);
 
             let contents = metric_set
-                .iter_metrics()
+                .metrics()
+                .iter()
                 .map(|m| SnapshotMetricSetItem {
                     name: m.name().to_string(),
                     attribute: m.attribute().to_string(),

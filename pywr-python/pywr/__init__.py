@@ -33,7 +33,12 @@ from .arrow import (
     METRIC_EXTENSION_NAME,
     MetricColumnExtensionType,
     MetricColumnMetadata,
+    ScenarioGroupMetadata,
+    ScenarioMetadata,
+    get_scenario_groups,
+    get_scenarios,
     register_metric_extension_type,
+    scenario_to_pandas,
 )
 
 __all__ = [
@@ -58,7 +63,9 @@ __all__ = [
     "ParameterInfo",
     "PywrError",
     "RecorderDoesNotSupportAggregation",
+    "ScenarioGroupMetadata",
     "ScenarioIndex",
+    "ScenarioMetadata",
     "SchemaBuildError",
     "SchemaReadError",
     "SetupError",
@@ -67,8 +74,11 @@ __all__ = [
     "convert_metric_from_v1_json_string",
     "convert_model_from_v1_json_string",
     "export_schema",
+    "get_scenario_groups",
+    "get_scenarios",
     "register_metric_extension_type",
     "run_from_path",
+    "scenario_to_pandas",
 ]
 
 
