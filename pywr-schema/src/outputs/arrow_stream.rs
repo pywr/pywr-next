@@ -14,7 +14,9 @@ use std::path::PathBuf;
 /// Output one metric set as a batched Arrow IPC stream.
 ///
 /// Each record batch contains up to `batch_size` model timesteps. Metric columns
-/// are stored as `Float64` Arrow extension fields carrying Pywr metric metadata.
+/// are stored as fixed-size lists of `Float64` values in scenario order.
+/// Scenario identities and groups are stored once as JSON in the `PYWR_SCENARIOS`
+/// and `PYWR_SCENARIO_GROUPS` schema metadata.
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitPaths)]
 pub struct ArrowStreamOutput {
     pub meta: NamedMeta,
@@ -58,6 +60,8 @@ mod tests {
     use crate::ModelSchema;
     use crate::visit::{Reference, VisitReferences};
     #[cfg(feature = "core")]
+    use arrow::array::{Array, FixedSizeListArray, Float64Array};
+    #[cfg(feature = "core")]
     use arrow::ipc::reader::StreamReader;
     #[cfg(feature = "core")]
     use pywr_core::solvers::ClpSolverSettings;
@@ -68,6 +72,7 @@ mod tests {
     const MODEL: &str = r#"
     {
       "metadata": { "title": "Arrow output", "minimum_version": "0.1" },
+      "scenarios": { "groups": [{ "name": "case", "size": 2, "labels": ["dry", "wet"] }] },
       "time": { "start": "2015-01-01", "end": "2015-01-03", "timestep": { "type": "Days", "days": 1 } },
       "network": {
         "nodes": [
@@ -75,7 +80,7 @@ mod tests {
           { "meta": { "name": "demand" }, "type": "Output", "max_flow": { "type": "Literal", "value": 10 } }
         ],
         "edges": [{ "from_node": "supply", "to_node": "demand" }],
-        "metric_sets": [{ "meta": { "name": "nodes" }, "metrics": [{ "type": "Node", "name": "demand" }] }],
+        "metric_sets": [{ "meta": { "name": "nodes" }, "metrics": [{ "type": "Node", "name": "demand" }, { "type": "Node", "name": "supply" }] }],
         "outputs": [{
           "meta": { "name": "arrow-output" },
           "type": "ArrowStream",
@@ -116,11 +121,40 @@ mod tests {
         let mut reader = StreamReader::try_new_buffered(std::fs::File::open(path).unwrap(), None).unwrap();
         let first_batch = reader.next().unwrap().unwrap();
         assert_eq!(first_batch.num_rows(), 2);
-        assert_eq!(first_batch.schema().fields().len(), 3);
+        assert_eq!(first_batch.schema().fields().len(), 4);
+        let scenarios: serde_json::Value =
+            serde_json::from_str(first_batch.schema().metadata().get("PYWR_SCENARIOS").unwrap()).unwrap();
+        assert_eq!(scenarios.as_array().unwrap().len(), 2);
+        assert_eq!(scenarios[0]["scenario_labels"][0], "dry");
+        assert_eq!(scenarios[1]["scenario_labels"][0], "wet");
+        let groups: serde_json::Value =
+            serde_json::from_str(first_batch.schema().metadata().get("PYWR_SCENARIO_GROUPS").unwrap()).unwrap();
+        assert_eq!(groups, serde_json::json!([{"name": "case", "size": 2}]));
+        assert!(
+            !first_batch
+                .schema()
+                .metadata()
+                .contains_key("PYWR_SCENARIO_GROUP_00_NAME")
+        );
+        assert!(
+            !first_batch
+                .schema()
+                .metadata()
+                .contains_key("PYWR_SCENARIO_GROUP_00_SIZE")
+        );
         assert_eq!(
             first_batch.schema().field(2).metadata().get("ARROW:extension:name"),
             Some(&"org.pywr.metric".to_string())
         );
+        for column in first_batch.columns().iter().skip(2) {
+            let values = column.as_any().downcast_ref::<FixedSizeListArray>().unwrap();
+            assert_eq!(values.value_length(), 2);
+            assert_eq!(values.len(), 2);
+            assert_eq!(
+                values.values().as_any().downcast_ref::<Float64Array>().unwrap().len(),
+                4
+            );
+        }
         assert_eq!(reader.next().unwrap().unwrap().num_rows(), 1);
         assert!(reader.next().is_none());
     }

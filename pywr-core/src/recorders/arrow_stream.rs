@@ -7,7 +7,7 @@ use crate::models::ModelDomain;
 use crate::network::{MetricSetIndex, Network, ResolutionMaps};
 use crate::scenario::{ScenarioDomain, ScenarioIndex};
 use crate::state::State;
-use arrow::array::{ArrayRef, Float64Array, TimestampMillisecondArray};
+use arrow::array::{ArrayRef, FixedSizeListArray, Float64Array, TimestampMillisecondArray};
 use arrow::datatypes::{DataType, Field, Schema, TimeUnit};
 use arrow::error::ArrowError;
 use arrow::ipc::writer::StreamWriter;
@@ -29,7 +29,7 @@ use thiserror::Error;
 
 /// Metadata identifying a metric column in an [`ArrowStreamOutput`] schema.
 ///
-/// The physical Arrow type remains `Float64`; this metadata is encoded as the
+/// The physical Arrow type is `FixedSizeList<Float64>`; this metadata is encoded as the
 /// `org.pywr.metric` Arrow extension type on the corresponding field.
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub struct MetricColumnMetadata {
@@ -39,9 +39,19 @@ pub struct MetricColumnMetadata {
     #[serde(rename = "type")]
     pub ty: String,
     pub sub_type: Option<String>,
-    pub simulation_id: usize,
-    pub simulation_indices: Vec<usize>,
-    pub scenario_labels: Vec<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+struct ScenarioMetadata {
+    simulation_id: usize,
+    simulation_indices: Vec<usize>,
+    scenario_labels: Vec<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+struct ScenarioGroupMetadata<'a> {
+    name: &'a str,
+    size: usize,
 }
 
 /// Arrow extension type used for Pywr metric columns.
@@ -54,7 +64,7 @@ impl MetricColumnExtension {
     }
 
     /// Create the extension-typed Arrow field for this metric.
-    pub fn field(&self, column_name: impl Into<String>) -> Field {
+    pub fn field(&self, column_name: impl Into<String>, scenario_count: i32) -> Field {
         let mut metadata = HashMap::new();
         metadata.insert(EXTENSION_TYPE_NAME_KEY.to_string(), Self::NAME.to_string());
         metadata.insert(
@@ -62,7 +72,12 @@ impl MetricColumnExtension {
             self.serialize_metadata()
                 .expect("metric extension metadata is serializable"),
         );
-        Field::new(column_name, DataType::Float64, false).with_metadata(metadata)
+        Field::new(
+            column_name,
+            DataType::FixedSizeList(Arc::new(Field::new("value", DataType::Float64, true)), scenario_count),
+            false,
+        )
+        .with_metadata(metadata)
     }
 }
 
@@ -87,11 +102,12 @@ impl ExtensionType for MetricColumnExtension {
     }
 
     fn supports_data_type(&self, data_type: &DataType) -> Result<(), ArrowError> {
-        if matches!(data_type, DataType::Float64) {
+        if matches!(data_type, DataType::FixedSizeList(field, size) if *size > 0 && field.data_type() == &DataType::Float64)
+        {
             Ok(())
         } else {
             Err(ArrowError::InvalidArgumentError(format!(
-                "Pywr metric extension requires Float64 storage, got {data_type:?}"
+                "Pywr metric extension requires FixedSizeList<Float64> storage, got {data_type:?}"
             )))
         }
     }
@@ -108,7 +124,7 @@ impl ExtensionType for MetricColumnExtension {
 pub struct ArrowStreamCommit {
     /// Zero-based record batch sequence number.
     pub batch_index: u64,
-    /// Number of scenario rows in this record batch.
+    /// Number of timestep rows in this record batch.
     pub row_count: usize,
     /// Exclusive byte offset of the flushed data in the IPC stream.
     pub byte_offset: u64,
@@ -131,6 +147,8 @@ pub enum ArrowStreamError {
     MetricSetIndexNotFound { index: MetricSetIndex },
     #[error("Metric set produced {actual} values, but its schema has {expected} metrics")]
     MetricCount { expected: usize, actual: usize },
+    #[error("Expected {expected} scenarios, but received {actual}")]
+    ScenarioCount { expected: usize, actual: usize },
     #[error("Metrics in one metric-set row have inconsistent reporting periods")]
     InconsistentPeriods,
     #[error("Arrow stream writer thread terminated: {0}")]
@@ -197,67 +215,84 @@ fn make_schema(metric_set_name: &str, scenario_domain: &ScenarioDomain, metrics:
     ];
     let mut used_names = HashMap::<String, usize>::new();
 
-    for s in scenario_domain.indices() {
-        for metric in metrics {
-            let base_name = format!(
-                "{}.{}.{:04}",
-                metric_set_name,
-                metric.fully_qualified_name(),
-                s.simulation_id()
-            );
-            let count = used_names.entry(base_name.clone()).or_default();
-            let column_name = if *count == 0 {
-                base_name
-            } else {
-                format!("{base_name}_{count}")
-            };
-            *count += 1;
-            let metadata = MetricColumnMetadata {
-                metric_set: metric_set_name.to_string(),
-                name: metric.name().to_string(),
-                attribute: metric.attribute().to_string(),
-                ty: metric.ty().to_string(),
-                sub_type: metric.sub_type().map(ToString::to_string),
-                simulation_id: s.simulation_id(),
-                simulation_indices: s.simulation_indices().to_vec(),
-                scenario_labels: s.labels().to_vec(),
-            };
-            fields.push(MetricColumnExtension::new(metadata).field(column_name));
-        }
+    let scenario_count = i32::try_from(scenario_domain.len()).expect("scenario count must fit in Arrow list size");
+    for metric in metrics {
+        let base_name = format!("{}.{}", metric_set_name, metric.fully_qualified_name());
+        let count = used_names.entry(base_name.clone()).or_default();
+        let column_name = if *count == 0 {
+            base_name
+        } else {
+            format!("{base_name}_{count}")
+        };
+        *count += 1;
+        let metadata = MetricColumnMetadata {
+            metric_set: metric_set_name.to_string(),
+            name: metric.name().to_string(),
+            attribute: metric.attribute().to_string(),
+            ty: metric.ty().to_string(),
+            sub_type: metric.sub_type().map(ToString::to_string),
+        };
+        fields.push(MetricColumnExtension::new(metadata).field(column_name, scenario_count));
     }
 
-    // Create metadata containing scenario group information
     let mut metadata = Metadata::new();
     metadata.insert("PYWR_VERSION", env!("CARGO_PKG_VERSION"));
+    let scenarios: Vec<_> = scenario_domain
+        .indices()
+        .iter()
+        .map(|s| ScenarioMetadata {
+            simulation_id: s.simulation_id(),
+            simulation_indices: s.simulation_indices().to_vec(),
+            scenario_labels: s.labels().to_vec(),
+        })
+        .collect();
+    metadata.insert(
+        "PYWR_SCENARIOS",
+        serde_json::to_string(&scenarios).expect("scenario metadata is serializable"),
+    );
 
-    for (i, group) in scenario_domain.groups().iter().enumerate() {
-        metadata.insert(format!("PYWR_SCENARIO_GROUP_{i:02}_NAME"), group.name());
-        metadata.insert(format!("PYWR_SCENARIO_GROUP_{i:02}_SIZE"), group.size().to_string());
-    }
+    let groups: Vec<_> = scenario_domain
+        .groups()
+        .iter()
+        .map(|group| ScenarioGroupMetadata {
+            name: group.name(),
+            size: group.size(),
+        })
+        .collect();
+    metadata.insert(
+        "PYWR_SCENARIO_GROUPS",
+        serde_json::to_string(&groups).expect("scenario group metadata is serializable"),
+    );
 
     Schema::new_with_metadata(fields, metadata)
 }
 
-fn record_batch(schema: Arc<Schema>, pending: PendingBatch) -> Result<RecordBatch, ArrowStreamError> {
+fn record_batch(
+    schema: Arc<Schema>,
+    scenario_count: usize,
+    pending: PendingBatch,
+) -> Result<RecordBatch, ArrowStreamError> {
     let metric_count = schema.fields().len() - 2; // Exclude time_start and time_end
     let row_count = pending.rows.len();
     let mut starts = Vec::with_capacity(row_count);
     let mut ends = Vec::with_capacity(row_count);
     let mut values = (0..metric_count)
-        .map(|_| Vec::with_capacity(row_count))
+        .map(|_| Vec::with_capacity(row_count * scenario_count))
         .collect::<Vec<_>>();
 
     for row in pending.rows {
-        if row.values.len() != metric_count {
+        if row.values.len() != metric_count * scenario_count {
             return Err(ArrowStreamError::MetricCount {
-                expected: metric_count,
+                expected: metric_count * scenario_count,
                 actual: row.values.len(),
             });
         }
         starts.push(row.time_start);
         ends.push(row.time_end);
-        for (column, value) in values.iter_mut().zip(row.values) {
-            column.push(value);
+        for scenario_values in row.values.chunks_exact(metric_count) {
+            for (column, value) in values.iter_mut().zip(scenario_values) {
+                column.push(*value);
+            }
         }
     }
 
@@ -265,11 +300,19 @@ fn record_batch(schema: Arc<Schema>, pending: PendingBatch) -> Result<RecordBatc
         Arc::new(TimestampMillisecondArray::from(starts)),
         Arc::new(TimestampMillisecondArray::from(ends)),
     ];
-    columns.extend(
-        values
-            .into_iter()
-            .map(|column| Arc::new(Float64Array::from(column)) as ArrayRef),
-    );
+    for (field, column) in schema.fields().iter().skip(2).zip(values) {
+        let DataType::FixedSizeList(child, size) = field.data_type() else {
+            return Err(ArrowStreamError::Arrow(ArrowError::SchemaError(
+                "Expected fixed-size list metric".into(),
+            )));
+        };
+        columns.push(Arc::new(FixedSizeListArray::try_new(
+            Arc::clone(child),
+            *size,
+            Arc::new(Float64Array::from(column)),
+            None,
+        )?));
+    }
     Ok(RecordBatch::try_new(schema, columns)?)
 }
 
@@ -278,6 +321,7 @@ fn worker(
     status_sender: Sender<WorkerStatus>,
     file: File,
     schema: Arc<Schema>,
+    scenario_count: usize,
     commits: Option<Sender<ArrowStreamCommit>>,
 ) -> Result<(), ArrowStreamError> {
     let mut writer = StreamWriter::try_new_buffered(CountingWriter::new(file), &schema)?;
@@ -287,7 +331,7 @@ fn worker(
             WorkerMessage::Batch(pending) if pending.rows.is_empty() => {}
             WorkerMessage::Batch(pending) => {
                 let row_count = pending.rows.len();
-                let batch = record_batch(Arc::clone(&schema), pending)?;
+                let batch = record_batch(Arc::clone(&schema), scenario_count, pending)?;
                 writer.write(&batch)?;
                 writer.flush()?;
                 let commit = ArrowStreamCommit {
@@ -324,6 +368,7 @@ struct Internal {
     status_receiver: Receiver<WorkerStatus>,
     worker: Option<JoinHandle<Result<(), ArrowStreamError>>>,
     metric_count: usize,
+    scenario_count: usize,
 }
 
 /// Output one metric set as a batched Arrow IPC stream on a worker thread.
@@ -364,7 +409,13 @@ impl ArrowStreamOutput {
         internal: &mut Internal,
     ) -> Result<(), ArrowStreamError> {
         let mut time_start_end: Option<(DateTime, DateTime)> = None;
-        let mut all_values: Vec<Option<f64>> = Vec::with_capacity(internal.metric_count * metric_set_states.len());
+        if metric_set_states.len() != internal.scenario_count {
+            return Err(ArrowStreamError::ScenarioCount {
+                expected: internal.scenario_count,
+                actual: metric_set_states.len(),
+            });
+        }
+        let mut all_values: Vec<Option<f64>> = Vec::with_capacity(internal.metric_count * internal.scenario_count);
 
         for scenario_states in metric_set_states.iter() {
             let values = scenario_states
@@ -379,6 +430,12 @@ impl ArrowStreamOutput {
                     all_values.extend(std::iter::repeat_n(None, internal.metric_count));
                 }
                 Some(values) => {
+                    if values.len() != internal.metric_count {
+                        return Err(ArrowStreamError::MetricCount {
+                            expected: internal.metric_count,
+                            actual: values.len(),
+                        });
+                    }
                     if let Some((start, end)) = time_start_end {
                         if values.iter().any(|value| value.start != start || value.end() != end) {
                             return Err(ArrowStreamError::InconsistentPeriods);
@@ -453,8 +510,9 @@ impl Recorder for ArrowStreamOutput {
         let (sender, receiver) = mpsc::channel();
         let (status_sender, status_receiver) = mpsc::channel();
         let commits = self.commits.clone();
+        let scenario_count = domain.scenarios().len();
         let worker = thread::spawn(move || {
-            let result = worker(receiver, status_sender.clone(), file, schema, commits);
+            let result = worker(receiver, status_sender.clone(), file, schema, scenario_count, commits);
             if let Err(error) = &result {
                 let _ = status_sender.send(WorkerStatus::Failed(error.to_string()));
             }
@@ -466,6 +524,7 @@ impl Recorder for ArrowStreamOutput {
             status_receiver,
             worker: Some(worker),
             metric_count: metric_set.metrics().len(),
+            scenario_count,
         })))
     }
 
@@ -590,11 +649,8 @@ mod tests {
             attribute: "volume".to_string(),
             ty: "node".to_string(),
             sub_type: Some("storage".to_string()),
-            simulation_id: 0,
-            simulation_indices: vec![0],
-            scenario_labels: vec!["0".to_string()],
         };
-        let field = MetricColumnExtension::new(metadata.clone()).field("reservoir");
+        let field = MetricColumnExtension::new(metadata.clone()).field("reservoir", 2);
         assert_eq!(
             MetricColumnExtension::try_new_from_field_metadata(field.data_type(), field.metadata())
                 .unwrap()
@@ -615,18 +671,24 @@ mod tests {
                 attribute: "outflow".to_string(),
                 ty: "node".to_string(),
                 sub_type: None,
-                simulation_id: 0,
-                simulation_indices: vec![0],
-                scenario_labels: vec!["0".to_string()],
             })
-            .field("flow"),
+            .field("flow", 2),
+            MetricColumnExtension::new(MetricColumnMetadata {
+                metric_set: "outputs".to_string(),
+                name: "volume".to_string(),
+                attribute: "volume".to_string(),
+                ty: "node".to_string(),
+                sub_type: None,
+            })
+            .field("volume", 2),
         ]));
         let (sender, receiver) = mpsc::channel();
         let (status_sender, _status_receiver) = mpsc::channel();
         let (commit_sender, commit_receiver) = mpsc::channel();
         let file = File::create(&path).unwrap();
         let worker_schema = Arc::clone(&schema);
-        let handle = thread::spawn(move || worker(receiver, status_sender, file, worker_schema, Some(commit_sender)));
+        let handle =
+            thread::spawn(move || worker(receiver, status_sender, file, worker_schema, 2, Some(commit_sender)));
         sender
             .send(WorkerMessage::Batch(PendingBatch {
                 timestep_count: 2,
@@ -634,12 +696,12 @@ mod tests {
                     ArrowStreamRow {
                         time_start: 0,
                         time_end: 1,
-                        values: vec![Some(1.0)],
+                        values: vec![Some(1.0), Some(10.0), None, None],
                     },
                     ArrowStreamRow {
                         time_start: 1,
                         time_end: 2,
-                        values: vec![Some(2.0)],
+                        values: vec![Some(2.0), Some(20.0), Some(3.0), Some(30.0)],
                     },
                 ],
             }))
@@ -658,6 +720,17 @@ mod tests {
         let mut reader = StreamReader::try_new_buffered(File::open(&path).unwrap(), None).unwrap();
         let batch = reader.next().unwrap().unwrap();
         assert_eq!(batch.num_rows(), 2);
+        let values = batch.column(2).as_any().downcast_ref::<FixedSizeListArray>().unwrap();
+        assert_eq!(values.value_length(), 2);
+        assert_eq!(
+            values.values().as_any().downcast_ref::<Float64Array>().unwrap(),
+            &Float64Array::from(vec![Some(1.0), None, Some(2.0), Some(3.0)])
+        );
+        let volumes = batch.column(3).as_any().downcast_ref::<FixedSizeListArray>().unwrap();
+        assert_eq!(
+            volumes.values().as_any().downcast_ref::<Float64Array>().unwrap(),
+            &Float64Array::from(vec![Some(10.0), None, Some(20.0), Some(30.0)])
+        );
         assert!(reader.next().is_none());
         fs::remove_file(path).unwrap();
     }
