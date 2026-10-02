@@ -65,8 +65,8 @@ pub struct RunProgress {
 pub struct ArrowStreamDescriptor {
     /// Stable output name supplied in the initialise request.
     pub name: String,
-    /// The resolved file path written by the runner.
-    pub filename: PathBuf,
+    /// The resolved file path written by the runner; `None` for a stream kept in memory.
+    pub filename: Option<PathBuf>,
     /// Name of the sole metric set in this stream.
     pub metric_set: String,
 }

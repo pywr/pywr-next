@@ -23,8 +23,8 @@ use crate::state::State;
 use crate::timestep::Timestep;
 pub use aggregator::{AggregationFrequency, Aggregator, PeriodValue};
 pub use arrow_stream::{
-    ArrowStreamCommit, ArrowStreamError, ArrowStreamOutput, ArrowStreamOutputBuilder, MetricColumnExtension,
-    MetricColumnMetadata,
+    ArrowStreamCommit, ArrowStreamError, ArrowStreamOutput, ArrowStreamOutputBuilder, ArrowStreamSink,
+    MetricColumnExtension, MetricColumnMetadata,
 };
 pub use csv::{CsvLongFmtOutput, CsvLongFmtOutputBuilder, CsvLongFmtRecord, CsvWideFmtOutput, CsvWideFmtOutputBuilder};
 use float_cmp::{ApproxEq, F64Margin, approx_eq};

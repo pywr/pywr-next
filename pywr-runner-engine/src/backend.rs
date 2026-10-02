@@ -2,7 +2,7 @@ use crate::command::{InitialiseRequest, ModelDocument, ResultOptions, Solver};
 use crate::event::{ArrowStreamDescriptor, FinalOutcome, RunFailure, RunFailureStage, RunProgress, RunSummary};
 use crate::state::RunTarget;
 use pywr_core::models::{Model, ModelFinaliseError, ModelState, ModelStepError, ModelTimings};
-use pywr_core::recorders::{ArrowStreamCommit, ArrowStreamOutputBuilder};
+use pywr_core::recorders::{ArrowStreamCommit, ArrowStreamOutputBuilder, ArrowStreamSink};
 #[cfg(feature = "cbc")]
 use pywr_core::solvers::CbcSolverSettings;
 #[cfg(feature = "clp")]
@@ -36,6 +36,10 @@ pub enum BackendError {
     SolverUnavailable(Solver),
     #[error("More than one Arrow stream is named `{name}`.")]
     DuplicateArrowStreamName { name: String },
+    #[error("Arrow stream `{name}` has no filename, and this runner writes streams to files.")]
+    ArrowStreamWithoutFilename { name: String },
+    #[error("Arrow stream `{name}` names a file, but this runner keeps streams in memory.")]
+    ArrowStreamWithFilename { name: String },
     #[error("Model step error.")]
     ModelStepError(#[from] ModelStepError),
     #[error("Model finalisation error.")]
@@ -215,39 +219,65 @@ fn apply_result_options_to_schema(
     Ok(())
 }
 
-/// Commits are routed by stream name, so each stream must have its own.
-fn check_arrow_stream_names(result_options: &ResultOptions) -> Result<(), BackendError> {
+/// Where each requested Arrow stream is written: its file, resolved against `output_path`, or
+/// memory. Each stream must have its own name, since commits are routed by it, and a filename
+/// exactly when the runner writes streams to files.
+fn arrow_stream_sinks(
+    result_options: &ResultOptions,
+    sink: ArrowStreamSinkKind,
+    output_path: Option<&std::path::Path>,
+) -> Result<Vec<ArrowStreamSink>, BackendError> {
     let mut names = HashSet::new();
+    let mut sinks = Vec::with_capacity(result_options.arrow_streams.len());
     for options in &result_options.arrow_streams {
         if !names.insert(options.name.as_str()) {
             return Err(BackendError::DuplicateArrowStreamName {
                 name: options.name.clone(),
             });
         }
+        sinks.push(match (sink, &options.filename) {
+            (ArrowStreamSinkKind::File, Some(filename)) => {
+                ArrowStreamSink::File(match (output_path, filename.is_relative()) {
+                    (Some(output_directory), true) => output_directory.join(filename),
+                    _ => filename.clone(),
+                })
+            }
+            (ArrowStreamSinkKind::File, None) => {
+                return Err(BackendError::ArrowStreamWithoutFilename {
+                    name: options.name.clone(),
+                });
+            }
+            (ArrowStreamSinkKind::Memory, Some(_)) => {
+                return Err(BackendError::ArrowStreamWithFilename {
+                    name: options.name.clone(),
+                });
+            }
+            (ArrowStreamSinkKind::Memory, None) => ArrowStreamSink::Memory,
+        });
     }
-    Ok(())
+    Ok(sinks)
 }
 
-/// Adds a recorder for each requested Arrow stream. Their commits share one channel, each
-/// naming its stream.
+/// Adds a recorder for each requested Arrow stream, writing to its sink from
+/// [`arrow_stream_sinks`]. Their commits share one channel, each naming its stream.
 fn apply_arrow_stream_recorders_to_model_builder(
     network_builder: &mut pywr_core::network::NetworkBuilder,
-    output_path: Option<&std::path::Path>,
     result_options: &ResultOptions,
+    sinks: Vec<ArrowStreamSink>,
 ) -> (Vec<ArrowStreamDescriptor>, Option<Receiver<ArrowStreamCommit>>) {
-    if result_options.arrow_streams.is_empty() {
+    if sinks.is_empty() {
         return (Vec::new(), None);
     }
 
     let (commit_sender, commit_receiver) = mpsc::channel();
     let mut descriptors = Vec::new();
-    for options in &result_options.arrow_streams {
-        let filename = match (output_path, options.filename.is_relative()) {
-            (Some(output_directory), true) => output_directory.join(&options.filename),
-            _ => options.filename.clone(),
+    for (options, sink) in result_options.arrow_streams.iter().zip(sinks) {
+        let filename = match &sink {
+            ArrowStreamSink::File(filename) => Some(filename.clone()),
+            ArrowStreamSink::Memory => None,
         };
         let mut recorder_builder =
-            ArrowStreamOutputBuilder::new(&options.name, &filename, &options.metric_set, options.batch_size);
+            ArrowStreamOutputBuilder::new(&options.name, sink, &options.metric_set, options.batch_size);
         recorder_builder.commit_sender(commit_sender.clone());
         network_builder.recorder(Box::new(recorder_builder));
 
@@ -315,21 +345,34 @@ impl PywrRuntime {
     }
 }
 
-/// Runs models with pywr, opening their input files through a [`FileProvider`], from disk by
-/// default.
+/// Where a [`PywrBackend`] writes a run's Arrow streams.
+#[derive(Debug, Clone, Copy)]
+pub enum ArrowStreamSinkKind {
+    /// Each to the file its request names.
+    File,
+    /// Each to memory, handed on in its commits' bytes.
+    Memory,
+}
+
+/// Runs models with pywr, opening their input files through a [`FileProvider`] and writing their
+/// Arrow streams to files or memory: from disk and to files by default.
 pub struct PywrBackend {
     files: Box<dyn FileProvider + Send>,
+    arrow_stream_sink: ArrowStreamSinkKind,
 }
 
 impl PywrBackend {
-    pub fn new(files: impl FileProvider + Send + 'static) -> Self {
-        Self { files: Box::new(files) }
+    pub fn new(files: impl FileProvider + Send + 'static, arrow_stream_sink: ArrowStreamSinkKind) -> Self {
+        Self {
+            files: Box::new(files),
+            arrow_stream_sink,
+        }
     }
 }
 
 impl Default for PywrBackend {
     fn default() -> Self {
-        Self::new(FileSystem)
+        Self::new(FileSystem, ArrowStreamSinkKind::File)
     }
 }
 
@@ -337,7 +380,11 @@ impl RunnerBackend for PywrBackend {
     type Runtime = PywrRuntime;
 
     fn initialise(&mut self, request: InitialiseRequest) -> Result<Initialised<Self::Runtime>, BackendError> {
-        check_arrow_stream_names(&request.result_options)?;
+        let arrow_stream_sinks = arrow_stream_sinks(
+            &request.result_options,
+            self.arrow_stream_sink,
+            request.output_path.as_deref(),
+        )?;
 
         // Try to make the schema from the model document. If it fails, return an error.
         let mut schema: pywr_schema::ModelSchema = match request.model {
@@ -358,8 +405,8 @@ impl RunnerBackend for PywrBackend {
 
         let (arrow_streams, arrow_stream_commits) = apply_arrow_stream_recorders_to_model_builder(
             model_builder.network_builder(),
-            request.output_path.as_deref(),
             &request.result_options,
+            arrow_stream_sinks,
         );
 
         let model = model_builder.build()?;
@@ -568,7 +615,7 @@ mod tests {
             }
         });
 
-        PywrBackend::new(files).initialise(InitialiseRequest {
+        PywrBackend::new(files, ArrowStreamSinkKind::File).initialise(InitialiseRequest {
             run_name: "test".into(),
             model: ModelDocument::Json(model),
             data_path: Some(PathBuf::from("site/models")),
@@ -611,7 +658,7 @@ mod tests {
     fn stream(name: &str, metric_set: &str) -> ArrowStreamOptions {
         ArrowStreamOptions {
             name: name.into(),
-            filename: format!("{name}.arrow").into(),
+            filename: Some(format!("{name}.arrow").into()),
             metric_set: metric_set.into(),
             batch_size: NonZeroUsize::new(10).unwrap(),
         }
@@ -674,19 +721,60 @@ mod tests {
         backend.finalise(&mut initialised.runtime).unwrap();
         for descriptor in &initialised.arrow_streams {
             let filename = output.path().join(format!("{}.arrow", descriptor.name));
-            assert_eq!(descriptor.filename, filename);
+            assert_eq!(descriptor.filename.as_deref(), Some(filename.as_path()));
             assert!(filename.is_file());
         }
     }
 
     #[test]
-    fn a_repeated_arrow_stream_name_is_refused_before_the_model_is_read() {
-        let streams = vec![stream("values", "nodes"), stream("values", "edges")];
+    fn a_memory_sink_hands_its_bytes_on_in_the_commits() {
+        let output = tempfile::tempdir().unwrap();
+        let mut backend = PywrBackend::new(FileSystem, ArrowStreamSinkKind::Memory);
+        let mut options = stream("node-values", "nodes");
+        options.filename = None;
+        let mut initialised = backend.initialise(request(output.path(), vec![options])).unwrap();
+        assert!(initialised.arrow_streams[0].filename.is_none());
+
+        let commits = initialised.arrow_stream_commits;
+        let step = backend
+            .step(&mut initialised.runtime, commits, &RunTarget::Step)
+            .unwrap();
+        let receiver = step.arrow_stream_commits.unwrap();
+        let commit = receiver.try_recv().unwrap();
+        assert!(commit.bytes.is_some_and(|bytes| !bytes.is_empty()));
+
+        backend.finalise(&mut initialised.runtime).unwrap();
+        let last = receiver.try_iter().last().unwrap();
+        assert_eq!(last.row_count, 0);
+        assert!(output.path().read_dir().unwrap().next().is_none());
+    }
+
+    /// Initialises `streams` with a document that is not a model, so only a check made before the
+    /// model is read can refuse them.
+    fn refusal(mut backend: PywrBackend, streams: Vec<ArrowStreamOptions>) -> BackendError {
         let mut request = request(Path::new("outputs"), streams);
         request.model = ModelDocument::Json(serde_json::Value::Null);
-        let Err(error) = PywrBackend::default().initialise(request) else {
-            panic!("two Arrow streams shared a name");
-        };
+        backend.initialise(request).err().expect("the streams were accepted")
+    }
+
+    #[test]
+    fn a_repeated_arrow_stream_name_is_refused_before_the_model_is_read() {
+        let error = refusal(
+            PywrBackend::default(),
+            vec![stream("values", "nodes"), stream("values", "edges")],
+        );
         assert!(matches!(error, BackendError::DuplicateArrowStreamName { name } if name == "values"));
+    }
+
+    #[test]
+    fn a_filename_must_match_where_the_runner_writes_streams() {
+        let mut unnamed = stream("values", "nodes");
+        unnamed.filename = None;
+        let error = refusal(PywrBackend::default(), vec![unnamed]);
+        assert!(matches!(error, BackendError::ArrowStreamWithoutFilename { name } if name == "values"));
+
+        let memory = PywrBackend::new(FileSystem, ArrowStreamSinkKind::Memory);
+        let error = refusal(memory, vec![stream("values", "nodes")]);
+        assert!(matches!(error, BackendError::ArrowStreamWithFilename { name } if name == "values"));
     }
 }

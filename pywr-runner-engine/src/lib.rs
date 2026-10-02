@@ -5,7 +5,7 @@ mod event;
 mod logging;
 mod state;
 
-pub use backend::{PywrBackend, RunnerBackend};
+pub use backend::{ArrowStreamSinkKind, PywrBackend, RunnerBackend};
 pub use command::{EngineCommand, EngineCommandKind, InitialiseRequest};
 pub use engine::{CommandError, OutputError, OutputSink, RunnerEngine, TickError};
 pub use event::{EngineEvent, EngineEventKind, EngineStatus};

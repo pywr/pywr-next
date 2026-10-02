@@ -657,6 +657,7 @@ mod tests {
                     batch_index: (flush_count - 1) as u64,
                     row_count: 1,
                     byte_offset: flush_count as u64,
+                    bytes: None,
                 })
                 .unwrap();
             Ok(())
