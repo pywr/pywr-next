@@ -5,6 +5,10 @@ name: Python
 on:
   push:
   pull_request:
+  workflow_call:
+
+permissions:
+  contents: read
 
 jobs:
   windows:
@@ -13,6 +17,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
+          ref: ${{ github.sha }}
           submodules: true
       - uses: swatinem/rust-cache@v2
       - name: Install uv
@@ -40,6 +45,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
+          ref: ${{ github.sha }}
           submodules: true
       - uses: swatinem/rust-cache@v2
       - name: Install uv

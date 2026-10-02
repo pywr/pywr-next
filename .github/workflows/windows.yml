@@ -4,6 +4,10 @@ on:
   push:
     branches: [ main ]
   pull_request:
+  workflow_call:
+
+permissions:
+  contents: read
 
 env:
   CARGO_INCREMENTAL: 0
@@ -19,6 +23,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
+          ref: ${{ github.sha }}
           submodules: true
       - uses: swatinem/rust-cache@v2
       - name: "Set up Python"
