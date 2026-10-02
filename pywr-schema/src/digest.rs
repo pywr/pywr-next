@@ -1,4 +1,4 @@
-use crate::{ConversionData, ConversionError, TryFromV1};
+use crate::{ConversionData, ConversionError, FileProvider, TryFromV1};
 use digest::Digest;
 use digest_io::IoWrapper;
 use md5::Md5;
@@ -6,7 +6,6 @@ use pywr_schema_macros::PywrVisitAll;
 use schemars::JsonSchema;
 use sha2::Sha256;
 use std::collections::HashMap;
-use std::fs::File;
 use std::io::{BufReader, copy};
 use std::path::{Path, PathBuf};
 use thiserror::Error;
@@ -40,10 +39,11 @@ pub enum Checksum {
 }
 
 impl Checksum {
-    pub fn check(&self, path: &Path) -> Result<(), ChecksumError> {
+    /// Check the file at `path` as `files` opens it.
+    pub fn check(&self, files: &dyn FileProvider, path: &Path) -> Result<(), ChecksumError> {
         match self {
-            Checksum::MD5 { hash } => validate_hex_digest::<Md5>(path, hash),
-            Checksum::SHA256 { hash } => validate_hex_digest::<Sha256>(path, hash),
+            Checksum::MD5 { hash } => validate_hex_digest::<Md5>(files, path, hash),
+            Checksum::SHA256 { hash } => validate_hex_digest::<Sha256>(files, path, hash),
         }
     }
 }
@@ -76,8 +76,12 @@ impl TryFromV1<HashMap<String, String>> for Checksum {
 }
 
 /// Validate a file's checksum against the expected hash.
-fn validate_hex_digest<D: Digest + digest::Update>(path: &Path, expected: &str) -> Result<(), ChecksumError> {
-    let input = File::open(path).map_err(|e| ChecksumError::IoError {
+fn validate_hex_digest<D: Digest + digest::Update>(
+    files: &dyn FileProvider,
+    path: &Path,
+    expected: &str,
+) -> Result<(), ChecksumError> {
+    let input = files.open(path).map_err(|e| ChecksumError::IoError {
         path: path.to_path_buf(),
         source: Box::new(e),
     })?;

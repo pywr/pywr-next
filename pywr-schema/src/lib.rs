@@ -9,6 +9,7 @@ pub mod data_tables;
 mod digest;
 pub mod edge;
 mod error;
+mod files;
 mod mermaid;
 pub mod meta;
 pub mod metric;
@@ -27,6 +28,7 @@ mod visit;
 
 pub use digest::{Checksum, ChecksumError};
 pub use error::{ComponentConversionError, ConversionError, SchemaError};
+pub use files::{FileProvider, FileSystem, InputFile, MemoryFiles};
 pub use model::{ModelSchema, ModelSchemaReadError, MultiNetworkModelSchema};
 #[cfg(feature = "core")]
 pub use model::{ModelSchemaBuildError, MultiNetworkModelSchemaBuildError};

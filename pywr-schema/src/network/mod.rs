@@ -4,7 +4,6 @@ mod validate;
 use super::edge::Edge;
 use super::nodes::{Node, NodeOrVirtualNode, VirtualNode};
 use super::parameters::{Parameter, ParameterOrTimeSeriesRef};
-use crate::ConversionError;
 use crate::data_tables::DataTable;
 #[cfg(feature = "core")]
 use crate::data_tables::{LoadedTableCollection, TableCollectionLoadError};
@@ -24,6 +23,7 @@ use crate::v1::{ConversionData, TryIntoV2};
 #[cfg(feature = "core")]
 use crate::validation::NetworkValidationError;
 use crate::visit::{Owner, Reference, ReferenceMut, VisitMetrics, VisitPaths, VisitReferences};
+use crate::{ConversionError, FileProvider, FileSystem};
 pub use merge::{NetworkMergeError, NetworkMergeOptions};
 #[cfg(all(feature = "core", feature = "pyo3"))]
 use pyo3::PyErr;
@@ -34,6 +34,7 @@ use pywr_core::models::ModelDomain;
 use pywr_schema_macros::skip_serializing_none;
 use pywr_v1_schema::nodes::{CoreNode as CoreNodeV1, Node as NodeV1};
 use schemars::JsonSchema;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumString, IntoStaticStr};
@@ -448,10 +449,19 @@ impl NetworkSchema {
     }
 
     pub fn from_path<P: AsRef<Path>>(path: P) -> Result<Self, NetworkSchemaReadError> {
-        let data = std::fs::read_to_string(&path).map_err(|source| NetworkSchemaReadError::IO {
-            path: path.as_ref().to_path_buf(),
-            source,
-        })?;
+        Self::from_files(&FileSystem, path.as_ref())
+    }
+
+    /// Read the network at `path` as `files` opens it.
+    pub(crate) fn from_files(files: &dyn FileProvider, path: &Path) -> Result<Self, NetworkSchemaReadError> {
+        let mut data = String::new();
+        files
+            .open(path)
+            .and_then(|mut file| file.read_to_string(&mut data))
+            .map_err(|source| NetworkSchemaReadError::IO {
+                path: path.to_path_buf(),
+                source,
+            })?;
         Ok(serde_json::from_str(data.as_str())?)
     }
 
@@ -758,6 +768,7 @@ impl NetworkSchema {
         &self,
         network_builder: &mut pywr_core::network::NetworkBuilder,
         domain: &ModelDomain,
+        files: &dyn FileProvider,
         data_path: Option<&Path>,
         output_path: Option<&Path>,
         inter_network_transfers: &[MultiNetworkTransfer],
@@ -766,8 +777,8 @@ impl NetworkSchema {
         self.validate()
             .map_err(|source| NetworkSchemaBuildError::Validation { source })?;
 
-        let tables = LoadedTableCollection::from_schema(self.tables.as_deref(), data_path)?;
-        let time_series = LoadedTimeSeriesCollection::from_schema(self.time_series.as_deref(), data_path)?;
+        let tables = LoadedTableCollection::from_schema(self.tables.as_deref(), files, data_path)?;
+        let time_series = LoadedTimeSeriesCollection::from_schema(self.time_series.as_deref(), files, data_path)?;
 
         let args = LoadArgs {
             schema: self,

@@ -1,6 +1,6 @@
-use pywr_schema::{ModelSchema, NetworkProblem, ScenarioProblem};
 #[cfg(feature = "core")]
-use pywr_schema::{ModelSchemaBuildError, NetworkSchemaBuildError};
+use pywr_schema::{FileSystem, ModelSchemaBuildError, NetworkSchemaBuildError};
+use pywr_schema::{ModelSchema, NetworkProblem, ScenarioProblem};
 use std::fs;
 use std::path::Path;
 #[cfg(feature = "core")]
@@ -139,7 +139,7 @@ fn unknown_scenario_group() {
         let temp_dir = TempDir::new().unwrap();
         let data_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("invalid");
 
-        match schema.create_model_builder(Some(&data_dir), Some(temp_dir.path())) {
+        match schema.create_model_builder(&FileSystem, Some(&data_dir), Some(temp_dir.path())) {
             Err(e) => panic!("Expected a `NetworkBuildError` error, but got: {e:?}"),
             Ok(builder) => match builder.build() {
                 Err(e) => match e {
@@ -180,7 +180,7 @@ fn deserialise_test_model(model_path: &Path) -> ModelSchema {
 fn build_test_model(schema: &ModelSchema) -> ModelSchemaBuildError {
     let temp_dir = TempDir::new().unwrap();
     let data_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join("invalid");
-    match schema.create_model_builder(Some(&data_dir), Some(temp_dir.path())) {
+    match schema.create_model_builder(&FileSystem, Some(&data_dir), Some(temp_dir.path())) {
         Ok(_) => panic!("Expected an error, but model built successfully!"),
         Err(e) => e,
     }

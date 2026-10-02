@@ -1,3 +1,5 @@
+#[cfg(all(feature = "core", feature = "hdf5"))]
+use crate::FileSystem;
 use crate::digest::Checksum;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
@@ -69,7 +71,7 @@ impl TablesArrayParameter {
         };
 
         if let Some(checksum) = &self.checksum {
-            checksum.check(&pth)?;
+            checksum.check(&FileSystem, &pth)?;
         }
 
         let hdf5_err = |source| SchemaError::HDF5Error {

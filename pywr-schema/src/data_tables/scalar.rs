@@ -1,6 +1,6 @@
+use crate::FileProvider;
 use crate::data_tables::TableError;
 use std::collections::HashMap;
-use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
 use std::str::FromStr;
@@ -95,12 +95,16 @@ impl LoadedScalarTable {
     }
 
     /// Load a CSV file whose first `key_size` columns hold the row keys.
-    pub fn from_csv_row(path: &Path, key_size: usize) -> Result<LoadedScalarTable, TableError> {
+    pub fn from_csv_row(
+        files: &dyn FileProvider,
+        path: &Path,
+        key_size: usize,
+    ) -> Result<LoadedScalarTable, TableError> {
         match key_size {
-            1 => Ok(LoadedScalarTable::One(load_csv_rows_scalar_table(path)?)),
-            2 => Ok(LoadedScalarTable::Two(load_csv_rows_scalar_table(path)?)),
-            3 => Ok(LoadedScalarTable::Three(load_csv_rows_scalar_table(path)?)),
-            4 => Ok(LoadedScalarTable::Four(load_csv_rows_scalar_table(path)?)),
+            1 => Ok(LoadedScalarTable::One(load_csv_rows_scalar_table(files, path)?)),
+            2 => Ok(LoadedScalarTable::Two(load_csv_rows_scalar_table(files, path)?)),
+            3 => Ok(LoadedScalarTable::Three(load_csv_rows_scalar_table(files, path)?)),
+            4 => Ok(LoadedScalarTable::Four(load_csv_rows_scalar_table(files, path)?)),
             _ => Err(TableError::FormatNotSupported(
                 "CSV row scalar table with more than four index columns is not supported.".to_string(),
             )),
@@ -108,28 +112,41 @@ impl LoadedScalarTable {
     }
 
     /// Load a CSV file whose first `key_size` header rows hold the column keys.
-    pub fn from_csv_col(path: &Path, key_size: usize) -> Result<LoadedScalarTable, TableError> {
+    pub fn from_csv_col(
+        files: &dyn FileProvider,
+        path: &Path,
+        key_size: usize,
+    ) -> Result<LoadedScalarTable, TableError> {
         match key_size {
-            1 => Ok(LoadedScalarTable::One(load_csv_cols_scalar_table(path)?)),
-            2 => Ok(LoadedScalarTable::Two(load_csv_cols_scalar_table(path)?)),
-            3 => Ok(LoadedScalarTable::Three(load_csv_cols_scalar_table(path)?)),
-            4 => Ok(LoadedScalarTable::Four(load_csv_cols_scalar_table(path)?)),
+            1 => Ok(LoadedScalarTable::One(load_csv_cols_scalar_table(files, path)?)),
+            2 => Ok(LoadedScalarTable::Two(load_csv_cols_scalar_table(files, path)?)),
+            3 => Ok(LoadedScalarTable::Three(load_csv_cols_scalar_table(files, path)?)),
+            4 => Ok(LoadedScalarTable::Four(load_csv_cols_scalar_table(files, path)?)),
             _ => Err(TableError::FormatNotSupported(
                 "CSV column scalar table with more than four index rows is not supported.".to_string(),
             )),
         }
     }
 
-    pub fn from_csv_row_col(path: &Path, rows: usize, cols: usize) -> Result<LoadedScalarTable, TableError> {
+    pub fn from_csv_row_col(
+        files: &dyn FileProvider,
+        path: &Path,
+        rows: usize,
+        cols: usize,
+    ) -> Result<LoadedScalarTable, TableError> {
         match (rows, cols) {
-            (1, 1) => Ok(LoadedScalarTable::Two(load_csv_row_col_scalar_table::<1, 1, _>(path)?)),
+            (1, 1) => Ok(LoadedScalarTable::Two(load_csv_row_col_scalar_table::<1, 1, _>(
+                files, path,
+            )?)),
             (1, 2) => Ok(LoadedScalarTable::Three(load_csv_row_col_scalar_table::<1, 2, _>(
-                path,
+                files, path,
             )?)),
             (2, 1) => Ok(LoadedScalarTable::Three(load_csv_row_col_scalar_table::<2, 1, _>(
-                path,
+                files, path,
             )?)),
-            (2, 2) => Ok(LoadedScalarTable::Four(load_csv_row_col_scalar_table::<2, 2, _>(path)?)),
+            (2, 2) => Ok(LoadedScalarTable::Four(load_csv_row_col_scalar_table::<2, 2, _>(
+                files, path,
+            )?)),
             _ => Err(TableError::FormatNotSupported(
                 "CSV row/column scalar table with more than two row or columns is not supported.".to_string(),
             )),
@@ -142,13 +159,14 @@ impl LoadedScalarTable {
 /// The CSV file should have a header row(s) with the column names, and first column(s)
 /// with the row names. The rest of the cells should be scalar values.
 fn load_csv_row_col_scalar_table<const R: usize, const C: usize, const N: usize>(
+    files: &dyn FileProvider,
     path: &Path,
 ) -> Result<ScalarTable<N>, TableError> {
     // Ensure R + C == N
     // Const generic expressions are not yet stable, so we use an assert at runtime.
     assert_eq!(R + C, N, "R + C must equal N");
 
-    let file = File::open(path).map_err(|source| TableError::IO {
+    let file = files.open(path).map_err(|source| TableError::IO {
         path: path.to_path_buf(),
         source,
     })?;
@@ -244,8 +262,11 @@ fn load_csv_row_col_scalar_table<const R: usize, const C: usize, const N: usize>
 }
 
 /// Load a CSV file with a row-based index of size `N`.
-fn load_csv_rows_scalar_table<const N: usize>(path: &Path) -> Result<ScalarTable<N>, TableError> {
-    let file = File::open(path).map_err(|source| TableError::IO {
+fn load_csv_rows_scalar_table<const N: usize>(
+    files: &dyn FileProvider,
+    path: &Path,
+) -> Result<ScalarTable<N>, TableError> {
+    let file = files.open(path).map_err(|source| TableError::IO {
         path: path.to_path_buf(),
         source,
     })?;
@@ -296,8 +317,11 @@ fn load_csv_rows_scalar_table<const N: usize>(path: &Path) -> Result<ScalarTable
 ///
 /// The CSV file should have a header row(s) with the column names.
 /// The rest of the cells should be scalar values.
-fn load_csv_cols_scalar_table<const N: usize>(path: &Path) -> Result<ScalarTable<N>, TableError> {
-    let file = File::open(path).map_err(|source| TableError::IO {
+fn load_csv_cols_scalar_table<const N: usize>(
+    files: &dyn FileProvider,
+    path: &Path,
+) -> Result<ScalarTable<N>, TableError> {
+    let file = files.open(path).map_err(|source| TableError::IO {
         path: path.to_path_buf(),
         source,
     })?;
@@ -380,6 +404,7 @@ fn load_csv_cols_scalar_table<const N: usize>(path: &Path) -> Result<ScalarTable
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::FileSystem;
     use std::io::Write;
     use tempfile::NamedTempFile;
 
@@ -399,7 +424,7 @@ mod tests {
         writeln!(file, "A,1.0").unwrap();
         writeln!(file, "B,2.0").unwrap();
         let path = file.path();
-        let table: ScalarTable<1> = load_csv_rows_scalar_table(path).unwrap();
+        let table: ScalarTable<1> = load_csv_rows_scalar_table(&FileSystem, path).unwrap();
         assert_eq!(table.get_scalar(&["A"]).unwrap().as_f64(), 1.0);
         assert_eq!(table.get_scalar(&["B"]).unwrap().as_f64(), 2.0);
         assert!(table.get_scalar(&["C"]).is_err());
@@ -412,7 +437,7 @@ mod tests {
         writeln!(file, "A,X,10.0").unwrap();
         writeln!(file, "B,Y,20.0").unwrap();
         let path = file.path();
-        let table: ScalarTable<2> = load_csv_rows_scalar_table(path).unwrap();
+        let table: ScalarTable<2> = load_csv_rows_scalar_table(&FileSystem, path).unwrap();
         assert_eq!(table.get_scalar(&["A", "X"]).unwrap().as_f64(), 10.0);
         assert_eq!(table.get_scalar(&["B", "Y"]).unwrap().as_f64(), 20.0);
         assert!(table.get_scalar(&["C", "Z"]).is_err());
@@ -424,7 +449,7 @@ mod tests {
         writeln!(file, "A,B").unwrap();
         writeln!(file, "1.0,2.0").unwrap();
         let path = file.path();
-        let table: ScalarTable<1> = load_csv_cols_scalar_table(path).unwrap();
+        let table: ScalarTable<1> = load_csv_cols_scalar_table(&FileSystem, path).unwrap();
         assert_eq!(table.get_scalar(&["A"]).unwrap().as_f64(), 1.0);
         assert_eq!(table.get_scalar(&["B"]).unwrap().as_f64(), 2.0);
         assert!(table.get_scalar(&["C"]).is_err());
@@ -437,7 +462,7 @@ mod tests {
         writeln!(file, "X,Y").unwrap();
         writeln!(file, "10.0,20.0").unwrap();
         let path = file.path();
-        let table: ScalarTable<2> = load_csv_cols_scalar_table(path).unwrap();
+        let table: ScalarTable<2> = load_csv_cols_scalar_table(&FileSystem, path).unwrap();
         assert_eq!(table.get_scalar(&["A", "X"]).unwrap().as_f64(), 10.0);
         assert_eq!(table.get_scalar(&["B", "Y"]).unwrap().as_f64(), 20.0);
         assert!(table.get_scalar(&["C", "Z"]).is_err());
@@ -450,7 +475,7 @@ mod tests {
         writeln!(file, "A,1.0,2.0").unwrap();
         writeln!(file, "B,3.0,4.0").unwrap();
         let path = file.path();
-        let table = load_csv_row_col_scalar_table::<1, 1, 2>(path).unwrap();
+        let table = load_csv_row_col_scalar_table::<1, 1, 2>(&FileSystem, path).unwrap();
         assert_eq!(table.get_scalar(&["A", "col1"]).unwrap().as_f64(), 1.0);
         assert_eq!(table.get_scalar(&["A", "col2"]).unwrap().as_f64(), 2.0);
         assert_eq!(table.get_scalar(&["B", "col1"]).unwrap().as_f64(), 3.0);
@@ -466,7 +491,7 @@ mod tests {
         writeln!(file, "X,A,1.0,2.0").unwrap();
         writeln!(file, "X,B,3.0,4.0").unwrap();
         let path = file.path();
-        let table = load_csv_row_col_scalar_table::<2, 2, 4>(path).unwrap();
+        let table = load_csv_row_col_scalar_table::<2, 2, 4>(&FileSystem, path).unwrap();
         assert_eq!(table.get_scalar(&["X", "A", "col1", "A"]).unwrap().as_f64(), 1.0);
         assert_eq!(table.get_scalar(&["X", "A", "col2", "A"]).unwrap().as_f64(), 2.0);
         assert_eq!(table.get_scalar(&["X", "B", "col1", "A"]).unwrap().as_f64(), 3.0);
@@ -482,7 +507,7 @@ mod tests {
         writeln!(file, "X,1.0,2.0").unwrap();
         writeln!(file, "Y,3.0,4.0").unwrap();
         let path = file.path();
-        let table = load_csv_row_col_scalar_table::<2, 1, 3>(path).unwrap();
+        let table = load_csv_row_col_scalar_table::<2, 1, 3>(&FileSystem, path).unwrap();
         assert_eq!(table.get_scalar(&["X", "col1", "A"]).unwrap().as_f64(), 1.0);
         assert_eq!(table.get_scalar(&["X", "col2", "A"]).unwrap().as_f64(), 2.0);
         assert_eq!(table.get_scalar(&["Y", "col1", "A"]).unwrap().as_f64(), 3.0);
@@ -496,7 +521,7 @@ mod tests {
         writeln!(file, "key,value").unwrap();
         writeln!(file, "A,1.0").unwrap();
         let path = file.path();
-        let table: ScalarTable<1> = load_csv_rows_scalar_table(path).unwrap();
+        let table: ScalarTable<1> = load_csv_rows_scalar_table(&FileSystem, path).unwrap();
         // Should error if key size is wrong
         assert!(matches!(
             table.get_scalar(&["A", "extra"]),
@@ -513,12 +538,12 @@ mod tests {
             let mut file = NamedTempFile::new().unwrap();
             writeln!(file, "{},value", headers.join(",")).unwrap();
             writeln!(file, "{},1.5", keys.join(",")).unwrap();
-            let table = LoadedScalarTable::from_csv_row(file.path(), n).unwrap();
+            let table = LoadedScalarTable::from_csv_row(&FileSystem, file.path(), n).unwrap();
             assert_eq!(table.get_scalar(&key).unwrap().as_f64(), 1.5);
             assert!(matches!(table.get_scalar(&key[1..]), Err(TableError::WrongKeySize(e, _)) if e == n));
         }
         assert!(matches!(
-            LoadedScalarTable::from_csv_row(Path::new("unused.csv"), 5),
+            LoadedScalarTable::from_csv_row(&FileSystem, Path::new("unused.csv"), 5),
             Err(TableError::FormatNotSupported(_))
         ));
     }
@@ -533,12 +558,12 @@ mod tests {
                 writeln!(file, "a{i},b{i}").unwrap();
             }
             writeln!(file, "1.5,2.5").unwrap();
-            let table = LoadedScalarTable::from_csv_col(file.path(), n).unwrap();
+            let table = LoadedScalarTable::from_csv_col(&FileSystem, file.path(), n).unwrap();
             assert_eq!(table.get_scalar(&key).unwrap().as_f64(), 2.5);
             assert!(matches!(table.get_scalar(&key[1..]), Err(TableError::WrongKeySize(e, _)) if e == n));
         }
         assert!(matches!(
-            LoadedScalarTable::from_csv_col(Path::new("unused.csv"), 5),
+            LoadedScalarTable::from_csv_col(&FileSystem, Path::new("unused.csv"), 5),
             Err(TableError::FormatNotSupported(_))
         ));
     }

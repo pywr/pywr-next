@@ -304,6 +304,7 @@ impl PythonParameter {
 #[cfg(test)]
 #[cfg(all(feature = "core", feature = "pyo3"))]
 mod tests {
+    use crate::FileSystem;
     use crate::data_tables::LoadedTableCollection;
     use crate::network::{LoadArgs, NetworkSchema};
     use crate::parameters::python::PythonParameter;
@@ -349,7 +350,7 @@ mod tests {
         let domain: ModelDomain = default_domain();
         let schema = NetworkSchema::default();
         let mut network = NetworkBuilder::default();
-        let tables = LoadedTableCollection::from_schema(None, None).unwrap();
+        let tables = LoadedTableCollection::from_schema(None, &FileSystem, None).unwrap();
         let ts = LoadedTimeSeriesCollection::default();
 
         let args = LoadArgs {
@@ -402,7 +403,7 @@ mod tests {
         let domain: ModelDomain = default_domain();
         let schema = NetworkSchema::default();
         let mut network = NetworkBuilder::default();
-        let tables = LoadedTableCollection::from_schema(None, None).unwrap();
+        let tables = LoadedTableCollection::from_schema(None, &FileSystem, None).unwrap();
         let ts = LoadedTimeSeriesCollection::default();
 
         let args = LoadArgs {

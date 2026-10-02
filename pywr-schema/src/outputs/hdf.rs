@@ -62,6 +62,8 @@ impl Hdf5Output {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(all(feature = "core", feature = "hdf5"))]
+    use crate::FileSystem;
     use crate::ModelSchema;
     use crate::visit::VisitPaths;
     #[cfg(all(feature = "core", feature = "hdf5"))]
@@ -103,7 +105,9 @@ mod tests {
 
         let temp_dir = TempDir::new().unwrap();
 
-        let builder = schema.create_model_builder(None, Some(temp_dir.path())).unwrap();
+        let builder = schema
+            .create_model_builder(&FileSystem, None, Some(temp_dir.path()))
+            .unwrap();
         let model = builder.build().unwrap();
 
         model.run(&ClpSolverSettings::default()).unwrap();

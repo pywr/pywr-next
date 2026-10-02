@@ -2129,6 +2129,7 @@ name = "pywr-schema"
 version = "2.0.0-beta11"
 dependencies = [
  "arrow",
+ "bytes",
  "chrono",
  "csv",
  "digest",
