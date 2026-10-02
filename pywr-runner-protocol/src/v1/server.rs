@@ -9,7 +9,7 @@ pub enum ServerMessage {
     StateChanged(ServerStatus),
     Initialised {
         progress: RunProgress,
-        arrow_stream: Option<ArrowStreamDescriptor>,
+        arrow_streams: Vec<ArrowStreamDescriptor>,
     },
     Update {
         progress: RunProgress,
@@ -73,6 +73,8 @@ pub struct ArrowStreamDescriptor {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ArrowStreamCommit {
+    /// The stream's name, as in its descriptor.
+    pub name: String,
     pub batch_index: u64,
     pub row_count: u64,
     /// Exclusive byte offset after the flushed IPC record batch.
@@ -152,6 +154,7 @@ mod tests {
                 next_date: None,
             },
             arrow_stream_commits: vec![ArrowStreamCommit {
+                name: "results".into(),
                 batch_index: 1,
                 row_count: 8,
                 byte_offset: 4096,
@@ -159,6 +162,7 @@ mod tests {
         };
         let value = serde_json::to_value(message).unwrap();
         assert_eq!(value["type"], "update");
+        assert_eq!(value["payload"]["arrow_stream_commits"][0]["name"], "results");
         assert_eq!(value["payload"]["arrow_stream_commits"][0]["byte_offset"], 4096);
     }
 

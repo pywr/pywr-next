@@ -222,7 +222,7 @@ where
                         self.output
                             .emit(EngineEvent::Initialised {
                                 progress: initialised.progress,
-                                arrow_stream: initialised.arrow_stream,
+                                arrow_streams: initialised.arrow_streams,
                             })
                             .map_err(TickError::OutputSinkError)?;
 
@@ -487,7 +487,7 @@ mod tests {
             Ok(Initialised {
                 runtime: (),
                 progress: progress(),
-                arrow_stream: None,
+                arrow_streams: Vec::new(),
                 arrow_stream_commits: None,
             })
         }
@@ -565,7 +565,7 @@ mod tests {
             Ok(Initialised {
                 runtime: (),
                 progress: progress(),
-                arrow_stream: None,
+                arrow_streams: Vec::new(),
                 arrow_stream_commits: None,
             })
         }
@@ -624,7 +624,7 @@ mod tests {
             Ok(Initialised {
                 runtime: RecorderRuntime { commit_sender },
                 progress: progress(),
-                arrow_stream: None,
+                arrow_streams: Vec::new(),
                 arrow_stream_commits: Some(commit_receiver),
             })
         }
@@ -653,6 +653,7 @@ mod tests {
             runtime
                 .commit_sender
                 .send(pywr_core::recorders::ArrowStreamCommit {
+                    name: "results".into(),
                     batch_index: (flush_count - 1) as u64,
                     row_count: 1,
                     byte_offset: flush_count as u64,
@@ -693,7 +694,7 @@ mod tests {
                 all_nodes_metric_set: None,
                 all_edges_metric_set: None,
                 clear_existing_outputs: false,
-                arrow_stream: None,
+                arrow_streams: Vec::new(),
             },
         }
     }
