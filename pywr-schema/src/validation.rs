@@ -370,7 +370,7 @@ pub enum InitialVolumeProblem {
     AboveMax,
 }
 
-/// A problem with a node's own fields or a local parameter's, found by
+/// A problem with a node's own fields or its local parameters, found by
 /// [`Node::validate`](crate::nodes::Node::validate).
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
 pub enum NodeProblem {
@@ -392,6 +392,8 @@ pub enum NodeProblem {
     GrossLossFactorOutOfRange,
     #[error("A `Net` `loss_factor` must not be negative.")]
     NegativeNetLossFactor,
+    #[error("The name `{name}` is used by {count} local parameters, but each name must be unique.")]
+    DuplicateLocalParameterName { name: String, count: usize },
     #[error("The local parameter `{parameter}` is invalid. {problem}")]
     InvalidLocalParameter {
         parameter: String,
@@ -399,7 +401,7 @@ pub enum NodeProblem {
     },
 }
 
-/// A problem with a virtual node's own fields or a local parameter's, found by
+/// A problem with a virtual node's own fields or its local parameters, found by
 /// [`VirtualNode::validate`](crate::nodes::VirtualNode::validate).
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
 pub enum VirtualNodeProblem {
@@ -424,6 +426,8 @@ pub enum VirtualNodeProblem {
         "The `Coefficients` relationship has {factors} factor(s) for {members} member(s), but needs exactly two members, with a factor each."
     )]
     CoefficientsFactorCount { factors: usize, members: usize },
+    #[error("The name `{name}` is used by {count} local parameters, but each name must be unique.")]
+    DuplicateLocalParameterName { name: String, count: usize },
     #[error("The local parameter `{parameter}` is invalid. {problem}")]
     InvalidLocalParameter {
         parameter: String,
