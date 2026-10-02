@@ -20,8 +20,9 @@ impl NetworkSchema {
     ///
     /// - Both ends name an entry of `nodes`; a virtual node is not an edge end.
     /// - The two ends are different nodes.
-    /// - Each slot is one that the node at that end has.
-    /// - The `from_node` can provide flow, and the `to_node` can receive it.
+    /// - The `from_node` provides flow and the `to_node` receives it, each through a slot it has;
+    ///   see [`Node::validate_edge_from`](crate::nodes::Node::validate_edge_from) and
+    ///   [`Node::validate_edge_to`](crate::nodes::Node::validate_edge_to) for the rules.
     ///
     /// All but the second are checks `pywr-core` makes only while building. The second is a
     /// schema-level rule: a composite node such as a `Reservoir` is one node here, so
@@ -54,43 +55,8 @@ impl NetworkSchema {
             return Err(EdgeProblem::SelfEdge(edge.from_node.clone()));
         }
 
-        if let Some(slot) = &edge.from_slot {
-            from_node
-                .validate_output_slot(Some(slot))
-                .map_err(|_| EdgeProblem::UnknownFromSlot {
-                    name: from_node.name().to_string(),
-                    node_type: from_node.node_type(),
-                    slot: slot.clone(),
-                    valid: from_node.iter_output_slots().map(|slots| slots.collect()),
-                })?;
-        }
-
-        if let Some(slot) = &edge.to_slot {
-            to_node
-                .validate_input_slot(Some(slot))
-                .map_err(|_| EdgeProblem::UnknownToSlot {
-                    name: to_node.name().to_string(),
-                    node_type: to_node.node_type(),
-                    slot: slot.clone(),
-                    valid: to_node.iter_input_slots().map(|slots| slots.collect()),
-                })?;
-        }
-
-        if !from_node.provides_outflow() {
-            return Err(EdgeProblem::NoOutflow {
-                name: from_node.name().to_string(),
-                node_type: from_node.node_type(),
-            });
-        }
-
-        if !to_node.accepts_inflow() {
-            return Err(EdgeProblem::NoInflow {
-                name: to_node.name().to_string(),
-                node_type: to_node.node_type(),
-            });
-        }
-
-        Ok(())
+        from_node.validate_edge_from(edge.from_slot.as_ref())?;
+        to_node.validate_edge_to(edge.to_slot.as_ref())
     }
 
     /// The problems [`VirtualNode::validate_member`] finds with `virtual_node`'s members, in the
