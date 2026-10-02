@@ -452,6 +452,19 @@ impl Parameter {
     }
 }
 
+/// The problems [`Parameter::validate`] finds in each of `parameters`, with the parameter's name,
+/// in the order listed.
+pub(crate) fn validate_each_parameter(parameters: &[Parameter]) -> impl Iterator<Item = (&str, ParameterProblem)> {
+    parameters.iter().flat_map(|parameter| {
+        parameter
+            .validate()
+            .err()
+            .unwrap_or_default()
+            .into_iter()
+            .map(move |problem| (parameter.name(), problem))
+    })
+}
+
 #[cfg(feature = "core")]
 impl Parameter {
     pub fn add_to_network(
