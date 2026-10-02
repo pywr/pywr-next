@@ -61,6 +61,7 @@ use crate::metric::{Metric, MetricValueType};
 use crate::network::LoadArgs;
 use crate::network::NetworkSchema;
 use crate::parameters::{Parameter, validate_each_parameter};
+use crate::util::duplicates;
 use crate::v1::{ConversionData, TryFromV1, TryIntoV2};
 use crate::validation::{NodeProblem, NodeReferenceProblem};
 use crate::visit::{Reference, ReferenceMut, VisitMetrics, VisitPaths, VisitReferences};
@@ -784,8 +785,8 @@ impl Node {
             .and_then(|params| params.iter().find(|p| p.name() == name))
     }
 
-    /// Check the node's own fields and its local parameters', and return every problem found, its
-    /// own first. A value in a table is not loaded, so it is not checked.
+    /// Check the node's own fields, its local parameters' names, and their fields, and return
+    /// every problem found, in that order. A value in a table is not loaded, so it is not checked.
     pub fn validate(&self) -> Result<(), Vec<NodeProblem>> {
         let mut problems = match self {
             Node::LossLink(LossLinkNode { loss_factor, .. })
@@ -811,14 +812,21 @@ impl Node {
         .err()
         .unwrap_or_default();
 
-        problems.extend(
-            validate_each_parameter(self.local_parameters().unwrap_or_default()).map(|(parameter, problem)| {
-                NodeProblem::InvalidLocalParameter {
-                    parameter: parameter.to_string(),
-                    problem,
-                }
-            }),
-        );
+        let locals = self.local_parameters().unwrap_or_default();
+
+        problems.extend(duplicates(locals, Parameter::name).into_iter().map(|(name, count)| {
+            NodeProblem::DuplicateLocalParameterName {
+                name: name.to_string(),
+                count,
+            }
+        }));
+
+        problems.extend(validate_each_parameter(locals).map(|(parameter, problem)| {
+            NodeProblem::InvalidLocalParameter {
+                parameter: parameter.to_string(),
+                problem,
+            }
+        }));
 
         if problems.is_empty() { Ok(()) } else { Err(problems) }
     }
@@ -1377,6 +1385,19 @@ mod tests {
                         problem: ParameterProblem::NotADate { day: 30, month: 2 },
                     },
                 ],
+            ),
+            (
+                NodeType::Link,
+                json!({
+                    "parameters": [
+                        { "meta": { "name": "x" }, "type": "Constant", "value": x(1.0) },
+                        { "meta": { "name": "x" }, "type": "Constant", "value": x(2.0) }
+                    ]
+                }),
+                vec![DuplicateLocalParameterName {
+                    name: "x".to_string(),
+                    count: 2,
+                }],
             ),
         ];
 

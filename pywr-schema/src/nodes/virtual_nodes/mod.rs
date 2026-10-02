@@ -4,6 +4,7 @@ mod virtual_storage;
 use crate::metric::{Metric, NodeComponentReference};
 use crate::nodes::{Node, NodeAttribute, NodeComponent, NodeMeta, NodePosition, PlaceholderNode};
 use crate::parameters::{Parameter, validate_each_parameter};
+use crate::util::duplicates;
 use crate::validation::{MemberProblem, NodeReferenceProblem, VirtualNodeProblem};
 use crate::visit::{Reference, ReferenceMut, VisitReferences};
 #[cfg(feature = "core")]
@@ -209,8 +210,8 @@ impl VirtualNode {
             .and_then(|params| params.iter().find(|p| p.name() == name))
     }
 
-    /// Check the virtual node's own fields and its local parameters', and return every problem
-    /// found, its own first.
+    /// Check the virtual node's own fields, its local parameters' names, and their fields, and
+    /// return every problem found, in that order.
     pub fn validate(&self) -> Result<(), Vec<VirtualNodeProblem>> {
         let mut problems = match self {
             VirtualNode::Aggregated(n) => n.validate(),
@@ -220,14 +221,21 @@ impl VirtualNode {
         .err()
         .unwrap_or_default();
 
-        problems.extend(
-            validate_each_parameter(self.local_parameters().unwrap_or_default()).map(|(parameter, problem)| {
-                VirtualNodeProblem::InvalidLocalParameter {
-                    parameter: parameter.to_string(),
-                    problem,
-                }
-            }),
-        );
+        let locals = self.local_parameters().unwrap_or_default();
+
+        problems.extend(duplicates(locals, Parameter::name).into_iter().map(|(name, count)| {
+            VirtualNodeProblem::DuplicateLocalParameterName {
+                name: name.to_string(),
+                count,
+            }
+        }));
+
+        problems.extend(validate_each_parameter(locals).map(|(parameter, problem)| {
+            VirtualNodeProblem::InvalidLocalParameter {
+                parameter: parameter.to_string(),
+                problem,
+            }
+        }));
 
         if problems.is_empty() { Ok(()) } else { Err(problems) }
     }
@@ -412,6 +420,19 @@ mod tests {
                 vec![InvalidLocalParameter {
                     parameter: "drawdown".to_string(),
                     problem: ParameterProblem::NotADate { day: 30, month: 2 },
+                }],
+            ),
+            (
+                VirtualNodeType::VirtualStorage,
+                json!({
+                    "parameters": [
+                        { "meta": { "name": "x" }, "type": "Constant", "value": x(1.0) },
+                        { "meta": { "name": "x" }, "type": "Constant", "value": x(2.0) }
+                    ]
+                }),
+                vec![DuplicateLocalParameterName {
+                    name: "x".to_string(),
+                    count: 2,
                 }],
             ),
         ];

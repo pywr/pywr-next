@@ -338,9 +338,9 @@ impl NetworkSchema {
     /// - Each parameter reference can read the parameter it names; see
     ///   [`Parameter::validate_reference`] for the rules.
     /// - Each table has a lookup pywr can load, and each table reference fits its table.
-    /// - Each node's, virtual node's and parameter's own fields; see
-    ///   [`Node::validate`](crate::nodes::Node::validate), [`VirtualNode::validate`] and
-    ///   [`Parameter::validate`] for the rules.
+    /// - Each node's and virtual node's own fields and local parameters, and each parameter's own
+    ///   fields; see [`Node::validate`](crate::nodes::Node::validate), [`VirtualNode::validate`]
+    ///   and [`Parameter::validate`] for the rules.
     ///
     /// Whether the whole model can be built is not; use [`NetworkSchema::add_to_network`] for
     /// that. See [`NetworkProblem`] for the problems that are detected.
