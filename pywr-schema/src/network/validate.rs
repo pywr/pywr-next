@@ -325,6 +325,25 @@ impl NetworkSchema {
             .collect()
     }
 
+    /// The problems [`MetricSet::validate`](crate::metric_sets::MetricSet::validate) finds.
+    fn metric_set_problems(&self) -> Vec<NetworkProblem> {
+        self.metric_sets
+            .iter()
+            .flatten()
+            .flat_map(|metric_set| {
+                metric_set
+                    .validate()
+                    .err()
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(|problem| NetworkProblem::InvalidMetricSet {
+                        metric_set: metric_set.name().to_string(),
+                        problem,
+                    })
+            })
+            .collect()
+    }
+
     /// Validate the network schema and report every problem.
     ///
     /// The following are checked:
@@ -338,9 +357,10 @@ impl NetworkSchema {
     /// - Each parameter reference can read the parameter it names; see
     ///   [`Parameter::validate_reference`] for the rules.
     /// - Each table has a lookup pywr can load, and each table reference fits its table.
-    /// - Each node's and virtual node's own fields and local parameters, and each parameter's own
-    ///   fields; see [`Node::validate`](crate::nodes::Node::validate), [`VirtualNode::validate`]
-    ///   and [`Parameter::validate`] for the rules.
+    /// - Each node's and virtual node's own fields and local parameters, and each parameter's and
+    ///   metric set's own fields; see [`Node::validate`](crate::nodes::Node::validate),
+    ///   [`VirtualNode::validate`], [`Parameter::validate`] and
+    ///   [`MetricSet::validate`](crate::metric_sets::MetricSet::validate) for the rules.
     ///
     /// Whether the whole model can be built is not; use [`NetworkSchema::add_to_network`] for
     /// that. See [`NetworkProblem`] for the problems that are detected.
@@ -428,6 +448,7 @@ impl NetworkSchema {
             .chain(self.node_problems())
             .chain(self.virtual_node_problems())
             .chain(self.parameter_problems())
+            .chain(self.metric_set_problems())
             .collect();
 
         if problems.is_empty() {
@@ -1234,12 +1255,18 @@ mod tests {
                 "type": "DailyProfile",
                 "values": { "type": "Literal", "values": [1.0, 2.0, 3.0] }
             }
+        ],
+        "metric_sets": [
+            {
+                "meta": { "name": "outputs" },
+                "metrics": [{ "type": "Node", "name": "loss" }, { "type": "Literal", "value": 1.0 }]
+            }
         ]
     }
     "#;
 
     /// Every component with invalid fields is reported: each node then its local parameters, each
-    /// virtual node then its own, then the network's parameters.
+    /// virtual node then its own, then the network's parameters, then the metric sets.
     #[test]
     fn test_validate_reports_all_invalid_components() {
         let network = parse_network(NETWORK_WITH_INVALID_COMPONENTS);
@@ -1256,6 +1283,7 @@ mod tests {
                 "The parameter `curve` is invalid. `values` has 1 entry(s), but the control curves require 2.",
                 "The parameter `interpolated` is invalid. The points in `xp` and `fp` cannot be interpolated between. There are 2 x value(s) but 1 y value(s), and each point needs one of each.",
                 "The parameter `profile` is invalid. `values` has 3 entry(s), but the profile takes 365 or 366.",
+                "The metric set `outputs` is invalid. The metric at index 1 of `metrics` is a literal, which has no name to be recorded under. Use a `Constant` parameter instead.",
             ]
         );
     }
