@@ -1,6 +1,39 @@
 # Changelog
 
-All notable changes to this project since v2.0.0-beta will be documented in this file.
+This changelog records changes since the v2.0.0 beta series. Pywr v2 is currently at its first release candidate,
+not yet the stable v2 release.
+
+## 2.0.0-rc1 release candidate overview
+
+Pywr v2 replaces the v1 Python/Cython core with a Rust modelling engine, Python bindings and command-line tools.
+The release candidate includes a validated JSON model schema, scenario execution, custom Python parameters,
+data integrations, and redesigned metrics and outputs. It is intended for testing ahead of the stable 2.0 release.
+
+**Installing:** Python 3.10 or later is required. Install the release candidate with
+`python -m pip install --upgrade --pre "pywr>=2.0.0rc1,<3"`.
+See the [installation guide](pywr-book/src/getting_started.md) for supported wheels, optional extras and source builds.
+
+**Migrating from v1:** v2 is not a drop-in replacement. The converter can return a partial schema with errors;
+v1 tables and outputs require manual configuration, custom Python parameters need updating, and v2 time series
+are not automatically resampled. Review diagnostics and compare results before relying on converted models.
+See the [migration guide](pywr-book/src/migration_guide.md) for the conversion workflow and other limitations.
+
+The versioned entries below record implementation-level changes.
+
+## [2.0.0-rc1] - 2026-10-04
+
+### 🚀 Features
+
+- *(schema)* Require piecewise curve values and non-zero reset months (#891)
+- *(schema)* Require a catchment's flow (#893)
+- *(schema)* Remove unused and unfinished NodeBuilder struct. (#892)
+- *(schema)* Derive Debug for MetricSet types. (#894)
+- *(schema)* Revise the implementation of Reservoir compensation and spill. (#896)
+
+### ⚙️ Miscellaneous Tasks
+
+- Drop Python 3.10 support. (#890)
+- *(release)* Prepare v2.0.0-rc1
 
 ## [2.0.0-beta12] - 2026-10-03
 

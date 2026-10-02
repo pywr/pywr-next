@@ -1995,7 +1995,7 @@ dependencies = [
 
 [[package]]
 name = "pywr-cli"
-version = "2.0.0-beta12"
+version = "2.0.0-rc1"
 dependencies = [
  "anyhow",
  "clap",
@@ -2015,7 +2015,7 @@ dependencies = [
 
 [[package]]
 name = "pywr-core"
-version = "2.0.0-beta12"
+version = "2.0.0-rc1"
 dependencies = [
  "ahash",
  "arrow",
@@ -2052,7 +2052,7 @@ dependencies = [
 
 [[package]]
 name = "pywr-project"
-version = "2.0.0-beta12"
+version = "2.0.0-rc1"
 dependencies = [
  "pywr-schema",
  "relative-path",
@@ -2065,7 +2065,7 @@ dependencies = [
 
 [[package]]
 name = "pywr-python"
-version = "2.0.0-beta12"
+version = "2.0.0-rc1"
 dependencies = [
  "anyhow",
  "arrow",
@@ -2083,7 +2083,7 @@ dependencies = [
 
 [[package]]
 name = "pywr-runner-engine"
-version = "2.0.0-beta12"
+version = "2.0.0-rc1"
 dependencies = [
  "jiff",
  "log",
@@ -2099,7 +2099,7 @@ dependencies = [
 
 [[package]]
 name = "pywr-runner-protocol"
-version = "2.0.0-beta12"
+version = "2.0.0-rc1"
 dependencies = [
  "jiff",
  "serde",
@@ -2111,7 +2111,7 @@ dependencies = [
 
 [[package]]
 name = "pywr-runner-service"
-version = "2.0.0-beta12"
+version = "2.0.0-rc1"
 dependencies = [
  "log",
  "pywr-runner-engine",
@@ -2123,7 +2123,7 @@ dependencies = [
 
 [[package]]
 name = "pywr-runner-transport"
-version = "2.0.0-beta12"
+version = "2.0.0-rc1"
 dependencies = [
  "interprocess",
  "thiserror 2.0.21",
@@ -2132,7 +2132,7 @@ dependencies = [
 
 [[package]]
 name = "pywr-schema"
-version = "2.0.0-beta12"
+version = "2.0.0-rc1"
 dependencies = [
  "arrow",
  "bytes",
@@ -2165,7 +2165,7 @@ dependencies = [
 
 [[package]]
 name = "pywr-schema-macros"
-version = "2.0.0-beta12"
+version = "2.0.0-rc1"
 dependencies = [
  "heck",
  "quote",

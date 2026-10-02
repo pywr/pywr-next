@@ -7,7 +7,25 @@
 # See https://keats.github.io/tera/docs/#introduction
 header = """
 # Changelog\n
-All notable changes to this project since v2.0.0-beta will be documented in this file.\n
+This changelog records changes since the v2.0.0 beta series. Pywr v2 is currently at its first release candidate,
+not yet the stable v2 release.
+
+## 2.0.0-rc1 release candidate overview
+
+Pywr v2 replaces the v1 Python/Cython core with a Rust modelling engine, Python bindings and command-line tools.
+The release candidate includes a validated JSON model schema, scenario execution, custom Python parameters,
+data integrations, and redesigned metrics and outputs. It is intended for testing ahead of the stable 2.0 release.
+
+**Installing:** Python 3.10 or later is required. Install the release candidate with
+`python -m pip install --upgrade --pre "pywr>=2.0.0rc1,<3"`.
+See the [installation guide](pywr-book/src/getting_started.md) for supported wheels, optional extras and source builds.
+
+**Migrating from v1:** v2 is not a drop-in replacement. The converter can return a partial schema with errors;
+v1 tables and outputs require manual configuration, custom Python parameters need updating, and v2 time series
+are not automatically resampled. Review diagnostics and compare results before relying on converted models.
+See the [migration guide](pywr-book/src/migration_guide.md) for the conversion workflow and other limitations.
+
+The versioned entries below record implementation-level changes.\n
 """
 body = """
 {% if version %}\
