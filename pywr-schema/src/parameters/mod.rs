@@ -40,7 +40,7 @@ use crate::metric::{Metric, MetricValueType, ParameterReturnValue};
 use crate::network::LoadArgs;
 use crate::time_series::ConvertedTimeSeriesReference;
 use crate::v1::{ConversionData, TryFromV1, TryIntoV2};
-use crate::validation::ParameterProblem;
+use crate::validation::{ParameterProblem, ParameterReferenceProblem};
 use crate::visit::{Reference, ReferenceMut, VisitMetrics, VisitPaths, VisitReferences};
 pub use aggregated::{AggregatedIndexParameter, AggregatedParameter};
 pub use asymmetric_switch::AsymmetricSwitchIndexParameter;
@@ -379,6 +379,32 @@ impl Parameter {
         };
 
         Some(value_type)
+    }
+
+    /// Check that a reference with `key`, read by a `metric` and asking for `return_value`, can
+    /// read this parameter: its key, then the kind of value, then the phase. A placeholder takes
+    /// any reference, and a Python class any phase.
+    pub fn validate_reference(
+        &self,
+        key: Option<&str>,
+        metric: MetricValueType,
+        return_value: ParameterReturnValue,
+    ) -> Result<(), ParameterReferenceProblem> {
+        let Some(value_type) = self.value_type() else {
+            return Ok(());
+        };
+
+        match (value_type.needs_key(), key) {
+            (true, None) => Err(ParameterReferenceProblem::KeyMissing),
+            (false, Some(key)) => Err(ParameterReferenceProblem::KeyNotAllowed { key: key.to_string() }),
+            _ if !value_type.is_readable_by(metric) => Err(ParameterReferenceProblem::NotAnIndex),
+            _ => match self.phase() {
+                Some(phase) if !phase.calculates(return_value) => {
+                    Err(ParameterReferenceProblem::ValueNotCalculated { return_value, phase })
+                }
+                _ => Ok(()),
+            },
+        }
     }
 
     /// Check the parameter's own fields, such as a control curve's count of values, and return
@@ -1327,6 +1353,66 @@ mod tests {
         assert_eq!(value_type(&python), Some(Index));
         python["return_type"] = json!("Dict");
         assert_eq!(value_type(&python), Some(Multi));
+    }
+
+    /// [`Parameter::validate_reference`] should check the key, then the kind of value, then the
+    /// phase, and pass a placeholder and a Python class's phase.
+    #[test]
+    fn test_validate_reference_checks_each_rule() {
+        use crate::metric::MetricValueType;
+        use crate::metric::ParameterReturnValue::{After, Before};
+        use crate::validation::ParameterReferenceProblem::*;
+
+        let parameter = |data: serde_json::Value| serde_json::from_value::<Parameter>(data).unwrap();
+
+        let constant = parameter(json!({
+            "meta": { "name": "constant" },
+            "type": "Constant",
+            "value": { "type": "Literal", "value": 1.0 }
+        }));
+        let python_dict = parameter(json!({
+            "meta": { "name": "python" },
+            "type": "Python",
+            "source": { "type": "Path", "path": "p.py" },
+            "object": { "type": "Class", "class": "P" },
+            "return_type": "Dict"
+        }));
+        let placeholder = parameter(json!({ "meta": { "name": "placeholder" }, "type": "Placeholder" }));
+
+        // The `KeyNotAllowed` and `NotAnIndex` cases also break the rules checked after them.
+        let cases = [
+            (&constant, None, MetricValueType::Float, Before, Ok(())),
+            (
+                &constant,
+                Some("a"),
+                MetricValueType::Index,
+                After,
+                Err(KeyNotAllowed { key: "a".to_string() }),
+            ),
+            (&constant, None, MetricValueType::Index, After, Err(NotAnIndex)),
+            (
+                &constant,
+                None,
+                MetricValueType::Float,
+                After,
+                Err(ValueNotCalculated {
+                    return_value: After,
+                    phase: ParameterPhase::Before,
+                }),
+            ),
+            (&python_dict, None, MetricValueType::Float, Before, Err(KeyMissing)),
+            (&python_dict, Some("a"), MetricValueType::Index, After, Ok(())),
+            (&placeholder, Some("a"), MetricValueType::Index, After, Ok(())),
+        ];
+
+        for (parameter, key, metric, return_value, expected) in cases {
+            assert_eq!(
+                parameter.validate_reference(key, metric, return_value),
+                expected,
+                "{} with key {key:?}, read as {metric:?} for {return_value}",
+                parameter.name()
+            );
+        }
     }
 
     /// [`Parameter::validate`] should refuse a parameter breaking each rule, and pass one where a

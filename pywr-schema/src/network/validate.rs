@@ -1,14 +1,11 @@
 use super::NetworkSchema;
 use crate::data_tables::DataTable;
 use crate::edge::Edge;
-use crate::metric::{MetricValueType, NodeComponentReference};
 use crate::nodes::VirtualNode;
 use crate::parameters::Parameter;
 use crate::time_series::TimeSeries;
 use crate::util::duplicates;
-use crate::validation::{
-    DuplicateNodeName, EdgeProblem, EdgeValidationError, NetworkProblem, NetworkValidationError, ProblemOwner,
-};
+use crate::validation::{DuplicateNodeName, EdgeProblem, EdgeValidationError, NetworkProblem, NetworkValidationError};
 use crate::visit::{Owner, Reference};
 use std::collections::HashMap;
 
@@ -93,57 +90,29 @@ impl NetworkSchema {
         Ok(())
     }
 
-    /// The problems with `virtual_node`'s members, in the order listed. A member naming a node
-    /// that is not in `nodes`, or a placeholder, is skipped.
+    /// The problems [`VirtualNode::validate_member`] finds with `virtual_node`'s members, in the
+    /// order listed. A member naming a node that is not in `nodes` is skipped.
     fn member_problems(&self, virtual_node: &VirtualNode) -> Vec<NetworkProblem> {
-        let (members, takes_storage): (&[NodeComponentReference], bool) = match virtual_node {
-            VirtualNode::Aggregated(n) => (&n.nodes, false),
-            VirtualNode::VirtualStorage(n) => (&n.nodes, false),
-            VirtualNode::AggregatedStorage(n) => (&n.storage_nodes, true),
-            VirtualNode::Placeholder(_) => (&[], false),
-        };
-
-        members
+        virtual_node
+            .members()
             .iter()
             .filter_map(|member| {
-                let node = self
-                    .get_node_by_name(&member.name)
-                    .filter(|node| !node.is_placeholder())?;
+                let node = self.get_node_by_name(&member.name)?;
+                let problem = virtual_node.validate_member(member, node).err()?;
 
-                if takes_storage {
-                    return (!node.is_storage()).then(|| NetworkProblem::MemberNotStorage {
-                        virtual_node: virtual_node.name().to_string(),
-                        node: member.name.clone(),
-                        node_type: node.node_type(),
-                    });
-                }
-
-                let Some(default) = node.default_component() else {
-                    return Some(NetworkProblem::MemberWithoutComponents {
-                        virtual_node: virtual_node.name().to_string(),
-                        node: member.name.clone(),
-                        node_type: node.node_type(),
-                    });
-                };
-
-                let component = member.component.unwrap_or(default);
-                let built = node.built_components();
-
-                (!built.contains(&component)).then(|| NetworkProblem::MemberComponentNotBuilt {
+                Some(NetworkProblem::InvalidMember {
                     virtual_node: virtual_node.name().to_string(),
                     node: member.name.clone(),
                     node_type: node.node_type(),
-                    component,
-                    default: member.component.is_none(),
-                    built,
+                    problem,
                 })
             })
             .collect()
     }
 
-    /// The problems with the metrics reading a node or virtual node: an attribute its type does
-    /// not have, or a node read as an index. A reference naming no node, or a placeholder, is
-    /// skipped, as is one reading the default attribute, which a node always has.
+    /// The problems [`Node::validate_reference`](crate::nodes::Node::validate_reference) and
+    /// [`VirtualNode::validate_reference`] find with the metrics reading a node or virtual node. A
+    /// reference naming no node is skipped.
     fn node_reference_problems(&self) -> Vec<NetworkProblem> {
         let mut problems = Vec::new();
 
@@ -151,60 +120,36 @@ impl NetworkSchema {
             let problem = match reference {
                 Reference::Node {
                     name,
-                    metric: Some(MetricValueType::Index),
-                    ..
+                    attribute,
+                    metric: Some(metric),
                 } => {
-                    if self.get_node_by_name(name).is_none_or(|node| node.is_placeholder()) {
-                        return;
-                    }
-
-                    NetworkProblem::NodeNotAnIndex {
-                        owner: owner.into(),
-                        node: name.to_string(),
-                    }
-                }
-                Reference::Node {
-                    name,
-                    attribute: Some(attribute),
-                    metric: Some(MetricValueType::Float),
-                } => {
-                    let Some(node) = self.get_node_by_name(name).filter(|node| !node.is_placeholder()) else {
+                    let Some(node) = self.get_node_by_name(name) else {
                         return;
                     };
-                    let supported = node.attributes();
-                    if supported.contains(&attribute) {
+                    let Err(problem) = node.validate_reference(attribute, metric) else {
                         return;
-                    }
+                    };
 
-                    NetworkProblem::NodeAttributeNotSupported {
+                    NetworkProblem::InvalidNodeReference {
                         owner: owner.into(),
                         node: name.to_string(),
                         node_type: node.node_type(),
-                        attribute,
-                        supported,
+                        problem,
                     }
                 }
-                Reference::VirtualNode {
-                    name,
-                    attribute: Some(attribute),
-                } => {
-                    let Some(virtual_node) = self
-                        .get_virtual_node_by_name(name)
-                        .filter(|virtual_node| !virtual_node.is_placeholder())
-                    else {
+                Reference::VirtualNode { name, attribute } => {
+                    let Some(virtual_node) = self.get_virtual_node_by_name(name) else {
                         return;
                     };
-                    let supported = virtual_node.attributes();
-                    if supported.contains(&attribute) {
+                    let Err(problem) = virtual_node.validate_reference(attribute) else {
                         return;
-                    }
+                    };
 
-                    NetworkProblem::VirtualNodeAttributeNotSupported {
+                    NetworkProblem::InvalidVirtualNodeReference {
                         owner: owner.into(),
                         virtual_node: name.to_string(),
                         node_type: virtual_node.node_type(),
-                        attribute,
-                        supported,
+                        problem,
                     }
                 }
                 _ => return,
@@ -216,9 +161,8 @@ impl NetworkSchema {
         problems
     }
 
-    /// The problems with the parameter references, each checked against the value type and phase
-    /// of the parameter it names. A reference naming no parameter, or a placeholder, is skipped,
-    /// as is the phase of a Python class.
+    /// The problems [`Parameter::validate_reference`] finds with the parameter references. A
+    /// reference naming no parameter is skipped.
     fn parameter_reference_problems(&self) -> Vec<NetworkProblem> {
         let mut problems = Vec::new();
 
@@ -257,38 +201,19 @@ impl NetworkSchema {
                 },
                 None => self.get_parameter_by_name(name),
             };
-            let Some(value_type) = resolved.and_then(Parameter::value_type) else {
+            let Some(parameter) = resolved else {
+                return;
+            };
+            let Err(problem) = parameter.validate_reference(key, metric, return_value) else {
                 return;
             };
 
-            let owner = ProblemOwner::from(owner);
-            let parameter = name.to_string();
-            let node = node.map(str::to_string);
-
-            let problem = match (value_type.needs_key(), key) {
-                (true, None) => NetworkProblem::ParameterKeyMissing { owner, parameter, node },
-                (false, Some(key)) => NetworkProblem::ParameterKeyNotAllowed {
-                    owner,
-                    parameter,
-                    node,
-                    key: key.to_string(),
-                },
-                _ if !value_type.is_readable_by(metric) => {
-                    NetworkProblem::ParameterNotAnIndex { owner, parameter, node }
-                }
-                _ => match resolved.and_then(Parameter::phase) {
-                    Some(phase) if !phase.calculates(return_value) => NetworkProblem::ParameterValueNotCalculated {
-                        owner,
-                        parameter,
-                        node,
-                        return_value,
-                        phase,
-                    },
-                    _ => return,
-                },
-            };
-
-            problems.push(problem);
+            problems.push(NetworkProblem::InvalidParameterReference {
+                owner: owner.into(),
+                parameter: name.to_string(),
+                node: node.map(str::to_string),
+                problem,
+            });
         });
 
         problems
@@ -403,10 +328,12 @@ impl NetworkSchema {
     ///
     /// - The schema is unambiguous.
     /// - Each edge could be made; see [`NetworkSchema::validate_edge`] for the rules.
-    /// - Each virtual node's members name parts their nodes build.
-    /// - Each metric reading a node or virtual node reads an attribute it has, and no index
-    ///   metric names a node.
-    /// - Each parameter reference suits the parameter it names.
+    /// - Each virtual node can take its members; see [`VirtualNode::validate_member`] for the rules.
+    /// - Each metric can read the node or virtual node it names; see
+    ///   [`Node::validate_reference`](crate::nodes::Node::validate_reference) and
+    ///   [`VirtualNode::validate_reference`] for the rules.
+    /// - Each parameter reference can read the parameter it names; see
+    ///   [`Parameter::validate_reference`] for the rules.
     /// - Each table has a lookup pywr can load, and each table reference fits its table.
     /// - Each node's, virtual node's and parameter's own fields; see
     ///   [`Node::validate`](crate::nodes::Node::validate), [`VirtualNode::validate`] and
@@ -922,7 +849,7 @@ mod tests {
                 "The virtual node `agg` takes the component `Rainfall` of the `Reservoir` node `reservoir`, but that node does not build it. It builds: `Compensation`.",
                 "The virtual node `agg` takes the default component `Compensation` of the `Reservoir` node `bare-reservoir`, but that node does not build it. As configured, it builds no components.",
                 "The virtual node `agg` takes the component `Loss` of the `Link` node `link`, but that node does not build it. It builds: `Inflow`, `Outflow`.",
-                "The virtual node `agg` names the `Storage` node `store`, but nodes of this type have no components for it to take.",
+                "The virtual node `agg` names the `Storage` node `store`, but nodes of its type have no components for it to take.",
                 "The virtual node `licence` takes the component `Loss` of the `WaterTreatmentWorks` node `works`, but that node does not build it. It builds: `Inflow`, `Outflow`.",
                 "The virtual node `licence` takes the component `Loss` of the `River` node `river`, but that node does not build it. It builds: `Inflow`, `Outflow`.",
                 "The virtual node `licence` takes the component `Loss` of the `LossLink` node `loss-link`, but that node does not build it. It builds: `Inflow`, `Outflow`.",
@@ -1000,10 +927,10 @@ mod tests {
         assert_eq!(
             messages,
             vec![
-                "The node `supply` reads the attribute `Inflow` of the `Storage` node `store`, but nodes of this type do not have it. Their attributes are: `Volume`, `ProportionalVolume`, `MaxVolume`.",
-                "The parameter `total` reads the attribute `Volume` of the `Link` node `link`, but nodes of this type do not have it. Their attributes are: `Inflow`, `Outflow`.",
-                "The parameter `total` reads the attribute `Inflow` of the `VirtualStorage` virtual node `licence`, but virtual nodes of this type do not have it. Their attributes are: `Volume`, `ProportionalVolume`.",
-                "The parameter `indexed` uses the node `link` as an index, but nodes give only float values.",
+                "The node `supply` reads the attribute `Inflow` of the `Storage` node `store`, but nodes of its type do not have it. Their attributes are: `Volume`, `ProportionalVolume`, `MaxVolume`.",
+                "The parameter `total` reads the attribute `Volume` of the `Link` node `link`, but nodes of its type do not have it. Their attributes are: `Inflow`, `Outflow`.",
+                "The parameter `total` reads the attribute `Inflow` of the `VirtualStorage` virtual node `licence`, but nodes of its type do not have it. Their attributes are: `Volume`, `ProportionalVolume`.",
+                "The parameter `indexed` uses the `Link` node `link` as an index, but nodes give only float values.",
             ]
         );
     }

@@ -1,10 +1,10 @@
 mod aggregated;
 mod virtual_storage;
 
-use crate::metric::Metric;
-use crate::nodes::{NodeAttribute, NodeComponent, NodeMeta, NodePosition, PlaceholderNode};
+use crate::metric::{Metric, NodeComponentReference};
+use crate::nodes::{Node, NodeAttribute, NodeComponent, NodeMeta, NodePosition, PlaceholderNode};
 use crate::parameters::Parameter;
-use crate::validation::VirtualNodeProblem;
+use crate::validation::{MemberProblem, NodeReferenceProblem, VirtualNodeProblem};
 use crate::visit::{Reference, ReferenceMut, VisitReferences};
 #[cfg(feature = "core")]
 use crate::{LoadArgs, SchemaError};
@@ -109,6 +109,25 @@ impl VirtualNode {
         }
     }
 
+    /// Check that a metric can read this virtual node's `attribute`, `None` being its default. A
+    /// placeholder takes any reference.
+    pub fn validate_reference(&self, attribute: Option<NodeAttribute>) -> Result<(), NodeReferenceProblem> {
+        if self.is_placeholder() {
+            return Ok(());
+        }
+
+        let Some(attribute) = attribute else {
+            return Ok(());
+        };
+        let supported = self.attributes();
+
+        if supported.contains(&attribute) {
+            Ok(())
+        } else {
+            Err(NodeReferenceProblem::AttributeNotSupported { attribute, supported })
+        }
+    }
+
     /// Returns the default component for the node, if defined.
     pub fn default_component(&self) -> Option<NodeComponent> {
         match self {
@@ -116,6 +135,49 @@ impl VirtualNode {
             VirtualNode::AggregatedStorage(_) => None,
             VirtualNode::VirtualStorage(_) => None,
             VirtualNode::Placeholder(_) => None,
+        }
+    }
+
+    /// The nodes this virtual node is made of, each with the component it takes.
+    pub fn members(&self) -> &[NodeComponentReference] {
+        match self {
+            VirtualNode::Aggregated(n) => &n.nodes,
+            VirtualNode::AggregatedStorage(n) => &n.storage_nodes,
+            VirtualNode::VirtualStorage(n) => &n.nodes,
+            VirtualNode::Placeholder(_) => &[],
+        }
+    }
+
+    /// Check that this virtual node can take `node` as its `member`. The member's name is not
+    /// compared with `node`'s, so a node being edited can be checked. A placeholder on either side
+    /// passes.
+    pub fn validate_member(&self, member: &NodeComponentReference, node: &Node) -> Result<(), MemberProblem> {
+        if self.is_placeholder() || node.is_placeholder() {
+            return Ok(());
+        }
+
+        if matches!(self, VirtualNode::AggregatedStorage(_)) {
+            return if node.is_storage() {
+                Ok(())
+            } else {
+                Err(MemberProblem::NotStorage)
+            };
+        }
+
+        let Some(default) = node.default_component() else {
+            return Err(MemberProblem::WithoutComponents);
+        };
+        let component = member.component.unwrap_or(default);
+        let built = node.built_components();
+
+        if built.contains(&component) {
+            Ok(())
+        } else {
+            Err(MemberProblem::ComponentNotBuilt {
+                component,
+                default: member.component.is_none(),
+                built,
+            })
         }
     }
 
@@ -334,6 +396,105 @@ mod tests {
 
             let expected = if problems.is_empty() { Ok(()) } else { Err(problems) };
             assert_eq!(node.validate(), expected, "{data}");
+        }
+    }
+
+    /// [`VirtualNode::validate_reference`] should refuse an attribute the type does not have, and
+    /// pass the default attribute and a placeholder.
+    #[test]
+    fn test_validate_reference_checks_each_rule() {
+        use crate::nodes::NodeAttribute::{Inflow, Volume};
+        use crate::validation::NodeReferenceProblem::AttributeNotSupported;
+
+        let storage = VirtualNode::from(VirtualNodeType::VirtualStorage);
+        let placeholder = VirtualNode::from(VirtualNodeType::Placeholder);
+
+        let cases = [
+            (&storage, None, Ok(())),
+            (&storage, Some(Volume), Ok(())),
+            (
+                &storage,
+                Some(Inflow),
+                Err(AttributeNotSupported {
+                    attribute: Inflow,
+                    supported: storage.attributes(),
+                }),
+            ),
+            (&placeholder, Some(Inflow), Ok(())),
+        ];
+
+        for (node, attribute, expected) in cases {
+            assert_eq!(
+                node.validate_reference(attribute),
+                expected,
+                "{} reading {attribute:?}",
+                node.node_type()
+            );
+        }
+    }
+
+    /// [`VirtualNode::validate_member`] should refuse a member breaking each rule, and pass a
+    /// placeholder on either side.
+    #[test]
+    fn test_validate_member_checks_each_rule() {
+        use crate::metric::NodeComponentReference;
+        use crate::nodes::NodeComponent::{Compensation, Inflow, Loss, Outflow};
+        use crate::nodes::{Node, NodeType};
+        use crate::validation::MemberProblem::*;
+
+        let aggregated = VirtualNode::from(VirtualNodeType::Aggregated);
+        let aggregated_storage = VirtualNode::from(VirtualNodeType::AggregatedStorage);
+        let placeholder = VirtualNode::from(VirtualNodeType::Placeholder);
+
+        let link = Node::from(NodeType::Link);
+        let storage = Node::from(NodeType::Storage);
+        // A reservoir builds no components until it has a compensation, rainfall or evaporation.
+        let reservoir = Node::from(NodeType::Reservoir);
+        let node_placeholder = Node::from(NodeType::Placeholder);
+
+        let member = |component| NodeComponentReference {
+            name: "member".to_string(),
+            component,
+        };
+
+        let cases = [
+            (&aggregated, member(None), &link, Ok(())),
+            (
+                &aggregated,
+                member(Some(Loss)),
+                &link,
+                Err(ComponentNotBuilt {
+                    component: Loss,
+                    default: false,
+                    built: vec![Inflow, Outflow],
+                }),
+            ),
+            (
+                &aggregated,
+                member(None),
+                &reservoir,
+                Err(ComponentNotBuilt {
+                    component: Compensation,
+                    default: true,
+                    built: vec![],
+                }),
+            ),
+            (&aggregated, member(None), &storage, Err(WithoutComponents)),
+            (&aggregated_storage, member(None), &storage, Ok(())),
+            (&aggregated_storage, member(None), &link, Err(NotStorage)),
+            (&aggregated_storage, member(None), &node_placeholder, Ok(())),
+            (&placeholder, member(Some(Loss)), &link, Ok(())),
+        ];
+
+        for (virtual_node, member, node, expected) in cases {
+            assert_eq!(
+                virtual_node.validate_member(&member, node),
+                expected,
+                "{} taking {:?} of {}",
+                virtual_node.node_type(),
+                member.component,
+                node.node_type()
+            );
         }
     }
 

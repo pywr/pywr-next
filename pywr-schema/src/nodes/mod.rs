@@ -56,13 +56,13 @@ mod water_treatment_works;
 mod virtual_nodes;
 
 use crate::error::{ComponentConversionError, ConversionError, SchemaError};
-use crate::metric::Metric;
+use crate::metric::{Metric, MetricValueType};
 #[cfg(feature = "core")]
 use crate::network::LoadArgs;
 use crate::network::NetworkSchema;
 use crate::parameters::Parameter;
 use crate::v1::{ConversionData, TryFromV1, TryIntoV2};
-use crate::validation::NodeProblem;
+use crate::validation::{NodeProblem, NodeReferenceProblem};
 use crate::visit::{Reference, ReferenceMut, VisitMetrics, VisitPaths, VisitReferences};
 pub use abstraction::{AbstractionNode, AbstractionNodeAttribute, AbstractionNodeComponent, AbstractionOutputNodeSlot};
 pub use attributes::NodeAttribute;
@@ -629,6 +629,33 @@ impl Node {
             Node::Reservoir(_) => ReservoirNodeAttribute::iter().map(Into::into).collect(),
             Node::Placeholder(_) => Vec::new(),
             Node::Abstraction(_) => AbstractionNodeAttribute::iter().map(Into::into).collect(),
+        }
+    }
+
+    /// Check that a `metric` can read this node's `attribute`, `None` being its default. A
+    /// placeholder takes any reference.
+    pub fn validate_reference(
+        &self,
+        attribute: Option<NodeAttribute>,
+        metric: MetricValueType,
+    ) -> Result<(), NodeReferenceProblem> {
+        if self.is_placeholder() {
+            return Ok(());
+        }
+
+        if metric == MetricValueType::Index {
+            return Err(NodeReferenceProblem::NotAnIndex);
+        }
+
+        let Some(attribute) = attribute else {
+            return Ok(());
+        };
+        let supported = self.attributes();
+
+        if supported.contains(&attribute) {
+            Ok(())
+        } else {
+            Err(NodeReferenceProblem::AttributeNotSupported { attribute, supported })
         }
     }
 
@@ -1329,6 +1356,43 @@ mod tests {
 
             let expected = if problems.is_empty() { Ok(()) } else { Err(problems) };
             assert_eq!(node.validate(), expected, "{data}");
+        }
+    }
+
+    /// [`Node::validate_reference`] should refuse a node read as an index before checking the
+    /// attribute, and pass the default attribute and a placeholder.
+    #[test]
+    fn test_validate_reference_checks_each_rule() {
+        use crate::metric::MetricValueType::{Float, Index};
+        use crate::nodes::NodeAttribute::{Outflow, Volume};
+        use crate::validation::NodeReferenceProblem::*;
+
+        let link = Node::from(NodeType::Link);
+        let placeholder = Node::from(NodeType::Placeholder);
+
+        let cases = [
+            (&link, None, Float, Ok(())),
+            (&link, Some(Outflow), Float, Ok(())),
+            (
+                &link,
+                Some(Volume),
+                Float,
+                Err(AttributeNotSupported {
+                    attribute: Volume,
+                    supported: link.attributes(),
+                }),
+            ),
+            (&link, Some(Volume), Index, Err(NotAnIndex)),
+            (&placeholder, Some(Volume), Index, Ok(())),
+        ];
+
+        for (node, attribute, metric, expected) in cases {
+            assert_eq!(
+                node.validate_reference(attribute, metric),
+                expected,
+                "{} reading {attribute:?} as {metric:?}",
+                node.node_type()
+            );
         }
     }
 
