@@ -3,7 +3,7 @@ use crate::error::SchemaError;
 use crate::meta::NamedMeta;
 use crate::visit::{Reference, ReferenceMut, VisitReferences};
 #[cfg(feature = "core")]
-use pywr_core::recorders::ArrowStreamOutputBuilder;
+use pywr_core::recorders::{ArrowStreamOutputBuilder, ArrowStreamSink};
 use pywr_schema_macros::PywrVisitPaths;
 use schemars::JsonSchema;
 use std::num::NonZeroUsize;
@@ -49,7 +49,12 @@ impl ArrowStreamOutput {
             (Some(output_directory), true) => output_directory.join(&self.filename),
             _ => self.filename.to_path_buf(),
         };
-        let recorder = ArrowStreamOutputBuilder::new(&self.meta.name, filename, &self.metric_set, self.batch_size);
+        let recorder = ArrowStreamOutputBuilder::new(
+            &self.meta.name,
+            ArrowStreamSink::File(filename),
+            &self.metric_set,
+            self.batch_size,
+        );
         network.recorder(Box::new(recorder));
         Ok(())
     }
