@@ -370,7 +370,8 @@ pub enum InitialVolumeProblem {
     AboveMax,
 }
 
-/// A problem with a node's own fields, found by [`Node::validate`](crate::nodes::Node::validate).
+/// A problem with a node's own fields or a local parameter's, found by
+/// [`Node::validate`](crate::nodes::Node::validate).
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
 pub enum NodeProblem {
     #[error("{0}")]
@@ -391,9 +392,14 @@ pub enum NodeProblem {
     GrossLossFactorOutOfRange,
     #[error("A `Net` `loss_factor` must not be negative.")]
     NegativeNetLossFactor,
+    #[error("The local parameter `{parameter}` is invalid. {problem}")]
+    InvalidLocalParameter {
+        parameter: String,
+        problem: ParameterProblem,
+    },
 }
 
-/// A problem with a virtual node's own fields, found by
+/// A problem with a virtual node's own fields or a local parameter's, found by
 /// [`VirtualNode::validate`](crate::nodes::VirtualNode::validate).
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
 pub enum VirtualNodeProblem {
@@ -418,6 +424,11 @@ pub enum VirtualNodeProblem {
         "The `Coefficients` relationship has {factors} factor(s) for {members} member(s), but needs exactly two members, with a factor each."
     )]
     CoefficientsFactorCount { factors: usize, members: usize },
+    #[error("The local parameter `{parameter}` is invalid. {problem}")]
+    InvalidLocalParameter {
+        parameter: String,
+        problem: ParameterProblem,
+    },
 }
 
 /// A problem with a model that is not about any one of its networks, found by

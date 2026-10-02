@@ -3,7 +3,7 @@ mod virtual_storage;
 
 use crate::metric::{Metric, NodeComponentReference};
 use crate::nodes::{Node, NodeAttribute, NodeComponent, NodeMeta, NodePosition, PlaceholderNode};
-use crate::parameters::Parameter;
+use crate::parameters::{Parameter, validate_each_parameter};
 use crate::validation::{MemberProblem, NodeReferenceProblem, VirtualNodeProblem};
 use crate::visit::{Reference, ReferenceMut, VisitReferences};
 #[cfg(feature = "core")]
@@ -209,13 +209,27 @@ impl VirtualNode {
             .and_then(|params| params.iter().find(|p| p.name() == name))
     }
 
-    /// Check the virtual node's own fields and return every problem found.
+    /// Check the virtual node's own fields and its local parameters', and return every problem
+    /// found, its own first.
     pub fn validate(&self) -> Result<(), Vec<VirtualNodeProblem>> {
-        match self {
+        let mut problems = match self {
             VirtualNode::Aggregated(n) => n.validate(),
             VirtualNode::VirtualStorage(n) => n.validate(),
             VirtualNode::AggregatedStorage(_) | VirtualNode::Placeholder(_) => Ok(()),
         }
+        .err()
+        .unwrap_or_default();
+
+        problems.extend(
+            validate_each_parameter(self.local_parameters().unwrap_or_default()).map(|(parameter, problem)| {
+                VirtualNodeProblem::InvalidLocalParameter {
+                    parameter: parameter.to_string(),
+                    problem,
+                }
+            }),
+        );
+
+        if problems.is_empty() { Ok(()) } else { Err(problems) }
     }
 }
 
@@ -316,8 +330,8 @@ mod tests {
     /// rule, and pass one where a rule could be too strict.
     #[test]
     fn test_validate_checks_each_rule() {
-        use crate::validation::InitialVolumeProblem;
         use crate::validation::VirtualNodeProblem::*;
+        use crate::validation::{InitialVolumeProblem, ParameterProblem};
         use serde_json::json;
 
         for node_type in VirtualNodeType::iter() {
@@ -384,6 +398,21 @@ mod tests {
                 VirtualNodeType::Aggregated,
                 json!({ "nodes": members(3), "relationship": { "type": "Coefficients", "factors": [x(1.0), x(1.0), x(1.0)] } }),
                 vec![CoefficientsFactorCount { factors: 3, members: 3 }],
+            ),
+            (
+                VirtualNodeType::VirtualStorage,
+                json!({
+                    "parameters": [{
+                        "meta": { "name": "drawdown" },
+                        "type": "UniformDrawdownProfile",
+                        "reset_day": { "type": "Literal", "value": 30 },
+                        "reset_month": { "type": "Literal", "value": 2 }
+                    }]
+                }),
+                vec![InvalidLocalParameter {
+                    parameter: "drawdown".to_string(),
+                    problem: ParameterProblem::NotADate { day: 30, month: 2 },
+                }],
             ),
         ];
 

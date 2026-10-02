@@ -2,10 +2,13 @@ use super::NetworkSchema;
 use crate::data_tables::DataTable;
 use crate::edge::Edge;
 use crate::nodes::VirtualNode;
-use crate::parameters::Parameter;
+use crate::parameters::{Parameter, validate_each_parameter};
 use crate::time_series::TimeSeries;
 use crate::util::duplicates;
-use crate::validation::{DuplicateNodeName, EdgeProblem, EdgeValidationError, NetworkProblem, NetworkValidationError};
+use crate::validation::{
+    DuplicateNodeName, EdgeProblem, EdgeValidationError, NetworkProblem, NetworkValidationError, NodeProblem,
+    VirtualNodeProblem,
+};
 use crate::visit::{Owner, Reference};
 use std::collections::HashMap;
 
@@ -257,7 +260,8 @@ impl NetworkSchema {
         problems
     }
 
-    /// The problems [`Node::validate`](crate::nodes::Node::validate) finds.
+    /// The problems [`Node::validate`](crate::nodes::Node::validate) finds, with a local
+    /// parameter's reported as [`NetworkProblem::InvalidParameter`].
     fn node_problems(&self) -> Vec<NetworkProblem> {
         self.nodes
             .iter()
@@ -266,15 +270,23 @@ impl NetworkSchema {
                     .err()
                     .unwrap_or_default()
                     .into_iter()
-                    .map(|problem| NetworkProblem::InvalidNode {
-                        node: node.name().to_string(),
-                        problem,
+                    .map(|problem| match problem {
+                        NodeProblem::InvalidLocalParameter { parameter, problem } => NetworkProblem::InvalidParameter {
+                            parameter,
+                            node: Some(node.name().to_string()),
+                            problem,
+                        },
+                        problem => NetworkProblem::InvalidNode {
+                            node: node.name().to_string(),
+                            problem,
+                        },
                     })
             })
             .collect()
     }
 
-    /// The problems [`VirtualNode::validate`] finds.
+    /// The problems [`VirtualNode::validate`] finds, with a local parameter's reported as
+    /// [`NetworkProblem::InvalidParameter`].
     fn virtual_node_problems(&self) -> Vec<NetworkProblem> {
         self.virtual_nodes
             .iter()
@@ -285,41 +297,32 @@ impl NetworkSchema {
                     .err()
                     .unwrap_or_default()
                     .into_iter()
-                    .map(|problem| NetworkProblem::InvalidVirtualNode {
-                        virtual_node: virtual_node.name().to_string(),
-                        problem,
+                    .map(|problem| match problem {
+                        VirtualNodeProblem::InvalidLocalParameter { parameter, problem } => {
+                            NetworkProblem::InvalidParameter {
+                                parameter,
+                                node: Some(virtual_node.name().to_string()),
+                                problem,
+                            }
+                        }
+                        problem => NetworkProblem::InvalidVirtualNode {
+                            virtual_node: virtual_node.name().to_string(),
+                            problem,
+                        },
                     })
             })
             .collect()
     }
 
-    /// The problems [`Parameter::validate`] finds, the network's parameters before the local ones.
+    /// The problems [`Parameter::validate`] finds in the network's own parameters.
     fn parameter_problems(&self) -> Vec<NetworkProblem> {
-        let mut problems = Vec::new();
-
-        let mut validate = |node: Option<&str>, parameters: Option<&[Parameter]>| {
-            for parameter in parameters.unwrap_or_default() {
-                if let Err(found) = parameter.validate() {
-                    problems.extend(found.into_iter().map(|problem| NetworkProblem::InvalidParameter {
-                        parameter: parameter.name().to_string(),
-                        node: node.map(str::to_string),
-                        problem,
-                    }));
-                }
-            }
-        };
-
-        validate(None, self.parameters.as_deref());
-
-        for node in &self.nodes {
-            validate(Some(node.name()), node.local_parameters());
-        }
-
-        for node in self.virtual_nodes.iter().flatten() {
-            validate(Some(node.name()), node.local_parameters());
-        }
-
-        problems
+        validate_each_parameter(self.parameters.as_deref().unwrap_or_default())
+            .map(|(parameter, problem)| NetworkProblem::InvalidParameter {
+                parameter: parameter.to_string(),
+                node: None,
+                problem,
+            })
+            .collect()
     }
 
     /// Validate the network schema and report every problem.
@@ -1197,7 +1200,15 @@ mod tests {
                 "type": "VirtualStorage",
                 "nodes": [],
                 "initial_volume": { "type": "Proportional", "proportion": 1.0 },
-                "reset": { "type": "Annual", "day": 30, "month": 2 }
+                "reset": { "type": "Annual", "day": 30, "month": 2 },
+                "parameters": [
+                    {
+                        "meta": { "name": "refill" },
+                        "type": "UniformDrawdownProfile",
+                        "reset_day": { "type": "Literal", "value": 31 },
+                        "reset_month": { "type": "Literal", "value": 4 }
+                    }
+                ]
             }
         ],
         "edges": [],
@@ -1227,8 +1238,8 @@ mod tests {
     }
     "#;
 
-    /// Every component with invalid fields is reported: the nodes, the virtual nodes, the
-    /// network's parameters, then the local ones.
+    /// Every component with invalid fields is reported: each node then its local parameters, each
+    /// virtual node then its own, then the network's parameters.
     #[test]
     fn test_validate_reports_all_invalid_components() {
         let network = parse_network(NETWORK_WITH_INVALID_COMPONENTS);
@@ -1238,12 +1249,13 @@ mod tests {
         assert_eq!(
             messages,
             vec![
+                "The local parameter `drawdown` of `supply` is invalid. `reset_day` 30 and `reset_month` 2 do not make a date.",
                 "The node `loss` is invalid. A `Gross` `loss_factor` must be from 0 up to 1, 1 excluded.",
                 "The virtual node `licence` is invalid. `day` 30 and `month` 2 do not make a date.",
+                "The local parameter `refill` of `licence` is invalid. `reset_day` 31 and `reset_month` 4 do not make a date.",
                 "The parameter `curve` is invalid. `values` has 1 entry(s), but the control curves require 2.",
                 "The parameter `interpolated` is invalid. The points in `xp` and `fp` cannot be interpolated between. There are 2 x value(s) but 1 y value(s), and each point needs one of each.",
                 "The parameter `profile` is invalid. `values` has 3 entry(s), but the profile takes 365 or 366.",
-                "The local parameter `drawdown` of `supply` is invalid. `reset_day` 30 and `reset_month` 2 do not make a date.",
             ]
         );
     }

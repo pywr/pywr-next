@@ -60,7 +60,7 @@ use crate::metric::{Metric, MetricValueType};
 #[cfg(feature = "core")]
 use crate::network::LoadArgs;
 use crate::network::NetworkSchema;
-use crate::parameters::Parameter;
+use crate::parameters::{Parameter, validate_each_parameter};
 use crate::v1::{ConversionData, TryFromV1, TryIntoV2};
 use crate::validation::{NodeProblem, NodeReferenceProblem};
 use crate::visit::{Reference, ReferenceMut, VisitMetrics, VisitPaths, VisitReferences};
@@ -784,10 +784,10 @@ impl Node {
             .and_then(|params| params.iter().find(|p| p.name() == name))
     }
 
-    /// Check the node's own fields and return every problem found. A value in a
-    /// table is not loaded, so it is not checked.
+    /// Check the node's own fields and its local parameters', and return every problem found, its
+    /// own first. A value in a table is not loaded, so it is not checked.
     pub fn validate(&self) -> Result<(), Vec<NodeProblem>> {
-        match self {
+        let mut problems = match self {
             Node::LossLink(LossLinkNode { loss_factor, .. })
             | Node::River(RiverNode { loss_factor, .. })
             | Node::WaterTreatmentWorks(WaterTreatmentWorksNode { loss_factor, .. }) => {
@@ -808,6 +808,19 @@ impl Node {
             | Node::Placeholder(_)
             | Node::Abstraction(_) => Ok(()),
         }
+        .err()
+        .unwrap_or_default();
+
+        problems.extend(
+            validate_each_parameter(self.local_parameters().unwrap_or_default()).map(|(parameter, problem)| {
+                NodeProblem::InvalidLocalParameter {
+                    parameter: parameter.to_string(),
+                    problem,
+                }
+            }),
+        );
+
+        if problems.is_empty() { Ok(()) } else { Err(problems) }
     }
 }
 
@@ -1242,8 +1255,8 @@ mod tests {
     /// pass one where a rule could be too strict.
     #[test]
     fn test_validate_checks_each_rule() {
-        use crate::validation::InitialVolumeProblem;
         use crate::validation::NodeProblem::*;
+        use crate::validation::{InitialVolumeProblem, ParameterProblem};
         use serde_json::json;
 
         for node_type in NodeType::iter() {
@@ -1344,6 +1357,26 @@ mod tests {
                 NodeType::Reservoir,
                 json!({ "max_volume": x(100.0), "initial_volume": { "type": "Absolute", "volume": 150.0 } }),
                 vec![InitialVolume(InitialVolumeProblem::AboveMax)],
+            ),
+            // Its own problems come before its local parameters'.
+            (
+                NodeType::LossLink,
+                json!({
+                    "loss_factor": { "type": "Gross", "factor": x(1.0) },
+                    "parameters": [{
+                        "meta": { "name": "drawdown" },
+                        "type": "UniformDrawdownProfile",
+                        "reset_day": { "type": "Literal", "value": 30 },
+                        "reset_month": { "type": "Literal", "value": 2 }
+                    }]
+                }),
+                vec![
+                    GrossLossFactorOutOfRange,
+                    InvalidLocalParameter {
+                        parameter: "drawdown".to_string(),
+                        problem: ParameterProblem::NotADate { day: 30, month: 2 },
+                    },
+                ],
             ),
         ];
 
