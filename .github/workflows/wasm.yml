@@ -1,0 +1,25 @@
+name: Rust (wasm)
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+env:
+  CARGO_INCREMENTAL: 0
+  CARGO_TERM_COLOR: always
+  # Make sure CI fails on all warnings, including Clippy lints
+  RUSTFLAGS: "-Dwarnings"
+
+jobs:
+  build:
+    name: Clippy (wasm32-unknown-unknown)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7
+      - name: Add the wasm target
+        run: rustup target add wasm32-unknown-unknown
+      - uses: swatinem/rust-cache@v2
+      - name: Run Clippy
+        run: cargo clippy --target wasm32-unknown-unknown -p pywr-core -p pywr-schema -p pywr-runner-protocol -p pywr-runner-engine --no-default-features --features pywr-runner-engine/microlp
