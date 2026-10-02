@@ -118,6 +118,156 @@ pub enum TableReferenceProblem {
     EmptyLabel { index: usize },
 }
 
+/// The reason a reference cannot read the parameter it names, found by
+/// [`Parameter::validate_reference`](crate::parameters::Parameter::validate_reference).
+#[derive(Error, Debug, Clone, PartialEq, Eq)]
+pub enum ParameterReferenceProblem {
+    /// A reference without a key naming a multi-valued parameter.
+    KeyMissing,
+    /// A reference with a key naming a parameter that gives a single value.
+    KeyNotAllowed { key: String },
+    /// An index metric naming a parameter that gives a float value.
+    NotAnIndex,
+    /// A reference asking a parameter for a value it does not calculate.
+    ValueNotCalculated {
+        return_value: ParameterReturnValue,
+        phase: ParameterPhase,
+    },
+}
+
+impl ParameterReferenceProblem {
+    /// The message, with `owner` naming the reference's holder and `parameter` the parameter, as
+    /// "The parameter `total`" and "the local parameter `x` of `node`".
+    fn message(&self, owner: &str, parameter: &str) -> String {
+        match self {
+            Self::KeyMissing => {
+                format!("{owner} refers to {parameter} without a key, but it gives several values, one per key.")
+            }
+            Self::KeyNotAllowed { key } => {
+                format!("{owner} names the key `{key}` of {parameter}, but it gives a single value and takes no key.")
+            }
+            Self::NotAnIndex => format!("{owner} uses {parameter} as an index, but it gives a float value."),
+            Self::ValueNotCalculated { return_value, phase } => format!(
+                "{owner} asks {parameter} for its `{return_value}` value, but it is calculated only in the `{phase}` phase."
+            ),
+        }
+    }
+}
+
+/// With "The reference" and "the parameter" in place of the names, which only
+/// [`NetworkProblem::InvalidParameterReference`] knows.
+impl std::fmt::Display for ParameterReferenceProblem {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message("The reference", "the parameter"))
+    }
+}
+
+/// The reason a metric cannot read the node or virtual node it names, found by
+/// [`Node::validate_reference`](crate::nodes::Node::validate_reference) and
+/// [`VirtualNode::validate_reference`](crate::nodes::VirtualNode::validate_reference).
+#[derive(Error, Debug, Clone, PartialEq, Eq)]
+pub enum NodeReferenceProblem {
+    /// A metric reading an attribute its node's type does not have.
+    AttributeNotSupported {
+        attribute: NodeAttribute,
+        /// The attributes nodes of this type do have.
+        supported: Vec<NodeAttribute>,
+    },
+    /// An index metric naming a node, which gives only float values.
+    NotAnIndex,
+}
+
+impl NodeReferenceProblem {
+    /// The message, with `owner` naming the metric's holder and `node` the node, as "The
+    /// parameter `total`" and "the `Link` node `link`".
+    fn message(&self, owner: &str, node: &str) -> String {
+        match self {
+            Self::AttributeNotSupported { attribute, supported } => format!(
+                "{owner} reads the attribute `{attribute}` of {node}, but nodes of its type do not have it. {}",
+                attribute_list_message(supported)
+            ),
+            Self::NotAnIndex => format!("{owner} uses {node} as an index, but nodes give only float values."),
+        }
+    }
+}
+
+/// With "The metric" and "the node" in place of the names, which only
+/// [`NetworkProblem::InvalidNodeReference`] and [`NetworkProblem::InvalidVirtualNodeReference`]
+/// know.
+impl std::fmt::Display for NodeReferenceProblem {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message("The metric", "the node"))
+    }
+}
+
+/// The attributes nodes of a type have, for the end of a message about one they do not.
+fn attribute_list_message(attributes: &[NodeAttribute]) -> String {
+    let attributes: Vec<String> = attributes.iter().map(|attribute| format!("`{attribute}`")).collect();
+    format!("Their attributes are: {}.", attributes.join(", "))
+}
+
+/// The reason a virtual node cannot take one of its members, found by
+/// [`VirtualNode::validate_member`](crate::nodes::VirtualNode::validate_member).
+#[derive(Error, Debug, Clone, PartialEq, Eq)]
+pub enum MemberProblem {
+    /// A member of an `Aggregated` or `VirtualStorage` node naming a node with no components.
+    WithoutComponents,
+    /// A member of an `Aggregated` or `VirtualStorage` node taking a component its node does not
+    /// build.
+    ComponentNotBuilt {
+        /// The component the member names, or its node's default.
+        component: NodeComponent,
+        /// Whether the member names no component.
+        default: bool,
+        /// The components the node does build.
+        built: Vec<NodeComponent>,
+    },
+    /// A member of an `AggregatedStorage` node that is not a storage.
+    NotStorage,
+}
+
+impl MemberProblem {
+    /// The message, with `virtual_node` and `node` naming the two, as "The virtual node `agg`" and
+    /// "the `Link` node `link`".
+    fn message(&self, virtual_node: &str, node: &str) -> String {
+        match self {
+            Self::WithoutComponents => {
+                format!("{virtual_node} names {node}, but nodes of its type have no components for it to take.")
+            }
+            Self::ComponentNotBuilt {
+                component,
+                default,
+                built,
+            } => format!(
+                "{virtual_node} takes the {}component `{component}` of {node}, but that node does not build it. {}",
+                if *default { "default " } else { "" },
+                component_list_message(built)
+            ),
+            Self::NotStorage => {
+                format!("{virtual_node} names {node}, but an `AggregatedStorage` node takes only storage nodes.")
+            }
+        }
+    }
+}
+
+/// With "The virtual node" and "the node" in place of the names, which only
+/// [`NetworkProblem::InvalidMember`] knows.
+impl std::fmt::Display for MemberProblem {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message("The virtual node", "the node"))
+    }
+}
+
+/// The components a node builds, for the end of a message about one it does not.
+fn component_list_message(built: &[NodeComponent]) -> String {
+    if built.is_empty() {
+        "As configured, it builds no components.".to_string()
+    } else {
+        let built: Vec<String> = built.iter().map(|component| format!("`{component}`")).collect();
+        format!("It builds: {}.", built.join(", "))
+    }
+}
+
 /// Why a list of points cannot be interpolated between.
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
 pub enum PointsProblem {
@@ -503,22 +653,6 @@ impl std::fmt::Display for ScenarioValidationError {
 
 impl std::error::Error for ScenarioValidationError {}
 
-/// The components a node builds, for the end of a message about one it does not.
-fn component_list_message(built: &[NodeComponent]) -> String {
-    if built.is_empty() {
-        "As configured, it builds no components.".to_string()
-    } else {
-        let built: Vec<String> = built.iter().map(|component| format!("`{component}`")).collect();
-        format!("It builds: {}.", built.join(", "))
-    }
-}
-
-/// The attributes nodes of a type have, for the end of a message about one they do not.
-fn attribute_list_message(attributes: &[NodeAttribute]) -> String {
-    let attributes: Vec<String> = attributes.iter().map(|attribute| format!("`{attribute}`")).collect();
-    format!("Their attributes are: {}.", attributes.join(", "))
-}
-
 /// A problem with one network, found by [`crate::NetworkSchema::validate`].
 ///
 /// A name must be unique within its list, not across lists: `nodes` and `virtual_nodes` share one
@@ -543,105 +677,44 @@ pub enum NetworkProblem {
     /// An edge that could not connect the nodes it names.
     #[error("{0}")]
     InvalidEdge(EdgeValidationError),
-    /// A member of an `Aggregated` or `VirtualStorage` node naming a node with no components.
+    /// A member a virtual node cannot take.
     #[error(
-        "The virtual node `{virtual_node}` names the `{node_type}` node `{node}`, but nodes of this type have no components for it to take."
+        "{}", .problem.message(&format!("The virtual node `{virtual_node}`"), &format!("the `{node_type}` node `{node}`"))
     )]
-    MemberWithoutComponents {
+    InvalidMember {
         virtual_node: String,
         node: String,
         node_type: NodeType,
+        problem: MemberProblem,
     },
-    /// A member of an `Aggregated` or `VirtualStorage` node taking a component its node does not
-    /// build.
-    #[error(
-        "The virtual node `{virtual_node}` takes the {}component `{component}` of the `{node_type}` node `{node}`, but that node does not build it. {}", if *.default { "default " } else { "" }, component_list_message(.built)
-    )]
-    MemberComponentNotBuilt {
-        virtual_node: String,
-        node: String,
-        node_type: NodeType,
-        /// The component the member names, or its node's default.
-        component: NodeComponent,
-        /// Whether the member names no component.
-        default: bool,
-        /// The components the node does build.
-        built: Vec<NodeComponent>,
-    },
-    /// A member of an `AggregatedStorage` node that is not a storage.
-    #[error(
-        "The virtual node `{virtual_node}` names the `{node_type}` node `{node}`, but an `AggregatedStorage` node takes only storage nodes."
-    )]
-    MemberNotStorage {
-        virtual_node: String,
-        node: String,
-        node_type: NodeType,
-    },
-    /// A metric reading an attribute its node's type does not have.
-    #[error(
-        "The {owner} reads the attribute `{attribute}` of the `{node_type}` node `{node}`, but nodes of this type do not have it. {}", attribute_list_message(.supported)
-    )]
-    NodeAttributeNotSupported {
+    /// A metric that cannot read the node it names.
+    #[error("{}", .problem.message(&format!("The {owner}"), &format!("the `{node_type}` node `{node}`")))]
+    InvalidNodeReference {
         owner: ProblemOwner,
         node: String,
         node_type: NodeType,
-        attribute: NodeAttribute,
-        /// The attributes nodes of this type do have.
-        supported: Vec<NodeAttribute>,
+        problem: NodeReferenceProblem,
     },
-    /// A metric reading an attribute its virtual node's type does not have.
+    /// A metric that cannot read the virtual node it names.
     #[error(
-        "The {owner} reads the attribute `{attribute}` of the `{node_type}` virtual node `{virtual_node}`, but virtual nodes of this type do not have it. {}", attribute_list_message(.supported)
+        "{}", .problem.message(&format!("The {owner}"), &format!("the `{node_type}` virtual node `{virtual_node}`"))
     )]
-    VirtualNodeAttributeNotSupported {
+    InvalidVirtualNodeReference {
         owner: ProblemOwner,
         virtual_node: String,
         node_type: VirtualNodeType,
-        attribute: NodeAttribute,
-        /// The attributes virtual nodes of this type do have.
-        supported: Vec<NodeAttribute>,
+        problem: NodeReferenceProblem,
     },
-    /// An index metric naming a node, which gives only float values.
-    #[error("The {owner} uses the node `{node}` as an index, but nodes give only float values.")]
-    NodeNotAnIndex { owner: ProblemOwner, node: String },
-    /// An index metric naming a parameter that gives a float value.
+    /// A reference that cannot read the parameter it names.
     #[error(
-        "The {owner} uses the {} as an index, but it gives a float value.", named_parameter(.parameter, .node.as_deref())
+        "{}", .problem.message(&format!("The {owner}"), &format!("the {}", named_parameter(.parameter, .node.as_deref())))
     )]
-    ParameterNotAnIndex {
+    InvalidParameterReference {
         owner: ProblemOwner,
         parameter: String,
+        /// The node or virtual node holding it, for a local parameter.
         node: Option<String>,
-    },
-    /// A reference without a key naming a multi-valued parameter.
-    #[error(
-        "The {owner} refers to the {} without a key, but it gives several values, one per key.", named_parameter(.parameter, .node.as_deref())
-    )]
-    ParameterKeyMissing {
-        owner: ProblemOwner,
-        parameter: String,
-        node: Option<String>,
-    },
-    /// A reference with a key naming a parameter that gives a single value.
-    #[error(
-        "The {owner} names the key `{key}` of the {}, but it gives a single value and takes no key.", named_parameter(.parameter, .node.as_deref())
-    )]
-    ParameterKeyNotAllowed {
-        owner: ProblemOwner,
-        parameter: String,
-        node: Option<String>,
-        key: String,
-    },
-    /// A reference asking a parameter for a value it does not calculate.
-    #[error(
-        "The {owner} asks the {} for its `{return_value}` value, but it is calculated only in the `{phase}` phase.", named_parameter(.parameter, .node.as_deref())
-    )]
-    ParameterValueNotCalculated {
-        owner: ProblemOwner,
-        parameter: String,
-        node: Option<String>,
-        return_value: ParameterReturnValue,
-        phase: ParameterPhase,
+        problem: ParameterReferenceProblem,
     },
     /// A CSV table whose lookup pywr cannot load with its type of values.
     #[error("The table `{table}` cannot be loaded. {}", unsupported_lookup_message(.value_type, .lookup))]

@@ -62,20 +62,20 @@ invalid_schema_tests! {
     duplicate_parameter_name: "duplicate-parameter-name.json", DuplicateParameterName,
     // A link as a member of an aggregated storage node, which takes only storage nodes. The core
     // builder would refuse this too, but validation now refuses it first.
-    agg_storage_with_flow_node: "agg-storage-with-flow-node.json", MemberNotStorage,
+    agg_storage_with_flow_node: "agg-storage-with-flow-node.json", InvalidMember,
     // An index metric naming a constant, which gives a float. The core builder would refuse this
     // too, as a parameter it cannot find, but validation now refuses it first.
-    index_metric_names_float_parameter: "index-metric-names-float-parameter.json", ParameterNotAnIndex,
+    index_metric_names_float_parameter: "index-metric-names-float-parameter.json", InvalidParameterReference,
     // A node asking a constant for its after value, which it does not calculate. The core builder
     // would refuse this too, as a parameter not registered in that phase, but validation now
     // refuses it first.
-    node_asks_constant_for_after_value: "node-asks-constant-for-after-value.json", ParameterValueNotCalculated,
+    node_asks_constant_for_after_value: "node-asks-constant-for-after-value.json", InvalidParameterReference,
     // A monthly profile reading its values from a table of scalars. The core builder would refuse
     // this too, when it asks the table for an array, but validation now refuses it first.
     profile_reads_scalar_table: "profile-reads-scalar-table.json", InvalidTableReference,
     // An index metric naming a node, which gives only floats. The core builder would panic on
     // this, but validation now refuses it first.
-    index_metric_names_node: "index-metric-names-node.json", NodeNotAnIndex,
+    index_metric_names_node: "index-metric-names-node.json", InvalidNodeReference,
 }
 
 /// A group of no scenarios, which `pywr-core` would build into a model that simulates nothing.
