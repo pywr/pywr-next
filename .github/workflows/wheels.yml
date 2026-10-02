@@ -207,12 +207,113 @@ jobs:
           name: wheels-sdist
           path: dist
 
+  wheel-tests:
+    name: Wheel tests / ${{ matrix.platform.runner }} / Python ${{ matrix.python }}
+    needs: [ linux, windows, macos ]
+    runs-on: ${{ matrix.platform.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # Test the minimum and latest stable regular CPython, not free-threaded Python.
+        python: [ '3.10', '3.x' ]
+        platform:
+          - runner: ubuntu-24.04
+            architecture: x64
+            artifact: wheels-linux-x86_64
+          - runner: windows-latest
+            architecture: x64
+            artifact: wheels-windows-x64
+          - runner: macos-15-intel
+            architecture: x64
+            artifact: wheels-macos-x86_64
+          - runner: macos-15
+            architecture: arm64
+            artifact: wheels-macos-aarch64
+    env:
+      PYTEST_DISABLE_PLUGIN_AUTOLOAD: '1'
+      PYTEST_ADDOPTS: ''
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python }}
+          architecture: ${{ matrix.platform.architecture }}
+          allow-prereleases: false
+          check-latest: true
+      - uses: actions/download-artifact@v8
+        with:
+          name: ${{ matrix.platform.artifact }}
+          path: ${{ runner.temp }}/downloaded-wheel
+      - name: Install and test the built wheel outside the checkout
+        shell: python
+        run: |
+          import os
+          import shutil
+          import subprocess
+          import sys
+          import tempfile
+          import textwrap
+          from pathlib import Path
+
+          repo = Path(os.environ["GITHUB_WORKSPACE"])
+          temp = Path(os.environ["RUNNER_TEMP"])
+          work = Path(tempfile.mkdtemp(prefix="wheel-test-", dir=temp))
+          wheels = list((temp / "downloaded-wheel").rglob("*.whl"))
+          assert len(wheels) == 1, f"Expected one platform wheel, found: {wheels}"
+          wheel = wheels[0]
+          assert wheel.name.startswith("pywr-") and "-cp310-abi3-" in wheel.name, wheel
+
+          def run(*args):
+              subprocess.run([str(arg) for arg in args], cwd=work, check=True)
+
+          venv = work / "venv"
+          run(sys.executable, "-I", "-m", "venv", venv)
+          python = venv / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+          run(python, "-I", "-m", "pip", "install", "--upgrade", "pip")
+          # Install the exact artifact, never an editable/source install or PyPI's pywr.
+          # Resolve binary dependencies as a fresh user installation would.
+          run(python, "-I", "-m", "pip", "install", "--only-binary=:all:", wheel)
+          run(python, "-I", "-c", textwrap.dedent("""
+              import sys
+              import sysconfig
+              from importlib.metadata import version
+              from pathlib import Path
+              import pywr
+              import pywr._pywr as native
+
+              assert not sysconfig.get_config_var("Py_GIL_DISABLED")
+              for module in (pywr, native):
+                  origin = Path(module.__file__).resolve()
+                  assert origin.is_relative_to(Path(sys.prefix).resolve()), origin
+                  print(origin)
+              assert version("pywr") == sys.argv[1], version("pywr")
+              print("Testing pywr", version("pywr"), "on", sys.version)
+          """), wheel.name.split("-")[1])
+          run(python, "-I", "-m", "pywr", "--help")
+
+          run(python, "-I", "-m", "pip", "install", "--only-binary=:all:",
+              f"{wheel}[pandas,polars,excel,hdf]", "pytest", "numpy")
+          run(python, "-I", "-m", "pip", "check")
+          tests = work / "tests"
+          shutil.copytree(repo / "pywr-python/tests", tests,
+                          ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+          run(python, "-I", "-m", "pytest", "--import-mode=importlib", "-ra", tests)
+
+          data = tests / "models/simple-time-series"
+          output = work / "cli-output"
+          output.mkdir()
+          run(python, "-I", "-m", "pywr", "run", data / "model.json",
+              "--solver", "clp", "--data-path", data, "--output-path", output)
+          assert (output / "outputs.h5").is_file(), "CLI did not produce its output"
+
   release:
     name: Release
     environment: pypi
     runs-on: ubuntu-latest
     if: ${{ github.event_name == 'push' && github.ref_type == 'tag' && !github.event.deleted }}
-    needs: [ validate-release, rust-linux, rust-windows, python-tests, linux, windows, macos, sdist ]
+    needs: [ validate-release, rust-linux, rust-windows, python-tests, linux, windows, macos, sdist, wheel-tests ]
     permissions:
       # Used for trusted publishing and artifact attestation
       id-token: write
