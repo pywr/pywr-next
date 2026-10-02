@@ -2,6 +2,7 @@ use crate::aggregated_node::{AggregatedNode, AggregatedNodeBuilder, AggregatedNo
 use crate::aggregated_storage_node::{
     AggregatedStorageNode, AggregatedStorageNodeBuilder, AggregatedStorageNodeBuilderError,
 };
+use crate::clock::Instant;
 use crate::edge::Edge;
 use crate::metric::CalculationPhase;
 use crate::models::{ModelDomain, MultiNetworkTransferIndex};
@@ -38,7 +39,6 @@ use std::ops::Deref;
 use std::slice::{Iter, IterMut};
 use std::sync::Arc;
 use std::time::Duration;
-use std::time::Instant;
 use thiserror::Error;
 
 #[derive(Copy, Clone)]

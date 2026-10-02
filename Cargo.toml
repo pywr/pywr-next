@@ -90,6 +90,7 @@ syn = "3.0"
 tempfile = "3.27"
 thiserror = "2.0"
 uuid = { version = "1", features = ["v4"] }
+web-time = "1.1"
 wide = "1.4.0"
 
 [workspace.metadata.docs.rs]

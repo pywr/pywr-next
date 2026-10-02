@@ -476,7 +476,7 @@ impl MultiNetworkModel {
         let scenario_indices = self.domain.scenario.indices();
 
         for (idx, entry) in self.networks.iter().enumerate() {
-            let step_start = std::time::Instant::now();
+            let step_start = crate::clock::Instant::now();
 
             let timing = timings
                 .network_timings
@@ -557,7 +557,7 @@ impl MultiNetworkModel {
         let scenario_indices = self.domain.scenario.indices();
 
         for (idx, entry) in self.networks.iter().enumerate() {
-            let step_start = std::time::Instant::now();
+            let step_start = crate::clock::Instant::now();
 
             let timing = timings
                 .network_timings

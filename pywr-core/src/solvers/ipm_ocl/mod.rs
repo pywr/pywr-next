@@ -1,5 +1,6 @@
 mod settings;
 
+use crate::clock::Instant;
 use crate::network::{EdgeIndex, Network};
 use crate::node::{Node, NodeBounds, NodeType};
 use crate::solvers::col_edge_map::{ColumnEdgeMap, ColumnEdgeMapBuilder};
@@ -19,7 +20,6 @@ pub use settings::{
 use std::collections::BTreeMap;
 use std::f64;
 use std::num::NonZeroUsize;
-use std::time::Instant;
 
 const B_MAX: f64 = 999999.0;
 

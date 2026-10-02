@@ -1,5 +1,6 @@
 mod settings;
 
+use crate::clock::Instant;
 use crate::network::Network;
 use crate::solvers::builder::{BuiltSolver, ColType, SolverBuilder};
 use crate::solvers::{Solver, SolverConfig, SolverFeatures, SolverSetupError, SolverSolveError, SolverTimings};
@@ -22,7 +23,6 @@ use libc::c_void;
 pub use settings::{HighsSolverSettings, HighsSolverSettingsBuilder};
 use std::ffi::CString;
 use std::ptr::null;
-use std::time::Instant;
 use thiserror::Error;
 
 struct Highs {

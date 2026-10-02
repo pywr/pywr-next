@@ -1,5 +1,6 @@
 mod settings;
 use super::builder::{ColType, SolverBuilder};
+use crate::clock::Instant;
 use crate::network::Network;
 use crate::solvers::builder::BuiltSolver;
 use crate::solvers::{Solver, SolverConfig, SolverFeatures, SolverSetupError, SolverSolveError, SolverTimings};
@@ -7,7 +8,6 @@ use crate::state::{ConstParameterValues, State};
 use crate::timestep::Timestep;
 use microlp::{ComparisonOp, OptimizationDirection, Problem};
 pub use settings::{MicroLpSolverSettings, MicroLpSolverSettingsBuilder};
-use std::time::Instant;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
