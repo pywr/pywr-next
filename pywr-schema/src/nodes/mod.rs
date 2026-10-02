@@ -63,7 +63,7 @@ use crate::network::NetworkSchema;
 use crate::parameters::{Parameter, validate_each_parameter};
 use crate::util::duplicates;
 use crate::v1::{ConversionData, TryFromV1, TryIntoV2};
-use crate::validation::{NodeProblem, NodeReferenceProblem};
+use crate::validation::{EdgeProblem, NodeProblem, NodeReferenceProblem};
 use crate::visit::{Reference, ReferenceMut, VisitMetrics, VisitPaths, VisitReferences};
 pub use abstraction::{AbstractionNode, AbstractionNodeAttribute, AbstractionNodeComponent, AbstractionOutputNodeSlot};
 pub use attributes::NodeAttribute;
@@ -586,6 +586,52 @@ impl Node {
             Node::Reservoir(n) => n.output_slot(slot).map(|s| Some(s.into())),
             Node::Abstraction(n) => n.output_slot(slot).map(|s| Some(s.into())),
         }
+    }
+
+    /// Check that this node can be the `from_node` of an edge leaving through `slot`: that it
+    /// provides flow, then that it has the slot.
+    pub fn validate_edge_from(&self, slot: Option<&NodeSlot>) -> Result<(), EdgeProblem> {
+        if !self.provides_outflow() {
+            return Err(EdgeProblem::NoOutflow {
+                name: self.name().to_string(),
+                node_type: self.node_type(),
+            });
+        }
+
+        if let Some(slot) = slot {
+            self.validate_output_slot(Some(slot))
+                .map_err(|_| EdgeProblem::UnknownFromSlot {
+                    name: self.name().to_string(),
+                    node_type: self.node_type(),
+                    slot: slot.clone(),
+                    valid: self.iter_output_slots().map(|slots| slots.collect()),
+                })?;
+        }
+
+        Ok(())
+    }
+
+    /// Check that this node can be the `to_node` of an edge arriving through `slot`: that it
+    /// receives flow, then that it has the slot.
+    pub fn validate_edge_to(&self, slot: Option<&NodeSlot>) -> Result<(), EdgeProblem> {
+        if !self.accepts_inflow() {
+            return Err(EdgeProblem::NoInflow {
+                name: self.name().to_string(),
+                node_type: self.node_type(),
+            });
+        }
+
+        if let Some(slot) = slot {
+            self.validate_input_slot(Some(slot))
+                .map_err(|_| EdgeProblem::UnknownToSlot {
+                    name: self.name().to_string(),
+                    node_type: self.node_type(),
+                    slot: slot.clone(),
+                    valid: self.iter_input_slots().map(|slots| slots.collect()),
+                })?;
+        }
+
+        Ok(())
     }
 
     pub fn default_attribute(&self) -> NodeAttribute {
@@ -1446,6 +1492,82 @@ mod tests {
                 expected,
                 "{} reading {attribute:?} as {metric:?}",
                 node.node_type()
+            );
+        }
+    }
+
+    /// [`Node::validate_edge_from`] and [`Node::validate_edge_to`] should refuse a node that
+    /// cannot pass flow that way before checking its slot, and pass a slot the node has.
+    #[test]
+    fn test_validate_edge_ends_check_flow_then_slot() {
+        use crate::nodes::NodeSlot::{Spill, Storage};
+        use crate::validation::EdgeProblem::*;
+
+        let node = |node_type: NodeType| {
+            let mut node = Node::from(node_type);
+            node.meta_mut().name = node_type.to_string();
+            node
+        };
+
+        let from_cases = [
+            (NodeType::Link, None, Ok(())),
+            (NodeType::Reservoir, Some(Storage), Ok(())),
+            (
+                NodeType::Output,
+                Some(Spill),
+                Err(NoOutflow {
+                    name: "Output".to_string(),
+                    node_type: NodeType::Output,
+                }),
+            ),
+            (
+                NodeType::Link,
+                Some(Spill),
+                Err(UnknownFromSlot {
+                    name: "Link".to_string(),
+                    node_type: NodeType::Link,
+                    slot: Spill,
+                    valid: None,
+                }),
+            ),
+        ];
+
+        for (node_type, slot, expected) in from_cases {
+            assert_eq!(
+                node(node_type).validate_edge_from(slot.as_ref()),
+                expected,
+                "from {node_type} through {slot:?}"
+            );
+        }
+
+        let to_cases = [
+            (NodeType::Link, None, Ok(())),
+            (NodeType::Placeholder, Some(Storage), Ok(())),
+            (
+                NodeType::Input,
+                Some(Storage),
+                Err(NoInflow {
+                    name: "Input".to_string(),
+                    node_type: NodeType::Input,
+                }),
+            ),
+            (
+                NodeType::Output,
+                Some(Storage),
+                Err(UnknownToSlot {
+                    name: "Output".to_string(),
+                    node_type: NodeType::Output,
+                    slot: Storage,
+                    valid: None,
+                }),
+            ),
+        ];
+
+        for (node_type, slot, expected) in to_cases {
+            assert_eq!(
+                node(node_type).validate_edge_to(slot.as_ref()),
+                expected,
+                "to {node_type} through {slot:?}"
             );
         }
     }
