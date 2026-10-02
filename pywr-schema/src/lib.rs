@@ -38,8 +38,8 @@ pub use network::{NetworkMergeError, NetworkMergeOptions, NetworkSchema, Network
 pub use py_utils::{PythonSource, PythonSourceType, PythonSourceTypeIter};
 pub use v1::{ConversionData, TryFromV1, TryIntoV2};
 pub use validation::{
-    DuplicateNodeName, EdgeProblem, EdgeValidationError, InitialVolumeProblem, MemberProblem, ModelProblem,
-    NetworkProblem, NetworkValidationError, NodeProblem, NodeReferenceProblem, ParameterProblem,
+    DuplicateNodeName, EdgeProblem, EdgeValidationError, InitialVolumeProblem, MemberProblem, MetricSetProblem,
+    ModelProblem, NetworkProblem, NetworkValidationError, NodeProblem, NodeReferenceProblem, ParameterProblem,
     ParameterReferenceProblem, PointsProblem, ProblemOwner, ScenarioProblem, ScenarioValidationError,
     TableReferenceProblem, ValidationError, VirtualNodeProblem,
 };

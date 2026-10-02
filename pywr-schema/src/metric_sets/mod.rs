@@ -9,6 +9,7 @@ use crate::metric::{EdgeReference, ParameterReferenceBuilder, ParameterReturnVal
 use crate::network::LoadArgs;
 #[cfg(feature = "core")]
 use crate::parameters::{Parameter, PythonReturnType};
+use crate::validation::MetricSetProblem;
 use pywr_schema_macros::{PywrVisitPaths, PywrVisitReferences, skip_serializing_none};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -188,6 +189,21 @@ impl MetricSet {
         &mut self.meta
     }
 
+    /// Check the set's own fields and return every problem found. Whether it would be empty is
+    /// not checked, since that depends on the network its filters read.
+    pub fn validate(&self) -> Result<(), Vec<MetricSetProblem>> {
+        let problems: Vec<MetricSetProblem> = self
+            .metrics
+            .iter()
+            .flatten()
+            .enumerate()
+            .filter(|(_, metric)| matches!(metric, Metric::Literal { .. }))
+            .map(|(index, _)| MetricSetProblem::Literal { index })
+            .collect();
+
+        if problems.is_empty() { Ok(()) } else { Err(problems) }
+    }
+
     #[cfg(feature = "core")]
     pub fn add_to_network(
         &self,
@@ -236,5 +252,28 @@ impl MetricSet {
         network.metric_set(metric_set);
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::MetricSet;
+    use crate::validation::MetricSetProblem::Literal;
+    use serde_json::json;
+
+    /// [`MetricSet::validate`] should refuse each literal in `metrics`, by its index.
+    #[test]
+    fn test_validate_refuses_each_literal() {
+        let metric_set = |metrics: serde_json::Value| -> MetricSet {
+            serde_json::from_value(json!({ "meta": { "name": "outputs" }, "metrics": metrics })).unwrap()
+        };
+        let literal = json!({ "type": "Literal", "value": 1.0 });
+        let node = json!({ "type": "Node", "name": "supply" });
+
+        assert_eq!(
+            metric_set(json!([node, literal, node, literal])).validate(),
+            Err(vec![Literal { index: 1 }, Literal { index: 3 }])
+        );
+        assert_eq!(metric_set(json!([node])).validate(), Ok(()));
     }
 }

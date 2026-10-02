@@ -435,6 +435,16 @@ pub enum VirtualNodeProblem {
     },
 }
 
+/// A problem with a metric set's own fields, found by
+/// [`MetricSet::validate`](crate::metric_sets::MetricSet::validate).
+#[derive(Error, Debug, Clone, PartialEq, Eq)]
+pub enum MetricSetProblem {
+    #[error(
+        "The metric at index {index} of `metrics` is a literal, which has no name to be recorded under. Use a `Constant` parameter instead."
+    )]
+    Literal { index: usize },
+}
+
 /// A problem with a model that is not about any one of its networks, found by
 /// [`crate::model::TimeDomain::validate`].
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
@@ -763,6 +773,13 @@ pub enum NetworkProblem {
         /// The node or virtual node holding it, for a local parameter.
         node: Option<String>,
         problem: ParameterProblem,
+    },
+    /// A metric set whose own fields are invalid, found by
+    /// [`MetricSet::validate`](crate::metric_sets::MetricSet::validate).
+    #[error("The metric set `{metric_set}` is invalid. {problem}")]
+    InvalidMetricSet {
+        metric_set: String,
+        problem: MetricSetProblem,
     },
 }
 
