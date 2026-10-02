@@ -122,6 +122,8 @@ impl ExtensionType for MetricColumnExtension {
 /// A notification sent after a complete record batch has been written and flushed.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ArrowStreamCommit {
+    /// The name of the recorder that wrote the batch.
+    pub name: String,
     /// Zero-based record batch sequence number.
     pub batch_index: u64,
     /// Number of timestep rows in this record batch.
@@ -322,6 +324,7 @@ fn worker(
     file: File,
     schema: Arc<Schema>,
     scenario_count: usize,
+    name: String,
     commits: Option<Sender<ArrowStreamCommit>>,
 ) -> Result<(), ArrowStreamError> {
     let mut writer = StreamWriter::try_new_buffered(CountingWriter::new(file), &schema)?;
@@ -335,6 +338,7 @@ fn worker(
                 writer.write(&batch)?;
                 writer.flush()?;
                 let commit = ArrowStreamCommit {
+                    name: name.clone(),
                     batch_index,
                     row_count,
                     byte_offset: writer.get_ref().get_ref().position,
@@ -509,10 +513,19 @@ impl Recorder for ArrowStreamOutput {
             })?;
         let (sender, receiver) = mpsc::channel();
         let (status_sender, status_receiver) = mpsc::channel();
+        let name = self.meta.name.clone();
         let commits = self.commits.clone();
         let scenario_count = domain.scenarios().len();
         let worker = thread::spawn(move || {
-            let result = worker(receiver, status_sender.clone(), file, schema, scenario_count, commits);
+            let result = worker(
+                receiver,
+                status_sender.clone(),
+                file,
+                schema,
+                scenario_count,
+                name,
+                commits,
+            );
             if let Err(error) = &result {
                 let _ = status_sender.send(WorkerStatus::Failed(error.to_string()));
             }
@@ -687,8 +700,17 @@ mod tests {
         let (commit_sender, commit_receiver) = mpsc::channel();
         let file = File::create(&path).unwrap();
         let worker_schema = Arc::clone(&schema);
-        let handle =
-            thread::spawn(move || worker(receiver, status_sender, file, worker_schema, 2, Some(commit_sender)));
+        let handle = thread::spawn(move || {
+            worker(
+                receiver,
+                status_sender,
+                file,
+                worker_schema,
+                2,
+                "results".to_string(),
+                Some(commit_sender),
+            )
+        });
         sender
             .send(WorkerMessage::Batch(PendingBatch {
                 timestep_count: 2,
@@ -710,6 +732,7 @@ mod tests {
         sender.send(WorkerMessage::Flush(flush_sender)).unwrap();
         flush_receiver.recv().unwrap();
         let commit = commit_receiver.recv().unwrap();
+        assert_eq!(commit.name, "results");
         assert_eq!(commit.batch_index, 0);
         assert_eq!(commit.row_count, 2);
         assert!(commit.byte_offset > 0);

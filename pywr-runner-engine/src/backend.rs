@@ -14,6 +14,7 @@ use pywr_core::solvers::MicroLpSolverSettings;
 use pywr_core::solvers::{BuiltInSolver, BuiltInSolverConfig};
 use pywr_schema::{FileProvider, FileSystem, NetworkSchema};
 use std::any::Any;
+use std::collections::HashSet;
 use std::sync::mpsc::{self, Receiver};
 use thiserror::Error;
 
@@ -33,6 +34,8 @@ pub enum BackendError {
     ModelStateNotInitialised,
     #[error("Requested solver is not enabled in this runner: {0:?}")]
     SolverUnavailable(Solver),
+    #[error("More than one Arrow stream is named `{name}`.")]
+    DuplicateArrowStreamName { name: String },
     #[error("Model step error.")]
     ModelStepError(#[from] ModelStepError),
     #[error("Model finalisation error.")]
@@ -131,7 +134,7 @@ pub trait RunnerBackend {
 pub struct Initialised<R> {
     pub runtime: R,
     pub progress: RunProgress,
-    pub arrow_stream: Option<ArrowStreamDescriptor>,
+    pub arrow_streams: Vec<ArrowStreamDescriptor>,
     pub arrow_stream_commits: Option<Receiver<ArrowStreamCommit>>,
 }
 
@@ -212,33 +215,50 @@ fn apply_result_options_to_schema(
     Ok(())
 }
 
-fn apply_arrow_stream_recorder_to_model_builder(
+/// Commits are routed by stream name, so each stream must have its own.
+fn check_arrow_stream_names(result_options: &ResultOptions) -> Result<(), BackendError> {
+    let mut names = HashSet::new();
+    for options in &result_options.arrow_streams {
+        if !names.insert(options.name.as_str()) {
+            return Err(BackendError::DuplicateArrowStreamName {
+                name: options.name.clone(),
+            });
+        }
+    }
+    Ok(())
+}
+
+/// Adds a recorder for each requested Arrow stream. Their commits share one channel, each
+/// naming its stream.
+fn apply_arrow_stream_recorders_to_model_builder(
     network_builder: &mut pywr_core::network::NetworkBuilder,
     output_path: Option<&std::path::Path>,
     result_options: &ResultOptions,
-) -> (Option<ArrowStreamDescriptor>, Option<Receiver<ArrowStreamCommit>>) {
-    if let Some(options) = &result_options.arrow_stream {
+) -> (Vec<ArrowStreamDescriptor>, Option<Receiver<ArrowStreamCommit>>) {
+    if result_options.arrow_streams.is_empty() {
+        return (Vec::new(), None);
+    }
+
+    let (commit_sender, commit_receiver) = mpsc::channel();
+    let mut descriptors = Vec::new();
+    for options in &result_options.arrow_streams {
         let filename = match (output_path, options.filename.is_relative()) {
             (Some(output_directory), true) => output_directory.join(&options.filename),
             _ => options.filename.clone(),
         };
-        let (commit_sender, commit_receiver) = mpsc::channel();
         let mut recorder_builder =
             ArrowStreamOutputBuilder::new(&options.name, &filename, &options.metric_set, options.batch_size);
-        recorder_builder.commit_sender(commit_sender);
+        recorder_builder.commit_sender(commit_sender.clone());
         network_builder.recorder(Box::new(recorder_builder));
 
-        (
-            Some(ArrowStreamDescriptor {
-                name: options.name.clone(),
-                filename,
-                metric_set: options.metric_set.clone(),
-            }),
-            Some(commit_receiver),
-        )
-    } else {
-        (None, None)
+        descriptors.push(ArrowStreamDescriptor {
+            name: options.name.clone(),
+            filename,
+            metric_set: options.metric_set.clone(),
+        });
     }
+
+    (descriptors, Some(commit_receiver))
 }
 
 struct PywrState {
@@ -317,6 +337,8 @@ impl RunnerBackend for PywrBackend {
     type Runtime = PywrRuntime;
 
     fn initialise(&mut self, request: InitialiseRequest) -> Result<Initialised<Self::Runtime>, BackendError> {
+        check_arrow_stream_names(&request.result_options)?;
+
         // Try to make the schema from the model document. If it fails, return an error.
         let mut schema: pywr_schema::ModelSchema = match request.model {
             ModelDocument::Json(value) => {
@@ -334,7 +356,7 @@ impl RunnerBackend for PywrBackend {
             request.output_path.as_deref(),
         )?;
 
-        let (arrow_stream, arrow_stream_commits) = apply_arrow_stream_recorder_to_model_builder(
+        let (arrow_streams, arrow_stream_commits) = apply_arrow_stream_recorders_to_model_builder(
             model_builder.network_builder(),
             request.output_path.as_deref(),
             &request.result_options,
@@ -401,7 +423,7 @@ impl RunnerBackend for PywrBackend {
         Ok(Initialised {
             runtime,
             progress,
-            arrow_stream,
+            arrow_streams,
             arrow_stream_commits,
         })
     }
@@ -519,9 +541,10 @@ fn target_reached(progress: &RunProgress, target: &RunTarget) -> bool {
 #[cfg(all(test, feature = "clp"))]
 mod tests {
     use super::*;
-    use crate::command::SolverConfiguration;
+    use crate::command::{AddEdgesMetricSet, AddNodesMetricSet, ArrowStreamOptions, SolverConfiguration};
     use pywr_schema::MemoryFiles;
-    use std::path::PathBuf;
+    use std::num::NonZeroUsize;
+    use std::path::{Path, PathBuf};
 
     /// Initialise a model whose time series is at `../data/inflow.csv` from the data path
     /// `site/models`, so it is read from `site/data/inflow.csv`.
@@ -556,7 +579,7 @@ mod tests {
                 all_nodes_metric_set: None,
                 all_edges_metric_set: None,
                 clear_existing_outputs: false,
-                arrow_stream: None,
+                arrow_streams: Vec::new(),
             },
         })
     }
@@ -583,5 +606,87 @@ mod tests {
             "{:?}",
             failure.causes
         );
+    }
+
+    fn stream(name: &str, metric_set: &str) -> ArrowStreamOptions {
+        ArrowStreamOptions {
+            name: name.into(),
+            filename: format!("{name}.arrow").into(),
+            metric_set: metric_set.into(),
+            batch_size: NonZeroUsize::new(10).unwrap(),
+        }
+    }
+
+    /// A two-day model with all-nodes and all-edges metric sets, writing its streams under
+    /// `output_path`.
+    fn request(output_path: &Path, arrow_streams: Vec<ArrowStreamOptions>) -> InitialiseRequest {
+        let model = serde_json::json!({
+            "metadata": { "title": "Arrow streams" },
+            "time": { "start": "2021-01-01", "end": "2021-01-02", "timestep": { "type": "Days", "days": 1 } },
+            "network": {
+                "nodes": [
+                    { "meta": { "name": "input" }, "type": "Input", "max_flow": { "type": "Literal", "value": 5.0 } },
+                    { "meta": { "name": "output" }, "type": "Output", "cost": { "type": "Literal", "value": -10.0 } }
+                ],
+                "edges": [{ "from_node": "input", "to_node": "output" }]
+            }
+        });
+
+        InitialiseRequest {
+            run_name: "test".into(),
+            model: ModelDocument::Json(model),
+            data_path: None,
+            output_path: Some(output_path.to_path_buf()),
+            log_level: None,
+            solver: SolverConfiguration { solver: Solver::Clp },
+            result_options: ResultOptions {
+                all_nodes_metric_set: Some(AddNodesMetricSet { name: "nodes".into() }),
+                all_edges_metric_set: Some(AddEdgesMetricSet { name: "edges".into() }),
+                clear_existing_outputs: false,
+                arrow_streams,
+            },
+        }
+    }
+
+    #[test]
+    fn initialise_adds_a_recorder_for_each_arrow_stream() {
+        let output = tempfile::tempdir().unwrap();
+        let streams = vec![stream("node-values", "nodes"), stream("edge-values", "edges")];
+        let mut backend = PywrBackend::default();
+        let mut initialised = backend.initialise(request(output.path(), streams)).unwrap();
+
+        let descriptors: Vec<_> = initialised
+            .arrow_streams
+            .iter()
+            .map(|descriptor| (descriptor.name.as_str(), descriptor.metric_set.as_str()))
+            .collect();
+        assert_eq!(descriptors, [("node-values", "nodes"), ("edge-values", "edges")]);
+
+        let commits = initialised.arrow_stream_commits;
+        let step = backend
+            .step(&mut initialised.runtime, commits, &RunTarget::Step)
+            .unwrap();
+        let receiver = step.arrow_stream_commits.unwrap();
+        let mut committed: Vec<_> = receiver.try_iter().map(|commit| commit.name).collect();
+        committed.sort();
+        assert_eq!(committed, ["edge-values", "node-values"]);
+
+        backend.finalise(&mut initialised.runtime).unwrap();
+        for descriptor in &initialised.arrow_streams {
+            let filename = output.path().join(format!("{}.arrow", descriptor.name));
+            assert_eq!(descriptor.filename, filename);
+            assert!(filename.is_file());
+        }
+    }
+
+    #[test]
+    fn a_repeated_arrow_stream_name_is_refused_before_the_model_is_read() {
+        let streams = vec![stream("values", "nodes"), stream("values", "edges")];
+        let mut request = request(Path::new("outputs"), streams);
+        request.model = ModelDocument::Json(serde_json::Value::Null);
+        let Err(error) = PywrBackend::default().initialise(request) else {
+            panic!("two Arrow streams shared a name");
+        };
+        assert!(matches!(error, BackendError::DuplicateArrowStreamName { name } if name == "values"));
     }
 }

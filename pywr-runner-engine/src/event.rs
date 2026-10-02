@@ -12,7 +12,7 @@ pub enum EngineEvent {
     },
     Initialised {
         progress: RunProgress,
-        arrow_stream: Option<ArrowStreamDescriptor>,
+        arrow_streams: Vec<ArrowStreamDescriptor>,
     },
     Progress {
         progress: RunProgress,
@@ -52,9 +52,12 @@ impl TryFrom<EngineEvent> for v1::ServerMessage {
         let message = match value {
             EngineEvent::StateChanged { status } => v1::ServerMessage::StateChanged(status.try_into()?),
 
-            EngineEvent::Initialised { progress, arrow_stream } => v1::ServerMessage::Initialised {
+            EngineEvent::Initialised {
+                progress,
+                arrow_streams,
+            } => v1::ServerMessage::Initialised {
                 progress: progress.try_into()?,
-                arrow_stream: arrow_stream.map(Into::into),
+                arrow_streams: arrow_streams.into_iter().map(Into::into).collect(),
             },
 
             EngineEvent::Progress { progress } => v1::ServerMessage::Update {
@@ -212,6 +215,7 @@ impl From<ArrowStreamDescriptor> for v1::ArrowStreamDescriptor {
 
 #[derive(Debug, Clone)]
 pub struct ArrowStreamCommit {
+    pub name: String,
     pub batch_index: u64,
     pub row_count: u64,
     pub byte_offset: u64,
@@ -220,6 +224,7 @@ pub struct ArrowStreamCommit {
 impl From<CoreArrowStreamCommit> for ArrowStreamCommit {
     fn from(value: CoreArrowStreamCommit) -> Self {
         Self {
+            name: value.name,
             batch_index: value.batch_index,
             row_count: value.row_count as u64,
             byte_offset: value.byte_offset,
@@ -230,6 +235,7 @@ impl From<CoreArrowStreamCommit> for ArrowStreamCommit {
 impl From<ArrowStreamCommit> for v1::ArrowStreamCommit {
     fn from(value: ArrowStreamCommit) -> Self {
         Self {
+            name: value.name,
             batch_index: value.batch_index,
             row_count: value.row_count,
             byte_offset: value.byte_offset,

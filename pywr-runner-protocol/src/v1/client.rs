@@ -72,7 +72,8 @@ pub struct ResultOptions {
     pub all_nodes_metric_set: Option<AddNodesMetricSet>,
     pub all_edges_metric_set: Option<AddEdgesMetricSet>,
     pub clear_existing_outputs: bool,
-    pub arrow_stream: Option<ArrowStreamOptions>,
+    /// The Arrow streams to write. Their names must be unique.
+    pub arrow_streams: Vec<ArrowStreamOptions>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

@@ -130,7 +130,7 @@ pub struct ResultOptions {
     pub all_nodes_metric_set: Option<AddNodesMetricSet>,
     pub all_edges_metric_set: Option<AddEdgesMetricSet>,
     pub clear_existing_outputs: bool,
-    pub arrow_stream: Option<ArrowStreamOptions>,
+    pub arrow_streams: Vec<ArrowStreamOptions>,
 }
 
 #[allow(clippy::infallible_try_from)]
@@ -142,7 +142,11 @@ impl TryFrom<v1::ResultOptions> for ResultOptions {
             all_nodes_metric_set: options.all_nodes_metric_set.map(|set| set.try_into()).transpose()?,
             all_edges_metric_set: options.all_edges_metric_set.map(|set| set.try_into()).transpose()?,
             clear_existing_outputs: options.clear_existing_outputs,
-            arrow_stream: options.arrow_stream.map(TryInto::try_into).transpose()?,
+            arrow_streams: options
+                .arrow_streams
+                .into_iter()
+                .map(TryInto::try_into)
+                .collect::<Result<_, _>>()?,
         })
     }
 }
