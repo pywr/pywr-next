@@ -288,7 +288,7 @@ impl Model {
     where
         S: Solver,
     {
-        let step_start = std::time::Instant::now();
+        let step_start = crate::clock::Instant::now();
 
         let timestep = self
             .domain
@@ -354,7 +354,7 @@ impl Model {
     where
         S: MultiStateSolver,
     {
-        let step_start = std::time::Instant::now();
+        let step_start = crate::clock::Instant::now();
 
         let timestep = self
             .domain

@@ -1,3 +1,4 @@
+use crate::clock::Instant;
 use crate::network::{AggregatedNodeIndex, EdgeIndex, Network, NodeIndex};
 use crate::node::{Node, NodeBounds, NodeType};
 use crate::solvers::col_edge_map::{ColumnEdgeMap, ColumnEdgeMapBuilder};
@@ -6,7 +7,6 @@ use crate::state::{ConstParameterValues, State};
 use crate::timestep::Timestep;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::Debug;
-use std::time::Instant;
 
 enum Bounds {
     // Free,

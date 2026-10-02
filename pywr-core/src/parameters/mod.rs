@@ -37,6 +37,7 @@ mod vector;
 use std::any::Any;
 use std::collections::HashSet;
 // Re-imports
+use crate::clock::Instant;
 use crate::metric::{MetricF64Error, MetricF64ResolutionError, MetricU64ResolutionError};
 use crate::network::{Network, ResolutionMaps};
 use crate::scenario::{ScenarioGroupNotFound, ScenarioIndex};
@@ -97,7 +98,7 @@ use std::marker::PhantomData;
 use std::ops::Deref;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use thiserror::Error;
 pub use threshold::{Predicate, ThresholdParameter, ThresholdParameterBuilder};
 pub use vector::{VectorParameter, VectorParameterBuilder};

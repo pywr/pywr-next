@@ -2,6 +2,7 @@ pub use network::{NetworkError, NodeIndex};
 pub mod agg_funcs;
 pub mod aggregated_node;
 mod aggregated_storage_node;
+pub mod clock;
 pub mod edge;
 pub mod metric;
 pub mod models;
