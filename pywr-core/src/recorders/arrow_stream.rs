@@ -173,6 +173,8 @@ pub enum ArrowStreamError {
     WorkerPanicked,
     #[error("An in-memory Arrow stream needs a commit sender to hand its bytes to")]
     MemorySinkWithoutCommitSender,
+    #[error("An in-memory Arrow stream's commit receiver was dropped, losing its bytes")]
+    MemorySinkDisconnected,
 }
 
 #[derive(Clone, Debug)]
@@ -425,18 +427,18 @@ impl MemoryWriter {
         let row_count = pending.rows.len();
         let batch = record_batch(Arc::clone(&self.schema), self.scenario_count, pending)?;
         self.writer.write(&batch)?;
-        self.commit(row_count);
-        Ok(())
+        self.commit(row_count)
     }
 
     /// Ends the stream, committing its end-of-stream marker as a batch of no rows.
     fn finish(mut self) -> Result<(), ArrowStreamError> {
         self.writer.finish()?;
-        self.commit(0);
-        Ok(())
+        self.commit(0)
     }
 
-    fn commit(&mut self, row_count: usize) {
+    /// Sends the bytes written since the previous commit, which exist nowhere else, so a
+    /// missing receiver is an error.
+    fn commit(&mut self, row_count: usize) -> Result<(), ArrowStreamError> {
         let buffer = self.writer.get_mut();
         let commit = ArrowStreamCommit {
             name: self.name.clone(),
@@ -446,7 +448,9 @@ impl MemoryWriter {
             bytes: Some(std::mem::take(&mut buffer.inner)),
         };
         self.batch_index += 1;
-        let _ = self.commits.send(commit);
+        self.commits
+            .send(commit)
+            .map_err(|_| ArrowStreamError::MemorySinkDisconnected)
     }
 }
 
@@ -739,9 +743,11 @@ impl ArrowStreamOutputBuilder {
         }
     }
 
-    /// Send a best-effort commit notification after every flushed record batch.
+    /// Send a commit after every flushed record batch.
     ///
-    /// Dropping the receiver never stops model execution or Arrow output.
+    /// A file's commits are best-effort notifications: dropping the receiver never stops the
+    /// run or the file's output. A memory sink's commits carry its output, so dropping the
+    /// receiver fails the recorder.
     pub fn commit_sender(&mut self, sender: Sender<ArrowStreamCommit>) -> &mut Self {
         self.commits = Some(sender);
         self
@@ -867,6 +873,9 @@ mod tests {
         assert!(commit.byte_offset > 0);
         assert!(commit.bytes.is_none());
         assert_eq!(fs::metadata(&path).unwrap().len(), commit.byte_offset);
+        // With no commit receiver, the file worker writes on.
+        drop(commit_receiver);
+        sender.send(WorkerMessage::Batch(two_row_batch())).unwrap();
         sender.send(WorkerMessage::Finish).unwrap();
         handle.join().unwrap().unwrap();
 
@@ -884,21 +893,31 @@ mod tests {
             volumes.values().as_any().downcast_ref::<Float64Array>().unwrap(),
             &Float64Array::from(vec![Some(10.0), None, Some(20.0), Some(30.0)])
         );
+        assert_eq!(reader.next().unwrap().unwrap().num_rows(), 2);
         assert!(reader.next().is_none());
         fs::remove_file(path).unwrap();
     }
 
+    /// A memory writer over [`two_metric_schema`], and the receiver of its commits.
+    fn memory_writer() -> (MemoryWriter, Receiver<ArrowStreamCommit>) {
+        let (commit_sender, commit_receiver) = mpsc::channel();
+        let writer = MemoryWriter::new(two_metric_schema(), 2, "results".to_string(), commit_sender).unwrap();
+        (writer, commit_receiver)
+    }
+
     #[test]
     fn memory_writer_drains_each_batch_and_the_stream_end_into_commits() {
-        let (commit_sender, commit_receiver) = mpsc::channel();
-        let mut writer = MemoryWriter::new(two_metric_schema(), 2, "results".to_string(), commit_sender).unwrap();
+        let (mut writer, commit_receiver) = memory_writer();
         writer.write(two_row_batch()).unwrap();
         writer.write(two_row_batch()).unwrap();
         writer.finish().unwrap();
 
         let commits: Vec<_> = commit_receiver.try_iter().collect();
-        let row_counts: Vec<_> = commits.iter().map(|commit| commit.row_count).collect();
-        assert_eq!(row_counts, [2, 2, 0]);
+        let batch_rows: Vec<_> = commits
+            .iter()
+            .map(|commit| (commit.batch_index, commit.row_count))
+            .collect();
+        assert_eq!(batch_rows, [(0, 2), (1, 2), (2, 0)]);
         let mut stream = Vec::new();
         for commit in &commits {
             stream.extend_from_slice(commit.bytes.as_deref().unwrap());
@@ -915,5 +934,32 @@ mod tests {
             .collect::<Result<_, _>>()
             .unwrap();
         assert_eq!(batches.len(), 2);
+    }
+
+    #[test]
+    fn memory_writer_with_no_batches_commits_a_readable_empty_stream() {
+        let (writer, commit_receiver) = memory_writer();
+        writer.finish().unwrap();
+
+        let commit = commit_receiver.try_recv().unwrap();
+        assert_eq!((commit.batch_index, commit.row_count), (0, 0));
+        let bytes = commit.bytes.unwrap();
+        let mut reader = StreamReader::try_new(bytes.as_slice(), None).unwrap();
+        assert_eq!(reader.schema(), two_metric_schema());
+        assert!(reader.next().is_none());
+    }
+
+    #[test]
+    fn memory_writer_fails_once_its_commits_have_no_receiver() {
+        let (mut writer, commit_receiver) = memory_writer();
+        drop(commit_receiver);
+        let result = writer.write(two_row_batch());
+        assert!(matches!(result, Err(ArrowStreamError::MemorySinkDisconnected)));
+
+        let (mut writer, commit_receiver) = memory_writer();
+        writer.write(two_row_batch()).unwrap();
+        drop(commit_receiver);
+        let result = writer.finish();
+        assert!(matches!(result, Err(ArrowStreamError::MemorySinkDisconnected)));
     }
 }

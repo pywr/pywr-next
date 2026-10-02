@@ -120,12 +120,7 @@ pub trait RunnerBackend {
 
     fn initialise(&mut self, request: InitialiseRequest) -> Result<Initialised<Self::Runtime>, BackendError>;
 
-    fn step(
-        &mut self,
-        runtime: &mut Self::Runtime,
-        arrow_stream_commits: Option<Receiver<ArrowStreamCommit>>,
-        target: &RunTarget,
-    ) -> Result<BackendStep, BackendError>;
+    fn step(&mut self, runtime: &mut Self::Runtime, target: &RunTarget) -> Result<BackendStep, BackendError>;
 
     /// Flush recorder output without finalising the model so execution can resume.
     fn flush_recorders(&mut self, runtime: &mut Self::Runtime) -> Result<(), BackendError>;
@@ -145,7 +140,6 @@ pub struct Initialised<R> {
 pub struct BackendStep {
     pub outcome: BackendStepOutcome,
     pub progress: RunProgress,
-    pub arrow_stream_commits: Option<Receiver<ArrowStreamCommit>>,
     pub target_reached: bool,
 }
 
@@ -475,12 +469,7 @@ impl RunnerBackend for PywrBackend {
         })
     }
 
-    fn step(
-        &mut self,
-        runtime: &mut Self::Runtime,
-        arrow_stream_commits: Option<Receiver<ArrowStreamCommit>>,
-        target: &RunTarget,
-    ) -> Result<BackendStep, BackendError> {
+    fn step(&mut self, runtime: &mut Self::Runtime, target: &RunTarget) -> Result<BackendStep, BackendError> {
         let result = if let Some(model_state) = &mut runtime.model_state {
             runtime.model.step(
                 &mut model_state.model_state,
@@ -505,7 +494,6 @@ impl RunnerBackend for PywrBackend {
                 Ok(BackendStep {
                     outcome: BackendStepOutcome::Advanced,
                     progress: current_progress,
-                    arrow_stream_commits,
                     target_reached,
                 })
             }
@@ -513,7 +501,6 @@ impl RunnerBackend for PywrBackend {
             Err(ModelStepError::EndOfTimesteps) => Ok(BackendStep {
                 outcome: BackendStepOutcome::EndOfTimesteps,
                 progress: runtime.current_progress(),
-                arrow_stream_commits,
                 target_reached: true,
             }),
 
@@ -709,11 +696,8 @@ mod tests {
             .collect();
         assert_eq!(descriptors, [("node-values", "nodes"), ("edge-values", "edges")]);
 
-        let commits = initialised.arrow_stream_commits;
-        let step = backend
-            .step(&mut initialised.runtime, commits, &RunTarget::Step)
-            .unwrap();
-        let receiver = step.arrow_stream_commits.unwrap();
+        backend.step(&mut initialised.runtime, &RunTarget::Step).unwrap();
+        let receiver = initialised.arrow_stream_commits.unwrap();
         let mut committed: Vec<_> = receiver.try_iter().map(|commit| commit.name).collect();
         committed.sort();
         assert_eq!(committed, ["edge-values", "node-values"]);
@@ -735,11 +719,8 @@ mod tests {
         let mut initialised = backend.initialise(request(output.path(), vec![options])).unwrap();
         assert!(initialised.arrow_streams[0].filename.is_none());
 
-        let commits = initialised.arrow_stream_commits;
-        let step = backend
-            .step(&mut initialised.runtime, commits, &RunTarget::Step)
-            .unwrap();
-        let receiver = step.arrow_stream_commits.unwrap();
+        backend.step(&mut initialised.runtime, &RunTarget::Step).unwrap();
+        let receiver = initialised.arrow_stream_commits.unwrap();
         let commit = receiver.try_recv().unwrap();
         assert!(commit.bytes.is_some_and(|bytes| !bytes.is_empty()));
 

@@ -232,7 +232,7 @@ where
                             reason: ReadyReason::Initialised,
                         }
                     }
-                    Err(error) => Self::failed_state(&mut self.output, error, BackendOperation::Initialise)?,
+                    Err(error) => Self::failed_state(&mut self.output, &None, error, BackendOperation::Initialise)?,
                 }
             }
             RunnerState::Ready {
@@ -254,7 +254,7 @@ where
             } => {
                 let step_result = Self::catch_backend_panic(|| {
                     capture_logs(self.log_level, self.log_sender.clone(), || {
-                        self.backend.step(&mut runtime, arrow_stream_commits, &target)
+                        self.backend.step(&mut runtime, &target)
                     })
                 });
 
@@ -269,7 +269,7 @@ where
                             })
                             .map_err(TickError::OutputSinkError)?;
 
-                        Self::emit_arrow_stream_commits(&mut self.output, &step.arrow_stream_commits)
+                        Self::emit_arrow_stream_commits(&mut self.output, &arrow_stream_commits)
                             .map_err(TickError::OutputSinkError)?;
 
                         match step.outcome {
@@ -278,14 +278,14 @@ where
                                     // Transition to ready state
                                     RunnerState::Ready {
                                         runtime,
-                                        arrow_stream_commits: step.arrow_stream_commits,
+                                        arrow_stream_commits,
                                         reason: ReadyReason::TargetReached,
                                     }
                                 } else {
                                     // Remain in running state
                                     RunnerState::Running {
                                         runtime,
-                                        arrow_stream_commits: step.arrow_stream_commits,
+                                        arrow_stream_commits,
                                         target,
                                     }
                                 }
@@ -294,12 +294,14 @@ where
                                 // Transition to finalising state
                                 RunnerState::Finalising {
                                     runtime,
-                                    arrow_stream_commits: step.arrow_stream_commits,
+                                    arrow_stream_commits,
                                 }
                             }
                         }
                     }
-                    Err(error) => Self::failed_state(&mut self.output, error, BackendOperation::Step)?,
+                    Err(error) => {
+                        Self::failed_state(&mut self.output, &arrow_stream_commits, error, BackendOperation::Step)?
+                    }
                 }
             }
             RunnerState::Finalising {
@@ -326,7 +328,12 @@ where
 
                         RunnerState::Completed(finalisation.summary)
                     }
-                    Err(error) => Self::failed_state(&mut self.output, error, BackendOperation::Finalise)?,
+                    Err(error) => Self::failed_state(
+                        &mut self.output,
+                        &arrow_stream_commits,
+                        error,
+                        BackendOperation::Finalise,
+                    )?,
                 }
             }
             RunnerState::Pausing {
@@ -353,7 +360,12 @@ where
                             reason: ReadyReason::Paused,
                         }
                     }
-                    Err(error) => Self::failed_state(&mut self.output, error, BackendOperation::FlushRecorders)?,
+                    Err(error) => Self::failed_state(
+                        &mut self.output,
+                        &arrow_stream_commits,
+                        error,
+                        BackendOperation::FlushRecorders,
+                    )?,
                 }
             }
             RunnerState::Cancelling {
@@ -381,7 +393,9 @@ where
 
                         RunnerState::Cancelled(finalisation.summary)
                     }
-                    Err(error) => Self::failed_state(&mut self.output, error, BackendOperation::Cancel)?,
+                    Err(error) => {
+                        Self::failed_state(&mut self.output, &arrow_stream_commits, error, BackendOperation::Cancel)?
+                    }
                 }
             }
             RunnerState::Completed(summary) => RunnerState::Completed(summary),
@@ -424,11 +438,15 @@ where
             .unwrap_or_else(|payload| Err(BackendError::from_panic_payload(payload)))
     }
 
+    /// Emits the commits made before the failure, whose bytes may exist nowhere else, then the
+    /// failure.
     fn failed_state(
         output: &mut O,
+        commits: &Option<Receiver<pywr_core::recorders::ArrowStreamCommit>>,
         error: crate::backend::BackendError,
         operation: BackendOperation,
     ) -> Result<RunnerState<B::Runtime>, OutputError> {
+        Self::emit_arrow_stream_commits(output, commits)?;
         let error = error.into_run_failure(operation);
         output.emit(EngineEvent::Failed { error: error.clone() })?;
         Ok(RunnerState::Failed { error })
@@ -440,7 +458,6 @@ mod tests {
     use super::*;
     use crate::backend::{BackendFinalisation, BackendStep, Initialised};
     use crate::command::{ModelDocument, ResultOptions, Solver, SolverConfiguration};
-    use std::sync::mpsc::Receiver;
     use std::sync::{Arc, atomic::AtomicUsize};
 
     #[derive(Default)]
@@ -474,8 +491,22 @@ mod tests {
 
     struct PanickingBackend(PanicPoint);
 
+    /// Sends a commit, as a recorder that wrote before another failed would, then panics.
+    fn commit_then_panic(commits: &mpsc::Sender<pywr_core::recorders::ArrowStreamCommit>, message: &str) -> ! {
+        commits
+            .send(pywr_core::recorders::ArrowStreamCommit {
+                name: "results".into(),
+                batch_index: 0,
+                row_count: 1,
+                byte_offset: 8,
+                bytes: Some(vec![0; 8]),
+            })
+            .unwrap();
+        panic!("{message}");
+    }
+
     impl RunnerBackend for PanickingBackend {
-        type Runtime = ();
+        type Runtime = mpsc::Sender<pywr_core::recorders::ArrowStreamCommit>;
 
         fn initialise(
             &mut self,
@@ -484,22 +515,22 @@ mod tests {
             if matches!(self.0, PanicPoint::Initialise) {
                 panic!("initialise panic");
             }
+            let (commit_sender, commit_receiver) = mpsc::channel();
             Ok(Initialised {
-                runtime: (),
+                runtime: commit_sender,
                 progress: progress(),
                 arrow_streams: Vec::new(),
-                arrow_stream_commits: None,
+                arrow_stream_commits: Some(commit_receiver),
             })
         }
 
         fn step(
             &mut self,
-            _runtime: &mut Self::Runtime,
-            commits: Option<Receiver<pywr_core::recorders::ArrowStreamCommit>>,
+            runtime: &mut Self::Runtime,
             target: &RunTarget,
         ) -> Result<BackendStep, crate::backend::BackendError> {
             if matches!(self.0, PanicPoint::Step) {
-                panic!("step panic");
+                commit_then_panic(runtime, "step panic");
             }
             Ok(BackendStep {
                 outcome: if matches!(self.0, PanicPoint::Finalise) {
@@ -508,24 +539,23 @@ mod tests {
                     BackendStepOutcome::Advanced
                 },
                 progress: progress(),
-                arrow_stream_commits: commits,
                 target_reached: !matches!(target, RunTarget::ToEnd),
             })
         }
 
-        fn flush_recorders(&mut self, _runtime: &mut Self::Runtime) -> Result<(), crate::backend::BackendError> {
+        fn flush_recorders(&mut self, runtime: &mut Self::Runtime) -> Result<(), crate::backend::BackendError> {
             if matches!(self.0, PanicPoint::FlushRecorders) {
-                panic!("flush panic");
+                commit_then_panic(runtime, "flush panic");
             }
             Ok(())
         }
 
         fn finalise(
             &mut self,
-            _runtime: &mut Self::Runtime,
+            runtime: &mut Self::Runtime,
         ) -> Result<BackendFinalisation, crate::backend::BackendError> {
             if matches!(self.0, PanicPoint::Finalise) {
-                panic!("finalise panic");
+                commit_then_panic(runtime, "finalise panic");
             }
             Ok(BackendFinalisation {
                 summary: crate::event::RunSummary {
@@ -535,12 +565,9 @@ mod tests {
             })
         }
 
-        fn cancel(
-            &mut self,
-            _runtime: &mut Self::Runtime,
-        ) -> Result<BackendFinalisation, crate::backend::BackendError> {
+        fn cancel(&mut self, runtime: &mut Self::Runtime) -> Result<BackendFinalisation, crate::backend::BackendError> {
             if matches!(self.0, PanicPoint::Cancel) {
-                panic!("cancel panic");
+                commit_then_panic(runtime, "cancel panic");
             }
             Ok(BackendFinalisation {
                 summary: crate::event::RunSummary {
@@ -573,7 +600,6 @@ mod tests {
         fn step(
             &mut self,
             _runtime: &mut Self::Runtime,
-            commits: Option<Receiver<pywr_core::recorders::ArrowStreamCommit>>,
             _target: &RunTarget,
         ) -> Result<BackendStep, crate::backend::BackendError> {
             if matches!(self.0, FailurePoint::Step) {
@@ -583,7 +609,6 @@ mod tests {
             Ok(BackendStep {
                 outcome: BackendStepOutcome::EndOfTimesteps,
                 progress: progress(),
-                arrow_stream_commits: commits,
                 target_reached: true,
             })
         }
@@ -632,7 +657,6 @@ mod tests {
         fn step(
             &mut self,
             runtime: &mut Self::Runtime,
-            commits: Option<Receiver<pywr_core::recorders::ArrowStreamCommit>>,
             target: &RunTarget,
         ) -> Result<BackendStep, crate::backend::BackendError> {
             let target_reached = !matches!(target, RunTarget::ToEnd);
@@ -643,7 +667,6 @@ mod tests {
             Ok(BackendStep {
                 outcome: BackendStepOutcome::Advanced,
                 progress: progress(),
-                arrow_stream_commits: commits,
                 target_reached,
             })
         }
@@ -731,6 +754,19 @@ mod tests {
                 if matches!(error.stage, RunFailureStage::Panic)
                     && error.summary == format!("Backend panicked: {message}")
         ));
+        // A commit sent before the panic reaches the output ahead of `Failed`, the last event.
+        let emitted = engine
+            .output
+            .0
+            .iter()
+            .filter(|event| matches!(event, EngineEvent::ArrowStreamCommitted { .. }))
+            .count();
+        let sent = if matches!(engine.backend.0, PanicPoint::Initialise) {
+            0
+        } else {
+            1
+        };
+        assert_eq!(emitted, sent);
     }
 
     fn assert_commit_precedes_ready(events: &[EngineEvent]) {
