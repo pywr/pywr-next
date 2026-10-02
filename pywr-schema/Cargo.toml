@@ -33,6 +33,7 @@ hdf5 = ["dep:hdf5-metno", "pywr-core/hdf5"]
 
 [dependencies]
 arrow = { workspace = true, optional = true }
+bytes = { workspace = true }
 chrono = { workspace = true }
 csv = { workspace = true }
 digest = { workspace = true }

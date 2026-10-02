@@ -800,6 +800,7 @@ impl DirunalProfileParameter {
 #[cfg(all(test, feature = "core"))]
 mod tests {
     use super::*;
+    use crate::FileSystem;
     use crate::network::NetworkSchema;
     use crate::parameters::{ConstantFloatVec, Parameter};
     use pywr_core::models::ModelDomain;
@@ -823,7 +824,7 @@ mod tests {
         };
 
         let mut builder = NetworkBuilder::default();
-        let result = network.add_to_network(&mut builder, &domain, None, None, &[]);
+        let result = network.add_to_network(&mut builder, &domain, &FileSystem, None, None, &[]);
 
         assert!(result.is_ok());
     }
@@ -847,7 +848,7 @@ mod tests {
         };
 
         let mut builder = NetworkBuilder::default();
-        let result = network.add_to_network(&mut builder, &domain, None, None, &[]);
+        let result = network.add_to_network(&mut builder, &domain, &FileSystem, None, None, &[]);
 
         assert!(result.is_ok());
     }
@@ -869,7 +870,7 @@ mod tests {
         };
 
         let mut builder = NetworkBuilder::default();
-        let result = network.add_to_network(&mut builder, &domain, None, None, &[]);
+        let result = network.add_to_network(&mut builder, &domain, &FileSystem, None, None, &[]);
 
         assert!(result.is_err());
     }

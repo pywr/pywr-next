@@ -19,6 +19,8 @@ mod scalar;
 mod vec;
 
 use crate::ConversionError;
+#[cfg(feature = "core")]
+use crate::FileProvider;
 use crate::digest::{Checksum, ChecksumError};
 use crate::meta::NamedMeta;
 use crate::parameters::TableIndex;
@@ -137,9 +139,9 @@ impl DataTable {
     }
 
     #[cfg(feature = "core")]
-    pub fn load(&self, data_path: Option<&Path>) -> Result<LoadedTable, TableError> {
+    pub fn load(&self, files: &dyn FileProvider, data_path: Option<&Path>) -> Result<LoadedTable, TableError> {
         match self {
-            DataTable::CSV(tbl) => tbl.load_f64(data_path),
+            DataTable::CSV(tbl) => tbl.load_f64(files, data_path),
             DataTable::Placeholder(tbl) => Err(TableError::PlaceholderTableNotAllowed {
                 name: tbl.meta.name.clone(),
             }),
@@ -206,31 +208,31 @@ impl CsvDataTable {
 
 #[cfg(feature = "core")]
 impl CsvDataTable {
-    fn load_f64(&self, data_path: Option<&Path>) -> Result<LoadedTable, TableError> {
+    fn load_f64(&self, files: &dyn FileProvider, data_path: Option<&Path>) -> Result<LoadedTable, TableError> {
         let fp = make_path(&self.url, data_path);
 
         if let Some(checksum) = &self.checksum {
-            checksum.check(&fp)?;
+            checksum.check(files, &fp)?;
         }
 
         match &self.ty {
             DataTableValueType::Scalar => match self.lookup {
-                CsvDataTableLookup::Row { cols: rows } => {
-                    Ok(LoadedTable::FloatScalar(LoadedScalarTable::from_csv_row(&fp, rows)?))
-                }
-                CsvDataTableLookup::Col { rows: cols } => {
-                    Ok(LoadedTable::FloatScalar(LoadedScalarTable::from_csv_col(&fp, cols)?))
-                }
+                CsvDataTableLookup::Row { cols: rows } => Ok(LoadedTable::FloatScalar(
+                    LoadedScalarTable::from_csv_row(files, &fp, rows)?,
+                )),
+                CsvDataTableLookup::Col { rows: cols } => Ok(LoadedTable::FloatScalar(
+                    LoadedScalarTable::from_csv_col(files, &fp, cols)?,
+                )),
                 CsvDataTableLookup::Both { rows, cols } => Ok(LoadedTable::FloatScalar(
-                    LoadedScalarTable::from_csv_row_col(&fp, rows, cols)?,
+                    LoadedScalarTable::from_csv_row_col(files, &fp, rows, cols)?,
                 )),
             },
             DataTableValueType::Array => match self.lookup {
                 CsvDataTableLookup::Row { cols: rows } => {
-                    Ok(LoadedTable::FloatVec(LoadedVecTable::from_csv_row(&fp, rows)?))
+                    Ok(LoadedTable::FloatVec(LoadedVecTable::from_csv_row(files, &fp, rows)?))
                 }
                 CsvDataTableLookup::Col { rows: cols } => {
-                    Ok(LoadedTable::FloatVec(LoadedVecTable::from_csv_col(&fp, cols)?))
+                    Ok(LoadedTable::FloatVec(LoadedVecTable::from_csv_col(files, &fp, cols)?))
                 }
                 CsvDataTableLookup::Both { .. } => Err(TableError::FormatNotSupported(
                     "CSV row & column array table is not supported. Use either row or column based format.".to_string(),
@@ -400,6 +402,7 @@ pub struct LoadedTableCollection {
 impl LoadedTableCollection {
     pub fn from_schema(
         table_defs: Option<&[DataTable]>,
+        files: &dyn FileProvider,
         data_path: Option<&Path>,
     ) -> Result<Self, TableCollectionLoadError> {
         let mut tables = HashMap::new();
@@ -407,12 +410,13 @@ impl LoadedTableCollection {
             for table_def in table_defs {
                 let name = table_def.name().to_string();
                 info!("Loading table: {}", name);
-                let table = table_def
-                    .load(data_path)
-                    .map_err(|source| TableCollectionLoadError::TableError {
-                        name: name.clone(),
-                        source,
-                    })?;
+                let table =
+                    table_def
+                        .load(files, data_path)
+                        .map_err(|source| TableCollectionLoadError::TableError {
+                            name: name.clone(),
+                            source,
+                        })?;
 
                 if tables.contains_key(&name) {
                     return Err(TableCollectionLoadError::DuplicateTableName { name });
@@ -530,6 +534,7 @@ impl TryFrom<TableDataRefV1> for TableDataRef {
 #[cfg(feature = "core")]
 mod tests {
     use super::*;
+    use crate::FileSystem;
     use std::fs;
     use std::fs::File;
     use std::io::Write;
@@ -573,7 +578,7 @@ my-reservoir,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2";
         // Deserialize the representation
         let tbl: DataTable = serde_json::from_str(&table_def).unwrap();
         // Load the table definition
-        let tbl = tbl.load(None).unwrap();
+        let tbl = tbl.load(&FileSystem, None).unwrap();
 
         let values: Vec<f64> = tbl.get_vec_f64(&["my-reservoir"]).unwrap().to_vec();
 
@@ -598,7 +603,10 @@ my-reservoir,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2";
                     checksum: None,
                 };
 
-                let supported = !matches!(table.load_f64(None), Err(TableError::FormatNotSupported(_)));
+                let supported = !matches!(
+                    table.load_f64(&FileSystem, None),
+                    Err(TableError::FormatNotSupported(_))
+                );
 
                 assert_eq!(table.is_lookup_supported(), supported, "{ty} table with {lookup:?}");
             }

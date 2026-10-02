@@ -46,6 +46,7 @@ mod core {
 #[cfg(all(feature = "core", feature = "pyo3"))]
 mod core {
     use super::PolarsTimeSeries;
+    use crate::FileSystem;
     use crate::time_series::load_py::{LoadModule, load_record_batch_from_py_callback};
     use crate::time_series::{LoadedTimeSeries, TimeSeriesError};
     use std::path::Path;
@@ -62,7 +63,7 @@ mod core {
 
             // Validate the checksum if provided
             if let Some(checksum) = &self.checksum {
-                checksum.check(&fp)?;
+                checksum.check(&FileSystem, &fp)?;
             }
 
             let kwargs = self.kwargs.clone().unwrap_or_default();

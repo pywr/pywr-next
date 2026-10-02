@@ -707,6 +707,7 @@ impl ReservoirNode {
 #[cfg(test)]
 #[cfg(feature = "core")]
 mod tests {
+    use crate::FileSystem;
     use crate::model::ModelSchema;
 
     fn reservoir_with_spill_str() -> &'static str {
@@ -717,7 +718,7 @@ mod tests {
     fn test_model_nodes_and_edges() {
         let data = reservoir_with_spill_str();
         let schema: ModelSchema = serde_json::from_str(data).unwrap();
-        let builder = schema.create_model_builder(None, None).unwrap();
+        let builder = schema.create_model_builder(&FileSystem, None, None).unwrap();
 
         let model = builder.build().unwrap();
 

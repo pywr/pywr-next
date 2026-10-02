@@ -93,6 +93,8 @@ impl MemoryOutput {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(feature = "core")]
+    use crate::FileSystem;
     use crate::ModelSchema;
     #[cfg(feature = "core")]
     use float_cmp::assert_approx_eq;
@@ -125,7 +127,9 @@ mod tests {
 
         let temp_dir = TempDir::new().unwrap();
 
-        let builder = schema.create_model_builder(None, Some(temp_dir.path())).unwrap();
+        let builder = schema
+            .create_model_builder(&FileSystem, None, Some(temp_dir.path()))
+            .unwrap();
         let model = builder.build().unwrap();
 
         let result = model.run(&ClpSolverSettings::default()).unwrap();

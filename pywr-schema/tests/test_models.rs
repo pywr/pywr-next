@@ -1,6 +1,8 @@
 #[cfg(feature = "core")]
 use pywr_core::test_utils::{ExpectedOutputsLong, ExpectedOutputsWide, VerifyExpected, run_all_solvers};
 use pywr_schema::{ComponentConversionError, ModelSchema};
+#[cfg(feature = "core")]
+use pywr_schema::{FileProvider, FileSystem, MemoryFiles, VisitPaths};
 use std::fs;
 use std::path::Path;
 #[cfg(feature = "core")]
@@ -26,7 +28,8 @@ macro_rules! model_tests {
                 let input_pth = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join(input);
                 let expected_paths = expected.into_iter().map(|(p, shape)| (Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join(p), shape)).collect::<Vec<_>>();
                 let schema = deserialise_test_model(&input_pth);
-                run_test_model(&schema, expected_paths.as_slice(), &solvers_without_features, &solvers_to_skip);
+                let data_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests");
+                run_test_model(&schema, &FileSystem, &data_dir, expected_paths.as_slice(), &solvers_without_features, &solvers_to_skip);
             }
 
             // Just deserialise the schema
@@ -133,7 +136,39 @@ fn test_time_series_pandas() {
 
     // TODO - fix issue with pyo3 failing to find the active venv so this feature gate can be removed
     #[cfg(feature = "test-python")]
-    run_test_model(&_schema, &_expected_paths, &[], &[]);
+    run_test_model(
+        &_schema,
+        &FileSystem,
+        &Path::new(env!("CARGO_MANIFEST_DIR")).join("tests"),
+        &_expected_paths,
+        &[],
+        &[],
+    );
+}
+
+/// Run models with their input files only in memory, as the browser runner does: listed by
+/// `VisitPaths` with the outputs cleared, and keyed by the data path joined with the path in the
+/// model. Nothing is on disk at the data path, so a read that bypasses the provider fails.
+#[cfg(feature = "core")]
+#[test]
+fn test_input_files_in_memory() {
+    let tests_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests");
+    let data_dir = Path::new("in-memory");
+
+    for (input, expected) in [
+        ("time-series.json", "time-series-expected.csv"),
+        ("tbl-formats1.json", "tbl-formats1-expected.csv"),
+    ] {
+        let schema = deserialise_test_model(&tests_dir.join(input));
+
+        let mut inputs = schema.clone();
+        inputs.network.outputs = None;
+        let mut files = MemoryFiles::default();
+        inputs.visit_paths(&mut |path| files.insert(data_dir.join(path), fs::read(tests_dir.join(path)).unwrap()));
+
+        let expected = [(tests_dir.join(expected), ResultsShape::Long)];
+        run_test_model(&schema, &files, data_dir, &expected, &[], &[]);
+    }
 }
 
 fn deserialise_test_model(model_path: &Path) -> ModelSchema {
@@ -144,14 +179,15 @@ fn deserialise_test_model(model_path: &Path) -> ModelSchema {
 #[cfg(feature = "core")]
 fn run_test_model(
     schema: &ModelSchema,
+    files: &dyn FileProvider,
+    data_dir: &Path,
     result_paths: &[(PathBuf, ResultsShape)],
     solvers_without_features: &[&str],
     solvers_to_skip: &[&str],
 ) {
     let temp_dir = TempDir::new().unwrap();
-    let data_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests");
     let builder = schema
-        .create_model_builder(Some(&data_dir), Some(temp_dir.path()))
+        .create_model_builder(files, Some(data_dir), Some(temp_dir.path()))
         .unwrap();
     // After model run there should be an output file.
     let expected_outputs: Vec<Box<dyn VerifyExpected>> = result_paths

@@ -8,6 +8,8 @@ mod polars;
 mod py;
 
 use crate::ConversionError;
+#[cfg(feature = "core")]
+use crate::FileProvider;
 use crate::digest::Checksum;
 use crate::error::ComponentConversionError;
 use crate::meta::NamedMeta;
@@ -101,13 +103,17 @@ pub enum TimeSeries {
 
 impl TimeSeries {
     #[cfg(feature = "core")]
-    pub fn load(&self, data_path: Option<&Path>) -> Result<LoadedTimeSeries, TimeSeriesError> {
+    pub fn load(
+        &self,
+        files: &dyn FileProvider,
+        data_path: Option<&Path>,
+    ) -> Result<LoadedTimeSeries, TimeSeriesError> {
         match &self {
             TimeSeries::Polars(dataset) => dataset.load(data_path),
             TimeSeries::Pandas(dataset) => dataset.load(data_path),
             TimeSeries::Python(dataset) => dataset.load(data_path),
-            TimeSeries::Arrow(dataset) => dataset.load(data_path),
-            TimeSeries::Parquet(dataset) => dataset.load(data_path),
+            TimeSeries::Arrow(dataset) => dataset.load(files, data_path),
+            TimeSeries::Parquet(dataset) => dataset.load(files, data_path),
             TimeSeries::Placeholder(dataset) => dataset.load(),
         }
     }
@@ -321,17 +327,18 @@ pub struct LoadedTimeSeriesCollection {
 impl LoadedTimeSeriesCollection {
     pub fn from_schema(
         time_series_defs: Option<&[TimeSeries]>,
+        files: &dyn FileProvider,
         data_path: Option<&Path>,
     ) -> Result<Self, LoadedTimeSeriesCollectionError> {
         let mut time_series = HashMap::new();
         if let Some(time_series_defs) = time_series_defs {
             for ts in time_series_defs {
-                let df = ts
-                    .load(data_path)
-                    .map_err(|source| LoadedTimeSeriesCollectionError::TimeSeriesError {
-                        name: ts.name().to_string(),
-                        source,
-                    })?;
+                let df =
+                    ts.load(files, data_path)
+                        .map_err(|source| LoadedTimeSeriesCollectionError::TimeSeriesError {
+                            name: ts.name().to_string(),
+                            source,
+                        })?;
                 if time_series.contains_key(ts.name()) {
                     return Err(LoadedTimeSeriesCollectionError::DuplicateTimeSeriesName(
                         ts.name().to_string(),
@@ -714,6 +721,7 @@ impl TryFromV1<DataFrameParameterV1> for ConvertedTimeSeriesReference {
 #[cfg(all(test, feature = "core"))]
 mod tests {
     use super::*;
+    use crate::{FileSystem, MemoryFiles};
     use arrow::array::{AsArray, Date32Array, Float64Array};
     use arrow::datatypes::{DataType, Field, Schema};
     use arrow::ipc::writer::FileWriter;
@@ -765,13 +773,21 @@ mod tests {
         );
     }
 
+    /// The file at `path`, served from memory as `name`. Nothing is on disk at `name`, so a load
+    /// from it succeeds only through the provider.
+    fn in_memory(name: &str, path: &Path) -> MemoryFiles {
+        let mut files = MemoryFiles::default();
+        files.insert(name, std::fs::read(path).unwrap());
+        files
+    }
+
     #[test]
     fn arrow_csv_loader_infers_format_from_extension() {
         let temp_dir = TempDir::new().unwrap();
         let path = temp_dir.path().join("time-series.csv");
         std::fs::write(&path, "date,value\n1970-01-01,1.0\n1970-01-02,2.0\n1970-01-03,3.0\n").unwrap();
 
-        assert_loaded_values(arrow_time_series(path, None).load(None).unwrap());
+        assert_loaded_values(arrow_time_series(path, None).load(&FileSystem, None).unwrap());
     }
 
     #[test]
@@ -784,7 +800,9 @@ mod tests {
         writer.write(&batch.slice(1, 2)).unwrap();
         writer.finish().unwrap();
 
-        assert_loaded_values(arrow_time_series(path, None).load(None).unwrap());
+        let time_series = arrow_time_series(PathBuf::from("time-series.arrow"), None);
+        assert_loaded_values(time_series.load(&FileSystem, Some(temp_dir.path())).unwrap());
+        assert_loaded_values(time_series.load(&in_memory("time-series.arrow", &path), None).unwrap());
     }
 
     #[test]
@@ -805,15 +823,20 @@ mod tests {
                 provenance: None,
             },
             time_col: Some("date".to_string()),
-            path,
+            path: PathBuf::from("time-series.parquet"),
             checksum: None,
         });
-        assert_loaded_values(time_series.load(None).unwrap());
+        assert_loaded_values(time_series.load(&FileSystem, Some(temp_dir.path())).unwrap());
+        assert_loaded_values(
+            time_series
+                .load(&in_memory("time-series.parquet", &path), None)
+                .unwrap(),
+        );
     }
 
     #[test]
     fn arrow_loader_rejects_unknown_extension_when_format_is_not_specified() {
-        let error = match arrow_time_series(PathBuf::from("time-series.unknown"), None).load(None) {
+        let error = match arrow_time_series(PathBuf::from("time-series.unknown"), None).load(&FileSystem, None) {
             Ok(_) => panic!("unknown file extension should not be accepted"),
             Err(error) => error,
         };

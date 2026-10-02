@@ -12,7 +12,7 @@ use pywr_core::solvers::HighsSolverSettings;
 #[cfg(feature = "microlp")]
 use pywr_core::solvers::MicroLpSolverSettings;
 use pywr_core::solvers::{BuiltInSolver, BuiltInSolverConfig};
-use pywr_schema::NetworkSchema;
+use pywr_schema::{FileProvider, FileSystem, NetworkSchema};
 use std::any::Any;
 use std::sync::mpsc::{self, Receiver};
 use thiserror::Error;
@@ -295,8 +295,23 @@ impl PywrRuntime {
     }
 }
 
-#[derive(Debug, Default)]
-pub struct PywrBackend {}
+/// Runs models with pywr, opening their input files through a [`FileProvider`], from disk by
+/// default.
+pub struct PywrBackend {
+    files: Box<dyn FileProvider + Send>,
+}
+
+impl PywrBackend {
+    pub fn new(files: impl FileProvider + Send + 'static) -> Self {
+        Self { files: Box::new(files) }
+    }
+}
+
+impl Default for PywrBackend {
+    fn default() -> Self {
+        Self::new(FileSystem)
+    }
+}
 
 impl RunnerBackend for PywrBackend {
     type Runtime = PywrRuntime;
@@ -313,8 +328,11 @@ impl RunnerBackend for PywrBackend {
         apply_result_options_to_schema(&mut schema.network, &request.result_options)?;
 
         // Construct the model using the two-stage process.
-        let mut model_builder =
-            schema.create_model_builder(request.data_path.as_deref(), request.output_path.as_deref())?;
+        let mut model_builder = schema.create_model_builder(
+            self.files.as_ref(),
+            request.data_path.as_deref(),
+            request.output_path.as_deref(),
+        )?;
 
         let (arrow_stream, arrow_stream_commits) = apply_arrow_stream_recorder_to_model_builder(
             model_builder.network_builder(),
@@ -495,5 +513,75 @@ fn target_reached(progress: &RunProgress, target: &RunTarget) -> bool {
                 false
             }
         }
+    }
+}
+
+#[cfg(all(test, feature = "clp"))]
+mod tests {
+    use super::*;
+    use crate::command::SolverConfiguration;
+    use pywr_schema::MemoryFiles;
+    use std::path::PathBuf;
+
+    /// Initialise a model whose time series is at `../data/inflow.csv` from the data path
+    /// `site/models`, so it is read from `site/data/inflow.csv`.
+    fn initialise(files: MemoryFiles) -> Result<Initialised<PywrRuntime>, BackendError> {
+        let model = serde_json::json!({
+            "metadata": { "title": "Input files in memory" },
+            "time": { "start": "2021-01-01", "end": "2021-01-02", "timestep": { "type": "Days", "days": 1 } },
+            "network": {
+                "nodes": [
+                    {
+                        "meta": { "name": "input" },
+                        "type": "Input",
+                        "max_flow": { "type": "TimeSeries", "name": "inflow", "columns": { "type": "Column", "name": "inflow" } }
+                    },
+                    { "meta": { "name": "output" }, "type": "Output", "cost": { "type": "Literal", "value": -10.0 } }
+                ],
+                "edges": [{ "from_node": "input", "to_node": "output" }],
+                "time_series": [
+                    { "meta": { "name": "inflow" }, "type": "Arrow", "time_col": "date", "path": "../data/inflow.csv" }
+                ]
+            }
+        });
+
+        PywrBackend::new(files).initialise(InitialiseRequest {
+            run_name: "test".into(),
+            model: ModelDocument::Json(model),
+            data_path: Some(PathBuf::from("site/models")),
+            output_path: None,
+            log_level: None,
+            solver: SolverConfiguration { solver: Solver::Clp },
+            result_options: ResultOptions {
+                all_nodes_metric_set: None,
+                all_edges_metric_set: None,
+                clear_existing_outputs: false,
+                arrow_stream: None,
+            },
+        })
+    }
+
+    #[test]
+    fn initialise_reads_input_files_through_the_provider() {
+        let mut files = MemoryFiles::default();
+        files.insert(
+            "site/data/inflow.csv",
+            "date,inflow\n2021-01-01,1.0\n2021-01-02,2.0\n".as_bytes(),
+        );
+        initialise(files).unwrap();
+    }
+
+    #[test]
+    fn a_missing_input_file_fails_the_model_build() {
+        let Err(error) = initialise(MemoryFiles::default()) else {
+            panic!("the model built without its input file");
+        };
+        let failure = error.into_run_failure(BackendOperation::Initialise);
+        assert!(matches!(failure.stage, RunFailureStage::ModelBuild));
+        assert!(
+            failure.causes.iter().any(|cause| cause.contains("inflow.csv")),
+            "{:?}",
+            failure.causes
+        );
     }
 }

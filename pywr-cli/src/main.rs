@@ -14,7 +14,7 @@ use pywr_core::solvers::{MicroLpSolverSettings, MicroLpSolverSettingsBuilder};
 use pywr_core::solvers::{SimdIpmSolverSettings, SimdIpmSolverSettingsBuilder};
 use pywr_core::test_utils::make_random_model_builder;
 use pywr_runner_service::RunnerServiceConfig;
-use pywr_schema::{ComponentConversionError, ModelSchema, MultiNetworkModelSchema, NetworkSchema};
+use pywr_schema::{ComponentConversionError, FileSystem, ModelSchema, MultiNetworkModelSchema, NetworkSchema};
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use schemars::schema_for;
@@ -377,7 +377,9 @@ fn run(
     let data_path = data_path.or_else(|| path.parent());
     let schema_v2: ModelSchema = serde_json::from_str(data.as_str()).unwrap();
 
-    let builder = schema_v2.create_model_builder(data_path, output_path).unwrap();
+    let builder = schema_v2
+        .create_model_builder(&FileSystem, data_path, output_path)
+        .unwrap();
     let model = builder.build().unwrap();
 
     match *solver {
@@ -484,7 +486,9 @@ fn run_multi(path: &Path, solver: &Solver, data_path: Option<&Path>, output_path
 
     let schema_v2: MultiNetworkModelSchema = serde_json::from_str(data.as_str()).unwrap();
 
-    let builder = schema_v2.create_model_builder(data_path, output_path).unwrap();
+    let builder = schema_v2
+        .create_model_builder(&FileSystem, data_path, output_path)
+        .unwrap();
     let model = builder.build().unwrap();
 
     match *solver {
@@ -575,7 +579,9 @@ fn run_project(
     let composed_schemas = composed_model.load().unwrap();
     let options = pywr_schema::NetworkMergeOptions::default();
     let schema_v2 = composed_schemas.into_model_schema(&options).unwrap();
-    let model_builder = schema_v2.create_model_builder(data_path, output_path).unwrap();
+    let model_builder = schema_v2
+        .create_model_builder(&FileSystem, data_path, output_path)
+        .unwrap();
     let model = model_builder.build().unwrap();
 
     match *solver {

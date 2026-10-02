@@ -1,4 +1,6 @@
 #[cfg(feature = "core")]
+use crate::FileProvider;
+#[cfg(feature = "core")]
 use crate::data_tables::LoadedTableCollection;
 use crate::error::ComponentConversionError;
 #[cfg(feature = "core")]
@@ -789,10 +791,12 @@ impl ModelSchema {
         .into_result()
     }
 
-    /// Create a [`pywr_core::models::ModelBuilder`] from the schema.
+    /// Create a [`pywr_core::models::ModelBuilder`] from the schema, opening its input files
+    /// through `files`.
     #[cfg(feature = "core")]
     pub fn create_model_builder(
         &self,
+        files: &dyn FileProvider,
         data_path: Option<&Path>,
         output_path: Option<&Path>,
     ) -> Result<ModelBuilder, ModelSchemaBuildError> {
@@ -811,7 +815,7 @@ impl ModelSchema {
         let mut network_builder = pywr_core::network::NetworkBuilder::default();
 
         self.network
-            .add_to_network(&mut network_builder, &domain, data_path, output_path, &[])
+            .add_to_network(&mut network_builder, &domain, files, data_path, output_path, &[])
             .map_err(|source| ModelSchemaBuildError::NetworkBuildError {
                 source: Box::new(source),
             })?;
@@ -1065,9 +1069,12 @@ impl MultiNetworkModelSchema {
         .into_result()
     }
 
+    /// Create a [`MultiNetworkModelBuilder`] from the schema, opening its input files and
+    /// network files through `files`.
     #[cfg(feature = "core")]
     pub fn create_model_builder(
         &self,
+        files: &dyn FileProvider,
         data_path: Option<&Path>,
         output_path: Option<&Path>,
     ) -> Result<MultiNetworkModelBuilder, MultiNetworkModelSchemaBuildError> {
@@ -1106,13 +1113,14 @@ impl MultiNetworkModelSchema {
                         path.clone()
                     };
 
-                    let network_schema = NetworkSchema::from_path(&pth)
+                    let network_schema = NetworkSchema::from_files(files, &pth)
                         .map_err(|source| MultiNetworkModelSchemaBuildError::NetworkReadError { path: pth, source })?;
 
                     let (tables, time_series) = network_schema
                         .add_to_network(
                             &mut network_builder,
                             &domain,
+                            files,
                             data_path,
                             output_path,
                             &network_entry.transfers,
@@ -1129,6 +1137,7 @@ impl MultiNetworkModelSchema {
                         .add_to_network(
                             &mut network_builder,
                             &domain,
+                            files,
                             data_path,
                             output_path,
                             &network_entry.transfers,
@@ -1216,6 +1225,8 @@ impl MultiNetworkModelSchema {
 #[cfg(test)]
 mod tests {
     use super::{ModelSchema, MultiNetworkModelSchema, ScenarioDomain};
+    #[cfg(feature = "core")]
+    use crate::FileSystem;
     use crate::edge::Edge;
     use crate::model::{TimeDomain, Timestep};
     use crate::validation::{
@@ -1301,7 +1312,10 @@ mod tests {
 
         // Expect this to file as the path has been updated to a missing file.
         #[cfg(feature = "core")]
-        if schema.create_model_builder(model_fn.parent(), None).is_ok() {
+        if schema
+            .create_model_builder(&FileSystem, model_fn.parent(), None)
+            .is_ok()
+        {
             let str = serde_json::to_string_pretty(&schema).unwrap();
             panic!("Expected an error due to missing file: {str}");
         }
@@ -1886,6 +1900,7 @@ mod tests {
 #[cfg(feature = "core")]
 mod core_tests {
     use super::{ModelSchema, MultiNetworkModelSchema};
+    use crate::FileSystem;
     use crate::agg_funcs::AggFunc;
     use crate::meta::NamedMeta;
     use crate::metric::{Metric, ParameterReference};
@@ -1907,7 +1922,9 @@ mod core_tests {
         let data = model_str();
         let schema: ModelSchema = serde_json::from_str(&data).unwrap();
         let temp_dir = TempDir::new().unwrap();
-        let mut model_builder = schema.create_model_builder(None, Some(temp_dir.path())).unwrap();
+        let mut model_builder = schema
+            .create_model_builder(&FileSystem, None, Some(temp_dir.path()))
+            .unwrap();
 
         let network_builder = model_builder.network_builder();
 
@@ -1997,7 +2014,7 @@ mod core_tests {
         }
 
         // TODO this could assert a specific type of error
-        let builder = schema.create_model_builder(None, None).unwrap();
+        let builder = schema.create_model_builder(&FileSystem, None, None).unwrap();
         assert!(builder.build().is_err());
     }
 
@@ -2054,7 +2071,7 @@ mod core_tests {
             ]);
         }
         // TODO this could assert a specific type of error
-        let _ = schema.create_model_builder(None, None).unwrap();
+        let _ = schema.create_model_builder(&FileSystem, None, None).unwrap();
     }
 
     /// Test the multi1 model
@@ -2064,7 +2081,9 @@ mod core_tests {
         model_fn.push("tests/multi1/model.json");
 
         let schema = MultiNetworkModelSchema::from_path(model_fn.as_path()).unwrap();
-        let mut builder = schema.create_model_builder(model_fn.parent(), None).unwrap();
+        let mut builder = schema
+            .create_model_builder(&FileSystem, model_fn.parent(), None)
+            .unwrap();
 
         // Add some recorders for the expected outputs
         let network_1 = builder
@@ -2110,7 +2129,9 @@ mod core_tests {
         model_fn.push("tests/multi2/model.json");
 
         let schema = MultiNetworkModelSchema::from_path(model_fn.as_path()).unwrap();
-        let mut builder = schema.create_model_builder(model_fn.parent(), None).unwrap();
+        let mut builder = schema
+            .create_model_builder(&FileSystem, model_fn.parent(), None)
+            .unwrap();
 
         // Add some recorders for the expected outputs
         // inflow1 should be set to a max of 20.0 from the "demand" parameter in network2

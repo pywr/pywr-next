@@ -45,6 +45,7 @@ impl VisitPaths for ArrowTimeSeries {
 #[cfg(feature = "core")]
 mod core {
     use super::{ArrowFormat, ArrowTimeSeries};
+    use crate::FileProvider;
     use crate::time_series::{LoadedTimeSeries, TimeSeriesError};
     use arrow::array::RecordBatch;
     use arrow::compute::concat_batches;
@@ -56,7 +57,11 @@ mod core {
     use std::sync::Arc;
 
     impl ArrowTimeSeries {
-        pub fn load(&self, data_path: Option<&Path>) -> Result<LoadedTimeSeries, TimeSeriesError> {
+        pub fn load(
+            &self,
+            files: &dyn FileProvider,
+            data_path: Option<&Path>,
+        ) -> Result<LoadedTimeSeries, TimeSeriesError> {
             let fp = if self.path.is_absolute() {
                 self.path.clone()
             } else if let Some(data_path) = data_path {
@@ -85,20 +90,20 @@ mod core {
 
             // Validate the checksum if provided
             if let Some(checksum) = &self.checksum {
-                checksum.check(&fp)?;
+                checksum.check(files, &fp)?;
             }
 
             let record_batch = match format {
-                ArrowFormat::CSV => load_arrow_time_series_from_csv(&fp)?,
-                ArrowFormat::IPC => load_arrow_time_series_from_ipc(&fp)?,
+                ArrowFormat::CSV => load_arrow_time_series_from_csv(files, &fp)?,
+                ArrowFormat::IPC => load_arrow_time_series_from_ipc(files, &fp)?,
             };
 
             Ok(LoadedTimeSeries::new(record_batch, self.time_col.clone()))
         }
     }
 
-    fn load_arrow_time_series_from_csv(path: &Path) -> Result<RecordBatch, TimeSeriesError> {
-        let mut file = std::fs::File::open(path).map_err(|source| TimeSeriesError::IOError {
+    fn load_arrow_time_series_from_csv(files: &dyn FileProvider, path: &Path) -> Result<RecordBatch, TimeSeriesError> {
+        let mut file = files.open(path).map_err(|source| TimeSeriesError::IOError {
             source,
             path: path.to_path_buf(),
         })?;
@@ -148,8 +153,8 @@ mod core {
         Ok(record_batch)
     }
 
-    fn load_arrow_time_series_from_ipc(path: &Path) -> Result<RecordBatch, TimeSeriesError> {
-        let mut file = std::fs::File::open(path).map_err(|source| TimeSeriesError::IOError {
+    fn load_arrow_time_series_from_ipc(files: &dyn FileProvider, path: &Path) -> Result<RecordBatch, TimeSeriesError> {
+        let mut file = files.open(path).map_err(|source| TimeSeriesError::IOError {
             source,
             path: path.to_path_buf(),
         })?;

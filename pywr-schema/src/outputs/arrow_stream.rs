@@ -57,6 +57,8 @@ impl ArrowStreamOutput {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(feature = "core")]
+    use crate::FileSystem;
     use crate::ModelSchema;
     use crate::visit::{Reference, VisitReferences};
     #[cfg(feature = "core")]
@@ -111,7 +113,7 @@ mod tests {
         let schema = ModelSchema::from_str(MODEL).unwrap();
         let output_directory = TempDir::new().unwrap();
         let model = schema
-            .create_model_builder(None, Some(output_directory.path()))
+            .create_model_builder(&FileSystem, None, Some(output_directory.path()))
             .unwrap()
             .build()
             .unwrap();

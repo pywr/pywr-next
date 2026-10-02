@@ -1,6 +1,6 @@
+use crate::FileProvider;
 use crate::data_tables::TableError;
 use std::collections::HashMap;
-use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
 use std::str::FromStr;
@@ -51,32 +51,32 @@ where
         }
     }
 
-    pub fn from_csv_row(path: &Path, key_size: usize) -> Result<Self, TableError>
+    pub fn from_csv_row(files: &dyn FileProvider, path: &Path, key_size: usize) -> Result<Self, TableError>
     where
         T: FromStr,
         TableError: From<T::Err>,
     {
         match key_size {
-            1 => Ok(LoadedVecTable::One(load_csv_row_vec_table(path)?)),
-            2 => Ok(LoadedVecTable::Two(load_csv_row_vec_table(path)?)),
-            3 => Ok(LoadedVecTable::Three(load_csv_row_vec_table(path)?)),
-            4 => Ok(LoadedVecTable::Four(load_csv_row_vec_table(path)?)),
+            1 => Ok(LoadedVecTable::One(load_csv_row_vec_table(files, path)?)),
+            2 => Ok(LoadedVecTable::Two(load_csv_row_vec_table(files, path)?)),
+            3 => Ok(LoadedVecTable::Three(load_csv_row_vec_table(files, path)?)),
+            4 => Ok(LoadedVecTable::Four(load_csv_row_vec_table(files, path)?)),
             _ => Err(TableError::FormatNotSupported(
                 "CSV row array table with more than four index columns is not supported.".to_string(),
             )),
         }
     }
 
-    pub fn from_csv_col(path: &Path, key_size: usize) -> Result<Self, TableError>
+    pub fn from_csv_col(files: &dyn FileProvider, path: &Path, key_size: usize) -> Result<Self, TableError>
     where
         T: FromStr,
         TableError: From<T::Err>,
     {
         match key_size {
-            1 => Ok(LoadedVecTable::One(load_csv_col_vec_table(path)?)),
-            2 => Ok(LoadedVecTable::Two(load_csv_col_vec_table(path)?)),
-            3 => Ok(LoadedVecTable::Three(load_csv_col_vec_table(path)?)),
-            4 => Ok(LoadedVecTable::Four(load_csv_col_vec_table(path)?)),
+            1 => Ok(LoadedVecTable::One(load_csv_col_vec_table(files, path)?)),
+            2 => Ok(LoadedVecTable::Two(load_csv_col_vec_table(files, path)?)),
+            3 => Ok(LoadedVecTable::Three(load_csv_col_vec_table(files, path)?)),
+            4 => Ok(LoadedVecTable::Four(load_csv_col_vec_table(files, path)?)),
             _ => Err(TableError::FormatNotSupported(
                 "CSV column array table with more than four index rows is not supported.".to_string(),
             )),
@@ -84,12 +84,15 @@ where
     }
 }
 
-fn load_csv_row_vec_table<const N: usize, T>(path: &Path) -> Result<VecTable<N, T>, TableError>
+fn load_csv_row_vec_table<const N: usize, T>(
+    files: &dyn FileProvider,
+    path: &Path,
+) -> Result<VecTable<N, T>, TableError>
 where
     T: FromStr,
     TableError: From<T::Err>,
 {
-    let file = File::open(path).map_err(|source| TableError::IO {
+    let file = files.open(path).map_err(|source| TableError::IO {
         path: path.to_path_buf(),
         source,
     })?;
@@ -121,12 +124,15 @@ where
     Ok(VecTable { values })
 }
 
-fn load_csv_col_vec_table<const N: usize, T>(path: &Path) -> Result<VecTable<N, T>, TableError>
+fn load_csv_col_vec_table<const N: usize, T>(
+    files: &dyn FileProvider,
+    path: &Path,
+) -> Result<VecTable<N, T>, TableError>
 where
     T: FromStr + Copy,
     TableError: From<T::Err>,
 {
-    let file = File::open(path).map_err(|source| TableError::IO {
+    let file = files.open(path).map_err(|source| TableError::IO {
         path: path.to_path_buf(),
         source,
     })?;

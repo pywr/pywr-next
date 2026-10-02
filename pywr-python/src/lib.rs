@@ -29,7 +29,8 @@ use pywr_core::solvers::{ClIpmF32Settings, ClIpmF64Settings};
 use pywr_runner_service::{install_interrupt_handler, install_log_router_with};
 use pywr_schema::metric::Metric;
 use pywr_schema::{
-    ComponentConversionError, ConversionData, ConversionError, ModelSchema, MultiNetworkModelSchema, TryIntoV2,
+    ComponentConversionError, ConversionData, ConversionError, FileSystem, ModelSchema, MultiNetworkModelSchema,
+    TryIntoV2,
 };
 use schemars::schema_for;
 use std::path::PathBuf;
@@ -474,7 +475,7 @@ impl PyModelSchema {
     fn build(&mut self, data_path: Option<PathBuf>, output_path: Option<PathBuf>) -> PyResult<PyModel> {
         let builder = self
             .inner
-            .create_model_builder(data_path.as_deref(), output_path.as_deref())
+            .create_model_builder(&FileSystem, data_path.as_deref(), output_path.as_deref())
             .map_err(PyModelSchemaBuildError::from)?;
         let inner = builder.build().map_err(PyModelBuilderError::from)?;
         Ok(PyModel { inner })
@@ -520,7 +521,7 @@ impl PyMultiNetworkModelSchema {
     fn build(&mut self, data_path: Option<PathBuf>, output_path: Option<PathBuf>) -> PyResult<PyMultiNetworkModel> {
         let builder = self
             .inner
-            .create_model_builder(data_path.as_deref(), output_path.as_deref())
+            .create_model_builder(&FileSystem, data_path.as_deref(), output_path.as_deref())
             .map_err(PyMultiNetworkModelSchemaBuildError::from)?;
         let inner = builder.build().map_err(PyMultiNetworkModelBuilderError::from)?;
         Ok(PyMultiNetworkModel { inner })

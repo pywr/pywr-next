@@ -34,12 +34,17 @@ impl VisitPaths for ParquetTimeSeries {
 mod core {
     use super::ParquetTimeSeries;
     use crate::time_series::{LoadedTimeSeries, TimeSeriesError};
+    use crate::{FileProvider, InputFile};
     use arrow::compute::concat_batches;
     use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
     use std::path::Path;
 
     impl ParquetTimeSeries {
-        pub fn load(&self, data_path: Option<&Path>) -> Result<LoadedTimeSeries, TimeSeriesError> {
+        pub fn load(
+            &self,
+            files: &dyn FileProvider,
+            data_path: Option<&Path>,
+        ) -> Result<LoadedTimeSeries, TimeSeriesError> {
             let fp = if self.path.is_absolute() {
                 self.path.clone()
             } else if let Some(data_path) = data_path {
@@ -50,21 +55,21 @@ mod core {
 
             // Validate the checksum if provided
             if let Some(checksum) = &self.checksum {
-                checksum.check(&fp)?;
+                checksum.check(files, &fp)?;
             }
 
-            let file = std::fs::File::open(&fp).map_err(|source| TimeSeriesError::IOError {
+            let file = files.open(&fp).map_err(|source| TimeSeriesError::IOError {
                 source,
                 path: fp.to_path_buf(),
             })?;
 
-            let builder =
-                ParquetRecordBatchReaderBuilder::try_new(file).map_err(|e| TimeSeriesError::ParquetError {
-                    path: fp.to_path_buf(),
-                    source: e,
-                })?;
-
-            let reader = builder.build().map_err(|e| TimeSeriesError::ParquetError {
+            let reader = match file {
+                InputFile::Disk(file) => ParquetRecordBatchReaderBuilder::try_new(file).and_then(|b| b.build()),
+                InputFile::Memory(cursor) => {
+                    ParquetRecordBatchReaderBuilder::try_new(cursor.into_inner()).and_then(|b| b.build())
+                }
+            }
+            .map_err(|e| TimeSeriesError::ParquetError {
                 path: fp.to_path_buf(),
                 source: e,
             })?;
