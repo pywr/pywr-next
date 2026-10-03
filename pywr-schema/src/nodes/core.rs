@@ -541,7 +541,7 @@ impl LinkNode {
                 // add constraints on node aggregating `[name]` and `[name].soft_min`
                 if let Some(soft_max_flow) = &soft_max.flow {
                     let value = soft_max_flow.load(network, args, Some(&self.meta.name))?;
-                    agg_node.max_flow(value);
+                    agg_node_l_l.max_flow(value);
                 }
 
                 network.node(link);
