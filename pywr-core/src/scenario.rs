@@ -213,14 +213,14 @@ impl ScenarioGroupBuilder {
             None => None,
         };
 
-        if let Some(labels) = &self.labels {
-            if labels.len() != self.size {
-                return Err(ScenarioDomainBuilderError::IncorrectNumberOfLabels {
-                    group: self.name,
-                    found: labels.len(),
-                    expected: self.size,
-                });
-            }
+        if let Some(labels) = &self.labels
+            && labels.len() != self.size
+        {
+            return Err(ScenarioDomainBuilderError::IncorrectNumberOfLabels {
+                group: self.name,
+                found: labels.len(),
+                expected: self.size,
+            });
         }
 
         Ok(ScenarioGroup {

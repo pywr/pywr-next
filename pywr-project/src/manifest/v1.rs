@@ -236,14 +236,14 @@ impl ProjectManifest {
             &mut problems,
         );
         for set in &self.network_sets {
-            if let (Some(min_files), Some(max_files)) = (set.min_files, set.max_files) {
-                if min_files > max_files {
-                    problems.push(ProjectManifestProblem::InvalidFileConstraints {
-                        set: set.name.clone(),
-                        min_files,
-                        max_files,
-                    });
-                }
+            if let (Some(min_files), Some(max_files)) = (set.min_files, set.max_files)
+                && min_files > max_files
+            {
+                problems.push(ProjectManifestProblem::InvalidFileConstraints {
+                    set: set.name.clone(),
+                    min_files,
+                    max_files,
+                });
             }
         }
         problems
@@ -352,14 +352,14 @@ impl Definition {
             let set = sets.get(&selection.set).ok_or_else(|| ComposeModelError::SetNotFound {
                 set: selection.set.clone(),
             })?;
-            if let (Some(min_files), Some(max_files)) = (set.min_files, set.max_files) {
-                if min_files > max_files {
-                    return Err(ComposeModelError::InvalidFileConstraints {
-                        set: set.name.clone(),
-                        min_files,
-                        max_files,
-                    });
-                }
+            if let (Some(min_files), Some(max_files)) = (set.min_files, set.max_files)
+                && min_files > max_files
+            {
+                return Err(ComposeModelError::InvalidFileConstraints {
+                    set: set.name.clone(),
+                    min_files,
+                    max_files,
+                });
             }
             let files = resolve_selection_for_composition(selection, set)?;
             if let Some(file) = unused_file_meta_keys(selection, &files).into_iter().next() {
@@ -368,23 +368,23 @@ impl Definition {
                     file: file.to_string(),
                 });
             }
-            if let Some(min_files) = set.min_files {
-                if files.len() < min_files {
-                    return Err(ComposeModelError::MinFilesNotMet {
-                        set: set.name.clone(),
-                        min_files,
-                        actual_files: files.len(),
-                    });
-                }
+            if let Some(min_files) = set.min_files
+                && files.len() < min_files
+            {
+                return Err(ComposeModelError::MinFilesNotMet {
+                    set: set.name.clone(),
+                    min_files,
+                    actual_files: files.len(),
+                });
             }
-            if let Some(max_files) = set.max_files {
-                if files.len() > max_files {
-                    return Err(ComposeModelError::MaxFilesExceeded {
-                        set: set.name.clone(),
-                        max_files,
-                        actual_files: files.len(),
-                    });
-                }
+            if let Some(max_files) = set.max_files
+                && files.len() > max_files
+            {
+                return Err(ComposeModelError::MaxFilesExceeded {
+                    set: set.name.clone(),
+                    max_files,
+                    actual_files: files.len(),
+                });
             }
 
             for file in files {
@@ -407,16 +407,15 @@ impl Definition {
         }
         // Constraints also apply to sets omitted by this definition.
         for set in sets.values() {
-            if !selected_sets.contains(&set.name) {
-                if let Some(min_files) = set.min_files {
-                    if min_files > 0 {
-                        return Err(ComposeModelError::MinFilesNotMet {
-                            set: set.name.clone(),
-                            min_files,
-                            actual_files: 0,
-                        });
-                    }
-                }
+            if !selected_sets.contains(&set.name)
+                && let Some(min_files) = set.min_files
+                && min_files > 0
+            {
+                return Err(ComposeModelError::MinFilesNotMet {
+                    set: set.name.clone(),
+                    min_files,
+                    actual_files: 0,
+                });
             }
         }
         if let Some(overrides) = &self.overrides {
@@ -587,25 +586,25 @@ fn validate_constraints(
     count: usize,
     errors: &mut Vec<ProjectManifestProblem>,
 ) {
-    if let Some(min_files) = set.min_files {
-        if count < min_files {
-            errors.push(ProjectManifestProblem::MinFilesNotMet {
-                definition: definition.name.clone(),
-                set: set.name.clone(),
-                min_files,
-                actual_files: count,
-            });
-        }
+    if let Some(min_files) = set.min_files
+        && count < min_files
+    {
+        errors.push(ProjectManifestProblem::MinFilesNotMet {
+            definition: definition.name.clone(),
+            set: set.name.clone(),
+            min_files,
+            actual_files: count,
+        });
     }
-    if let Some(max_files) = set.max_files {
-        if count > max_files {
-            errors.push(ProjectManifestProblem::MaxFilesExceeded {
-                definition: definition.name.clone(),
-                set: set.name.clone(),
-                max_files,
-                actual_files: count,
-            });
-        }
+    if let Some(max_files) = set.max_files
+        && count > max_files
+    {
+        errors.push(ProjectManifestProblem::MaxFilesExceeded {
+            definition: definition.name.clone(),
+            set: set.name.clone(),
+            max_files,
+            actual_files: count,
+        });
     }
 }
 

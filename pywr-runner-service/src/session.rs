@@ -32,10 +32,10 @@ impl Session {
             });
         }
 
-        if let Some(expected_run_id) = self.run_id {
-            if envelope.run_id != Some(expected_run_id) {
-                return Err(crate::ServiceError::InvalidRun);
-            }
+        if let Some(expected_run_id) = self.run_id
+            && envelope.run_id != Some(expected_run_id)
+        {
+            return Err(crate::ServiceError::InvalidRun);
         }
 
         self.next_client_sequence += 1;

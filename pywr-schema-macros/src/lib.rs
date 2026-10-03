@@ -191,23 +191,22 @@ pub fn skip_serializing_none(_attr: TokenStream, item: TokenStream) -> TokenStre
     let mut output = input.clone();
 
     for field in &mut output.fields {
-        if let Type::Path(type_path) = &field.ty {
-            if type_path
+        if let Type::Path(type_path) = &field.ty
+            && type_path
                 .path
                 .segments
                 .last()
                 .map(|s| s.ident == "Option")
                 .unwrap_or(false)
-            {
-                // Only add if not already present
-                let already_has = field.attrs.iter().any(|attr| {
-                    attr.path().is_ident("serde") && attr.to_token_stream().to_string().contains("skip_serializing_if")
-                });
-                if !already_has {
-                    field.attrs.push(syn::parse_quote!(
-                        #[serde(skip_serializing_if = "Option::is_none")]
-                    ));
-                }
+        {
+            // Only add if not already present
+            let already_has = field.attrs.iter().any(|attr| {
+                attr.path().is_ident("serde") && attr.to_token_stream().to_string().contains("skip_serializing_if")
+            });
+            if !already_has {
+                field.attrs.push(syn::parse_quote!(
+                    #[serde(skip_serializing_if = "Option::is_none")]
+                ));
             }
         }
     }

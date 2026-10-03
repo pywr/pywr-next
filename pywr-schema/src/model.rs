@@ -730,14 +730,14 @@ fn scenario_problems<'a>(
 
     for (network_name, network) in networks {
         network.visit_owned_references(&mut |owner, reference| {
-            if let Reference::ScenarioGroup(group) = reference {
-                if !groups.contains(group) {
-                    problems.push(ScenarioProblem::UnknownGroupReference {
-                        network: network_name.map(ToString::to_string),
-                        owner: owner.into(),
-                        group: group.to_string(),
-                    });
-                }
+            if let Reference::ScenarioGroup(group) = reference
+                && !groups.contains(group)
+            {
+                problems.push(ScenarioProblem::UnknownGroupReference {
+                    network: network_name.map(ToString::to_string),
+                    owner: owner.into(),
+                    group: group.to_string(),
+                });
             }
         });
     }

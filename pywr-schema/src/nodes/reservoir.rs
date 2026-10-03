@@ -469,10 +469,8 @@ impl ReservoirNode {
         let connect_comp = self
             .connect_compensation_to_spill
             .unwrap_or(Self::DEFAULT_CONNECT_COMPENSATION_TO_SPILL);
-        if connect_comp {
-            if let (Some(spill), Some(comp)) = (spill_node, comp_node) {
-                network.connect(comp, spill);
-            }
+        if connect_comp && let (Some(spill), Some(comp)) = (spill_node, comp_node) {
+            network.connect(comp, spill);
         }
 
         // add rainfall node and edge
