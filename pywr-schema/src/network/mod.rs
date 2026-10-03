@@ -566,11 +566,10 @@ impl NetworkSchema {
         // Closure to update a parameter ref with a time series ref when names match.
         // We match on the original parameter name because the parameter name may have been changed
         let update_to_ts_ref = &mut |m: &mut Metric| {
-            if let Metric::Parameter(p) = m {
-                if let Some(converted_ts_ref) = time_series_refs.iter().find(|ts| ts.original_parameter_name == p.name)
-                {
-                    *m = Metric::TimeSeries(converted_ts_ref.ts_ref.clone());
-                }
+            if let Metric::Parameter(p) = m
+                && let Some(converted_ts_ref) = time_series_refs.iter().find(|ts| ts.original_parameter_name == p.name)
+            {
+                *m = Metric::TimeSeries(converted_ts_ref.ts_ref.clone());
             }
         };
 

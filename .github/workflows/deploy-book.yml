@@ -7,11 +7,12 @@ on:
     types:
       - completed
 
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' }}
     permissions:
-      contents: write  # To push a branch
       pages: write  # To push to a GitHub Pages site
       id-token: write # To update the deployment status
     steps:
@@ -19,13 +20,9 @@ jobs:
         with:
           submodules: true
       - uses: swatinem/rust-cache@v2
-      - name: Install latest mdbook
-        run: |
-          tag="v0.4.52"
-          url="https://github.com/rust-lang/mdbook/releases/download/${tag}/mdbook-${tag}-x86_64-unknown-linux-gnu.tar.gz"
-          mkdir mdbook
-          curl -sSL $url | tar -xz --directory=./mdbook
-          echo `pwd`/mdbook >> $GITHUB_PATH
+      - uses: taiki-e/install-action@v2.87.20
+        with:
+          tool: mdbook@0.4.52
       - name: Build Book
         run: |
           output=$(mdbook build ./pywr-book 2>&1)

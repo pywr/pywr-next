@@ -4,6 +4,10 @@ on:
   push:
     branches: [ main ]
   pull_request:
+  workflow_call:
+
+permissions:
+  contents: read
 
 env:
   CARGO_INCREMENTAL: 0
@@ -12,6 +16,12 @@ env:
   RUSTFLAGS: "-Dwarnings"
 
 jobs:
+  cargo-deny:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: EmbarkStudios/cargo-deny-action@v2
+
   build:
     name: Build (stable)
     runs-on: ubuntu-latest
@@ -20,6 +30,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           submodules: true
+      - uses: dtolnay/rust-toolchain@stable
       - name: Cargo format
         run: cargo fmt --all -- --check
       - uses: swatinem/rust-cache@v2
@@ -30,25 +41,21 @@ jobs:
       - name: Install Intel OpenCL
         run: sudo apt-get install -y intel-opencl-icd ocl-icd-opencl-dev
       - name: Run Clippy
-        run: cargo clippy --all-targets --all-features --all
-      - name: Install latest mdbook
-        run: |
-          tag="v0.4.52"
-          url="https://github.com/rust-lang/mdbook/releases/download/${tag}/mdbook-${tag}-x86_64-unknown-linux-gnu.tar.gz"
-          mkdir bin
-          curl -sSL $url | tar -xz --directory=bin
-          echo "$(pwd)/bin" >> $GITHUB_PATH
+        run: cargo clippy --locked --all-targets --all-features --all
       - uses: taiki-e/install-action@v2.87.20
         with:
-          tool: cargo-hack@0.5
+          tool: mdbook@0.4.52
+      - uses: taiki-e/install-action@v2.87.20
+        with:
+          tool: cargo-hack@0.6
       - name: Check (pywr-core)
         run: cargo hack check --each-feature --no-dev-deps -p pywr-core
       - name: Check (pywr-schema)
         run: cargo hack check --each-feature --no-dev-deps -p pywr-schema
       - name: Build
-        run: cargo build --verbose  --all-features --workspace --exclude pywr-python
+        run: cargo build --locked --verbose --all-features --workspace --exclude pywr-python
       - name: Run tests
-        run: cargo test --all --exclude pywr-python --exclude ipm-ocl --features highs,cbc,microlp,ipm-simd --verbose -- --test-threads=1
+        run: cargo test --locked --all --exclude pywr-python --exclude ipm-ocl --features highs,cbc,microlp,ipm-simd --verbose -- --test-threads=1
       - name: Run mdbook test & build
         run: |
           output=$(mdbook test ./pywr-book 2>&1)
@@ -60,3 +67,14 @@ jobs:
           if echo "$output" | grep -q "\[ERROR\]" ; then
               exit 1
           fi
+
+  build_msrv:
+    name: Build (v1.96)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: true
+      - uses: dtolnay/rust-toolchain@1.96
+      - name: Run tests
+        run: cargo test --locked --all --exclude pywr-python --exclude ipm-ocl --features highs,cbc,microlp,ipm-simd --verbose -- --test-threads=1

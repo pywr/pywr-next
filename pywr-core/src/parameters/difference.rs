@@ -114,15 +114,15 @@ impl SimpleParameter<f64> for DifferenceParameter<SimpleMetricF64> {
 /// optionally clamping the result to a specified minimum and maximum value.
 fn difference(a: f64, b: f64, min: Option<f64>, max: Option<f64>) -> f64 {
     let result = a - b;
-    if let Some(min_val) = min {
-        if result < min_val {
-            return min_val;
-        }
+    if let Some(min_val) = min
+        && result < min_val
+    {
+        return min_val;
     }
-    if let Some(max_val) = max {
-        if result > max_val {
-            return max_val;
-        }
+    if let Some(max_val) = max
+        && result > max_val
+    {
+        return max_val;
     }
     result
 }

@@ -114,35 +114,35 @@ impl MetricSetFilters {
             }
         }
 
-        if self.all_virtual_nodes {
-            if let Some(virtual_nodes) = args.schema.virtual_nodes.as_ref() {
-                for node in virtual_nodes.iter() {
-                    metrics.push(Metric::VirtualNode(VirtualNodeAttrReference::new(
-                        node.name().to_string(),
-                        None,
-                    )));
-                }
+        if self.all_virtual_nodes
+            && let Some(virtual_nodes) = args.schema.virtual_nodes.as_ref()
+        {
+            for node in virtual_nodes.iter() {
+                metrics.push(Metric::VirtualNode(VirtualNodeAttrReference::new(
+                    node.name().to_string(),
+                    None,
+                )));
             }
         }
 
-        if self.all_parameters {
-            if let Some(parameters) = args.schema.parameters.as_ref() {
-                for parameter in parameters.iter() {
-                    // Skip Python parameters that return multiple values as the type or keys of these values is not
-                    // known at this point.
-                    if let Parameter::Python(param) = parameter {
-                        if matches!(param.return_type, PythonReturnType::Dict) {
-                            continue;
-                        }
-                    }
+        if self.all_parameters
+            && let Some(parameters) = args.schema.parameters.as_ref()
+        {
+            for parameter in parameters.iter() {
+                // Skip Python parameters that return multiple values as the type or keys of these values is not
+                // known at this point.
+                if let Parameter::Python(param) = parameter
+                    && matches!(param.return_type, PythonReturnType::Dict)
+                {
+                    continue;
+                }
 
-                    // Which phases a parameter calculates is only known once it is built (e.g.
-                    // from a Python class's methods), so ask for both.
-                    for return_value in [ParameterReturnValue::Before, ParameterReturnValue::After] {
-                        let mut p_ref_builder = ParameterReferenceBuilder::new(parameter.name());
-                        p_ref_builder.return_value(return_value);
-                        metrics.push(Metric::Parameter(p_ref_builder.build()));
-                    }
+                // Which phases a parameter calculates is only known once it is built (e.g.
+                // from a Python class's methods), so ask for both.
+                for return_value in [ParameterReturnValue::Before, ParameterReturnValue::After] {
+                    let mut p_ref_builder = ParameterReferenceBuilder::new(parameter.name());
+                    p_ref_builder.return_value(return_value);
+                    metrics.push(Metric::Parameter(p_ref_builder.build()));
                 }
             }
         }

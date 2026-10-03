@@ -288,17 +288,16 @@ fn convert(in_path: &Path, out_path: &Path, stop_on_error: bool, network_only: b
         {
             let path = entry.path();
 
-            if path.is_file() {
-                if let Some(ext) = path.extension() {
-                    if ext == "json" {
-                        let out_fn = out_path.join(
-                            path.file_name()
-                                .with_context(|| "Failed to determine output filename.".to_string())?,
-                        );
+            if path.is_file()
+                && let Some(ext) = path.extension()
+                && ext == "json"
+            {
+                let out_fn = out_path.join(
+                    path.file_name()
+                        .with_context(|| "Failed to determine output filename.".to_string())?,
+                );
 
-                        v1_to_v2(&path, &out_fn, stop_on_error, network_only)?;
-                    }
-                }
+                v1_to_v2(&path, &out_fn, stop_on_error, network_only)?;
             }
         }
     } else {
