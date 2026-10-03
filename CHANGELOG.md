@@ -2,6 +2,33 @@
 
 All notable changes to this project since v2.0.0-beta will be documented in this file.
 
+## [2.0.0-beta12] - 2026-10-03
+
+### 🚀 Features
+
+- Make Arrow stream output timeseries columns. (#878)
+- *(core)* Add a clock module so pywr-core runs on wasm (#881)
+- *(schema)* Read model input files through a FileProvider (#880)
+- Let a run write several Arrow streams (#882)
+- Let an Arrow stream output write to memory (#884)
+- *(schema)* Add validate_reference and validate_member
+- *(schema)* Include local parameters in a node's validate ()
+- *(schema)* Refuse a local parameter name used twice in one node
+- *(schema)* Refuse a literal in a metric set's metrics
+- *(schema)* Check a node as an edge end on its own
+
+### 🐛 Bug Fixes
+
+- Application of Link soft max. (#887)
+
+### 💼 Other
+
+- Let the core, schema and runner protocol crates build for wasm (#879)
+
+### ⚙️ Miscellaneous Tasks
+
+- Add workflow for running Clippy against wasm target (#883)
+
 ## [2.0.0-beta11] - 2026-09-30
 
 ### 🚀 Features
