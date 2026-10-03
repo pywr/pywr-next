@@ -21,7 +21,7 @@ use std::fs::{File, OpenOptions};
 use std::io::{self, Write};
 use std::num::NonZeroUsize;
 use std::ops::Deref;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
 use std::thread::{self, JoinHandle};
@@ -130,6 +130,18 @@ pub struct ArrowStreamCommit {
     pub row_count: usize,
     /// Exclusive byte offset of the flushed data in the IPC stream.
     pub byte_offset: u64,
+    /// The bytes written since the previous commit, from an [`ArrowStreamSink::Memory`] output.
+    /// `None` from a file output, whose file holds them.
+    pub bytes: Option<Vec<u8>>,
+}
+
+/// Where an [`ArrowStreamOutput`] writes its IPC stream.
+#[derive(Clone, Debug)]
+pub enum ArrowStreamSink {
+    /// This file, through a writer thread.
+    File(PathBuf),
+    /// A buffer on the calling thread, drained into each commit. Needs a commit sender.
+    Memory,
 }
 
 /// Errors produced by the Arrow IPC stream output.
@@ -159,6 +171,10 @@ pub enum ArrowStreamError {
     WorkerDisconnected,
     #[error("Arrow stream writer thread panicked")]
     WorkerPanicked,
+    #[error("An in-memory Arrow stream needs a commit sender to hand its bytes to")]
+    MemorySinkWithoutCommitSender,
+    #[error("An in-memory Arrow stream's commit receiver was dropped, losing its bytes")]
+    MemorySinkDisconnected,
 }
 
 #[derive(Clone, Debug)]
@@ -342,6 +358,7 @@ fn worker(
                     batch_index,
                     row_count,
                     byte_offset: writer.get_ref().get_ref().position,
+                    bytes: None,
                 };
                 batch_index += 1;
                 if let Some(commits) = &commits {
@@ -365,35 +382,160 @@ fn worker(
     Err(error)
 }
 
-#[derive(Debug)]
+/// Writes a batch the way its output's [`ArrowStreamSink`] says.
+enum BatchWriter {
+    /// A thread running [`worker`], writing to the output's file.
+    Thread {
+        sender: Sender<WorkerMessage>,
+        status_receiver: Receiver<WorkerStatus>,
+        worker: JoinHandle<Result<(), ArrowStreamError>>,
+    },
+    Memory(Box<MemoryWriter>),
+}
+
+/// Writes batches into a buffer on the calling thread, and drains it into the commit that
+/// follows each, so the stream is never held twice.
+struct MemoryWriter {
+    writer: StreamWriter<CountingWriter<Vec<u8>>>,
+    schema: Arc<Schema>,
+    scenario_count: usize,
+    name: String,
+    batch_index: u64,
+    commits: Sender<ArrowStreamCommit>,
+}
+
+impl MemoryWriter {
+    fn new(
+        schema: Arc<Schema>,
+        scenario_count: usize,
+        name: String,
+        commits: Sender<ArrowStreamCommit>,
+    ) -> Result<Self, ArrowStreamError> {
+        // Writes the schema message, which the first commit carries.
+        let writer = StreamWriter::try_new(CountingWriter::new(Vec::new()), &schema)?;
+        Ok(Self {
+            writer,
+            schema,
+            scenario_count,
+            name,
+            batch_index: 0,
+            commits,
+        })
+    }
+
+    fn write(&mut self, pending: PendingBatch) -> Result<(), ArrowStreamError> {
+        let row_count = pending.rows.len();
+        let batch = record_batch(Arc::clone(&self.schema), self.scenario_count, pending)?;
+        self.writer.write(&batch)?;
+        self.commit(row_count)
+    }
+
+    /// Ends the stream, committing its end-of-stream marker as a batch of no rows.
+    fn finish(mut self) -> Result<(), ArrowStreamError> {
+        self.writer.finish()?;
+        self.commit(0)
+    }
+
+    /// Sends the bytes written since the previous commit, which exist nowhere else, so a
+    /// missing receiver is an error.
+    fn commit(&mut self, row_count: usize) -> Result<(), ArrowStreamError> {
+        let buffer = self.writer.get_mut();
+        let commit = ArrowStreamCommit {
+            name: self.name.clone(),
+            batch_index: self.batch_index,
+            row_count,
+            byte_offset: buffer.position,
+            bytes: Some(std::mem::take(&mut buffer.inner)),
+        };
+        self.batch_index += 1;
+        self.commits
+            .send(commit)
+            .map_err(|_| ArrowStreamError::MemorySinkDisconnected)
+    }
+}
+
 struct Internal {
     pending: PendingBatch,
-    sender: Sender<WorkerMessage>,
-    status_receiver: Receiver<WorkerStatus>,
-    worker: Option<JoinHandle<Result<(), ArrowStreamError>>>,
+    writer: BatchWriter,
     metric_count: usize,
     scenario_count: usize,
 }
 
-/// Output one metric set as a batched Arrow IPC stream on a worker thread.
+/// Output one metric set as a batched Arrow IPC stream, to a file through a worker thread or to
+/// memory (see [`ArrowStreamSink`]).
 #[derive(Debug)]
 pub struct ArrowStreamOutput {
     meta: RecorderMeta,
-    filename: PathBuf,
     metric_set_idx: MetricSetIndex,
     batch_size: NonZeroUsize,
     commits: Option<Sender<ArrowStreamCommit>>,
+    sink: ArrowStreamSink,
 }
 
 impl ArrowStreamOutput {
     fn check_worker(internal: &Internal) -> Result<(), ArrowStreamError> {
-        match internal.status_receiver.try_recv() {
+        let BatchWriter::Thread {
+            status_receiver,
+            worker,
+            ..
+        } = &internal.writer
+        else {
+            return Ok(());
+        };
+        match status_receiver.try_recv() {
             Ok(WorkerStatus::Failed(message)) => Err(ArrowStreamError::WorkerFailed(message)),
-            Err(TryRecvError::Disconnected) if internal.worker.as_ref().is_some_and(JoinHandle::is_finished) => {
-                Err(ArrowStreamError::WorkerDisconnected)
-            }
+            Err(TryRecvError::Disconnected) if worker.is_finished() => Err(ArrowStreamError::WorkerDisconnected),
             Err(_) => Ok(()),
         }
+    }
+
+    /// Creates `filename` and starts a [`worker`] thread writing to it.
+    fn spawn_file_writer(
+        &self,
+        filename: &Path,
+        schema: Arc<Schema>,
+        scenario_count: usize,
+    ) -> Result<BatchWriter, ArrowStreamError> {
+        let file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(filename)
+            .map_err(|source| {
+                if source.kind() == io::ErrorKind::AlreadyExists {
+                    ArrowStreamError::OutputAlreadyExists {
+                        path: filename.to_path_buf(),
+                    }
+                } else {
+                    ArrowStreamError::Io {
+                        path: filename.to_path_buf(),
+                        source,
+                    }
+                }
+            })?;
+        let (sender, receiver) = mpsc::channel();
+        let (status_sender, status_receiver) = mpsc::channel();
+        let name = self.meta.name.clone();
+        let commits = self.commits.clone();
+        let worker = thread::spawn(move || {
+            let result = worker(
+                receiver,
+                status_sender.clone(),
+                file,
+                schema,
+                scenario_count,
+                name,
+                commits,
+            );
+            if let Err(error) = &result {
+                let _ = status_sender.send(WorkerStatus::Failed(error.to_string()));
+            }
+            result
+        });
+        Ok(BatchWriter::Thread {
+            sender,
+            status_receiver,
+            worker,
+        })
     }
 
     fn queue_pending(&self, internal: &mut Internal, force: bool) -> Result<(), ArrowStreamError> {
@@ -401,10 +543,12 @@ impl ArrowStreamOutput {
             return Ok(());
         }
         let pending = std::mem::take(&mut internal.pending);
-        internal
-            .sender
-            .send(WorkerMessage::Batch(pending))
-            .map_err(|_| ArrowStreamError::WorkerDisconnected)
+        match &mut internal.writer {
+            BatchWriter::Thread { sender, .. } => sender
+                .send(WorkerMessage::Batch(pending))
+                .map_err(|_| ArrowStreamError::WorkerDisconnected),
+            BatchWriter::Memory(writer) => writer.write(pending),
+        }
     }
 
     fn append_values(
@@ -495,47 +639,25 @@ impl Recorder for ArrowStreamOutput {
                 })?;
 
         let schema = Arc::new(make_schema(metric_set.name(), domain.scenarios(), metric_set.metrics()));
-        let file = OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&self.filename)
-            .map_err(|source| {
-                if source.kind() == io::ErrorKind::AlreadyExists {
-                    ArrowStreamError::OutputAlreadyExists {
-                        path: self.filename.clone(),
-                    }
-                } else {
-                    ArrowStreamError::Io {
-                        path: self.filename.clone(),
-                        source,
-                    }
-                }
-            })?;
-        let (sender, receiver) = mpsc::channel();
-        let (status_sender, status_receiver) = mpsc::channel();
-        let name = self.meta.name.clone();
-        let commits = self.commits.clone();
         let scenario_count = domain.scenarios().len();
-        let worker = thread::spawn(move || {
-            let result = worker(
-                receiver,
-                status_sender.clone(),
-                file,
-                schema,
-                scenario_count,
-                name,
-                commits,
-            );
-            if let Err(error) = &result {
-                let _ = status_sender.send(WorkerStatus::Failed(error.to_string()));
+        let writer = match &self.sink {
+            ArrowStreamSink::File(filename) => self.spawn_file_writer(filename, schema, scenario_count)?,
+            ArrowStreamSink::Memory => {
+                let commits = self
+                    .commits
+                    .clone()
+                    .ok_or(ArrowStreamError::MemorySinkWithoutCommitSender)?;
+                BatchWriter::Memory(Box::new(MemoryWriter::new(
+                    schema,
+                    scenario_count,
+                    self.meta.name.clone(),
+                    commits,
+                )?))
             }
-            result
-        });
+        };
         Ok(Some(Box::new(Internal {
             pending: PendingBatch::default(),
-            sender,
-            status_receiver,
-            worker: Some(worker),
+            writer,
             metric_count: metric_set.metrics().len(),
             scenario_count,
         })))
@@ -562,15 +684,17 @@ impl Recorder for ArrowStreamOutput {
         let internal = downcast_internal_state_mut::<Internal>(internal_state);
         Self::check_worker(internal)?;
         self.queue_pending(internal, true)?;
-        let (response_sender, response_receiver) = mpsc::channel();
-        internal
-            .sender
-            .send(WorkerMessage::Flush(response_sender))
-            .map_err(|_| ArrowStreamError::WorkerDisconnected)?;
-        response_receiver
-            .recv()
-            .map_err(|_| ArrowStreamError::WorkerDisconnected)?;
-        Self::check_worker(internal)?;
+        // A memory writer committed the batch as it wrote it; a thread must be waited for.
+        if let BatchWriter::Thread { sender, .. } = &internal.writer {
+            let (response_sender, response_receiver) = mpsc::channel();
+            sender
+                .send(WorkerMessage::Flush(response_sender))
+                .map_err(|_| ArrowStreamError::WorkerDisconnected)?;
+            response_receiver
+                .recv()
+                .map_err(|_| ArrowStreamError::WorkerDisconnected)?;
+            Self::check_worker(internal)?;
+        }
         Ok(())
     }
 
@@ -585,12 +709,15 @@ impl Recorder for ArrowStreamOutput {
         Self::check_worker(&internal)?;
         self.append_values(metric_set_states, &mut internal)?;
         self.queue_pending(&mut internal, true)?;
-        internal
-            .sender
-            .send(WorkerMessage::Finish)
-            .map_err(|_| ArrowStreamError::WorkerDisconnected)?;
-        let worker = internal.worker.take().expect("Arrow stream worker must be present");
-        worker.join().map_err(|_| ArrowStreamError::WorkerPanicked)??;
+        match internal.writer {
+            BatchWriter::Thread { sender, worker, .. } => {
+                sender
+                    .send(WorkerMessage::Finish)
+                    .map_err(|_| ArrowStreamError::WorkerDisconnected)?;
+                worker.join().map_err(|_| ArrowStreamError::WorkerPanicked)??;
+            }
+            BatchWriter::Memory(writer) => writer.finish()?,
+        }
         Ok(None)
     }
 }
@@ -599,26 +726,28 @@ impl Recorder for ArrowStreamOutput {
 #[derive(Debug)]
 pub struct ArrowStreamOutputBuilder {
     meta: RecorderMeta,
-    filename: PathBuf,
+    sink: ArrowStreamSink,
     metric_set: String,
     batch_size: NonZeroUsize,
     commits: Option<Sender<ArrowStreamCommit>>,
 }
 
 impl ArrowStreamOutputBuilder {
-    pub fn new<P: Into<PathBuf>>(name: &str, filename: P, metric_set: &str, batch_size: NonZeroUsize) -> Self {
+    pub fn new(name: &str, sink: ArrowStreamSink, metric_set: &str, batch_size: NonZeroUsize) -> Self {
         Self {
             meta: RecorderMeta::new(name),
-            filename: filename.into(),
+            sink,
             metric_set: metric_set.to_string(),
             batch_size,
             commits: None,
         }
     }
 
-    /// Send a best-effort commit notification after every flushed record batch.
+    /// Send a commit after every flushed record batch.
     ///
-    /// Dropping the receiver never stops model execution or Arrow output.
+    /// A file's commits are best-effort notifications: dropping the receiver never stops the
+    /// run or the file's output. A memory sink's commits carry its output, so dropping the
+    /// receiver fails the recorder.
     pub fn commit_sender(&mut self, sender: Sender<ArrowStreamCommit>) -> &mut Self {
         self.commits = Some(sender);
         self
@@ -640,10 +769,10 @@ impl RecorderBuilder for ArrowStreamOutputBuilder {
             })?;
         Ok(Box::new(ArrowStreamOutput {
             meta: self.meta,
-            filename: self.filename,
             metric_set_idx,
             batch_size: self.batch_size,
             commits: self.commits,
+            sink: self.sink,
         }))
     }
 }
@@ -672,10 +801,9 @@ mod tests {
         );
     }
 
-    #[test]
-    fn worker_writes_batched_rows_and_commits_after_flush() {
-        let path = std::env::temp_dir().join(format!("pywr-arrow-stream-{}.arrow", std::process::id()));
-        let schema = Arc::new(Schema::new(vec![
+    /// Two metrics over two scenarios.
+    fn two_metric_schema() -> Arc<Schema> {
+        Arc::new(Schema::new(vec![
             Field::new("time_start", DataType::Timestamp(TimeUnit::Millisecond, None), false),
             Field::new("time_end", DataType::Timestamp(TimeUnit::Millisecond, None), false),
             MetricColumnExtension::new(MetricColumnMetadata {
@@ -694,40 +822,47 @@ mod tests {
                 sub_type: None,
             })
             .field("volume", 2),
-        ]));
+        ]))
+    }
+
+    /// Two timesteps of [`two_metric_schema`]'s metrics, the first missing its second scenario.
+    fn two_row_batch() -> PendingBatch {
+        PendingBatch {
+            timestep_count: 2,
+            rows: vec![
+                ArrowStreamRow {
+                    time_start: 0,
+                    time_end: 1,
+                    values: vec![Some(1.0), Some(10.0), None, None],
+                },
+                ArrowStreamRow {
+                    time_start: 1,
+                    time_end: 2,
+                    values: vec![Some(2.0), Some(20.0), Some(3.0), Some(30.0)],
+                },
+            ],
+        }
+    }
+
+    #[test]
+    fn worker_writes_batched_rows_and_commits_after_flush() {
+        let path = std::env::temp_dir().join(format!("pywr-arrow-stream-{}.arrow", std::process::id()));
         let (sender, receiver) = mpsc::channel();
         let (status_sender, _status_receiver) = mpsc::channel();
         let (commit_sender, commit_receiver) = mpsc::channel();
         let file = File::create(&path).unwrap();
-        let worker_schema = Arc::clone(&schema);
         let handle = thread::spawn(move || {
             worker(
                 receiver,
                 status_sender,
                 file,
-                worker_schema,
+                two_metric_schema(),
                 2,
                 "results".to_string(),
                 Some(commit_sender),
             )
         });
-        sender
-            .send(WorkerMessage::Batch(PendingBatch {
-                timestep_count: 2,
-                rows: vec![
-                    ArrowStreamRow {
-                        time_start: 0,
-                        time_end: 1,
-                        values: vec![Some(1.0), Some(10.0), None, None],
-                    },
-                    ArrowStreamRow {
-                        time_start: 1,
-                        time_end: 2,
-                        values: vec![Some(2.0), Some(20.0), Some(3.0), Some(30.0)],
-                    },
-                ],
-            }))
-            .unwrap();
+        sender.send(WorkerMessage::Batch(two_row_batch())).unwrap();
         let (flush_sender, flush_receiver) = mpsc::channel();
         sender.send(WorkerMessage::Flush(flush_sender)).unwrap();
         flush_receiver.recv().unwrap();
@@ -736,7 +871,11 @@ mod tests {
         assert_eq!(commit.batch_index, 0);
         assert_eq!(commit.row_count, 2);
         assert!(commit.byte_offset > 0);
+        assert!(commit.bytes.is_none());
         assert_eq!(fs::metadata(&path).unwrap().len(), commit.byte_offset);
+        // With no commit receiver, the file worker writes on.
+        drop(commit_receiver);
+        sender.send(WorkerMessage::Batch(two_row_batch())).unwrap();
         sender.send(WorkerMessage::Finish).unwrap();
         handle.join().unwrap().unwrap();
 
@@ -754,7 +893,73 @@ mod tests {
             volumes.values().as_any().downcast_ref::<Float64Array>().unwrap(),
             &Float64Array::from(vec![Some(10.0), None, Some(20.0), Some(30.0)])
         );
+        assert_eq!(reader.next().unwrap().unwrap().num_rows(), 2);
         assert!(reader.next().is_none());
         fs::remove_file(path).unwrap();
+    }
+
+    /// A memory writer over [`two_metric_schema`], and the receiver of its commits.
+    fn memory_writer() -> (MemoryWriter, Receiver<ArrowStreamCommit>) {
+        let (commit_sender, commit_receiver) = mpsc::channel();
+        let writer = MemoryWriter::new(two_metric_schema(), 2, "results".to_string(), commit_sender).unwrap();
+        (writer, commit_receiver)
+    }
+
+    #[test]
+    fn memory_writer_drains_each_batch_and_the_stream_end_into_commits() {
+        let (mut writer, commit_receiver) = memory_writer();
+        writer.write(two_row_batch()).unwrap();
+        writer.write(two_row_batch()).unwrap();
+        writer.finish().unwrap();
+
+        let commits: Vec<_> = commit_receiver.try_iter().collect();
+        let batch_rows: Vec<_> = commits
+            .iter()
+            .map(|commit| (commit.batch_index, commit.row_count))
+            .collect();
+        assert_eq!(batch_rows, [(0, 2), (1, 2), (2, 0)]);
+        let mut stream = Vec::new();
+        for commit in &commits {
+            stream.extend_from_slice(commit.bytes.as_deref().unwrap());
+            assert_eq!(commit.byte_offset, stream.len() as u64);
+        }
+        // The last commit is the end-of-stream marker alone.
+        assert_eq!(
+            commits[2].bytes.as_deref(),
+            Some([0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0].as_slice())
+        );
+
+        let batches: Vec<_> = StreamReader::try_new(stream.as_slice(), None)
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert_eq!(batches.len(), 2);
+    }
+
+    #[test]
+    fn memory_writer_with_no_batches_commits_a_readable_empty_stream() {
+        let (writer, commit_receiver) = memory_writer();
+        writer.finish().unwrap();
+
+        let commit = commit_receiver.try_recv().unwrap();
+        assert_eq!((commit.batch_index, commit.row_count), (0, 0));
+        let bytes = commit.bytes.unwrap();
+        let mut reader = StreamReader::try_new(bytes.as_slice(), None).unwrap();
+        assert_eq!(reader.schema(), two_metric_schema());
+        assert!(reader.next().is_none());
+    }
+
+    #[test]
+    fn memory_writer_fails_once_its_commits_have_no_receiver() {
+        let (mut writer, commit_receiver) = memory_writer();
+        drop(commit_receiver);
+        let result = writer.write(two_row_batch());
+        assert!(matches!(result, Err(ArrowStreamError::MemorySinkDisconnected)));
+
+        let (mut writer, commit_receiver) = memory_writer();
+        writer.write(two_row_batch()).unwrap();
+        drop(commit_receiver);
+        let result = writer.finish();
+        assert!(matches!(result, Err(ArrowStreamError::MemorySinkDisconnected)));
     }
 }

@@ -95,7 +95,9 @@ pub struct AddEdgesMetricSet {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ArrowStreamOptions {
     pub name: String,
-    pub filename: PathBuf,
+    /// Where to write the stream, when the runner writes streams to files; `None` when it keeps
+    /// them in memory.
+    pub filename: Option<PathBuf>,
     pub metric_set: String,
     pub batch_size: NonZeroUsize,
 }

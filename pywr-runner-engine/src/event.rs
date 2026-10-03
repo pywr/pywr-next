@@ -199,7 +199,7 @@ impl TryFrom<RunProgress> for v1::RunProgress {
 #[derive(Debug)]
 pub struct ArrowStreamDescriptor {
     pub name: String,
-    pub filename: PathBuf,
+    pub filename: Option<PathBuf>,
     pub metric_set: String,
 }
 
@@ -219,6 +219,8 @@ pub struct ArrowStreamCommit {
     pub batch_index: u64,
     pub row_count: u64,
     pub byte_offset: u64,
+    /// The batch's bytes, from a memory sink.
+    pub bytes: Option<Vec<u8>>,
 }
 
 impl From<CoreArrowStreamCommit> for ArrowStreamCommit {
@@ -228,10 +230,12 @@ impl From<CoreArrowStreamCommit> for ArrowStreamCommit {
             batch_index: value.batch_index,
             row_count: value.row_count as u64,
             byte_offset: value.byte_offset,
+            bytes: value.bytes,
         }
     }
 }
 
+/// The protocol carries no data, so the commit's bytes are dropped.
 impl From<ArrowStreamCommit> for v1::ArrowStreamCommit {
     fn from(value: ArrowStreamCommit) -> Self {
         Self {

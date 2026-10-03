@@ -182,7 +182,7 @@ impl TryFrom<v1::AddEdgesMetricSet> for AddEdgesMetricSet {
 #[derive(Debug)]
 pub struct ArrowStreamOptions {
     pub name: String,
-    pub filename: PathBuf,
+    pub filename: Option<PathBuf>,
     pub metric_set: String,
     pub batch_size: NonZeroUsize,
 }
