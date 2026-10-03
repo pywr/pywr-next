@@ -41,7 +41,7 @@ jobs:
           tool: mdbook@0.4.52
       - uses: taiki-e/install-action@v2.87.20
         with:
-          tool: cargo-hack@0.5
+          tool: cargo-hack@0.6
       - name: Check (pywr-core)
         run: cargo hack check --each-feature --no-dev-deps -p pywr-core
       - name: Check (pywr-schema)
