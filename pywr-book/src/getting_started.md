@@ -8,7 +8,7 @@ TBC
 
 ## Python
 
-Pywr requires Python 3.10 or later.
+Pywr requires Python 3.11 or later.
 It is currently available on PyPI as a pre-release.
 
 > **Note**: That current Pywr v2.x is in pre-release and may not be suitable for production use.
@@ -43,7 +43,7 @@ GitHub [actions](https://github.com/pywr/pywr-next/actions) page.
 Navigate to the latest successful build, and download the archive and extract the wheel for your platform.
 
 ```bash
-pip install pywr-2.0.0b0-cp310-abi3-win_amd64.whl
+pip install pywr-2.0.0b0-cp311-abi3-win_amd64.whl
 ```
 
 ## Checking the installation

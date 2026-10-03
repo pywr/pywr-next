@@ -212,7 +212,7 @@ jobs:
       fail-fast: false
       matrix:
         # Test the minimum and latest stable regular CPython, not free-threaded Python.
-        python: [ '3.10', '3.14' ]
+        python: [ '3.11', '3.14' ]
         platform:
           - runner: ubuntu-24.04
             architecture: x64
@@ -256,7 +256,7 @@ jobs:
           wheels = list((temp / "downloaded-wheel").rglob("*.whl"))
           assert len(wheels) == 1, f"Expected one platform wheel, found: {wheels}"
           wheel = wheels[0]
-          assert wheel.name.startswith("pywr-") and "-cp310-abi3-" in wheel.name, wheel
+          assert wheel.name.startswith("pywr-") and "-cp311-abi3-" in wheel.name, wheel
 
           def run(*args):
               subprocess.run([str(arg) for arg in args], cwd=work, check=True)
