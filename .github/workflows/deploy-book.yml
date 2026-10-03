@@ -7,11 +7,12 @@ on:
     types:
       - completed
 
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' }}
     permissions:
-      contents: write  # To push a branch
       pages: write  # To push to a GitHub Pages site
       id-token: write # To update the deployment status
     steps:
