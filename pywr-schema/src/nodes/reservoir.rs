@@ -28,6 +28,7 @@ pub enum SpillNodeType {
 
 /// The bathymetry data type.
 #[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema, PywrVisitAll)]
+#[serde(deny_unknown_fields)]
 pub enum BathymetryType {
     /// The bathymetry is calculated by interpolating the storage and area data piecewise.
     Interpolated {
@@ -40,6 +41,7 @@ pub enum BathymetryType {
 
 /// The bathymetric data
 #[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema, PywrVisitAll)]
+#[serde(deny_unknown_fields)]
 pub struct Bathymetry {
     /// The bathymetric data and type.
     pub data: BathymetryType,
@@ -49,6 +51,7 @@ pub struct Bathymetry {
 
 /// The evaporation data
 #[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema, PywrVisitAll)]
+#[serde(deny_unknown_fields)]
 pub struct Evaporation {
     /// The [`Metric`] containing the evaporation height.
     pub data: Metric,
@@ -65,6 +68,7 @@ impl Evaporation {
 
 /// The leakage data
 #[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema, PywrVisitAll)]
+#[serde(deny_unknown_fields)]
 pub struct Leakage {
     /// The [`Metric`] containing the lost flow.
     pub loss: Metric,
@@ -74,6 +78,7 @@ pub struct Leakage {
 
 /// The rainfall data
 #[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema, PywrVisitAll)]
+#[serde(deny_unknown_fields)]
 pub struct Rainfall {
     /// The [`Metric`] containing the rainfall level.
     pub data: Metric,

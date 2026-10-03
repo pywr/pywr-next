@@ -61,17 +61,5 @@
         "to_node": "demand"
       }
     ]
-  },
-  "metric_sets": [
-    {
-      "name": "nodes",
-      "metrics": [
-        {
-          "type": "Node",
-          "name": "link",
-          "attribute": "Inflow"
-        }
-      ]
-    }
-  ]
+  }
 }

@@ -40,6 +40,7 @@ impl crate::meta::ComponentMeta for EdgeMeta {
 
 #[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Clone, JsonSchema, Debug)]
+#[serde(deny_unknown_fields)]
 pub struct Edge {
     pub meta: Option<EdgeMeta>,
     pub from_node: String,

@@ -11,6 +11,7 @@ use std::path::Path;
 use std::path::PathBuf;
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitPaths)]
+#[serde(deny_unknown_fields)]
 pub struct Hdf5Output {
     pub meta: NamedMeta,
     pub filename: PathBuf,

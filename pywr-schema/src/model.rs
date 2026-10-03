@@ -39,6 +39,7 @@ use thiserror::Error;
 
 #[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Clone, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct Metadata {
     pub title: String,
     pub description: Option<String>,
@@ -106,6 +107,7 @@ impl Default for Timestep {
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct TimeDomain {
     pub start: DateTime,
     pub end: DateTime,
@@ -220,6 +222,7 @@ pub enum ScenarioGroupSubset {
 /// See also the examples in the [`ScenarioDomain`] documentation.
 #[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Clone, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct ScenarioGroup {
     pub name: String,
     pub size: usize,
@@ -671,6 +674,7 @@ pub enum ModelSchemaBuildError {
 ///
 #[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Clone, JsonSchema, Default)]
+#[serde(deny_unknown_fields)]
 pub struct ModelSchema {
     pub metadata: Metadata,
     pub time: TimeDomain,
@@ -887,6 +891,7 @@ impl ModelSchema {
 
 #[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Clone)]
+#[serde(deny_unknown_fields)]
 pub struct MultiNetworkTransfer {
     pub from_network: String,
     pub metric: Metric,
@@ -895,6 +900,7 @@ pub struct MultiNetworkTransfer {
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Clone)]
+#[serde(deny_unknown_fields)]
 pub struct MultiNetworkEntry {
     pub name: String,
     pub network: NetworkSchemaRef,
@@ -994,6 +1000,7 @@ pub enum MultiNetworkModelSchemaBuildError {
 ///
 #[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Clone)]
+#[serde(deny_unknown_fields)]
 pub struct MultiNetworkModelSchema {
     pub metadata: Metadata,
     pub time: TimeDomain,

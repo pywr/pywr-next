@@ -20,6 +20,7 @@ use pywr_v1_schema::parameters::ParameterValues;
 use schemars::JsonSchema;
 
 #[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema, PywrVisitAll)]
+#[serde(deny_unknown_fields)]
 pub struct RiverSplit {
     /// Proportion of flow not going via the mrf route.
     pub factor: Metric,
