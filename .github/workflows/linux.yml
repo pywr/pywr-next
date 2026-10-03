@@ -36,13 +36,9 @@ jobs:
         run: sudo apt-get install -y intel-opencl-icd ocl-icd-opencl-dev
       - name: Run Clippy
         run: cargo clippy --locked --all-targets --all-features --all
-      - name: Install latest mdbook
-        run: |
-          tag="v0.4.52"
-          url="https://github.com/rust-lang/mdbook/releases/download/${tag}/mdbook-${tag}-x86_64-unknown-linux-gnu.tar.gz"
-          mkdir bin
-          curl -sSL $url | tar -xz --directory=bin
-          echo "$(pwd)/bin" >> $GITHUB_PATH
+      - uses: taiki-e/install-action@v2.87.20
+        with:
+          tool: mdbook@0.4.52
       - uses: taiki-e/install-action@v2.87.20
         with:
           tool: cargo-hack@0.5
