@@ -1131,7 +1131,7 @@ pub struct CatchmentNode {
     pub meta: NodeMeta,
     /// Optional local parameters.
     pub parameters: Option<Vec<Parameter>>,
-    pub flow: Option<Metric>,
+    pub flow: Metric,
     pub cost: Option<Metric>,
 }
 
@@ -1192,11 +1192,9 @@ impl CatchmentNode {
             input.cost(value);
         }
 
-        if let Some(flow) = &self.flow {
-            let value = flow.load(network, args, Some(&self.meta.name))?;
-            input.min_flow(value.clone());
-            input.max_flow(value);
-        }
+        let flow = self.flow.load(network, args, Some(&self.meta.name))?;
+        input.min_flow(flow.clone());
+        input.max_flow(flow);
 
         network.node(input);
 
@@ -1231,12 +1229,14 @@ impl TryFromV1<CatchmentNodeV1> for CatchmentNode {
         let meta: NodeMeta = try_convert_node_meta(v1.meta)?;
 
         let cost = try_convert_node_attr(&meta.name, "cost", v1.cost, parent_node, conversion_data)?;
-        let flow = try_convert_node_attr(&meta.name, "min_flow", v1.flow, parent_node, conversion_data)?;
+        let flow: Option<Metric> =
+            try_convert_node_attr(&meta.name, "min_flow", v1.flow, parent_node, conversion_data)?;
 
         let n = Self {
             meta,
             parameters: None,
-            flow,
+            // A v1 catchment without a flow supplies none.
+            flow: flow.unwrap_or_default(),
             cost,
         };
         Ok(n)

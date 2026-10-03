@@ -516,7 +516,7 @@ mod tests {
     {
         "nodes": [
             { "meta": { "name": "supply" }, "type": "Input" },
-            { "meta": { "name": "catchment" }, "type": "Catchment" },
+            { "meta": { "name": "catchment" }, "type": "Catchment", "flow": { "type": "Literal", "value": 0.0 } },
             { "meta": { "name": "link" }, "type": "Link" },
             { "meta": { "name": "demand" }, "type": "Output" }
         ],
