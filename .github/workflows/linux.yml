@@ -16,6 +16,12 @@ env:
   RUSTFLAGS: "-Dwarnings"
 
 jobs:
+  cargo-deny:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: EmbarkStudios/cargo-deny-action@v2
+
   build:
     name: Build (stable)
     runs-on: ubuntu-latest
