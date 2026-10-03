@@ -3,7 +3,7 @@ use crate::edge::Edge;
 use crate::metric::{IndexMetric, Metric, MetricValueType, ParameterReturnValue};
 use crate::nodes::NodeAttribute;
 use std::collections::HashMap;
-use std::num::{NonZeroI64, NonZeroU64, NonZeroUsize};
+use std::num::{NonZeroI64, NonZeroU8, NonZeroU64, NonZeroUsize};
 use std::path::{Path, PathBuf};
 
 /// A trait for recursively visiting [`Metric`] in a schema.
@@ -122,6 +122,7 @@ impl VisitMetrics for u64 {}
 impl VisitMetrics for String {}
 impl VisitMetrics for PathBuf {}
 impl VisitMetrics for NonZeroUsize {}
+impl VisitMetrics for NonZeroU8 {}
 impl VisitMetrics for NonZeroU64 {}
 
 impl VisitMetrics for serde_json::Value {}
@@ -252,6 +253,7 @@ impl VisitPaths for PathBuf {
     }
 }
 impl VisitPaths for NonZeroUsize {}
+impl VisitPaths for NonZeroU8 {}
 impl VisitPaths for NonZeroU64 {}
 impl VisitPaths for NonZeroI64 {}
 
@@ -582,6 +584,7 @@ impl VisitReferences for u64 {}
 impl VisitReferences for String {}
 impl VisitReferences for PathBuf {}
 impl VisitReferences for NonZeroUsize {}
+impl VisitReferences for NonZeroU8 {}
 impl VisitReferences for NonZeroU64 {}
 impl VisitReferences for NonZeroI64 {}
 
