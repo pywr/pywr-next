@@ -212,7 +212,7 @@ jobs:
       fail-fast: false
       matrix:
         # Test the minimum and latest stable regular CPython, not free-threaded Python.
-        python: [ '3.10', '3.14' ]
+        python: [ '3.11', '3.14' ]
         platform:
           - runner: ubuntu-24.04
             architecture: x64
