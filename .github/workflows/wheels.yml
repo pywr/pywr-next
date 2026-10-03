@@ -197,7 +197,7 @@ jobs:
         uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b
         with:
           command: sdist
-          args: --locked --out dist
+          args: --out dist
       - name: Upload sdist
         uses: actions/upload-artifact@v7
         with:
