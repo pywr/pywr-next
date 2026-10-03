@@ -256,7 +256,7 @@ jobs:
           wheels = list((temp / "downloaded-wheel").rglob("*.whl"))
           assert len(wheels) == 1, f"Expected one platform wheel, found: {wheels}"
           wheel = wheels[0]
-          assert wheel.name.startswith("pywr-") and "-cp310-abi3-" in wheel.name, wheel
+          assert wheel.name.startswith("pywr-") and "-cp311-abi3-" in wheel.name, wheel
 
           def run(*args):
               subprocess.run([str(arg) for arg in args], cwd=work, check=True)
