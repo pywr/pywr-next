@@ -59,7 +59,6 @@ use crate::error::{ComponentConversionError, ConversionError, SchemaError};
 use crate::metric::{Metric, MetricValueType};
 #[cfg(feature = "core")]
 use crate::network::LoadArgs;
-use crate::network::NetworkSchema;
 use crate::parameters::{Parameter, validate_each_parameter};
 use crate::util::duplicates;
 use crate::v1::{ConversionData, TryFromV1, TryIntoV2};
@@ -221,65 +220,6 @@ impl TryFrom<NodeMetaV1> for NodeMeta {
             tags: crate::v1::convert_tags(v1.tags)?,
             provenance: None,
         })
-    }
-}
-
-pub struct NodeBuilder {
-    ty: NodeType,
-    position: Option<NodePosition>,
-    name: Option<String>,
-}
-
-/// A builder for creating a new node.
-impl NodeBuilder {
-    pub fn new(ty: NodeType) -> Self {
-        Self {
-            ty,
-            position: None,
-            name: None,
-        }
-    }
-
-    /// Define the position of the node.
-    pub fn position(mut self, position: NodePosition) -> Self {
-        self.position = Some(position);
-        self
-    }
-
-    /// Define the name of the node.
-    pub fn name(mut self, name: String) -> Self {
-        self.name = Some(name);
-        self
-    }
-
-    /// Create the next default name without duplicating an existing name in the model.
-    ///
-    /// Nodes and virtual nodes share a single name-space, so this checks both.
-    pub fn next_default_name_for_model(mut self, network: &NetworkSchema) -> Self {
-        let mut num = 1;
-        loop {
-            let name = format!("{}-{}", self.ty, num);
-            if !network.node_name_exists(&name) {
-                // No node or virtual node with this name found!
-                self.name = Some(name);
-                break;
-            } else {
-                num += 1;
-            }
-        }
-        self
-    }
-
-    /// Build the [`Node`].
-    pub fn build(self) -> Node {
-        let name = self.name.unwrap_or_else(|| self.ty.to_string());
-
-        let mut node: Node = self.ty.into();
-        let meta = node.meta_mut();
-        meta.name = name;
-        meta.position = self.position;
-
-        node
     }
 }
 
