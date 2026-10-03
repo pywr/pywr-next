@@ -63,12 +63,12 @@ jobs:
           fi
 
   build_msrv:
-    name: Build (v1.89)
+    name: Build (v1.96)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
         with:
           submodules: true
-      - uses: dtolnay/rust-toolchain@1.89
+      - uses: dtolnay/rust-toolchain@1.96
       - name: Run tests
         run: cargo test --locked --all --exclude pywr-python --exclude ipm-ocl --features highs,cbc,microlp,ipm-simd --verbose -- --test-threads=1
