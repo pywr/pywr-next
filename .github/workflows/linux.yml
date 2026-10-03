@@ -65,3 +65,14 @@ jobs:
           if echo "$output" | grep -q "\[ERROR\]" ; then
               exit 1
           fi
+
+  build_msrv:
+    name: Build (v1.89)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: true
+      - uses: dtolnay/rust-toolchain@1.89
+      - name: Run tests
+        run: cargo test --locked --all --exclude pywr-python --exclude ipm-ocl --features highs,cbc,microlp,ipm-simd --verbose -- --test-threads=1
