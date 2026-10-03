@@ -23,7 +23,6 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ github.sha }}
           submodules: true
       - name: Cargo format
         run: cargo fmt --all -- --check
@@ -35,7 +34,7 @@ jobs:
       - name: Install Intel OpenCL
         run: sudo apt-get install -y intel-opencl-icd ocl-icd-opencl-dev
       - name: Run Clippy
-        run: cargo clippy --all-targets --all-features --all
+        run: cargo clippy --locked --all-targets --all-features --all
       - name: Install latest mdbook
         run: |
           tag="v0.4.52"
@@ -51,9 +50,9 @@ jobs:
       - name: Check (pywr-schema)
         run: cargo hack check --each-feature --no-dev-deps -p pywr-schema
       - name: Build
-        run: cargo build --verbose  --all-features --workspace --exclude pywr-python
+        run: cargo build --locked --verbose  --all-features --workspace --exclude pywr-python
       - name: Run tests
-        run: cargo test --all --exclude pywr-python --exclude ipm-ocl --features highs,cbc,microlp,ipm-simd --verbose -- --test-threads=1
+        run: cargo test --locked --all --exclude pywr-python --exclude ipm-ocl --features highs,cbc,microlp,ipm-simd --verbose -- --test-threads=1
       - name: Run mdbook test & build
         run: |
           output=$(mdbook test ./pywr-book 2>&1)
