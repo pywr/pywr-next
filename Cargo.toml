@@ -29,7 +29,7 @@ default-members = [
 [workspace.package]
 readme = "README.md"
 description = "A generalised water resource allocation model."
-version = "2.0.0-beta11"
+version = "2.0.0-beta12"
 edition = "2024"
 rust-version = "1.96"
 authors = ["James Tomlinson <tomo.bbe@gmail.com>"]
