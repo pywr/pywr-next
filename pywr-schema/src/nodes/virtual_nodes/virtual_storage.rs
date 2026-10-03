@@ -27,7 +27,7 @@ use pywr_v1_schema::nodes::{
     SeasonalVirtualStorageNode as SeasonalVirtualStorageNodeV1, VirtualStorageNode as VirtualStorageNodeV1,
 };
 use schemars::JsonSchema;
-use std::num::NonZeroUsize;
+use std::num::{NonZeroU8, NonZeroUsize};
 use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumString, IntoStaticStr};
 
 // This macro generates a subset enum for the `VirtualStorageNode` attributes.
@@ -68,7 +68,7 @@ pub enum VirtualStorageReset {
     Annual(AnnualReset),
     /// Reset every N months.
     Monthly {
-        months: u8,
+        months: NonZeroU8,
     },
     Seasonal(SeasonalReset),
 }
@@ -115,7 +115,9 @@ impl TryInto<pywr_core::virtual_storage::VirtualStorageReset> for VirtualStorage
                 month: annual.month,
             },
             VirtualStorageReset::Monthly { months } => {
-                pywr_core::virtual_storage::VirtualStorageReset::NumberOfMonths { months: months.into() }
+                pywr_core::virtual_storage::VirtualStorageReset::NumberOfMonths {
+                    months: months.get().into(),
+                }
             }
             VirtualStorageReset::Seasonal(seasonal) => pywr_core::virtual_storage::VirtualStorageReset::DayOfYear {
                 day: seasonal.start_day,
@@ -478,6 +480,16 @@ impl TryFromV1<MonthlyVirtualStorageNodeV1> for VirtualStorageNode {
             Some(VirtualStorageResetVolume::Max)
         };
 
+        let Some(months) = NonZeroU8::new(v1.months) else {
+            return Err(Box::new(ComponentConversionError::Node {
+                name: meta.name,
+                attr: "months".to_string(),
+                error: ConversionError::UnsupportedFeature {
+                    feature: "A reset every zero months is not supported".to_string(),
+                },
+            }));
+        };
+
         let n = Self {
             meta,
             parameters: None,
@@ -487,7 +499,7 @@ impl TryFromV1<MonthlyVirtualStorageNodeV1> for VirtualStorageNode {
             min_volume,
             cost,
             initial_volume,
-            reset: Some(VirtualStorageReset::Monthly { months: v1.months }),
+            reset: Some(VirtualStorageReset::Monthly { months }),
             reset_volume,
             window: None,
         };
