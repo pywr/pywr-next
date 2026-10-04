@@ -137,13 +137,13 @@ See the [User Guide](https://pywr.github.io/pywr-next/) for model concepts, supp
 
 ### Installing from PyPI
 
-The Python package is named **`pywr`** and requires **Python 3.10 or later**. Use a separate virtual environment when
+The Python package is named **`pywr`** and requires **Python 3.11 or later**. Use a separate virtual environment when
 trying v2 alongside an existing v1.x installation.
 
 To install the v2 release candidate (`2.0.0rc1`) or a newer v2 release from PyPI:
 
 ```bash
-python -m pip install --upgrade --pre "pywr>=2.0.0rc1,<3"
+python -m pip install --upgrade "pywr>=2.0.0rc1,<3"
 ```
 
 Once the stable v2 release is published, use:
@@ -158,7 +158,7 @@ Optional extras are available for data integrations: `pandas`, `polars`, `excel`
 v2 release candidate with Pandas and Excel support:
 
 ```bash
-python -m pip install --upgrade --pre "pywr[pandas,excel]>=2.0.0rc1,<3"
+python -m pip install --upgrade "pywr[pandas,excel]>=2.0.0rc1,<3"
 python -m pywr --help
 ```
 
@@ -169,7 +169,7 @@ See the [installation guide](https://pywr.github.io/pywr-next/getting_started.ht
 
 ### Compiling from source
 
-Source builds require a current stable Rust toolchain, Python 3.10 or later, C/C++ build tools, CMake, and
+Source builds require a current stable Rust toolchain, Python 3.11 or later, C/C++ build tools, CMake, and
 Clang/libclang
 for native dependencies. The bundled COIN-OR solvers use Git submodules; initialise them before building.
 
@@ -322,14 +322,15 @@ Schemas and composition tools for projects that assemble models from multiple fi
 
 Pywr v2 is now at **2.0.0-rc1**, its first release candidate (Python version **2.0.0rc1**). The core modelling engine,
 Python bindings, schema validation and redesigned output system are implemented. This marks the transition out of
-the experimental stage towards the first stable v2.0 release. The release candidate is still a prerelease; use the
-`--pre` installation command above until the stable release is published.
+the experimental stage towards the first stable v2.0 release. The release candidate is still a prerelease.
 
 Release readiness does not imply complete feature parity or backwards compatibility with v1.x. Testing representative
 models, checking migration results and reporting issues with the release candidate are especially valuable ahead of
 the stable release.
 
-See the [changelog](CHANGELOG.md), [releases](https://github.com/pywr/pywr-next/releases) and
+See
+the [changelog](https://github.com/pywr/pywr-next/blob/main/CHANGELOG.md), [releases](https://github.com/pywr/pywr-next/releases)
+and
 [open issues](https://github.com/pywr/pywr-next/issues) for release notes, planned work and known limitations.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
@@ -359,9 +360,12 @@ simply open an issue with the tag "enhancement". Don't forget to give the projec
 
 ## License
 
-The Pywr code in this repository is dual-licensed under the [Apache 2.0](LICENSE-APACHE) or [MIT](LICENSE-MIT) license.
+The Pywr code in this repository is dual-licensed under
+the [Apache 2.0](https://github.com/pywr/pywr-next/blob/main/LICENSE-APACHE)
+or [MIT](https://github.com/pywr/pywr-next/blob/main/LICENSE-MIT) license.
 Bundled third-party components have additional licensing terms, including EPL-2.0 for COIN-OR components in the Python
-distribution. See [NOTICE](NOTICE) and the bundled license files for details.
+distribution. See [NOTICE](https://github.com/pywr/pywr-next/blob/main/NOTICE) and the bundled license files for
+details.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
