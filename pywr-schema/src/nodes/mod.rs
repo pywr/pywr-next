@@ -86,8 +86,8 @@ use pywr_v1_schema::nodes::{
     CoreNode as CoreNodeV1, Node as NodeV1, NodeMeta as NodeMetaV1, NodePosition as NodePositionV1,
 };
 pub use reservoir::{
-    Bathymetry, BathymetryType, Evaporation, Leakage, Rainfall, ReservoirNode, ReservoirNodeAttribute,
-    ReservoirNodeComponent, ReservoirOutputNodeSlot, SpillNodeType,
+    Bathymetry, BathymetryType, Evaporation, Leakage, OutflowNodeType, Rainfall, ReservoirNode, ReservoirNodeAttribute,
+    ReservoirNodeComponent, ReservoirOutputNodeSlot,
 };
 pub use river::{
     MuskingumInitialCondition, MuskingumInitialConditionType, RiverNode, RiverNodeAttribute, RiverNodeComponent,

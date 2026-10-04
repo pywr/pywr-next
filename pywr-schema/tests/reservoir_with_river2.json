@@ -42,11 +42,18 @@
           "proportion": 1.0
         },
         "compensation": {
-          "type": "Literal",
-          "value": 1.0
+          "flow": {
+            "type": "Literal",
+            "value": 1.0
+          },
+          "cost": {
+            "type": "Literal",
+            "value": -15.0
+          }
         },
-        "spill": "LinkNode",
-        "connect_compensation_to_spill": false
+        "spill": {
+          "type": "LinkNode"
+        }
       },
       {
         "meta": {
@@ -77,14 +84,7 @@
       {
         "from_node": "Reservoir",
         "from_slot": {
-          "type": "Spill"
-        },
-        "to_node": "River termination"
-      },
-      {
-        "from_node": "Reservoir",
-        "from_slot": {
-          "type": "Compensation"
+          "type": "River"
         },
         "to_node": "River termination"
       },
@@ -95,7 +95,9 @@
     ],
     "metric_sets": [
       {
-        "meta": {"name": "nodes"},
+        "meta": {
+          "name": "nodes"
+        },
         "metrics": [
           {
             "type": "Node",
@@ -114,7 +116,9 @@
     ],
     "outputs": [
       {
-        "meta": {"name": "node-outputs"},
+        "meta": {
+          "name": "node-outputs"
+        },
         "type": "CSV",
         "format": "Long",
         "filename": "reservoir_with_river2-expected.csv",

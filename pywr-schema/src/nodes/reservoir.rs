@@ -17,13 +17,23 @@ use schemars::JsonSchema;
 use strum::IntoEnumIterator;
 use strum_macros::{Display, EnumIter};
 
-/// The type of spill node.
-#[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema, PywrVisitAll, Display, EnumIter)]
-pub enum SpillNodeType {
-    /// The spill node is created as output node.
+/// The type of the shared outflow node fed by compensation and/or spill.
+#[derive(serde::Deserialize, serde::Serialize, Clone, Copy, Debug, JsonSchema, PywrVisitAll, Display, EnumIter)]
+pub enum OutflowNodeType {
+    /// The outflow node is created as output node.
     OutputNode,
-    /// The spill node is created as link node.
+    /// The outflow node is created as link node.
     LinkNode,
+}
+
+/// Configuration for the optional spill link node.
+#[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema, PywrVisitAll)]
+pub struct Spill {
+    /// The cost to assign to the spill node.
+    pub cost: Option<Metric>,
+    /// If `true` (the default), the spill feeds the shared outflow node.
+    /// If `false`, connect it using the `Spill` output slot instead.
+    pub connect_to_outflow: Option<bool>,
 }
 
 /// The bathymetry data type.
@@ -86,6 +96,18 @@ impl Rainfall {
     pub const DEFAULT_USE_MAX_AREA: bool = false;
 }
 
+/// The compensation data
+#[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema, PywrVisitAll)]
+pub struct Compensation {
+    /// The maximum flow through the compensation link (not a guaranteed minimum).
+    pub flow: Metric,
+    /// The cost to assign to the compensation node.
+    pub cost: Option<Metric>,
+    /// If `true` (the default), connect the compensation link to the shared outflow node.
+    /// If `false`, connect it using the `Compensation` output slot instead.
+    pub connect_to_outflow: Option<bool>,
+}
+
 // This macro generates a subset enum for the `ReservoirNode` attributes.
 // It allows for easy conversion between the enum and the `NodeAttribute` type.
 node_attribute_subset_enum! {
@@ -95,7 +117,7 @@ node_attribute_subset_enum! {
         /// The proportional reservoir proportional volume (0-1).
         ProportionalVolume,
         MaxVolume,
-        /// The minimum residual flow when the `compensation` field is provided.
+        /// The flow through the compensation link when `compensation` is provided.
         Compensation,
         /// The rainfall flow when the `rainfall` field is provided.
         Rainfall,
@@ -128,6 +150,7 @@ pub enum ReservoirOutputNodeSlot {
     Storage,
     Compensation,
     Spill,
+    River,
 }
 
 impl From<ReservoirOutputNodeSlot> for NodeSlot {
@@ -136,6 +159,7 @@ impl From<ReservoirOutputNodeSlot> for NodeSlot {
             ReservoirOutputNodeSlot::Storage => NodeSlot::Storage,
             ReservoirOutputNodeSlot::Compensation => NodeSlot::Compensation,
             ReservoirOutputNodeSlot::Spill => NodeSlot::Spill,
+            ReservoirOutputNodeSlot::River => NodeSlot::River,
         }
     }
 }
@@ -147,6 +171,7 @@ impl TryFrom<NodeSlot> for ReservoirOutputNodeSlot {
             NodeSlot::Storage => Ok(ReservoirOutputNodeSlot::Storage),
             NodeSlot::Compensation => Ok(ReservoirOutputNodeSlot::Compensation),
             NodeSlot::Spill => Ok(ReservoirOutputNodeSlot::Spill),
+            NodeSlot::River => Ok(ReservoirOutputNodeSlot::River),
             _ => Err(SchemaError::OutputNodeSlotNotSupported { slot }),
         }
     }
@@ -159,21 +184,21 @@ impl TryFrom<NodeSlot> for ReservoirOutputNodeSlot {
 ///
 /// # Implementation
 ///
-/// This is a [`StorageNode`] connected to an upstream node `Upstream` and downstream network node `D`. When
-/// an edge to this component is created without slots, the target nodes are directly connected to
-/// `Downstream 1` via the "Storage" slot.
+/// This is a [`StorageNode`] connected to upstream and downstream network nodes. An edge without
+/// `from_slot` uses the `Storage` output slot, which always connects directly from storage.
+/// Compensation and spill may feed a separate shared outflow node. When it is a link, its `River`
+/// output slot can be connected to another network node. An output outflow terminates water and
+/// has no `River` slot. The outflow node is only created when at least one branch feeds it.
 ///
-/// This component has the following internal nodes, which the modeller still needs to connect to
-/// other network nodes using slots:
-/// - Compensation: when the `compensation` field is provided, a `Link` node with a `min_flow`
-///   constraint will be connected to the reservoir. To connect the compensation node to another
-///   node, you can use the slot named `compensation` in an edge `from_slot` property.
-/// - Spill: this can either be a [`pywr_core::node::OutputNode`] or a [`pywr_core::node::LinkNode`].
-///   When an output node is created, a slot called `to_spill` is added to connect any node to this
-///   internal node. For example, you can connect the compensation node. When a link is created two
-///   slots are available: `from_spill`to connect the link to another network node; and `to_spill`
-///   to route additional water via this node.
-///   Use `None` if you don't want to create the spill and to manually route the water.
+/// This component has the following optional internal nodes:
+/// - Compensation: when `compensation` is provided, a link node with a `max_flow` constraint
+///   connects to the reservoir. This is a cap, not a guaranteed minimum release. By default it
+///   feeds the shared outflow; with `connect_to_outflow: false` it exposes the `Compensation`
+///   output slot for an edge's `from_slot` property.
+/// - Spill: a [`pywr_core::node::LinkNode`] that feeds the shared outflow by default; with
+///   `connect_to_outflow: false`, use the `Spill` output slot to route it separately. No spill
+///   node is created when the field is omitted. The shared outflow type is selected by
+///   `outflow_node_type`, not by `spill`.
 /// - Rainfall: this is a [`pywr_core::node::InputNode`] with a `min_flow` and `max_flow` equal to
 ///   the product of the surface area and the rainfall height.
 /// - Evaporation: this is an optional [`pywr_core::node::OutputNode`] with a `max_flow` equal to
@@ -182,10 +207,10 @@ impl TryFrom<NodeSlot> for ReservoirOutputNodeSlot {
 /// - Leakage: this is an optional [`pywr_core::node::OutputNode`] with a `max_flow` equal to the
 ///   provided [`Metric`]'s value.
 ///
-/// The internal layout when configured with a `LinkNode` spill:
+/// The internal layout with a link outflow, spill and compensation:
 #[doc = mermaid!("doc_diagrams/reservoir-spill-link.mmd")]
 ///
-/// The internal layout when configured with an `OutputNode` spill:
+/// The internal layout with an output outflow, spill and compensation:
 #[doc = mermaid!("doc_diagrams/reservoir-spill-output.mmd")]
 ///
 /// ## Rainfall and evaporation calculation
@@ -217,15 +242,16 @@ impl TryFrom<NodeSlot> for ReservoirOutputNodeSlot {
 ///
 ///
 /// # JSON Examples
-/// ## Reservoir with output spill
+/// ## Reservoir with output outflow
 ///
 ///
 /// ```json
 #[doc = include_str!("../../tests/reservoir_with_spill1.json")]
 /// ```
 ///
-/// ## Reservoir with link spill
-/// The compensation goes into the spill which routes water to the "River termination" node.
+/// ## Reservoir with link outflow
+/// Compensation and spill feed the shared outflow, which connects to "River termination" through
+/// the `River` slot. The edge to "Demand" uses the `Storage` slot directly from storage.
 ///
 /// ```json
 #[doc = include_str!("../../tests/reservoir_with_river1.json")]
@@ -233,14 +259,10 @@ impl TryFrom<NodeSlot> for ReservoirOutputNodeSlot {
 pub struct ReservoirNode {
     #[serde(flatten)]
     pub storage: StorageNode,
-    /// The compensation flow. Use `None` not to add any minimum residual flow to the reservoir.
-    pub compensation: Option<Metric>,
-    /// Whether to create the spill node. The node can be a link or an output node.
-    pub spill: Option<SpillNodeType>,
-    /// If the `compensation` and `spill` fields are set, this options when `true` will create an edge
-    /// from the compensation to the spill node. When `false`, the user has to connect the
-    /// compensation node to an existing node. Default to `true`.
-    pub connect_compensation_to_spill: Option<bool>,
+    /// The capped compensation flow. Use `None` to omit the compensation link.
+    pub compensation: Option<Compensation>,
+    /// Whether to create the spill link node. Its flow can feed the shared outflow.
+    pub spill: Option<Spill>,
     /// The storage table with the relationship between storage and reservoir surface area. This must
     /// be provided for the calculations of the precipitation and evaporation volumes.
     pub surface_area: Option<Bathymetry>,
@@ -250,12 +272,17 @@ pub struct ReservoirNode {
     pub evaporation: Option<Evaporation>,
     /// The leakage to set on the node. Use `None` not to add any loss.
     pub leakage: Option<Leakage>,
+    /// Type of shared outflow when spill or compensation feeds it. Defaults to `LinkNode`, which
+    /// exposes a `River` output slot; `OutputNode` terminates water without a `River` slot.
+    pub outflow_node_type: Option<OutflowNodeType>,
 }
 
 impl ReservoirNode {
     pub const DEFAULT_COMPONENT: ReservoirNodeComponent = ReservoirNodeComponent::Compensation;
     const DEFAULT_OUTPUT_SLOT: ReservoirOutputNodeSlot = ReservoirOutputNodeSlot::Storage;
-    pub const DEFAULT_CONNECT_COMPENSATION_TO_SPILL: bool = true;
+    pub const DEFAULT_CONNECT_COMPENSATION_TO_OUTFLOW: bool = true;
+    pub const DEFAULT_CONNECT_SPILL_TO_OUTFLOW: bool = true;
+    pub const DEFAULT_OUTFLOW_NODE_TYPE: OutflowNodeType = OutflowNodeType::LinkNode;
 
     /// Get the node's metadata.
     pub(crate) fn meta(&self) -> &NodeMeta {
@@ -265,6 +292,18 @@ impl ReservoirNode {
     /// Get a mutable reference to the node's metadata.
     pub(crate) fn meta_mut(&mut self) -> &mut NodeMeta {
         &mut self.storage.meta
+    }
+
+    fn has_outflow_node(&self) -> bool {
+        self.spill.as_ref().is_some_and(|spill| {
+            spill
+                .connect_to_outflow
+                .unwrap_or(Self::DEFAULT_CONNECT_SPILL_TO_OUTFLOW)
+        }) || self.compensation.as_ref().is_some_and(|compensation| {
+            compensation
+                .connect_to_outflow
+                .unwrap_or(Self::DEFAULT_CONNECT_COMPENSATION_TO_OUTFLOW)
+        })
     }
 
     /// Check the storage's fields, and that `rainfall` and `evaporation` have a `surface_area`.
@@ -286,13 +325,31 @@ impl ReservoirNode {
     pub fn iter_output_slots(&self) -> impl Iterator<Item = ReservoirOutputNodeSlot> + '_ {
         let mut slots = vec![ReservoirOutputNodeSlot::Storage];
 
-        if self.compensation.is_some() {
+        // Independently disconnected branches still need slots even if the other branch feeds an outflow.
+        if self.compensation.as_ref().is_some_and(|compensation| {
+            !compensation
+                .connect_to_outflow
+                .unwrap_or(Self::DEFAULT_CONNECT_COMPENSATION_TO_OUTFLOW)
+        }) {
             slots.push(ReservoirOutputNodeSlot::Compensation);
         }
 
-        // There is only a Spill slot if the spill node is a LinkNode.
-        if matches!(self.spill, Some(SpillNodeType::LinkNode)) {
+        if self.spill.as_ref().is_some_and(|spill| {
+            !spill
+                .connect_to_outflow
+                .unwrap_or(Self::DEFAULT_CONNECT_SPILL_TO_OUTFLOW)
+        }) {
             slots.push(ReservoirOutputNodeSlot::Spill);
+        }
+
+        // If the outflow node is created, add the river slot. This is only valid for a link outflow node.
+        if self.has_outflow_node()
+            && matches!(
+                self.outflow_node_type.unwrap_or(Self::DEFAULT_OUTFLOW_NODE_TYPE),
+                OutflowNodeType::LinkNode
+            )
+        {
+            slots.push(ReservoirOutputNodeSlot::River);
         }
 
         slots.into_iter()
@@ -346,6 +403,11 @@ impl ReservoirNode {
         UnresolvedNode::new(&self.storage.meta.name, Some("spill"))
     }
 
+    /// The sub-name of the outflow link node.
+    fn outflow_node_sub_name(&self) -> UnresolvedNode {
+        UnresolvedNode::new(&self.storage.meta.name, Some("outflow"))
+    }
+
     pub fn input_connectors(&self, slot: Option<&NodeSlot>) -> Result<Vec<UnresolvedNode>, SchemaError> {
         if let Some(slot) = slot {
             Err(SchemaError::InputNodeSlotNotSupported { slot: slot.clone() })
@@ -362,19 +424,27 @@ impl ReservoirNode {
             ReservoirOutputNodeSlot::Storage => {
                 vec![self.meta().name.as_str().into()]
             }
-            ReservoirOutputNodeSlot::Compensation => {
-                vec![self.compensation_node_sub_name()]
-            }
-            ReservoirOutputNodeSlot::Spill => match self.spill {
-                Some(SpillNodeType::LinkNode) => {
-                    vec![self.spill_node_sub_name()]
-                }
-                _ => {
+            ReservoirOutputNodeSlot::River => {
+                // If there is an outflow node, return its sub-name. Otherwise, return the storage node's name.
+                if self.has_outflow_node()
+                    && matches!(
+                        self.outflow_node_type.unwrap_or(Self::DEFAULT_OUTFLOW_NODE_TYPE),
+                        OutflowNodeType::LinkNode
+                    )
+                {
+                    vec![self.outflow_node_sub_name()]
+                } else {
                     // This should not happen because we already validated the slot in `output_slot`,
                     // but we include this for completeness.
                     return Err(SchemaError::OutputNodeSlotNotSupported { slot: slot.into() });
                 }
-            },
+            }
+            ReservoirOutputNodeSlot::Compensation => {
+                vec![self.compensation_node_sub_name()]
+            }
+            ReservoirOutputNodeSlot::Spill => {
+                vec![self.spill_node_sub_name()]
+            }
         };
 
         Ok(indices)
@@ -430,47 +500,73 @@ impl ReservoirNode {
         // Storage node name
         let storage_name = UnresolvedNode::new(self.meta().name.as_str(), None);
 
-        // add compensation node and edge
-        let comp_node = match &self.compensation {
-            Some(compensation) => {
-                let mut comp = pywr_core::NodeBuilder::link(self.compensation_node_sub_name());
+        // Add a shared outflow link if either branch is configured to feed it.
+        let outflow_name = if self.has_outflow_node() {
+            let outflow_node = match self.outflow_node_type.unwrap_or(Self::DEFAULT_OUTFLOW_NODE_TYPE) {
+                OutflowNodeType::OutputNode => pywr_core::NodeBuilder::output(self.outflow_node_sub_name()),
+                OutflowNodeType::LinkNode => pywr_core::NodeBuilder::link(self.outflow_node_sub_name()),
+            };
 
-                let value = compensation.load(network, args, Some(&self.meta().name))?;
-                comp.min_flow(value);
-
-                let comp_name = comp.name().clone();
-                network.connect(storage_name.clone(), comp_name.clone());
-                network.node(comp);
-
-                Some(comp_name)
-            }
-            None => None,
+            let name = outflow_node.name().clone();
+            network.node(outflow_node);
+            Some(name)
+        } else {
+            None
         };
+
+        // add compensation node and edge
+
+        if let Some(compensation) = &self.compensation {
+            let mut comp = pywr_core::NodeBuilder::link(self.compensation_node_sub_name());
+
+            let flow = compensation.flow.load(network, args, Some(&self.meta().name))?;
+            comp.max_flow(flow);
+            if let Some(cost) = &compensation.cost {
+                let value = cost.load(network, args, Some(&self.meta().name))?;
+                comp.cost(value);
+            }
+
+            let comp_name = comp.name().clone();
+            network.connect(storage_name.clone(), comp_name.clone());
+            network.node(comp);
+
+            if compensation
+                .connect_to_outflow
+                .unwrap_or(Self::DEFAULT_CONNECT_COMPENSATION_TO_OUTFLOW)
+            {
+                if let Some(outflow_name) = &outflow_name {
+                    network.connect(comp_name.clone(), outflow_name.clone());
+                } else {
+                    unreachable!("Compensation node is set to connect to outflow, but no outflow node was created.");
+                }
+            }
+        }
 
         // add spill and edge
-        let spill_node = match &self.spill {
-            None => None,
-            Some(node_type) => {
-                let spill = match node_type {
-                    SpillNodeType::OutputNode => pywr_core::NodeBuilder::output(self.spill_node_sub_name()),
-                    SpillNodeType::LinkNode => pywr_core::NodeBuilder::link(self.spill_node_sub_name()),
-                };
 
-                let spill_name = spill.name().clone();
-                network.connect(storage_name.clone(), spill_name.clone());
+        if let Some(spill) = &self.spill {
+            let mut spill_builder = pywr_core::NodeBuilder::link(self.spill_node_sub_name());
 
-                network.node(spill);
-
-                Some(spill_name)
+            if spill
+                .connect_to_outflow
+                .unwrap_or(Self::DEFAULT_CONNECT_SPILL_TO_OUTFLOW)
+            {
+                if let Some(outflow_name) = &outflow_name {
+                    network.connect(spill_builder.name().clone(), outflow_name.clone());
+                } else {
+                    unreachable!("Spill node is set to connect to outflow, but no outflow node was created.");
+                }
             }
-        };
 
-        // connect compensation and spill
-        let connect_comp = self
-            .connect_compensation_to_spill
-            .unwrap_or(Self::DEFAULT_CONNECT_COMPENSATION_TO_SPILL);
-        if connect_comp && let (Some(spill), Some(comp)) = (spill_node, comp_node) {
-            network.connect(comp, spill);
+            if let Some(cost) = &spill.cost {
+                let value = cost.load(network, args, Some(&self.meta().name))?;
+                spill_builder.cost(value);
+            }
+
+            let spill_name = spill_builder.name().clone();
+            network.connect(storage_name.clone(), spill_name.clone());
+
+            network.node(spill_builder);
         }
 
         // add rainfall node and edge
@@ -721,7 +817,7 @@ mod tests {
         let model = builder.build().unwrap();
 
         let network = model.network();
-        assert_eq!(network.nodes().len(), 5);
-        assert_eq!(network.edges().len(), 5);
+        assert_eq!(network.nodes().len(), 6);
+        assert_eq!(network.edges().len(), 6);
     }
 }
