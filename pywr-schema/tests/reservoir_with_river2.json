@@ -51,9 +51,7 @@
             "value": -15.0
           }
         },
-        "spill": {
-          "type": "LinkNode"
-        }
+        "spill": {}
       },
       {
         "meta": {

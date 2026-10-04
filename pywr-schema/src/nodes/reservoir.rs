@@ -19,6 +19,7 @@ use strum_macros::{Display, EnumIter};
 
 /// The type of the shared outflow node fed by compensation and/or spill.
 #[derive(serde::Deserialize, serde::Serialize, Clone, Copy, Debug, JsonSchema, PywrVisitAll, Display, EnumIter)]
+#[serde(deny_unknown_fields)]
 pub enum OutflowNodeType {
     /// The outflow node is created as output node.
     OutputNode,
@@ -28,6 +29,7 @@ pub enum OutflowNodeType {
 
 /// Configuration for the optional spill link node.
 #[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema, PywrVisitAll)]
+#[serde(deny_unknown_fields)]
 pub struct Spill {
     /// The cost to assign to the spill node.
     pub cost: Option<Metric>,
@@ -38,6 +40,7 @@ pub struct Spill {
 
 /// The bathymetry data type.
 #[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema, PywrVisitAll)]
+#[serde(deny_unknown_fields)]
 pub enum BathymetryType {
     /// The bathymetry is calculated by interpolating the storage and area data piecewise.
     Interpolated {
@@ -50,6 +53,7 @@ pub enum BathymetryType {
 
 /// The bathymetric data
 #[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema, PywrVisitAll)]
+#[serde(deny_unknown_fields)]
 pub struct Bathymetry {
     /// The bathymetric data and type.
     pub data: BathymetryType,
@@ -59,6 +63,7 @@ pub struct Bathymetry {
 
 /// The evaporation data
 #[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema, PywrVisitAll)]
+#[serde(deny_unknown_fields)]
 pub struct Evaporation {
     /// The [`Metric`] containing the evaporation height.
     pub data: Metric,
@@ -75,6 +80,7 @@ impl Evaporation {
 
 /// The leakage data
 #[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema, PywrVisitAll)]
+#[serde(deny_unknown_fields)]
 pub struct Leakage {
     /// The [`Metric`] containing the lost flow.
     pub loss: Metric,
@@ -84,6 +90,7 @@ pub struct Leakage {
 
 /// The rainfall data
 #[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema, PywrVisitAll)]
+#[serde(deny_unknown_fields)]
 pub struct Rainfall {
     /// The [`Metric`] containing the rainfall level.
     pub data: Metric,
@@ -98,6 +105,7 @@ impl Rainfall {
 
 /// The compensation data
 #[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema, PywrVisitAll)]
+#[serde(deny_unknown_fields)]
 pub struct Compensation {
     /// The maximum flow through the compensation link (not a guaranteed minimum).
     pub flow: Metric,
@@ -295,14 +303,22 @@ impl ReservoirNode {
     }
 
     fn has_outflow_node(&self) -> bool {
+        self.spill_connects_to_outflow() || self.compensation_connects_to_outflow()
+    }
+
+    fn compensation_connects_to_outflow(&self) -> bool {
+        self.compensation.as_ref().is_some_and(|compensation| {
+            compensation
+                .connect_to_outflow
+                .unwrap_or(Self::DEFAULT_CONNECT_COMPENSATION_TO_OUTFLOW)
+        })
+    }
+
+    fn spill_connects_to_outflow(&self) -> bool {
         self.spill.as_ref().is_some_and(|spill| {
             spill
                 .connect_to_outflow
                 .unwrap_or(Self::DEFAULT_CONNECT_SPILL_TO_OUTFLOW)
-        }) || self.compensation.as_ref().is_some_and(|compensation| {
-            compensation
-                .connect_to_outflow
-                .unwrap_or(Self::DEFAULT_CONNECT_COMPENSATION_TO_OUTFLOW)
         })
     }
 
@@ -530,15 +546,10 @@ impl ReservoirNode {
             network.connect(storage_name.clone(), comp_name.clone());
             network.node(comp);
 
-            if compensation
-                .connect_to_outflow
-                .unwrap_or(Self::DEFAULT_CONNECT_COMPENSATION_TO_OUTFLOW)
+            if self.compensation_connects_to_outflow()
+                && let Some(outflow_name) = &outflow_name
             {
-                if let Some(outflow_name) = &outflow_name {
-                    network.connect(comp_name.clone(), outflow_name.clone());
-                } else {
-                    unreachable!("Compensation node is set to connect to outflow, but no outflow node was created.");
-                }
+                network.connect(comp_name.clone(), outflow_name.clone());
             }
         }
 
@@ -547,15 +558,10 @@ impl ReservoirNode {
         if let Some(spill) = &self.spill {
             let mut spill_builder = pywr_core::NodeBuilder::link(self.spill_node_sub_name());
 
-            if spill
-                .connect_to_outflow
-                .unwrap_or(Self::DEFAULT_CONNECT_SPILL_TO_OUTFLOW)
+            if self.spill_connects_to_outflow()
+                && let Some(outflow_name) = &outflow_name
             {
-                if let Some(outflow_name) = &outflow_name {
-                    network.connect(spill_builder.name().clone(), outflow_name.clone());
-                } else {
-                    unreachable!("Spill node is set to connect to outflow, but no outflow node was created.");
-                }
+                network.connect(spill_builder.name().clone(), outflow_name.clone());
             }
 
             if let Some(cost) = &spill.cost {
