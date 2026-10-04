@@ -30,7 +30,7 @@ It is recommended to install Pywr into a virtual environment.
 ```bash
 python -m venv .venv
 source .venv/bin/activate  # On Windows use `.venv\Scripts\activate`
-python -m pip install --upgrade --pre "pywr>=2.0.0rc1,<3"
+python -m pip install --upgrade "pywr>=2.0.0rc1,<3"
 ```
 
 #### Using uv
@@ -40,11 +40,11 @@ Alternatively, you can use `uv` to create and manage virtual environments:
 ```bash
 uv init my-project
 cd my-project
-uv add --prerelease allow "pywr>=2.0.0rc1,<3"
+uv add allow "pywr>=2.0.0rc1,<3"
 ```
 
 The version constraint selects v2 rather than v1.x. Once the stable v2 release is published, install it with
-`python -m pip install --upgrade "pywr>=2,<3"` (no `--pre` required).
+`python -m pip install --upgrade "pywr>=2,<3"`.
 Optional extras for data integrations include `pandas`, `polars`, `excel` and `hdf`;
 for example, use `"pywr[pandas,excel]>=2.0.0rc1,<3"` with the pip command above.
 
