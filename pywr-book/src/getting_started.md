@@ -40,7 +40,7 @@ Alternatively, you can use `uv` to create and manage virtual environments:
 ```bash
 uv init my-project
 cd my-project
-uv add allow "pywr>=2.0.0rc1,<3"
+uv add "pywr>=2.0.0rc1,<3"
 ```
 
 The version constraint selects v2 rather than v1.x. Once the stable v2 release is published, install it with
