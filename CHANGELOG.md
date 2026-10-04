@@ -1,6 +1,23 @@
 # Changelog
 
-All notable changes to this project since v2.0.0-beta will be documented in this file.
+This changelog records changes since the v2.0.0 beta series.
+
+The versioned entries below record implementation-level changes.
+
+## [2.0.0-rc1] - 2026-10-04
+
+### 🚀 Features
+
+- *(schema)* Require piecewise curve values and non-zero reset months (#891)
+- *(schema)* Require a catchment's flow (#893)
+- *(schema)* Remove unused and unfinished NodeBuilder struct. (#892)
+- *(schema)* Derive Debug for MetricSet types. (#894)
+- *(schema)* Revise the implementation of Reservoir compensation and spill. (#896)
+
+### ⚙️ Miscellaneous Tasks
+
+- Drop Python 3.10 support. (#890)
+- *(release)* Prepare v2.0.0-rc1
 
 ## [2.0.0-beta12] - 2026-10-03
 
