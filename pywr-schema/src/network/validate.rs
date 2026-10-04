@@ -654,7 +654,7 @@ mod tests {
                         "type": "Reservoir",
                         "max_volume": { "type": "Literal", "value": 100.0 },
                         "initial_volume": { "type": "Proportional", "proportion": 1.0 },
-                        "spill": "LinkNode"
+                        "spill": {}
                     }
                 ],
                 "edges": [
@@ -686,7 +686,7 @@ mod tests {
                         "type": "Reservoir",
                         "max_volume": { "type": "Literal", "value": 100.0 },
                         "initial_volume": { "type": "Proportional", "proportion": 1.0 },
-                        "spill": "LinkNode"
+                        "spill": {"connect_to_outflow": false}
                     },
                     {
                         "meta": { "name": "without-spill" },
@@ -769,7 +769,7 @@ mod tests {
                 "meta": { "name": "reservoir" },
                 "type": "Reservoir",
                 "initial_volume": { "type": "Proportional", "proportion": 1.0 },
-                "compensation": { "type": "Literal", "value": 1.0 },
+                "compensation": { "flow": { "type": "Literal", "value": 1.0 } },
                 "rainfall": { "data": { "type": "Literal", "value": 1.0 } }
             },
             {
