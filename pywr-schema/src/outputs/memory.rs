@@ -49,6 +49,7 @@ impl From<MemoryAggregationOrder> for pywr_core::recorders::AggregationOrder {
 
 #[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitPaths)]
+#[serde(deny_unknown_fields)]
 pub struct MemoryOutput {
     pub meta: NamedMeta,
     pub metric_set: String,
