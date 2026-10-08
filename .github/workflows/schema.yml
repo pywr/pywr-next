@@ -1,0 +1,39 @@
+name: JSON Schema
+
+# Attach the JSON Schemas for the model files to each published release, so that they have a stable,
+# versioned URL for editors and other tools.
+on:
+  release:
+    types: [ published ]
+
+permissions:
+  contents: write
+
+env:
+  CARGO_INCREMENTAL: 0
+  CARGO_TERM_COLOR: always
+
+jobs:
+  schema:
+    name: Export and upload the JSON Schemas
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.release.tag_name }}
+          submodules: true
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+      - name: "Set up Python"
+        uses: actions/setup-python@v7
+        with:
+          python-version-file: "pyproject.toml"
+      - name: Export the schemas
+        run: |
+          cargo run --locked --release -p pywr-cli -- export-schema pywr-v2.schema.json
+          cargo run --locked --release -p pywr-cli -- export-schema pywr.schema.json --union
+      - name: Upload the schemas to the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: gh release upload "$TAG" pywr-v2.schema.json pywr.schema.json
