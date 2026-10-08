@@ -134,6 +134,9 @@ enum Commands {
     ExportSchema {
         /// Path to save the JSON schema.
         out: PathBuf,
+        /// Write one schema that covers both Pywr v1 and v2 model files.
+        #[arg(long)]
+        union: bool,
     },
     /// Run the Pywr model runner service over a local socket or standard I/O.
     RunServer {
@@ -243,7 +246,7 @@ fn main() -> Result<()> {
             num_scenarios,
             solver,
         } => run_random(*num_systems, *density, *num_scenarios, solver),
-        Commands::ExportSchema { out } => export_schema(out)?,
+        Commands::ExportSchema { out, union } => export_schema(out, *union)?,
         Commands::RunServer { mode, socket_name } => {
             run_server(*mode, socket_name)?;
         }
@@ -531,8 +534,12 @@ fn run_random(num_systems: usize, density: usize, num_scenarios: usize, solver: 
     .unwrap();
 }
 
-fn export_schema(out_path: &Path) -> Result<()> {
-    let schema = schema_for!(ModelSchema);
+fn export_schema(out_path: &Path, union: bool) -> Result<()> {
+    let schema = if union {
+        pywr_schema::json_schema::pywr_model_schema(pywr_v1_schema::json_schema::CustomTypes::Any)
+    } else {
+        schema_for!(ModelSchema)
+    };
     std::fs::write(
         out_path,
         serde_json::to_string_pretty(&schema).with_context(|| "Failed serialise Pywr schema".to_string())?,
