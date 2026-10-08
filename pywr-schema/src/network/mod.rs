@@ -876,7 +876,7 @@ impl NetworkSchema {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Clone, Display, EnumDiscriminants)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, JsonSchema, Display, EnumDiscriminants)]
 #[serde(untagged)]
 #[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
 #[strum_discriminants(name(NetworkSchemaRefType))]
