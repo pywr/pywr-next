@@ -140,8 +140,10 @@ fn add_v2_documents(defs: &mut Map<String, Value>) -> Result<(String, String), J
 /// The JSON Schema for any Pywr model file, v1 or v2.
 ///
 /// A document is one of four kinds, told apart by its identifying property: `nodes` (v1 model),
-/// `models` (v1 multi-model), `network` (v2 model) or `networks` (v2 multi-network model). Each kind
-/// forbids the other kinds' properties so that a file mixing them is rejected. The definitions of each version are
+/// `models` (v1 multi-model), `network` (v2 model) or `networks` (v2 multi-network model). Exactly
+/// one of those properties must be present. The schema of the kind that is present is applied
+/// through an `if`/`then`, so that an invalid document reports the errors of its own kind rather
+/// than a bare "not valid under any of the given schemas". The definitions of each version are
 /// namespaced `v1_` or `v2_` so that the two cannot collide.
 ///
 /// `v1_custom_types` selects how the v1 schemas treat nodes and parameters that fail to match a
@@ -183,16 +185,26 @@ pub fn pywr_model_schema(v1_custom_types: CustomTypes) -> Result<Schema, JsonSch
     let one_of: Vec<Value> = branches
         .iter()
         .map(|branch| {
+            json!({
+                "title": format!("Pywr {} document with `{}`", branch.version, branch.key),
+                "required": [branch.key],
+            })
+        })
+        .collect();
+    let all_of: Vec<Value> = branches
+        .iter()
+        .map(|branch| {
             let others: Map<String, Value> = branches
                 .iter()
                 .filter(|other| other.key != branch.key)
                 .map(|other| (other.key.to_string(), Value::Bool(false)))
                 .collect();
             json!({
-                "title": format!("Pywr {} document with `{}`", branch.version, branch.key),
-                "required": [branch.key],
-                "properties": others,
-                "$ref": format!("{DEFS_POINTER}{}", branch.root),
+                "if": { "required": [branch.key] },
+                "then": {
+                    "properties": others,
+                    "$ref": format!("{DEFS_POINTER}{}", branch.root),
+                },
             })
         })
         .collect();
@@ -202,6 +214,7 @@ pub fn pywr_model_schema(v1_custom_types: CustomTypes) -> Result<Schema, JsonSch
         "title": "Pywr model (v1 or v2)",
         "description": "A Pywr model: v1 (`nodes`, or `models` for a multi-model) or v2 (`network`, or `networks` for a multi-network model).",
         "oneOf": one_of,
+        "allOf": all_of,
         "$defs": defs,
     });
     Schema::try_from(schema).map_err(|_| JsonSchemaError::UnionNotAnObject)
@@ -210,9 +223,11 @@ pub fn pywr_model_schema(v1_custom_types: CustomTypes) -> Result<Schema, JsonSch
 #[cfg(test)]
 mod tests {
     use super::pywr_model_schema;
+    use crate::{ModelSchema, MultiNetworkModelSchema};
     use jsonschema::Validator;
     use pywr_v1_schema::json_schema::CustomTypes;
-    use serde_json::Value;
+    use schemars::{JsonSchema, schema_for};
+    use serde_json::{Value, json};
     use std::fs;
     use std::path::{Path, PathBuf};
 
@@ -220,15 +235,22 @@ mod tests {
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests")
     }
 
+    fn union_schema(custom_types: CustomTypes) -> Value {
+        let schema = pywr_model_schema(custom_types).expect("the union is built");
+        serde_json::to_value(schema).expect("schema serialises")
+    }
+
     fn validator(custom_types: CustomTypes) -> Validator {
-        let schema = serde_json::to_value(pywr_model_schema(custom_types).expect("the union is built"))
-            .expect("schema serialises");
-        jsonschema::validator_for(&schema).expect("the union is a valid JSON Schema")
+        jsonschema::validator_for(&union_schema(custom_types)).expect("the union is a valid JSON Schema")
     }
 
     fn read(path: &Path) -> Value {
         let data = fs::read_to_string(path).unwrap_or_else(|e| panic!("read {path:?}: {e}"));
         serde_json::from_str(&data).unwrap_or_else(|e| panic!("parse {path:?}: {e}"))
+    }
+
+    fn errors(validator: &Validator, document: &Value) -> Vec<String> {
+        validator.iter_errors(document).map(|e| e.to_string()).collect()
     }
 
     /// The JSON files directly in `dir` that are model documents: those with a `time` property.
@@ -244,6 +266,46 @@ mod tests {
         files
     }
 
+    /// The v1 models used to test conversion: the files in `tests/v1` with a `nodes` property.
+    fn v1_model_files() -> Vec<PathBuf> {
+        let dir = tests_dir().join("v1");
+        let files: Vec<PathBuf> = fs::read_dir(&dir)
+            .expect("v1 test models")
+            .map(|entry| entry.expect("directory entry").path())
+            .filter(|path| read(path).get("nodes").is_some())
+            .collect();
+        assert!(!files.is_empty());
+        files
+    }
+
+    fn v2_model() -> Value {
+        read(&tests_dir().join("simple1.json"))
+    }
+
+    fn v2_multi_network_model() -> Value {
+        read(&tests_dir().join("multi1").join("model.json"))
+    }
+
+    fn v1_model() -> Value {
+        read(&tests_dir().join("v1").join("scenarios.json"))
+    }
+
+    fn without(mut document: Value, pointer: &str) -> Value {
+        let (parent, key) = pointer.rsplit_once('/').expect("a pointer with a parent");
+        document
+            .pointer_mut(parent)
+            .and_then(Value::as_object_mut)
+            .expect("the parent is an object")
+            .remove(key)
+            .expect("the key is present");
+        document
+    }
+
+    fn with(mut document: Value, pointer: &str, value: Value) -> Value {
+        *document.pointer_mut(pointer).expect("the pointer is present") = value;
+        document
+    }
+
     #[test]
     fn v2_models_validate() {
         let validator = validator(CustomTypes::Any);
@@ -251,47 +313,167 @@ mod tests {
         files.extend(model_files(&tests_dir().join("multi1")));
         files.extend(model_files(&tests_dir().join("multi2")));
         for path in files {
-            let errors: Vec<String> = validator.iter_errors(&read(&path)).map(|e| e.to_string()).collect();
+            let errors = errors(&validator, &read(&path));
             assert!(errors.is_empty(), "{path:?}: {errors:?}");
         }
     }
 
-    /// The v1 models used to test conversion are v1 documents, so only the v1 branch accepts them.
     #[test]
     fn v1_models_validate() {
         let validator = validator(CustomTypes::Any);
-        let dir = tests_dir().join("v1");
-        let v1_models: Vec<PathBuf> = fs::read_dir(&dir)
-            .expect("v1 test models")
-            .map(|entry| entry.expect("directory entry").path())
-            .filter(|path| read(path).get("nodes").is_some())
-            .collect();
-        assert!(!v1_models.is_empty());
-        for path in v1_models {
-            let errors: Vec<String> = validator.iter_errors(&read(&path)).map(|e| e.to_string()).collect();
+        for path in v1_model_files() {
+            let errors = errors(&validator, &read(&path));
             assert!(errors.is_empty(), "{path:?}: {errors:?}");
         }
     }
 
+    /// Documents without exactly one identifying property are rejected, whatever else they hold.
     #[test]
-    fn mixed_or_unidentified_documents_are_rejected() {
+    fn documents_without_exactly_one_identifying_property_are_rejected() {
         let validator = validator(CustomTypes::Any);
-        let v2 = read(&tests_dir().join("simple1.json"));
-        let v1 = read(&tests_dir().join("v1").join("scenarios.json"));
-        assert!(validator.is_valid(&v2) && validator.is_valid(&v1));
+        let (v1, v2, multi) = (v1_model(), v2_model(), v2_multi_network_model());
+        assert!(validator.is_valid(&v1) && validator.is_valid(&v2) && validator.is_valid(&multi));
 
-        let mut both = v2.clone();
-        both["nodes"] = v1["nodes"].clone();
+        let mut v2_with_nodes = v2.clone();
+        v2_with_nodes["nodes"] = v1["nodes"].clone();
+        let mut v1_with_network = v1.clone();
+        v1_with_network["network"] = v2["network"].clone();
+        let mut v1_with_models = v1.clone();
+        v1_with_models["models"] = json!([]);
+        let mut v2_with_networks = v2.clone();
+        v2_with_networks["networks"] = multi["networks"].clone();
+        let mut multi_with_network = multi.clone();
+        multi_with_network["network"] = v2["network"].clone();
+
+        let rejected = [
+            ("an empty object", json!({})),
+            ("an array", json!([])),
+            ("a string", json!("x")),
+            ("no identifying property", without(v2.clone(), "/network")),
+            ("`nodes` and `network`", v2_with_nodes.clone()),
+            ("`network` and `nodes`", v1_with_network),
+            ("`nodes` and `models`", v1_with_models),
+            ("`network` and `networks`", v2_with_networks),
+            ("`networks` and `network`", multi_with_network),
+        ];
+        for (name, document) in rejected {
+            assert!(!validator.is_valid(&document), "{name} must be rejected");
+        }
+
+        // A document with two identifying properties is reported against the one it is not allowed to have.
+        let mixed = errors(&validator, &v2_with_nodes);
+        assert!(mixed.iter().any(|e| e.contains("False schema")), "{mixed:?}");
+    }
+
+    /// An invalid document is checked against the schema of its own kind, and the errors say what is
+    /// wrong with it.
+    #[test]
+    fn invalid_documents_are_rejected_by_their_own_kind() {
+        let validator = validator(CustomTypes::Any);
+
+        let v2_without_time = errors(&validator, &without(v2_model(), "/time"));
         assert!(
-            !validator.is_valid(&both),
-            "`nodes` and `network` together must be rejected"
+            v2_without_time
+                .iter()
+                .any(|e| e.contains("\"time\" is a required property")),
+            "{v2_without_time:?}"
         );
 
-        let mut neither = v2;
-        neither.as_object_mut().expect("a model is an object").remove("network");
+        let v1_without_timestepper = errors(&validator, &without(v1_model(), "/timestepper"));
         assert!(
-            !validator.is_valid(&neither),
-            "a document with no identifying property must be rejected"
+            v1_without_timestepper
+                .iter()
+                .any(|e| e.contains("\"timestepper\" is a required property")),
+            "{v1_without_timestepper:?}"
         );
+
+        let multi_without_time = errors(&validator, &without(v2_multi_network_model(), "/time"));
+        assert!(
+            multi_without_time
+                .iter()
+                .any(|e| e.contains("\"time\" is a required property")),
+            "{multi_without_time:?}"
+        );
+
+        let invalid = [
+            (
+                "v2 model, unknown node type",
+                with(v2_model(), "/network/nodes/0/type", json!("Bogus")),
+            ),
+            (
+                "v2 model, `network` is a number",
+                with(v2_model(), "/network", json!(5)),
+            ),
+            ("v2 model, `time` is a number", with(v2_model(), "/time", json!(5))),
+            (
+                "v2 multi-network model, entry `network` is a number",
+                with(v2_multi_network_model(), "/networks/0/network", json!(5)),
+            ),
+            ("v1 model, an edge is a number", with(v1_model(), "/edges/0", json!(5))),
+            ("v1 model, `nodes` is a string", with(v1_model(), "/nodes", json!("x"))),
+        ];
+        for (name, document) in invalid {
+            assert!(!validator.is_valid(&document), "{name} must be rejected");
+        }
+    }
+
+    /// A node of an unknown type is a custom node to the v1 deserialisers, so a v1 model with one is valid.
+    #[test]
+    fn v1_unknown_node_types_are_custom_nodes() {
+        let document = with(v1_model(), "/nodes/0/type", json!("Bogus"));
+        assert!(validator(CustomTypes::Any).is_valid(&document));
+    }
+
+    /// The v2 half of the union is the standalone v2 schema, with every definition under the `v2_` prefix.
+    #[test]
+    fn v2_definitions_match_the_standalone_schema() {
+        let union = union_schema(CustomTypes::Any);
+        let union_defs = union["$defs"].as_object().expect("the union has definitions");
+
+        for (root, mut standalone) in [
+            (
+                ModelSchema::schema_name(),
+                serde_json::to_value(schema_for!(ModelSchema)),
+            ),
+            (
+                MultiNetworkModelSchema::schema_name(),
+                serde_json::to_value(schema_for!(MultiNetworkModelSchema)),
+            ),
+        ]
+        .map(|(name, schema)| (name, schema.expect("schema serialises")))
+        {
+            let standalone = standalone.as_object_mut().expect("a root schema is an object");
+            standalone.remove("$schema");
+            standalone.remove("title");
+            let definitions = standalone.remove("$defs").expect("a root schema has definitions");
+            let definitions = definitions.as_object().expect("definitions are an object");
+            for (name, definition) in definitions {
+                let unioned = union_defs
+                    .get(&format!("v2_{name}"))
+                    .expect("definition is in the union");
+                assert_eq!(&strip_prefix(unioned, "v2_"), definition, "definition {name}");
+            }
+            let unioned_root = union_defs.get(&format!("v2_{root}")).expect("the root is in the union");
+            assert_eq!(strip_prefix(unioned_root, "v2_"), Value::Object(standalone.clone()));
+        }
+    }
+
+    /// Undo the namespacing of `$ref`s.
+    fn strip_prefix(value: &Value, prefix: &str) -> Value {
+        match value {
+            Value::Object(map) => Value::Object(
+                map.iter()
+                    .map(|(key, child)| match child {
+                        Value::String(reference) if key == "$ref" => (
+                            key.clone(),
+                            Value::String(reference.replacen(&format!("#/$defs/{prefix}"), "#/$defs/", 1)),
+                        ),
+                        _ => (key.clone(), strip_prefix(child, prefix)),
+                    })
+                    .collect(),
+            ),
+            Value::Array(items) => Value::Array(items.iter().map(|item| strip_prefix(item, prefix)).collect()),
+            other => other.clone(),
+        }
     }
 }
