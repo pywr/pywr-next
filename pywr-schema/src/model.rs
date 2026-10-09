@@ -886,7 +886,7 @@ impl ModelSchema {
 }
 
 #[skip_serializing_none]
-#[derive(serde::Deserialize, serde::Serialize, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, JsonSchema)]
 pub struct MultiNetworkTransfer {
     pub from_network: String,
     pub metric: Metric,
@@ -894,7 +894,7 @@ pub struct MultiNetworkTransfer {
     pub initial_value: Option<f64>,
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, JsonSchema)]
 pub struct MultiNetworkEntry {
     pub name: String,
     pub network: NetworkSchemaRef,
@@ -993,7 +993,7 @@ pub enum MultiNetworkModelSchemaBuildError {
 ///
 ///
 #[skip_serializing_none]
-#[derive(serde::Deserialize, serde::Serialize, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, JsonSchema)]
 pub struct MultiNetworkModelSchema {
     pub metadata: Metadata,
     pub time: TimeDomain,
