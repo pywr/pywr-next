@@ -1,7 +1,8 @@
 name: JSON Schema
 
-# Attach the JSON Schemas for the model files to each published release, so that they have a stable,
-# versioned URL for editors and other tools.
+# Attach the JSON Schemas for the model files to each published release, so that they have a
+# versioned URL for editors and other tools. The upload replaces assets of the same name, so a
+# re-run of the job on a release is safe.
 on:
   release:
     types: [ published ]
@@ -36,4 +37,4 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.event.release.tag_name }}
-        run: gh release upload "$TAG" pywr-v2.schema.json pywr.schema.json
+        run: gh release upload --clobber "$TAG" pywr-v2.schema.json pywr.schema.json
