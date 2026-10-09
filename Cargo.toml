@@ -60,6 +60,7 @@ heck = "0.5"
 hex = "0.4.3"
 interprocess = "2.4"
 jiff = { version = "0.2", features = ["serde"] }
+jsonschema = { version = "0.58", default-features = false }
 libc = "0.2"
 log = "0.4"
 md-5 = "0.11"

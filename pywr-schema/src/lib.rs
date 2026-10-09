@@ -10,6 +10,7 @@ mod digest;
 pub mod edge;
 mod error;
 mod files;
+pub mod json_schema;
 mod mermaid;
 pub mod meta;
 pub mod metric;
