@@ -1,24 +1,53 @@
 //! A single JSON Schema covering the Pywr v1 and v2 model file formats.
+//!
+//! Only whole model files are covered. A bare network file (a v2 `NetworkSchema` or a v1 network)
+//! has no identifying property and so no entry in the union.
 
 use pywr_v1_schema::json_schema::{
     CustomTypes, model_schema as v1_model_schema, multi_model_schema as v1_multi_model_schema,
 };
-use schemars::{JsonSchema, Schema, schema_for};
+use pywr_v1_schema::{PywrModel, PywrMultiModel};
+use schemars::{JsonSchema, Schema, SchemaGenerator};
 use serde_json::{Map, Value, json};
+use thiserror::Error;
 
 const DEFS_POINTER: &str = "#/$defs/";
 
+/// Errors building the union schema.
+///
+/// Each variant means that a schema generator produced a shape this module does not handle, for
+/// example after a `schemars` upgrade.
+#[derive(Debug, Error)]
+pub enum JsonSchemaError {
+    #[error("the root schema of `{0}` is not a JSON object")]
+    RootNotAnObject(String),
+    #[error("the root schema of `{0}` has no definitions")]
+    RootWithoutDefinitions(String),
+    #[error("there is no definition for `{0}`")]
+    MissingDefinition(String),
+    #[error("unexpected `$ref` form: `{0}`")]
+    UnexpectedReference(String),
+    #[error("definition `{0}` differs between documents of one version")]
+    ConflictingDefinition(String),
+    #[error("the union is not a JSON object")]
+    UnionNotAnObject,
+}
+
 /// A document kind, identified by the property that only that kind has.
 struct Branch {
-    /// Prefix that namespaces the definitions of every document of one version.
-    prefix: &'static str,
+    /// The Pywr major version of the documents, as shown in the title.
+    version: &'static str,
     /// The property that identifies the document kind.
     key: &'static str,
-    schema: Schema,
+    /// The name of the definition that holds the root schema of the document, with its prefix.
+    root: String,
 }
 
 /// Prefix every `#/$defs/<name>` reference in `value` with `prefix`.
-fn prefix_refs(value: &mut Value, prefix: &str) {
+///
+/// Every string under a `$ref` key is taken to be a reference, including one inside a literal such
+/// as a `default`; none of the generated schemas has such a literal.
+fn prefix_refs(value: &mut Value, prefix: &str) -> Result<(), JsonSchemaError> {
     match value {
         Value::Object(map) => {
             for (key, child) in map.iter_mut() {
@@ -26,104 +55,144 @@ fn prefix_refs(value: &mut Value, prefix: &str) {
                     Value::String(reference) if key == "$ref" => {
                         let name = reference
                             .strip_prefix(DEFS_POINTER)
-                            .unwrap_or_else(|| panic!("unexpected $ref form: {reference}"));
+                            .ok_or_else(|| JsonSchemaError::UnexpectedReference(reference.clone()))?;
                         *reference = format!("{DEFS_POINTER}{prefix}{name}");
                     }
-                    _ => prefix_refs(child, prefix),
+                    _ => prefix_refs(child, prefix)?,
                 }
             }
         }
-        Value::Array(items) => items.iter_mut().for_each(|item| prefix_refs(item, prefix)),
+        Value::Array(items) => {
+            for item in items {
+                prefix_refs(item, prefix)?;
+            }
+        }
         _ => {}
     }
+    Ok(())
 }
 
-/// Move the definitions of `schema` into `defs` under `prefix`, with its root as one more definition.
+/// Move `definitions` into `defs` under `prefix`.
 ///
-/// Returns the name of the definition that holds the root. Two documents of one version share
-/// definitions, which must then be identical.
-fn add_namespaced(defs: &mut Map<String, Value>, schema: Schema, prefix: &str) -> String {
-    let Value::Object(mut root) = schema.to_value() else {
-        panic!("a root schema is an object");
-    };
-    root.remove("$schema");
-    let Some(Value::Object(definitions)) = root.remove("$defs") else {
-        panic!("a root schema has definitions");
-    };
-    let Some(Value::String(title)) = root.remove("title") else {
-        panic!("a root schema has a title");
-    };
-
-    let root_name = format!("{prefix}{title}");
-    let definitions = definitions
-        .into_iter()
-        .map(|(name, definition)| (format!("{prefix}{name}"), definition))
-        .chain([(root_name.clone(), Value::Object(root))]);
+/// Documents of one version share definitions, which must then be identical.
+fn add_definitions(
+    defs: &mut Map<String, Value>,
+    definitions: Map<String, Value>,
+    prefix: &str,
+) -> Result<(), JsonSchemaError> {
     for (name, mut definition) in definitions {
-        prefix_refs(&mut definition, prefix);
-        if let Some(existing) = defs.insert(name.clone(), definition.clone()) {
-            assert_eq!(
-                existing, definition,
-                "definition {name} differs between documents of one version"
-            );
+        prefix_refs(&mut definition, prefix)?;
+        let name = format!("{prefix}{name}");
+        if let Some(existing) = defs.insert(name.clone(), definition.clone())
+            && existing != definition
+        {
+            return Err(JsonSchemaError::ConflictingDefinition(name));
         }
     }
-    root_name
+    Ok(())
 }
 
-fn v2_schema<T: JsonSchema>() -> Schema {
-    schema_for!(T)
+/// Move the definitions of the root schema `schema` of `T` into `defs` under `prefix`, with the
+/// root as one more definition, and return the name of that definition.
+fn add_root_schema<T: JsonSchema>(
+    defs: &mut Map<String, Value>,
+    schema: Schema,
+    prefix: &str,
+) -> Result<String, JsonSchemaError> {
+    let name = T::schema_name().into_owned();
+    let Value::Object(mut root) = schema.to_value() else {
+        return Err(JsonSchemaError::RootNotAnObject(name));
+    };
+    root.remove("$schema");
+    // `schemars` titles a root schema with the type name, which a definition of the same type
+    // (as it appears in a multi-model) does not carry; without this the two would differ.
+    root.remove("title");
+    let Some(Value::Object(mut definitions)) = root.remove("$defs") else {
+        return Err(JsonSchemaError::RootWithoutDefinitions(name));
+    };
+    definitions.insert(name.clone(), Value::Object(root));
+    add_definitions(defs, definitions, prefix)?;
+    Ok(format!("{prefix}{name}"))
+}
+
+/// Add the v2 document types `ModelSchema` and `MultiNetworkModelSchema` to `defs`.
+///
+/// One generator produces both, so they share one definition namespace by construction.
+fn add_v2_documents(defs: &mut Map<String, Value>) -> Result<(String, String), JsonSchemaError> {
+    const PREFIX: &str = "v2_";
+    let mut generator = SchemaGenerator::default();
+    generator.subschema_for::<crate::ModelSchema>();
+    generator.subschema_for::<crate::MultiNetworkModelSchema>();
+    let definitions = generator.take_definitions(true);
+
+    let roots = [
+        crate::ModelSchema::schema_name().into_owned(),
+        crate::MultiNetworkModelSchema::schema_name().into_owned(),
+    ];
+    if let Some(missing) = roots.iter().find(|name| !definitions.contains_key(*name)) {
+        return Err(JsonSchemaError::MissingDefinition(missing.clone()));
+    }
+    add_definitions(defs, definitions, PREFIX)?;
+    let [model, multi] = roots;
+    Ok((format!("{PREFIX}{model}"), format!("{PREFIX}{multi}")))
 }
 
 /// The JSON Schema for any Pywr model file, v1 or v2.
 ///
 /// A document is one of four kinds, told apart by its identifying property: `nodes` (v1 model),
-/// `models` (v1 multi-model), `network` (v2 model) or `networks` (v2 multi-network model). The
-/// definitions of each version are namespaced `v1_` or `v2_` so that the two cannot collide, and
-/// each kind forbids the other kinds' properties so that a file mixing them is rejected.
+/// `models` (v1 multi-model), `network` (v2 model) or `networks` (v2 multi-network model). Each kind
+/// forbids the other kinds' properties so that a file mixing them is rejected. The definitions of each version are
+/// namespaced `v1_` or `v2_` so that the two cannot collide.
 ///
 /// `v1_custom_types` selects how the v1 schemas treat nodes and parameters that fail to match a
 /// core definition; see [`CustomTypes`].
-pub fn pywr_model_schema(v1_custom_types: CustomTypes) -> Schema {
+///
+/// # Errors
+///
+/// Returns an error if a schema generator produces a shape this function cannot namespace; see
+/// [`JsonSchemaError`].
+pub fn pywr_model_schema(v1_custom_types: CustomTypes) -> Result<Schema, JsonSchemaError> {
+    let mut defs = Map::new();
+    let v1_model = add_root_schema::<PywrModel>(&mut defs, v1_model_schema(v1_custom_types), "v1_")?;
+    let v1_multi = add_root_schema::<PywrMultiModel>(&mut defs, v1_multi_model_schema(v1_custom_types), "v1_")?;
+    let (v2_model, v2_multi) = add_v2_documents(&mut defs)?;
+
     let branches = [
         Branch {
-            prefix: "v1_",
+            version: "v1",
             key: "nodes",
-            schema: v1_model_schema(v1_custom_types),
+            root: v1_model,
         },
         Branch {
-            prefix: "v1_",
+            version: "v1",
             key: "models",
-            schema: v1_multi_model_schema(v1_custom_types),
+            root: v1_multi,
         },
         Branch {
-            prefix: "v2_",
+            version: "v2",
             key: "network",
-            schema: v2_schema::<crate::ModelSchema>(),
+            root: v2_model,
         },
         Branch {
-            prefix: "v2_",
+            version: "v2",
             key: "networks",
-            schema: v2_schema::<crate::MultiNetworkModelSchema>(),
+            root: v2_multi,
         },
     ];
 
-    let mut defs = Map::new();
-    let keys: Vec<&str> = branches.iter().map(|branch| branch.key).collect();
     let one_of: Vec<Value> = branches
-        .into_iter()
+        .iter()
         .map(|branch| {
-            let root = add_namespaced(&mut defs, branch.schema, branch.prefix);
-            let others: Map<String, Value> = keys
+            let others: Map<String, Value> = branches
                 .iter()
-                .filter(|key| **key != branch.key)
-                .map(|key| (key.to_string(), Value::Bool(false)))
+                .filter(|other| other.key != branch.key)
+                .map(|other| (other.key.to_string(), Value::Bool(false)))
                 .collect();
             json!({
-                "title": format!("Pywr {} document with `{}`", &branch.prefix[..2], branch.key),
+                "title": format!("Pywr {} document with `{}`", branch.version, branch.key),
                 "required": [branch.key],
                 "properties": others,
-                "$ref": format!("{DEFS_POINTER}{root}"),
+                "$ref": format!("{DEFS_POINTER}{}", branch.root),
             })
         })
         .collect();
@@ -135,7 +204,7 @@ pub fn pywr_model_schema(v1_custom_types: CustomTypes) -> Schema {
         "oneOf": one_of,
         "$defs": defs,
     });
-    Schema::try_from(schema).expect("the union is a JSON object")
+    Schema::try_from(schema).map_err(|_| JsonSchemaError::UnionNotAnObject)
 }
 
 #[cfg(test)]
@@ -152,7 +221,8 @@ mod tests {
     }
 
     fn validator(custom_types: CustomTypes) -> Validator {
-        let schema = serde_json::to_value(pywr_model_schema(custom_types)).expect("schema serialises");
+        let schema = serde_json::to_value(pywr_model_schema(custom_types).expect("the union is built"))
+            .expect("schema serialises");
         jsonschema::validator_for(&schema).expect("the union is a valid JSON Schema")
     }
 

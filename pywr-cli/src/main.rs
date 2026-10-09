@@ -134,7 +134,9 @@ enum Commands {
     ExportSchema {
         /// Path to save the JSON schema.
         out: PathBuf,
-        /// Write one schema that covers both Pywr v1 and v2 model files.
+        /// Write one schema that covers Pywr v1 and v2 model files, single- and multi-network, instead
+        /// of the schema of a v2 single-network model only. Nodes and parameters of a v1 model that
+        /// match no core type are accepted as custom types, as the v1 deserialiser accepts them.
         #[arg(long)]
         union: bool,
     },
@@ -537,6 +539,7 @@ fn run_random(num_systems: usize, density: usize, num_scenarios: usize, solver: 
 fn export_schema(out_path: &Path, union: bool) -> Result<()> {
     let schema = if union {
         pywr_schema::json_schema::pywr_model_schema(pywr_v1_schema::json_schema::CustomTypes::Any)
+            .with_context(|| "Failed to build the Pywr schema for v1 and v2 models".to_string())?
     } else {
         schema_for!(ModelSchema)
     };
