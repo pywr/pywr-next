@@ -20,7 +20,7 @@ jobs:
         with:
           submodules: true
       - uses: swatinem/rust-cache@v2
-      - uses: taiki-e/install-action@v2.87.20
+      - uses: taiki-e/install-action@v2.87.22
         with:
           tool: mdbook@0.4.52
       - name: Build Book

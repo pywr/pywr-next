@@ -42,10 +42,10 @@ jobs:
         run: sudo apt-get install -y intel-opencl-icd ocl-icd-opencl-dev
       - name: Run Clippy
         run: cargo clippy --locked --all-targets --all-features --all
-      - uses: taiki-e/install-action@v2.87.20
+      - uses: taiki-e/install-action@v2.87.22
         with:
           tool: mdbook@0.4.52
-      - uses: taiki-e/install-action@v2.87.20
+      - uses: taiki-e/install-action@v2.87.22
         with:
           tool: cargo-hack@0.6
       - name: Check (pywr-core)
