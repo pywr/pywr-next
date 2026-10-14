@@ -1,21 +1,18 @@
 use crate::agg_funcs::{AggFuncError, AggFuncF64};
 use crate::models::ModelDomain;
-use crate::network::Network;
+use crate::network::{MetricSetIndex, Network, ResolutionMaps};
 use crate::recorders::aggregator::PeriodValue;
 use crate::recorders::{
-    MetricSetIndex, MetricSetState, Recorder, RecorderAggregationError, RecorderDataFrameError, RecorderFinalResult,
-    RecorderFinaliseError, RecorderInternalState, RecorderMeta, RecorderSaveError, RecorderSetupError,
-    downcast_internal_state, downcast_internal_state_mut,
+    LongFmtRecord, MetricSetState, Recorder, RecorderAggregationError, RecorderBuilder, RecorderBuilderError,
+    RecorderFinalResult, RecorderFinaliseError, RecorderInternalState, RecorderMeta, RecorderSaveError,
+    RecorderSetupError, downcast_internal_state, downcast_internal_state_mut,
 };
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
 use crate::timestep::Timestep;
-use chrono::NaiveDateTime;
-use polars::df;
-use polars::frame::DataFrame;
+use log::warn;
 use std::ops::Deref;
 use thiserror::Error;
-use tracing::warn;
 
 #[derive(Error, Debug)]
 pub enum AggregationError {
@@ -23,11 +20,11 @@ pub enum AggregationError {
     AggregationFunctionNotDefined,
     #[error("Aggregation function failed.")]
     AggregationFunctionFailed,
-    #[error("Aggregation function error: {0}")]
+    #[error("Aggregation function error.")]
     AggFuncError(#[from] AggFuncError),
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Aggregation {
     scenario: Option<AggFuncF64>,
     time: Option<AggFuncF64>,
@@ -146,17 +143,6 @@ impl InternalState {
     }
 }
 
-struct LongFmtRecord {
-    time_start: NaiveDateTime,
-    time_end: NaiveDateTime,
-    simulation_id: usize,
-    label: String,
-    metric_set: String,
-    name: String,
-    attribute: String,
-    value: f64,
-}
-
 /// Final results for the memory recorder.
 ///
 /// This is a 3D array, where the first dimension is the scenario, the second dimension is the time,
@@ -261,29 +247,13 @@ impl RecorderFinalResult for MemoryRecorderResult {
         })
     }
 
-    fn to_dataframe(&self) -> Result<DataFrame, RecorderDataFrameError> {
-        let records: Vec<LongFmtRecord> = self.iter_long_fmt_records().collect();
-
-        df!(
-            "time_start" => records.iter().map(|r| r.time_start).collect::<Vec<_>>(),
-            "time_end" => records.iter().map(|r| r.time_end).collect::<Vec<_>>(),
-            "simulation_id" => records.iter().map(|r| r.simulation_id as u32).collect::<Vec<_>>(),
-            "label" => records.iter().map(|r| r.label.as_str()).collect::<Vec<_>>(),
-            "metric_set" => records.iter().map(|r| r.metric_set.as_str()).collect::<Vec<_>>(),
-            "name" => records.iter().map(|r| r.name.as_str()).collect::<Vec<_>>(),
-            "attribute" => records.iter().map(|r| r.attribute.as_str()).collect::<Vec<_>>(),
-            "value" => records.iter().map(|r| r.value).collect::<Vec<_>>(),
-        )
-        .map_err(|source| RecorderDataFrameError::PolarsError {
-            name: self.meta.name.clone(),
-            source,
-        })
+    fn iter_long_fmt_records(&self) -> Box<dyn Iterator<Item = LongFmtRecord> + '_> {
+        Box::new(self.iter_long_fmt_records())
     }
 }
 
-#[derive(Default, Copy, Clone)]
+#[derive(Debug, Copy, Clone)]
 pub enum AggregationOrder {
-    #[default]
     MetricTimeScenario,
     TimeMetricScenario,
 }
@@ -296,22 +266,12 @@ pub enum AggregationOrder {
 ///
 /// Users should be aware that this recorder can consume a large amount of memory if the number of
 /// scenarios, time steps, and metrics is large.
+#[derive(Debug)]
 pub struct MemoryRecorder {
     meta: RecorderMeta,
     metric_set_idx: MetricSetIndex,
     aggregation: Aggregation,
     order: AggregationOrder,
-}
-
-impl MemoryRecorder {
-    pub fn new(name: &str, metric_set_idx: MetricSetIndex, aggregation: Aggregation, order: AggregationOrder) -> Self {
-        Self {
-            meta: RecorderMeta::new(name),
-            metric_set_idx,
-            aggregation,
-            order,
-        }
-    }
 }
 
 impl Recorder for MemoryRecorder {
@@ -333,7 +293,7 @@ impl Recorder for MemoryRecorder {
         &self,
         _timestep: &Timestep,
         _scenario_indices: &[ScenarioIndex],
-        _model: &Network,
+        _network: &Network,
         _state: &[State],
         metric_set_states: &[Vec<MetricSetState>],
         internal_state: &mut Option<Box<dyn RecorderInternalState>>,
@@ -388,8 +348,8 @@ impl Recorder for MemoryRecorder {
         let result = MemoryRecorderResult {
             meta: self.meta.clone(),
             scenario_indices: scenario_indices.to_vec(),
-            metric_names: metric_set.iter_metrics().map(|m| m.name().to_string()).collect(),
-            metric_attrs: metric_set.iter_metrics().map(|m| m.attribute().to_string()).collect(),
+            metric_names: metric_set.metrics().iter().map(|m| m.name().to_string()).collect(),
+            metric_attrs: metric_set.metrics().iter().map(|m| m.attribute().to_string()).collect(),
             data: internal_state.data,
             aggregation: self.aggregation.clone(),
             order: self.order,
@@ -399,15 +359,57 @@ impl Recorder for MemoryRecorder {
     }
 }
 
+#[derive(Debug)]
+pub struct MemoryRecorderBuilder {
+    meta: RecorderMeta,
+    metric_set: String,
+    aggregation: Aggregation,
+    order: AggregationOrder,
+}
+
+impl MemoryRecorderBuilder {
+    pub fn new(name: &str, metric_set: &str, aggregation: Aggregation, order: AggregationOrder) -> Self {
+        Self {
+            meta: RecorderMeta::new(name),
+            metric_set: metric_set.to_string(),
+            aggregation,
+            order,
+        }
+    }
+}
+
+impl RecorderBuilder for MemoryRecorderBuilder {
+    fn name(&self) -> &str {
+        &self.meta.name
+    }
+
+    fn build(self: Box<Self>, resolution_maps: &ResolutionMaps) -> Result<Box<dyn Recorder>, RecorderBuilderError> {
+        let metric_set_idx = resolution_maps.metric_sets.get(&self.metric_set).ok_or_else(|| {
+            RecorderBuilderError::MetricSetNotFound {
+                name: self.metric_set.clone(),
+            }
+        })?;
+
+        let r = MemoryRecorder {
+            meta: self.meta,
+            metric_set_idx: *metric_set_idx,
+            aggregation: self.aggregation,
+            order: self.order,
+        };
+
+        Ok(Box::new(r))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{Aggregation, InternalState, MemoryRecorderResult};
     use crate::agg_funcs::AggFuncF64;
-    use crate::models::ModelDomain;
+    use crate::models::ModelDomainBuilder;
     use crate::recorders::RecorderMeta;
     use crate::recorders::aggregator::PeriodValue;
     use crate::scenario::{ScenarioDomainBuilder, ScenarioGroupBuilder};
-    use crate::test_utils::default_timestepper;
+    use crate::test_utils::default_time_domain_builder;
     use float_cmp::assert_approx_eq;
     use rand::{RngExt, SeedableRng};
     use rand_chacha::ChaCha8Rng;
@@ -416,10 +418,12 @@ mod tests {
     #[test]
     fn test_aggregation_orders() {
         let mut scenario_builder = ScenarioDomainBuilder::default();
-        let scenario_group = ScenarioGroupBuilder::new("test-scenario", 2).build().unwrap();
-        scenario_builder = scenario_builder.with_group(scenario_group).unwrap();
+        scenario_builder.with_group(ScenarioGroupBuilder::new("test-scenario", 2));
 
-        let domain = ModelDomain::try_from(default_timestepper(), scenario_builder).unwrap();
+        let mut domain_builder = ModelDomainBuilder::new(default_time_domain_builder());
+        domain_builder.scenario(scenario_builder);
+
+        let domain = domain_builder.build().unwrap();
 
         let num_metrics = 3;
         let mut state = InternalState::new(domain.scenarios().len());

@@ -1,82 +1,25 @@
 #![warn(clippy::pedantic)]
+
 use crate::NodeIndex;
-use crate::metric::{ConstantMetricF64Error, MetricF64, MetricF64Error};
-use crate::network::Network;
-use crate::node::{FlowConstraints, NodeMeta};
+use crate::metric::{
+    ConstantMetricF64Error, MetricConsumerPhase, MetricF64, MetricF64Error, MetricF64ResolutionError,
+    UnresolvedMetricF64,
+};
+use crate::network::{AggregatedNodeIndex, Network, ResolutionMaps};
+use crate::node::{FlowConstraints, NodeMeta, UnresolvedNode};
 use crate::state::{ConstParameterValues, State};
-use std::fmt::Display;
-use std::ops::{Deref, DerefMut};
+use std::fmt::Debug;
 use thiserror::Error;
-
-#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Debug)]
-pub struct AggregatedNodeIndex(usize);
-
-impl Deref for AggregatedNodeIndex {
-    type Target = usize;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl Display for AggregatedNodeIndex {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.0.fmt(f)
-    }
-}
-
-#[derive(Default)]
-pub struct AggregatedNodeVec {
-    nodes: Vec<AggregatedNode>,
-}
-
-impl Deref for AggregatedNodeVec {
-    type Target = Vec<AggregatedNode>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.nodes
-    }
-}
-
-impl DerefMut for AggregatedNodeVec {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.nodes
-    }
-}
-
-impl AggregatedNodeVec {
-    #[must_use]
-    pub fn get(&self, index: &AggregatedNodeIndex) -> Option<&AggregatedNode> {
-        self.nodes.get(index.0)
-    }
-
-    pub fn get_mut(&mut self, index: &AggregatedNodeIndex) -> Option<&mut AggregatedNode> {
-        self.nodes.get_mut(index.0)
-    }
-
-    pub fn push_new(
-        &mut self,
-        name: &str,
-        sub_name: Option<&str>,
-        nodes: &[Vec<NodeIndex>],
-        relationship: Option<Relationship>,
-    ) -> AggregatedNodeIndex {
-        let node_index = AggregatedNodeIndex(self.nodes.len());
-        let node = AggregatedNode::new(node_index, name, sub_name, nodes, relationship);
-        self.nodes.push(node);
-        node_index
-    }
-}
 
 /// Factors relating node flows in an aggregated node.
 #[derive(Debug, PartialEq)]
 pub enum Factors {
     /// Proportional factors require that the sum of the factors is less than 1.0, and that
-    /// all factors are non-negative. The first node in the aggregated node has an implicit
+    /// all factors are positive. The first node in the aggregated node has an implicit
     /// factor of `1.0 - sum(factors)`. Therefore, there should be one less factor than nodes.
     Proportion { factors: Vec<MetricF64> },
-    /// Ratio factors require that all factors are non-negative. There should be the same
-    /// number of factors as nodes.
+    /// Ratio factors require that all factors are positive. There should be the same
+    /// number of factors as nodes, and at least one node.
     Ratio { factors: Vec<MetricF64> },
     /// Linear combination of node flows. The factors can be positive or negative, and a
     /// right-hand side (rhs) value can be provided. There should be the same number of
@@ -97,6 +40,127 @@ impl Factors {
                 factors.iter().all(MetricF64::is_constant) && rhs.as_ref().is_none_or(MetricF64::is_constant)
             }
         }
+    }
+
+    /// Check the number of factors against the number of nodes they relate.
+    fn check_count(&self, num_nodes: usize) -> Result<(), FactorCountError> {
+        match self {
+            Self::Proportion { factors } if factors.len() + 1 != num_nodes => Err(FactorCountError::Proportion {
+                num_factors: factors.len(),
+                num_nodes,
+            }),
+            Self::Ratio { factors } if num_nodes == 0 || factors.len() != num_nodes => Err(FactorCountError::Ratio {
+                num_factors: factors.len(),
+                num_nodes,
+            }),
+            Self::Coefficients { factors, .. } if num_nodes != 2 || factors.len() != num_nodes => {
+                Err(FactorCountError::Coefficients {
+                    num_factors: factors.len(),
+                    num_nodes,
+                })
+            }
+            _ => Ok(()),
+        }
+    }
+}
+
+#[derive(Default, Debug)]
+pub struct ProportionalFactorsBuilder {
+    factors: Vec<UnresolvedMetricF64>,
+}
+
+impl ProportionalFactorsBuilder {
+    pub fn factor(&mut self, factor: UnresolvedMetricF64) -> &mut Self {
+        self.factors.push(factor);
+        self
+    }
+}
+
+impl RelationshipBuilder for ProportionalFactorsBuilder {
+    fn build(&self, resolution_maps: &ResolutionMaps) -> Result<Relationship, RelationshipBuildError> {
+        let factors = self
+            .factors
+            .iter()
+            .map(|f| f.resolve(resolution_maps, MetricConsumerPhase::Before))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|source| RelationshipBuildError::ResolveMetricF64Error {
+                attr: "factors".to_string(),
+                source,
+            })?;
+
+        Ok(Relationship::Factored(Factors::Proportion { factors }))
+    }
+}
+
+#[derive(Default, Debug)]
+pub struct RatioFactorsBuilder {
+    factors: Vec<UnresolvedMetricF64>,
+}
+
+impl RatioFactorsBuilder {
+    pub fn factor(&mut self, factor: UnresolvedMetricF64) -> &mut Self {
+        self.factors.push(factor);
+        self
+    }
+}
+
+impl RelationshipBuilder for RatioFactorsBuilder {
+    fn build(&self, resolution_maps: &ResolutionMaps) -> Result<Relationship, RelationshipBuildError> {
+        let factors = self
+            .factors
+            .iter()
+            .map(|f| f.resolve(resolution_maps, MetricConsumerPhase::Before))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|source| RelationshipBuildError::ResolveMetricF64Error {
+                attr: "factors".to_string(),
+                source,
+            })?;
+
+        Ok(Relationship::Factored(Factors::Ratio { factors }))
+    }
+}
+
+#[derive(Default, Debug)]
+pub struct CoefficientFactorsBuilder {
+    factors: Vec<UnresolvedMetricF64>,
+    rhs: Option<UnresolvedMetricF64>,
+}
+
+impl CoefficientFactorsBuilder {
+    pub fn factor(&mut self, factor: UnresolvedMetricF64) -> &mut Self {
+        self.factors.push(factor);
+        self
+    }
+
+    pub fn rhs(&mut self, rhs: UnresolvedMetricF64) -> &mut Self {
+        self.rhs = Some(rhs);
+        self
+    }
+}
+
+impl RelationshipBuilder for CoefficientFactorsBuilder {
+    fn build(&self, resolution_maps: &ResolutionMaps) -> Result<Relationship, RelationshipBuildError> {
+        let factors = self
+            .factors
+            .iter()
+            .map(|f| f.resolve(resolution_maps, MetricConsumerPhase::Before))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|source| RelationshipBuildError::ResolveMetricF64Error {
+                attr: "factors".to_string(),
+                source,
+            })?;
+
+        let rhs = self
+            .rhs
+            .as_ref()
+            .map(|r| r.resolve(resolution_maps, MetricConsumerPhase::Before))
+            .transpose()
+            .map_err(|source| RelationshipBuildError::ResolveMetricF64Error {
+                attr: "rhs".to_string(),
+                source,
+            })?;
+
+        Ok(Relationship::Factored(Factors::Coefficients { factors, rhs }))
     }
 }
 
@@ -120,6 +184,28 @@ impl Exclusivity {
     }
 }
 
+#[derive(Clone, Debug)]
+pub struct ExclusivityBuilder {
+    min_active: u64,
+    max_active: u64,
+}
+
+impl ExclusivityBuilder {
+    #[must_use]
+    pub fn new(min_active: u64, max_active: u64) -> Self {
+        Self { min_active, max_active }
+    }
+}
+
+impl RelationshipBuilder for ExclusivityBuilder {
+    fn build(&self, _resolution_maps: &ResolutionMaps) -> Result<Relationship, RelationshipBuildError> {
+        Ok(Relationship::Exclusive(Exclusivity {
+            min_active: self.min_active,
+            max_active: self.max_active,
+        }))
+    }
+}
+
 /// Additional relationship between nodes in an aggregated node.
 #[derive(Debug, PartialEq)]
 pub enum Relationship {
@@ -129,33 +215,23 @@ pub enum Relationship {
     Exclusive(Exclusivity),
 }
 
-impl Relationship {
-    #[must_use]
-    pub fn new_ratio_factors(factors: &[MetricF64]) -> Self {
-        Relationship::Factored(Factors::Ratio {
-            factors: factors.to_vec(),
-        })
-    }
-
-    #[must_use]
-    pub fn new_proportion_factors(factors: &[MetricF64]) -> Self {
-        Relationship::Factored(Factors::Proportion {
-            factors: factors.to_vec(),
-        })
-    }
-
-    #[must_use]
-    pub fn new_coefficient_factors(factors: &[MetricF64], rhs: Option<MetricF64>) -> Self {
-        Relationship::Factored(Factors::Coefficients {
-            factors: factors.to_vec(),
-            rhs,
-        })
-    }
-
-    #[must_use]
-    pub fn new_exclusive(min_active: u64, max_active: u64) -> Self {
-        Relationship::Exclusive(Exclusivity { min_active, max_active })
-    }
+#[derive(Debug, Error)]
+pub enum RelationshipBuildError {
+    #[error("Could not resolve f64 metric for `{attr}` attribute.")]
+    ResolveMetricF64Error {
+        attr: String,
+        #[source]
+        source: MetricF64ResolutionError,
+    },
+}
+pub trait RelationshipBuilder: Debug {
+    /// Try to construct a [`Relationship`].
+    ///
+    /// # Errors
+    ///
+    /// A [`RelationshipBuildError`] should be returned if the builder is unable to resolve any of
+    /// the metrics it references.
+    fn build(&self, resolution_maps: &ResolutionMaps) -> Result<Relationship, RelationshipBuildError>;
 }
 
 #[derive(Debug, Error)]
@@ -276,22 +352,6 @@ impl<'a> NodeConstFactorPair<'a> {
 }
 
 impl AggregatedNode {
-    #[must_use]
-    pub fn new(
-        index: AggregatedNodeIndex,
-        name: &str,
-        sub_name: Option<&str>,
-        nodes: &[Vec<NodeIndex>],
-        relationship: Option<Relationship>,
-    ) -> Self {
-        Self {
-            meta: NodeMeta::new(index, name, sub_name),
-            flow_constraints: FlowConstraints::default(),
-            nodes: nodes.to_vec(),
-            relationship,
-        }
-    }
-
     #[must_use]
     pub fn name(&self) -> &str {
         self.meta.name()
@@ -421,20 +481,20 @@ impl AggregatedNode {
     #[must_use]
     pub fn get_norm_factor_pairs(
         &self,
-        model: &Network,
+        network: &Network,
         state: &State,
     ) -> Option<Result<Vec<NodeFactorPair<'_>>, FactorError>> {
         if let Some(factors) = self.get_factors() {
             let pairs = match factors {
                 Factors::Proportion { factors } => {
-                    get_norm_proportional_factor_pairs(factors, &self.nodes, model, state)
+                    get_norm_proportional_factor_pairs(factors, &self.nodes, network, state)
                         .map_err(FactorError::Proportional)
                 }
                 Factors::Ratio { factors } => {
-                    get_norm_ratio_factor_pairs(factors, &self.nodes, model, state).map_err(FactorError::Ratio)
+                    get_norm_ratio_factor_pairs(factors, &self.nodes, network, state).map_err(FactorError::Ratio)
                 }
                 Factors::Coefficients { factors, rhs } => {
-                    get_coefficient_factor_pairs(factors, &self.nodes, rhs.as_ref(), model, state)
+                    get_coefficient_factor_pairs(factors, &self.nodes, rhs.as_ref(), network, state)
                         .map_err(FactorError::Coefficient)
                 }
             };
@@ -444,21 +504,14 @@ impl AggregatedNode {
         }
     }
 
-    pub fn set_min_flow(&mut self, value: Option<MetricF64>) {
-        self.flow_constraints.min_flow = value;
-    }
-
     /// Get the min flow constraint value.
     ///
     /// # Errors
     ///
     /// If the constraint is a metric any error when attempting to retrieve
     /// that metric will be returned. See [`MetricF64::get_value`] for more information.
-    pub fn get_min_flow(&self, model: &Network, state: &State) -> Result<f64, MetricF64Error> {
-        self.flow_constraints.get_min_flow(model, state)
-    }
-    pub fn set_max_flow(&mut self, value: Option<MetricF64>) {
-        self.flow_constraints.max_flow = value;
+    pub fn get_min_flow(&self, network: &Network, state: &State) -> Result<f64, MetricF64Error> {
+        self.flow_constraints.get_min_flow(network, state)
     }
 
     /// Get the max flow constraint value.
@@ -467,8 +520,8 @@ impl AggregatedNode {
     ///
     /// If the constraint is a metric any error when attempting to retrieve
     /// that metric will be returned. See [`MetricF64::get_value`] for more information.
-    pub fn get_max_flow(&self, model: &Network, state: &State) -> Result<f64, MetricF64Error> {
-        self.flow_constraints.get_max_flow(model, state)
+    pub fn get_max_flow(&self, network: &Network, state: &State) -> Result<f64, MetricF64Error> {
+        self.flow_constraints.get_max_flow(network, state)
     }
 
     /// Get the min and max flow bounds as a tuple.
@@ -477,8 +530,8 @@ impl AggregatedNode {
     ///
     /// If either constraint is a metric any error when attempting to retrieve
     /// that metric will be returned. See [`MetricF64::get_value`] for more information.
-    pub fn get_flow_bounds(&self, model: &Network, state: &State) -> Result<(f64, f64), AggregatedNodeError> {
-        match (self.get_min_flow(model, state), self.get_max_flow(model, state)) {
+    pub fn get_flow_bounds(&self, network: &Network, state: &State) -> Result<(f64, f64), AggregatedNodeError> {
+        match (self.get_min_flow(network, state), self.get_max_flow(network, state)) {
             (Ok(min_flow), Ok(max_flow)) => Ok((min_flow, max_flow)),
             _ => Err(AggregatedNodeError::FlowConstraintsUndefined),
         }
@@ -491,22 +544,195 @@ impl AggregatedNode {
 }
 
 #[derive(Debug, Error)]
+pub enum AggregatedNodeBuilderError {
+    #[error("Index not found in resolution map.")]
+    IndexNotFound,
+    #[error("Could not resolve f64 metric for `{attr}` attribute.")]
+    ResolveMetricF64Error {
+        attr: String,
+        #[source]
+        source: MetricF64ResolutionError,
+    },
+    #[error("Reference to node not found.")]
+    NodeIndexNotFound { node: UnresolvedNode },
+    #[error("Error building relationship.")]
+    RelationshipBuildError(#[from] RelationshipBuildError),
+    #[error("Factors do not match the nodes.")]
+    FactorCountError(#[from] FactorCountError),
+}
+
+#[derive(Debug)]
+pub struct AggregatedNodeBuilder {
+    name: UnresolvedNode,
+    min_flow: Option<UnresolvedMetricF64>,
+    max_flow: Option<UnresolvedMetricF64>,
+    nodes: Vec<Vec<UnresolvedNode>>,
+    relationship: Option<Box<dyn RelationshipBuilder>>,
+}
+
+impl AggregatedNodeBuilder {
+    #[must_use]
+    pub fn new<N: Into<UnresolvedNode>>(name: N) -> Self {
+        let name = name.into();
+
+        Self {
+            name,
+            min_flow: None,
+            max_flow: None,
+            nodes: Vec::new(),
+            relationship: None,
+        }
+    }
+
+    #[must_use]
+    pub fn name(&self) -> &UnresolvedNode {
+        &self.name
+    }
+
+    pub fn sub_name(&mut self, sub_name: &str) -> &mut Self {
+        self.name.set_sub_name(Some(sub_name));
+        self
+    }
+
+    pub fn min_flow(&mut self, min_flow: UnresolvedMetricF64) -> &mut Self {
+        self.min_flow = Some(min_flow);
+        self
+    }
+    pub fn max_flow(&mut self, max_flow: UnresolvedMetricF64) -> &mut Self {
+        self.max_flow = Some(max_flow);
+        self
+    }
+    pub fn nodes(&mut self, nodes: Vec<UnresolvedNode>) -> &mut Self {
+        self.nodes.push(nodes);
+        self
+    }
+
+    pub fn relationship(&mut self, relationship: Box<dyn RelationshipBuilder>) -> &mut Self {
+        self.relationship = Some(relationship);
+        self
+    }
+
+    /// Build a [`FlowConstraints`] from the builder.
+    fn build_flow_constraints(
+        &self,
+        resolution_maps: &ResolutionMaps,
+    ) -> Result<FlowConstraints, AggregatedNodeBuilderError> {
+        let min_flow = self
+            .min_flow
+            .as_ref()
+            .map(|min_flow| {
+                min_flow
+                    .resolve(resolution_maps, MetricConsumerPhase::Before)
+                    .map_err(|source| AggregatedNodeBuilderError::ResolveMetricF64Error {
+                        attr: "min_flow".to_string(),
+                        source,
+                    })
+            })
+            .transpose()?;
+
+        let max_flow = self
+            .max_flow
+            .as_ref()
+            .map(|max_flow| {
+                max_flow
+                    .resolve(resolution_maps, MetricConsumerPhase::Before)
+                    .map_err(|source| AggregatedNodeBuilderError::ResolveMetricF64Error {
+                        attr: "max_flow".to_string(),
+                        source,
+                    })
+            })
+            .transpose()?;
+
+        let flow_constraints = FlowConstraints::new(min_flow, max_flow);
+
+        Ok(flow_constraints)
+    }
+
+    /// Try to construct an [`AggregatedNode`] from this builder.
+    ///
+    /// # Errors
+    ///
+    /// An [`AggregatedNodeBuilderError`] will be returned if the builder is unable to resolve
+    /// any of the metrics or node names it references, or if the number of factors does not
+    /// match the number of nodes.
+    pub fn build(&self, resolution_maps: &ResolutionMaps) -> Result<AggregatedNode, AggregatedNodeBuilderError> {
+        let index = resolution_maps
+            .aggregated_nodes
+            .get(&self.name)
+            .ok_or(AggregatedNodeBuilderError::IndexNotFound)?;
+        let meta = NodeMeta::from_unresolved_name(self.name.clone(), *index);
+
+        let flow_constraints = self.build_flow_constraints(resolution_maps)?;
+
+        let nodes = self
+            .nodes
+            .iter()
+            .map(|indices| {
+                indices
+                    .iter()
+                    .map(|unresolved| {
+                        resolution_maps.nodes.get(unresolved).copied().ok_or_else(|| {
+                            AggregatedNodeBuilderError::NodeIndexNotFound {
+                                node: unresolved.clone(),
+                            }
+                        })
+                    })
+                    .collect::<Result<Vec<_>, _>>()
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let relationship = self
+            .relationship
+            .as_ref()
+            .map(|r| r.build(resolution_maps))
+            .transpose()?;
+
+        if let Some(Relationship::Factored(factors)) = &relationship {
+            factors.check_count(nodes.len())?;
+        }
+
+        Ok(AggregatedNode {
+            meta,
+            flow_constraints,
+            nodes,
+            relationship,
+        })
+    }
+}
+
+#[derive(Debug, Error, PartialEq, Eq)]
+pub enum FactorCountError {
+    #[error(
+        "Found {num_factors} proportional factors and {num_nodes} nodes. The number of proportional factors should equal one less than the number of nodes."
+    )]
+    Proportion { num_factors: usize, num_nodes: usize },
+    #[error(
+        "Found {num_factors} ratio factors and {num_nodes} nodes. The number of ratio factors should equal the number of nodes, and there should be at least one node."
+    )]
+    Ratio { num_factors: usize, num_nodes: usize },
+    #[error(
+        "Found {num_factors} coefficient factors and {num_nodes} nodes. Coefficient factors are only implemented for two nodes, with one factor each."
+    )]
+    Coefficients { num_factors: usize, num_nodes: usize },
+}
+
+#[derive(Debug, Error)]
 pub enum FactorError {
-    #[error("Error calculating proportional factors: {0}")]
+    #[error("Error calculating proportional factors.")]
     Proportional(#[from] ProportionalFactorError),
-    #[error("Error calculating ratio factors: {0}")]
+    #[error("Error calculating ratio factors.")]
     Ratio(#[from] RatioFactorError),
-    #[error("Error calculating coefficient factors: {0}")]
+    #[error("Error calculating coefficient factors.")]
     Coefficient(#[from] CoefficientFactorError),
 }
 
 #[derive(Debug, Error)]
 pub enum ConstantFactorError {
-    #[error("Error calculating proportional factors: {0}")]
+    #[error("Error calculating proportional factors.")]
     Proportional(#[from] ConstantProportionalFactorError),
-    #[error("Error calculating ratio factors: {0}")]
+    #[error("Error calculating ratio factors.")]
     Ratio(#[from] ConstantRatioFactorError),
-    #[error("Error calculating coefficient factors: {0}")]
+    #[error("Error calculating coefficient factors.")]
     Coefficient(#[from] ConstantCoefficientFactorError),
 }
 
@@ -516,7 +742,7 @@ pub enum ProportionalFactorError {
         "Found {num_factors} proportional factors and {num_nodes} nodes in aggregated node. The number of proportional factors should equal one less than the number of nodes."
     )]
     IncorrectNumberOfFactors { num_factors: usize, num_nodes: usize },
-    #[error("Failed to get metric value for factor: {0}")]
+    #[error("Failed to get metric value for factor.")]
     MetricF64(#[from] MetricF64Error),
     #[error("Negative or zero factor values are not allowed. Found: {value}")]
     NegativeOrZeroFactor { value: f64 },
@@ -528,14 +754,14 @@ pub enum ProportionalFactorError {
 ///
 /// There should be one less factor than node indices. The factors correspond to each of the node
 /// indices after the first. Factor pairs relating the first index to each of the other indices are
-/// calculated. This requires the sum of the factors to be greater than 0.0 and less than 1.0.
+/// calculated. This requires each factor to be positive and their sum to be less than 1.0.
 fn get_norm_proportional_factor_pairs<'a>(
     factors: &[MetricF64],
     nodes: &'a [Vec<NodeIndex>],
-    model: &Network,
+    network: &Network,
     state: &State,
 ) -> Result<Vec<NodeFactorPair<'a>>, ProportionalFactorError> {
-    if factors.len() != nodes.len() - 1 {
+    if factors.len() + 1 != nodes.len() {
         return Err(ProportionalFactorError::IncorrectNumberOfFactors {
             num_factors: factors.len(),
             num_nodes: nodes.len(),
@@ -546,8 +772,8 @@ fn get_norm_proportional_factor_pairs<'a>(
     let values: Vec<f64> = factors
         .iter()
         .map(|f| {
-            let v = f.get_value(model, state)?;
-            if v < 0.0 {
+            let v = f.get_value(network, state)?;
+            if v <= 0.0 {
                 Err(ProportionalFactorError::NegativeOrZeroFactor { value: v })
             } else {
                 Ok(v)
@@ -581,7 +807,7 @@ pub enum ConstantProportionalFactorError {
         "Found {num_factors} proportional factors and {num_nodes} nodes in aggregated node. The number of proportional factors should equal one less than the number of nodes."
     )]
     IncorrectNumberOfFactors { num_factors: usize, num_nodes: usize },
-    #[error("Failed to get metric value for factor: {0}")]
+    #[error("Failed to get metric value for factor.")]
     MetricF64(#[from] ConstantMetricF64Error),
     #[error("Negative or zero factor values are not allowed. Found: {value}")]
     NegativeOrZeroFactor { value: f64 },
@@ -593,27 +819,27 @@ pub enum ConstantProportionalFactorError {
 ///
 /// There should be one less factor than node indices. The factors correspond to each of the node
 /// indices after the first. Factor pairs relating the first index to each of the other indices are
-/// calculated. This requires the sum of the factors to be greater than 0.0 and less than 1.0. If
+/// calculated. This requires each factor to be positive and their sum to be less than 1.0. If
 /// any of the factors are not constant, the factor pairs will contain `None` values.
 fn get_const_norm_proportional_factor_pairs<'a>(
     factors: &[MetricF64],
     nodes: &'a [Vec<NodeIndex>],
     values: &ConstParameterValues,
 ) -> Result<Vec<NodeConstFactorPair<'a>>, ConstantProportionalFactorError> {
-    if factors.len() != nodes.len() - 1 {
+    if factors.len() + 1 != nodes.len() {
         return Err(ConstantProportionalFactorError::IncorrectNumberOfFactors {
             num_factors: factors.len(),
             num_nodes: nodes.len(),
         });
     }
 
-    // First get the current factor values, ensuring they are all non-negative
+    // First get the current factor values, ensuring they are all positive
     let factor_values: Vec<Option<f64>> = factors
         .iter()
         .map(|f| {
             let v = f.try_get_constant_value(values)?;
             if let Some(v) = v {
-                if v < 0.0 {
+                if v <= 0.0 {
                     Err(ConstantProportionalFactorError::NegativeOrZeroFactor { value: v })
                 } else {
                     Ok(Some(v))
@@ -676,7 +902,7 @@ pub enum RatioFactorError {
         "Found {num_factors} ratio factors and {num_nodes} nodes in aggregated node. The number of ratio factors should equal the number of nodes."
     )]
     IncorrectNumberOfFactors { num_factors: usize, num_nodes: usize },
-    #[error("Failed to get metric value for factor: {0}")]
+    #[error("Failed to get metric value for factor.")]
     MetricF64(#[from] MetricF64Error),
     #[error("Negative or zero factor values are not allowed. Found: {value}")]
     NegativeOrZeroFactor { value: f64 },
@@ -688,14 +914,13 @@ pub enum RatioFactorError {
 ///
 /// The number of node indices and factors should be equal. The factors correspond to each of the
 /// node indices. Factor pairs relating the first index to each of the other indices are calculated.
-/// This requires that the factors are all non-zero.
+/// This requires that the factors are all positive.
 fn get_norm_ratio_factor_pairs<'a>(
     factors: &[MetricF64],
     nodes: &'a [Vec<NodeIndex>],
-    model: &Network,
+    network: &Network,
     state: &State,
 ) -> Result<Vec<NodeFactorPair<'a>>, RatioFactorError> {
-    // TODO handle error cases more gracefully
     if factors.len() != nodes.len() {
         return Err(RatioFactorError::IncorrectNumberOfFactors {
             num_factors: factors.len(),
@@ -704,8 +929,8 @@ fn get_norm_ratio_factor_pairs<'a>(
     }
 
     let n0 = nodes[0].as_slice();
-    let f0 = factors[0].get_value(model, state)?;
-    if f0 < 0.0 {
+    let f0 = factors[0].get_value(network, state)?;
+    if f0 <= 0.0 {
         return Err(RatioFactorError::NegativeOrZeroFactor { value: f0 });
     }
 
@@ -714,7 +939,10 @@ fn get_norm_ratio_factor_pairs<'a>(
         .zip(factors)
         .skip(1)
         .map(|(n1, f1)| {
-            let v1 = f1.get_value(model, state)?;
+            let v1 = f1.get_value(network, state)?;
+            if v1 <= 0.0 {
+                return Err(RatioFactorError::NegativeOrZeroFactor { value: v1 });
+            }
 
             Ok(NodeFactorPair::new(
                 NodeFactor::new(n0, 1.0),
@@ -733,7 +961,7 @@ pub enum ConstantRatioFactorError {
         "Found {num_factors} ratio factors and {num_nodes} nodes in aggregated node. The number of ratio factors should equal the number of nodes."
     )]
     IncorrectNumberOfFactors { num_factors: usize, num_nodes: usize },
-    #[error("Failed to get metric value for factor: {0}")]
+    #[error("Failed to get metric value for factor.")]
     MetricF64(#[from] ConstantMetricF64Error),
     #[error("Negative or zero factor values are not allowed. Found: {value}")]
     NegativeOrZeroFactor { value: f64 },
@@ -760,10 +988,10 @@ fn get_const_norm_ratio_factor_pairs<'a>(
 
     let f0 = factors[0].try_get_constant_value(values)?;
 
-    if let Some(v0) = f0 {
-        if v0 < 0.0 {
-            return Err(ConstantRatioFactorError::NegativeOrZeroFactor { value: v0 });
-        }
+    if let Some(v0) = f0
+        && v0 <= 0.0
+    {
+        return Err(ConstantRatioFactorError::NegativeOrZeroFactor { value: v0 });
     }
 
     let pairs = nodes
@@ -773,10 +1001,10 @@ fn get_const_norm_ratio_factor_pairs<'a>(
         .map(|(n1, f1)| {
             let v1 = f1.try_get_constant_value(values)?;
 
-            if let Some(v) = v1 {
-                if v < 0.0 {
-                    return Err(ConstantRatioFactorError::NegativeOrZeroFactor { value: v });
-                }
+            if let Some(v) = v1
+                && v <= 0.0
+            {
+                return Err(ConstantRatioFactorError::NegativeOrZeroFactor { value: v });
             }
 
             let v1 = v1.and_then(|v| f0.map(|f0| -f0 / v));
@@ -800,7 +1028,7 @@ pub enum CoefficientFactorError {
     IncorrectNumberOfFactors { num_factors: usize, num_nodes: usize },
     #[error("Coefficient factors are not yet implemented for more than two nodes.")]
     MoreThanTwoFactors,
-    #[error("Failed to get metric value for factor: {0}")]
+    #[error("Failed to get metric value for factor.")]
     MetricF64(#[from] MetricF64Error),
 }
 
@@ -813,10 +1041,9 @@ fn get_coefficient_factor_pairs<'a>(
     factors: &[MetricF64],
     nodes: &'a [Vec<NodeIndex>],
     rhs: Option<&MetricF64>,
-    model: &Network,
+    network: &Network,
     state: &State,
 ) -> Result<Vec<NodeFactorPair<'a>>, CoefficientFactorError> {
-    // TODO handle error cases more gracefully
     if factors.len() != nodes.len() {
         return Err(CoefficientFactorError::IncorrectNumberOfFactors {
             num_factors: factors.len(),
@@ -828,10 +1055,10 @@ fn get_coefficient_factor_pairs<'a>(
         return Err(CoefficientFactorError::MoreThanTwoFactors);
     }
 
-    let f0 = factors[0].get_value(model, state)?;
-    let f1 = factors[1].get_value(model, state)?;
+    let f0 = factors[0].get_value(network, state)?;
+    let f1 = factors[1].get_value(network, state)?;
     let rhs = match rhs {
-        Some(rhs) => rhs.get_value(model, state)?,
+        Some(rhs) => rhs.get_value(network, state)?,
         None => 0.0,
     };
 
@@ -850,7 +1077,7 @@ pub enum ConstantCoefficientFactorError {
     IncorrectNumberOfFactors { num_factors: usize, num_nodes: usize },
     #[error("Coefficient factors are not yet implemented for more than two nodes.")]
     MoreThanTwoFactors,
-    #[error("Failed to get metric value for factor: {0}")]
+    #[error("Failed to get metric value for factor.")]
     MetricF64(#[from] ConstantMetricF64Error),
 }
 
@@ -891,62 +1118,245 @@ fn get_const_coefficient_factor_pairs<'a>(
 
 #[cfg(test)]
 mod tests {
-    use crate::aggregated_node::Relationship;
-    use crate::metric::MetricF64;
-    use crate::models::Model;
-    use crate::network::Network;
-    use crate::parameters::MonthlyProfileParameter;
-    use crate::recorders::AssertionF64Recorder;
-    use crate::state::ParameterReturnValue;
-    use crate::test_utils::{default_time_domain, run_all_solvers};
+    use crate::aggregated_node::{
+        AggregatedNodeBuilder, AggregatedNodeBuilderError, CoefficientFactorsBuilder, ConstantFactorError,
+        ConstantRatioFactorError, ExclusivityBuilder, FactorCountError, FactorError, ProportionalFactorsBuilder,
+        RatioFactorError, RatioFactorsBuilder, RelationshipBuilder,
+    };
+    use crate::metric::UnresolvedMetricF64;
+    use crate::models::{ModelBuilder, ModelRunError, ModelSetupError, ModelStepError};
+    use crate::network::{NetworkBuildError, NetworkBuilder, NetworkSolverSetupError, NetworkStepError};
+    use crate::node::{NodeBuilder, UnresolvedNode};
+    use crate::parameters::{MonthlyProfileParameterBuilder, ParameterName, UnresolvedParameterReturnValue};
+    use crate::recorders::AssertionF64RecorderBuilder;
+    use crate::solvers::{ClpSolverSettings, SolverSetupError, SolverSolveError};
+    use crate::test_utils::{default_domain, run_all_solvers};
+    use float_cmp::assert_approx_eq;
     use ndarray::Array2;
+    use std::collections::HashMap;
 
     /// Test the factors forcing a simple ratio of flow
     ///
     /// The model has a single input that diverges to two links and respective output nodes.
     #[test]
     fn test_simple_factors() {
-        let mut network = Network::default();
+        let mut builder = NetworkBuilder::default();
 
-        let input_node = network.add_input_node("input", None).unwrap();
-        let link_node0 = network.add_link_node("link", Some("0")).unwrap();
-        let output_node0 = network.add_output_node("output", Some("0")).unwrap();
+        let input_node = NodeBuilder::input("input");
+        builder.node(input_node);
 
-        network.connect_nodes(input_node, link_node0).unwrap();
-        network.connect_nodes(link_node0, output_node0).unwrap();
-
-        let link_node1 = network.add_link_node("link", Some("1")).unwrap();
-        let output_node1 = network.add_output_node("output", Some("1")).unwrap();
-
-        network.connect_nodes(input_node, link_node1).unwrap();
-        network.connect_nodes(link_node1, output_node1).unwrap();
-
-        let relationship = Some(Relationship::new_ratio_factors(&[2.0.into(), 1.0.into()]));
-
-        let _agg_node =
-            network.add_aggregated_node("agg-node", None, &[vec![link_node0], vec![link_node1]], relationship);
+        let mut link_node0 = NodeBuilder::link("link");
+        link_node0.sub_name("0");
+        let link_node0_ref = link_node0.name().clone();
+        builder.node(link_node0);
 
         // Setup a demand on output-0
-        let output_node = network.get_mut_node_by_name("output", Some("0")).unwrap();
-        output_node.set_max_flow_constraint(Some(100.0.into())).unwrap();
+        let mut output_node0 = NodeBuilder::output("output");
+        output_node0.sub_name("0").max_flow(100.0.into()).cost((-10.0).into());
+        builder.node(output_node0);
 
-        output_node.set_cost(Some((-10.0).into()));
+        builder.connect("input", UnresolvedNode::new("link", Some("0")));
+        builder.connect(
+            UnresolvedNode::new("link", Some("0")),
+            UnresolvedNode::new("output", Some("0")),
+        );
 
-        // Set-up assertion for "input" node
-        let idx = network.get_node_by_name("link", Some("0")).unwrap().index();
+        let mut link_node1 = NodeBuilder::link("link");
+        link_node1.sub_name("1");
+        let link_node1_ref = link_node1.name().clone();
+        builder.node(link_node1);
+
+        let mut output_node1 = NodeBuilder::output("output");
+        output_node1.sub_name("1");
+        builder.node(output_node1);
+
+        builder.connect("input", UnresolvedNode::new("link", Some("1")));
+        builder.connect(
+            UnresolvedNode::new("link", Some("1")),
+            UnresolvedNode::new("output", Some("1")),
+        );
+
+        let mut relationship = RatioFactorsBuilder::default();
+        relationship.factor(2.0.into()).factor(1.0.into());
+
+        let mut agg_node = AggregatedNodeBuilder::new("agg-node");
+        agg_node
+            .nodes(vec![link_node0_ref.clone()])
+            .nodes(vec![link_node1_ref.clone()])
+            .relationship(Box::new(relationship));
+        builder.agg_node(agg_node);
+
+        // Set-up assertion for "link-0" node
         let expected = Array2::from_elem((366, 10), 100.0);
-        let recorder = AssertionF64Recorder::new("link-0-flow", MetricF64::NodeOutFlow(idx), expected, None, None);
-        network.add_recorder(Box::new(recorder)).unwrap();
+        let recorder = AssertionF64RecorderBuilder::new(
+            "link-0-flow",
+            UnresolvedMetricF64::NodeOutFlow(link_node0_ref.clone()),
+            expected,
+        );
+        builder.recorder(Box::new(recorder));
 
-        // Set-up assertion for "input" node
-        let idx = network.get_node_by_name("link", Some("1")).unwrap().index();
+        // Set-up assertion for "link-1" node
         let expected = Array2::from_elem((366, 10), 50.0);
-        let recorder = AssertionF64Recorder::new("link-0-flow", MetricF64::NodeOutFlow(idx), expected, None, None);
-        network.add_recorder(Box::new(recorder)).unwrap();
+        let recorder = AssertionF64RecorderBuilder::new(
+            "link-0-flow",
+            UnresolvedMetricF64::NodeOutFlow(link_node1_ref.clone()),
+            expected,
+        );
+        builder.recorder(Box::new(recorder));
 
-        let model = Model::new(default_time_domain().into(), network);
+        let domain = default_domain();
+        let model = ModelBuilder::new(domain, builder).build().unwrap();
 
-        run_all_solvers(&model, &["ipm-simd", "ipm-ocl"], &[], &[]);
+        run_all_solvers(&model, &["ipm-simd", "ipm-ocl-f64"], &[], &[]);
+    }
+
+    /// Two inputs connected to an output, with an aggregated node over the first `num_nodes`
+    /// inputs.
+    fn agg_node_network(num_nodes: usize, relationship: Box<dyn RelationshipBuilder>) -> NetworkBuilder {
+        let mut builder = NetworkBuilder::default();
+
+        builder
+            .node(NodeBuilder::input("input0"))
+            .node(NodeBuilder::input("input1"))
+            .node(NodeBuilder::output("output"));
+        builder.connect("input0", "output");
+        builder.connect("input1", "output");
+
+        let mut agg_node = AggregatedNodeBuilder::new("agg-node");
+        for name in ["input0", "input1"].into_iter().take(num_nodes) {
+            agg_node.nodes(vec![name.into()]);
+        }
+        agg_node.relationship(relationship);
+        builder.agg_node(agg_node);
+
+        builder
+    }
+
+    /// Test that factors not matching the nodes stop the network build
+    #[test]
+    fn test_incorrect_number_of_factors() {
+        let mut proportion = ProportionalFactorsBuilder::default();
+        proportion.factor(0.2.into()).factor(0.3.into());
+        let mut ratio = RatioFactorsBuilder::default();
+        ratio.factor(2.0.into());
+        let mut coefficients = CoefficientFactorsBuilder::default();
+        coefficients.factor(1.0.into());
+
+        let cases: [(Box<dyn RelationshipBuilder>, usize, FactorCountError); 4] = [
+            (
+                Box::new(proportion),
+                2,
+                FactorCountError::Proportion {
+                    num_factors: 2,
+                    num_nodes: 2,
+                },
+            ),
+            (
+                Box::new(ratio),
+                2,
+                FactorCountError::Ratio {
+                    num_factors: 1,
+                    num_nodes: 2,
+                },
+            ),
+            (
+                Box::new(RatioFactorsBuilder::default()),
+                0,
+                FactorCountError::Ratio {
+                    num_factors: 0,
+                    num_nodes: 0,
+                },
+            ),
+            (
+                Box::new(coefficients),
+                1,
+                FactorCountError::Coefficients {
+                    num_factors: 1,
+                    num_nodes: 1,
+                },
+            ),
+        ];
+
+        for (relationship, num_nodes, expected) in cases {
+            let build_err = agg_node_network(num_nodes, relationship)
+                .build(&default_domain(), &HashMap::new())
+                .expect_err("Builder should error.");
+
+            if let NetworkBuildError::AggregatedNodeBuilderError { name, source } = &build_err
+                && let AggregatedNodeBuilderError::FactorCountError(err) = source.as_ref()
+            {
+                assert_eq!(name.to_string(), "agg-node");
+                assert_eq!(*err, expected);
+            } else {
+                panic!("Incorrect error returned, expected {expected:?}: {build_err:?}");
+            }
+        }
+    }
+
+    /// Test that a zero constant factor stops the solver setup
+    #[test]
+    fn test_zero_constant_factor() {
+        let mut relationship = RatioFactorsBuilder::default();
+        relationship.factor(2.0.into()).factor(0.0.into());
+
+        let builder = agg_node_network(2, Box::new(relationship));
+        let model = ModelBuilder::new(default_domain(), builder).build().unwrap();
+
+        let Err(setup_err) = model.setup(&ClpSolverSettings::default()) else {
+            panic!("Solver setup should error.");
+        };
+
+        if let ModelSetupError::SolverSetupError(network_err) = &setup_err
+            && let NetworkSolverSetupError::SolverSetupError(SolverSetupError::AggregatedNodeFactorError {
+                name,
+                source: ConstantFactorError::Ratio(ConstantRatioFactorError::NegativeOrZeroFactor { value }),
+                ..
+            }) = network_err.as_ref()
+        {
+            assert_eq!(name, "agg-node");
+            assert_approx_eq!(f64, *value, 0.0);
+        } else {
+            panic!("Incorrect error returned, expected NegativeOrZeroFactor: {setup_err:?}");
+        }
+    }
+
+    /// Test that a zero factor from a parameter stops the run
+    ///
+    /// The zero factor is the second, as every factor is checked, not only the first.
+    #[test]
+    fn test_zero_factor_profile() {
+        let factor_profile_name = ParameterName::new("factor-profile", None);
+
+        let mut relationship = RatioFactorsBuilder::default();
+        relationship
+            .factor(1.0.into())
+            .factor(UnresolvedMetricF64::ParameterValue {
+                name: factor_profile_name.clone(),
+                return_value: UnresolvedParameterReturnValue::Before,
+            });
+
+        let mut builder = agg_node_network(2, Box::new(relationship));
+        let factor_profile = MonthlyProfileParameterBuilder::new(factor_profile_name, [0.0; 12]);
+        builder.parameters().f64(Box::new(factor_profile));
+
+        let model = ModelBuilder::new(default_domain(), builder).build().unwrap();
+
+        let Err(run_err) = model.run(&ClpSolverSettings::default()) else {
+            panic!("Run should error.");
+        };
+
+        if let ModelRunError::StepError(ModelStepError::NetworkStepError { source, .. }) = &run_err
+            && let NetworkStepError::SolverError(SolverSolveError::AggregatedNodeFactorError {
+                name,
+                source: FactorError::Ratio(RatioFactorError::NegativeOrZeroFactor { value }),
+                ..
+            }) = source.as_ref()
+        {
+            assert_eq!(name, "agg-node");
+            assert_approx_eq!(f64, *value, 0.0);
+        } else {
+            panic!("Incorrect error returned, expected NegativeOrZeroFactor: {run_err:?}");
+        }
     }
 
     /// Test the factors forcing a simple ratio of flow that varies over time
@@ -954,53 +1364,83 @@ mod tests {
     /// The model has a single input that diverges to two links and respective output nodes.
     #[test]
     fn test_simple_factor_profile() {
-        let mut network = Network::default();
+        let mut builder = NetworkBuilder::default();
 
-        let input_node = network.add_input_node("input", None).unwrap();
-        let link_node0 = network.add_link_node("link", Some("0")).unwrap();
-        let output_node0 = network.add_output_node("output", Some("0")).unwrap();
+        let input_node = NodeBuilder::input("input");
+        builder.node(input_node);
 
-        network.connect_nodes(input_node, link_node0).unwrap();
-        network.connect_nodes(link_node0, output_node0).unwrap();
-
-        let link_node1 = network.add_link_node("link", Some("1")).unwrap();
-        let output_node1 = network.add_output_node("output", Some("1")).unwrap();
-
-        network.connect_nodes(input_node, link_node1).unwrap();
-        network.connect_nodes(link_node1, output_node1).unwrap();
-
-        let factor_profile = MonthlyProfileParameter::new("factor-profile".into(), [2.0; 12], None);
-        let factor_profile_idx = network.add_simple_parameter(Box::new(factor_profile)).unwrap();
-
-        let relationship = Some(Relationship::new_ratio_factors(&[
-            factor_profile_idx.into_metric_f64(ParameterReturnValue::Before),
-            1.0.into(),
-        ]));
-
-        let _agg_node =
-            network.add_aggregated_node("agg-node", None, &[vec![link_node0], vec![link_node1]], relationship);
+        let mut link_node0 = NodeBuilder::link("link");
+        link_node0.sub_name("0");
+        let link_node0_ref = link_node0.name().clone();
+        builder.node(link_node0);
 
         // Setup a demand on output-0
-        let output_node = network.get_mut_node_by_name("output", Some("0")).unwrap();
-        output_node.set_max_flow_constraint(Some(100.0.into())).unwrap();
+        let mut output_node0 = NodeBuilder::output("output");
+        output_node0.sub_name("0").max_flow(100.0.into()).cost((-10.0).into());
+        builder.node(output_node0);
 
-        output_node.set_cost(Some((-10.0).into()));
+        builder.connect("input", UnresolvedNode::new("link", Some("0")));
+        builder.connect(
+            UnresolvedNode::new("link", Some("0")),
+            UnresolvedNode::new("output", Some("0")),
+        );
+
+        let mut link_node1 = NodeBuilder::link("link");
+        link_node1.sub_name("1");
+        let link_node1_ref = link_node1.name().clone();
+        builder.node(link_node1);
+
+        let mut output_node1 = NodeBuilder::output("output");
+        output_node1.sub_name("1");
+        builder.node(output_node1);
+
+        builder.connect("input", UnresolvedNode::new("link", Some("1")));
+        builder.connect(
+            UnresolvedNode::new("link", Some("1")),
+            UnresolvedNode::new("output", Some("1")),
+        );
+
+        let factor_profile_name = ParameterName::new("factor-profile", None);
+        let factor_profile = MonthlyProfileParameterBuilder::new(factor_profile_name.clone(), [2.0; 12]);
+        builder.parameters().f64(Box::new(factor_profile));
+
+        let mut relationship = RatioFactorsBuilder::default();
+        relationship
+            .factor(UnresolvedMetricF64::ParameterValue {
+                name: factor_profile_name,
+                return_value: UnresolvedParameterReturnValue::Before,
+            })
+            .factor(1.0.into());
+
+        let mut agg_node = AggregatedNodeBuilder::new("agg-node");
+        agg_node
+            .nodes(vec![link_node0_ref.clone()])
+            .nodes(vec![link_node1_ref.clone()])
+            .relationship(Box::new(relationship));
+        builder.agg_node(agg_node);
 
         // Set-up assertion for "input" node
-        let idx = network.get_node_by_name("link", Some("0")).unwrap().index();
         let expected = Array2::from_elem((366, 10), 100.0);
-        let recorder = AssertionF64Recorder::new("link-0-flow", MetricF64::NodeOutFlow(idx), expected, None, None);
-        network.add_recorder(Box::new(recorder)).unwrap();
+        let recorder = AssertionF64RecorderBuilder::new(
+            "link-0-flow",
+            UnresolvedMetricF64::NodeOutFlow(link_node0_ref.clone()),
+            expected,
+        );
+        builder.recorder(Box::new(recorder));
 
         // Set-up assertion for "input" node
-        let idx = network.get_node_by_name("link", Some("1")).unwrap().index();
         let expected = Array2::from_elem((366, 10), 50.0);
-        let recorder = AssertionF64Recorder::new("link-0-flow", MetricF64::NodeOutFlow(idx), expected, None, None);
-        network.add_recorder(Box::new(recorder)).unwrap();
+        let recorder = AssertionF64RecorderBuilder::new(
+            "link-1-flow",
+            UnresolvedMetricF64::NodeOutFlow(link_node1_ref.clone()),
+            expected,
+        );
+        builder.recorder(Box::new(recorder));
 
-        let model = Model::new(default_time_domain().into(), network);
+        let domain = default_domain();
+        let model = ModelBuilder::new(domain, builder).build().unwrap();
 
-        run_all_solvers(&model, &["cbc", "ipm-simd", "ipm-ocl"], &[], &[]);
+        run_all_solvers(&model, &["cbc", "ipm-simd", "ipm-ocl-f64"], &[], &[]);
     }
 
     /// Test mutual exclusive flows
@@ -1008,55 +1448,76 @@ mod tests {
     /// The model has a single input that diverges to two links, only one of which can be active at a time.
     #[test]
     fn test_simple_mutual_exclusivity() {
-        let mut network = Network::default();
-
-        let input_node = network.add_input_node("input", None).unwrap();
-        let link_node0 = network.add_link_node("link", Some("0")).unwrap();
-        let output_node0 = network.add_output_node("output", Some("0")).unwrap();
-
-        network.connect_nodes(input_node, link_node0).unwrap();
-        network.connect_nodes(link_node0, output_node0).unwrap();
-
-        let link_node1 = network.add_link_node("link", Some("1")).unwrap();
-        let output_node1 = network.add_output_node("output", Some("1")).unwrap();
-
-        network.connect_nodes(input_node, link_node1).unwrap();
-        network.connect_nodes(link_node1, output_node1).unwrap();
-
-        let _me_node = network.add_aggregated_node(
-            "mutual-exclusivity",
-            None,
-            &[vec![link_node0], vec![link_node1]],
-            Some(Relationship::new_exclusive(0, 1)),
-        );
-
+        let mut builder = NetworkBuilder::default();
         // Setup a demand on output-0 and output-1.
         // output-0 has a lower penalty cost than output-1, so the flow should be directed to output-0.
-        let output_node = network.get_mut_node_by_name("output", Some("0")).unwrap();
-        output_node.set_max_flow_constraint(Some(100.0.into())).unwrap();
+        let input_node = NodeBuilder::input("input");
+        builder.node(input_node);
 
-        output_node.set_cost(Some((-10.0).into()));
+        let mut link_node0 = NodeBuilder::link("link");
+        link_node0.sub_name("0");
+        let link_node0_ref = link_node0.name().clone();
+        builder.node(link_node0);
 
-        let output_node = network.get_mut_node_by_name("output", Some("1")).unwrap();
-        output_node.set_max_flow_constraint(Some(100.0.into())).unwrap();
+        // Setup a demand on output-0
+        let mut output_node0 = NodeBuilder::output("output");
+        output_node0.sub_name("0").max_flow(100.0.into()).cost((-10.0).into());
+        builder.node(output_node0);
 
-        output_node.set_cost(Some((-5.0).into()));
+        builder.connect("input", UnresolvedNode::new("link", Some("0")));
+        builder.connect(
+            UnresolvedNode::new("link", Some("0")),
+            UnresolvedNode::new("output", Some("0")),
+        );
+
+        let mut link_node1 = NodeBuilder::link("link");
+        link_node1.sub_name("1");
+        let link_node1_ref = link_node1.name().clone();
+        builder.node(link_node1);
+
+        let mut output_node1 = NodeBuilder::output("output");
+        output_node1.sub_name("1").max_flow(100.0.into()).cost((-5.0).into());
+        builder.node(output_node1);
+
+        builder.connect("input", UnresolvedNode::new("link", Some("1")));
+        builder.connect(
+            UnresolvedNode::new("link", Some("1")),
+            UnresolvedNode::new("output", Some("1")),
+        );
+
+        let relationship = ExclusivityBuilder::new(0, 1);
+
+        let mut agg_node = AggregatedNodeBuilder::new("mutual-exclusivity");
+        agg_node
+            .nodes(vec![link_node0_ref.clone()])
+            .nodes(vec![link_node1_ref.clone()])
+            .relationship(Box::new(relationship));
+        builder.agg_node(agg_node);
 
         // Set-up assertion for "output-0" node
-        let idx = network.get_node_by_name("link", Some("0")).unwrap().index();
+
         let expected = Array2::from_elem((366, 10), 100.0);
-        let recorder = AssertionF64Recorder::new("link-0-flow", MetricF64::NodeOutFlow(idx), expected, None, None);
-        network.add_recorder(Box::new(recorder)).unwrap();
+        let recorder = AssertionF64RecorderBuilder::new(
+            "link-0-flow",
+            UnresolvedMetricF64::NodeOutFlow(link_node0_ref.clone()),
+            expected,
+        );
+        builder.recorder(Box::new(recorder));
 
         // Set-up assertion for "output-1" node
-        let idx = network.get_node_by_name("link", Some("1")).unwrap().index();
+
         let expected = Array2::from_elem((366, 10), 0.0);
-        let recorder = AssertionF64Recorder::new("link-1-flow", MetricF64::NodeOutFlow(idx), expected, None, None);
-        network.add_recorder(Box::new(recorder)).unwrap();
+        let recorder = AssertionF64RecorderBuilder::new(
+            "link-1-flow",
+            UnresolvedMetricF64::NodeOutFlow(link_node1_ref.clone()),
+            expected,
+        );
+        builder.recorder(Box::new(recorder));
 
-        let model = Model::new(default_time_domain().into(), network);
+        let domain = default_domain();
+        let model = ModelBuilder::new(domain, builder).build().unwrap();
 
-        run_all_solvers(&model, &["clp", "ipm-simd", "ipm-ocl"], &[], &[]);
+        run_all_solvers(&model, &["clp", "ipm-simd", "ipm-ocl-f64"], &[], &[]);
     }
 
     /// Test double mutual exclusive flows
@@ -1066,77 +1527,104 @@ mod tests {
     /// tests that a node can appear in two different mutual exclusivity constraints.
     #[test]
     fn test_double_mutual_exclusivity() {
-        let mut network = Network::default();
-
-        let input_node = network.add_input_node("input", None).unwrap();
-        let link_node0 = network.add_link_node("link", Some("0")).unwrap();
-        let output_node0 = network.add_output_node("output", Some("0")).unwrap();
-
-        network.connect_nodes(input_node, link_node0).unwrap();
-        network.connect_nodes(link_node0, output_node0).unwrap();
-
-        let link_node1 = network.add_link_node("link", Some("1")).unwrap();
-        let output_node1 = network.add_output_node("output", Some("1")).unwrap();
-
-        network.connect_nodes(input_node, link_node1).unwrap();
-        network.connect_nodes(link_node1, output_node1).unwrap();
-
-        let link_node2 = network.add_link_node("link", Some("2")).unwrap();
-        let output_node2 = network.add_output_node("output", Some("2")).unwrap();
-
-        network.connect_nodes(input_node, link_node2).unwrap();
-        network.connect_nodes(link_node2, output_node2).unwrap();
-
-        let _me_node = network.add_aggregated_node(
-            "mutual-exclusivity-01",
-            None,
-            &[vec![link_node0], vec![link_node1]],
-            Some(Relationship::new_exclusive(0, 1)),
-        );
-        let _me_node = network.add_aggregated_node(
-            "mutual-exclusivity-12",
-            None,
-            &[vec![link_node1], vec![link_node2]],
-            Some(Relationship::new_exclusive(0, 1)),
-        );
-
+        let mut builder = NetworkBuilder::default();
         // Setup a demand on the outputs
         // output-1 has a lower penalty cost than output-0 and output-2, so the flow should be directed to output-1.
-        let output_node = network.get_mut_node_by_name("output", Some("0")).unwrap();
-        output_node.set_max_flow_constraint(Some(100.0.into())).unwrap();
+        let input_node = NodeBuilder::input("input");
+        builder.node(input_node);
 
-        output_node.set_cost(Some((-5.0).into()));
+        let mut link_node0 = NodeBuilder::link("link");
+        link_node0.sub_name("0");
+        let link_node0_ref = link_node0.name().clone();
+        builder.node(link_node0);
 
-        let output_node = network.get_mut_node_by_name("output", Some("1")).unwrap();
-        output_node.set_max_flow_constraint(Some(100.0.into())).unwrap();
+        // Setup a demand on output-0
+        let mut output_node0 = NodeBuilder::output("output");
+        output_node0.sub_name("0").max_flow(100.0.into()).cost((-5.0).into());
+        builder.node(output_node0);
 
-        output_node.set_cost(Some((-15.0).into()));
+        builder.connect("input", UnresolvedNode::new("link", Some("0")));
+        builder.connect(
+            UnresolvedNode::new("link", Some("0")),
+            UnresolvedNode::new("output", Some("0")),
+        );
 
-        let output_node = network.get_mut_node_by_name("output", Some("2")).unwrap();
-        output_node.set_max_flow_constraint(Some(100.0.into())).unwrap();
+        let mut link_node1 = NodeBuilder::link("link");
+        link_node1.sub_name("1");
+        let link_node1_ref = link_node1.name().clone();
+        builder.node(link_node1);
 
-        output_node.set_cost(Some((-5.0).into()));
+        let mut output_node1 = NodeBuilder::output("output");
+        output_node1.sub_name("1").max_flow(100.0.into()).cost((-15.0).into());
+        builder.node(output_node1);
 
-        // Set-up assertion for "output-0" node
-        let idx = network.get_node_by_name("link", Some("0")).unwrap().index();
+        builder.connect("input", UnresolvedNode::new("link", Some("1")));
+        builder.connect(
+            UnresolvedNode::new("link", Some("1")),
+            UnresolvedNode::new("output", Some("1")),
+        );
+
+        let mut link_node2 = NodeBuilder::link("link");
+        link_node2.sub_name("2");
+        let link_node2_ref = link_node2.name().clone();
+        builder.node(link_node2);
+
+        let mut output_node2 = NodeBuilder::output("output");
+        output_node2.sub_name("2").max_flow(100.0.into()).cost((-5.0).into());
+        builder.node(output_node2);
+
+        builder.connect("input", UnresolvedNode::new("link", Some("2")));
+        builder.connect(
+            UnresolvedNode::new("link", Some("2")),
+            UnresolvedNode::new("output", Some("2")),
+        );
+
+        let relationship = ExclusivityBuilder::new(0, 1);
+
+        let mut agg_node = AggregatedNodeBuilder::new("mutual-exclusivity-01");
+        agg_node
+            .nodes(vec![link_node0_ref.clone()])
+            .nodes(vec![link_node1_ref.clone()])
+            .relationship(Box::new(relationship.clone()));
+        builder.agg_node(agg_node);
+
+        let mut agg_node = AggregatedNodeBuilder::new("mutual-exclusivity-12");
+        agg_node
+            .nodes(vec![link_node1_ref.clone()])
+            .nodes(vec![link_node2_ref.clone()])
+            .relationship(Box::new(relationship));
+        builder.agg_node(agg_node);
+
+        // Set-up assertion for "link-0" node
         let expected = Array2::from_elem((366, 10), 0.0);
-        let recorder = AssertionF64Recorder::new("link-0-flow", MetricF64::NodeOutFlow(idx), expected, None, None);
-        network.add_recorder(Box::new(recorder)).unwrap();
+        let recorder = AssertionF64RecorderBuilder::new(
+            "link-0-flow",
+            UnresolvedMetricF64::NodeOutFlow(link_node0_ref.clone()),
+            expected,
+        );
+        builder.recorder(Box::new(recorder));
 
-        // Set-up assertion for "output-0" node
-        let idx = network.get_node_by_name("link", Some("1")).unwrap().index();
+        // Set-up assertion for "link-1" node
         let expected = Array2::from_elem((366, 10), 100.0);
-        let recorder = AssertionF64Recorder::new("link-1-flow", MetricF64::NodeOutFlow(idx), expected, None, None);
-        network.add_recorder(Box::new(recorder)).unwrap();
+        let recorder = AssertionF64RecorderBuilder::new(
+            "link-1-flow",
+            UnresolvedMetricF64::NodeOutFlow(link_node1_ref.clone()),
+            expected,
+        );
+        builder.recorder(Box::new(recorder));
 
-        // Set-up assertion for "output-2" node
-        let idx = network.get_node_by_name("link", Some("2")).unwrap().index();
+        // Set-up assertion for "link-2" node
         let expected = Array2::from_elem((366, 10), 0.0);
-        let recorder = AssertionF64Recorder::new("link-2-flow", MetricF64::NodeOutFlow(idx), expected, None, None);
-        network.add_recorder(Box::new(recorder)).unwrap();
+        let recorder = AssertionF64RecorderBuilder::new(
+            "link-2-flow",
+            UnresolvedMetricF64::NodeOutFlow(link_node2_ref.clone()),
+            expected,
+        );
+        builder.recorder(Box::new(recorder));
 
-        let model = Model::new(default_time_domain().into(), network);
+        let domain = default_domain();
+        let model = ModelBuilder::new(domain, builder).build().unwrap();
 
-        run_all_solvers(&model, &["clp", "ipm-ocl", "ipm-simd"], &[], &[]);
+        run_all_solvers(&model, &["clp", "ipm-ocl-f64", "ipm-simd"], &[], &[]);
     }
 }

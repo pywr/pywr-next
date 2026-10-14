@@ -178,9 +178,9 @@ pub fn dual_feasibility(
 ///
 /// Theta value is the max(-dx/x, -dz/z, -dw/w, -dy/y).
 ///
-///     dx = (c - AT.dot(y) - AT.dot(dy) + mu/x)*x/z
-///     dz = (mu - z*dx)/x - z
-///     dw = (mu - w*dy)/y - w
+///  dx = (c - AT.dot(y) - AT.dot(dy) + mu/x)*x/z
+///  dz = (mu - z*dx)/x - z
+///  dw = (mu - w*dy)/y - w
 ///
 #[allow(clippy::too_many_arguments)]
 pub fn compute_dx_dz_dw(

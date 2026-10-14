@@ -2,13 +2,15 @@ use crate::ConversionError;
 use crate::error::ComponentConversionError;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
+use crate::meta::NamedMeta;
 use crate::metric::{Metric, NodeAttrReference};
 #[cfg(feature = "core")]
 use crate::network::LoadArgs;
-use crate::parameters::{ConversionData, ParameterMeta};
+use crate::parameters::{ConversionData, ParameterPhase};
 use crate::v1::{TryFromV1, TryIntoV2, try_convert_parameter_attr};
+use crate::validation::ParameterProblem;
 #[cfg(feature = "core")]
-use pywr_core::parameters::{ParameterName, ParameterType};
+use pywr_core::{metric::UnresolvedMetricU64, parameters::ParameterName};
 use pywr_schema_macros::{PywrVisitAll, skip_serializing_none};
 use pywr_v1_schema::parameters::{
     MultipleThresholdIndexParameter as MultiThresholdIndexParameterV1,
@@ -87,7 +89,8 @@ impl From<Predicate> for pywr_core::parameters::Predicate {
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct ThresholdParameter {
-    pub meta: ParameterMeta,
+    pub meta: NamedMeta,
+    pub phase: ParameterPhase,
     /// The metric to compare against the threshold.
     pub metric: Metric,
     /// The threshold to compare against.
@@ -105,51 +108,75 @@ pub struct ThresholdParameter {
 
 #[cfg(feature = "core")]
 impl ThresholdParameter {
-    pub fn add_to_model(
+    pub fn add_to_network(
         &self,
-        network: &mut pywr_core::network::Network,
+        network: &mut pywr_core::network::NetworkBuilder,
         args: &LoadArgs,
         parent: Option<&str>,
-    ) -> Result<ParameterType, SchemaError> {
-        let metric = self.metric.load(network, args, None)?;
-        let threshold = self.threshold.load(network, args, None)?;
+    ) -> Result<(), SchemaError> {
+        let metric = self.metric.load(network, args, parent)?;
+        let threshold = self.threshold.load(network, args, parent)?;
 
         // If the parameter has returned metrics, we need to create a sub-name for the threshold parameter
         // so that it can be distinguished from the indexed array parameter.
         // If it does not have returned metrics, we can just use the parameter name as the
         // name for the threshold parameter.
         let name = if self.returned_metrics.is_some() {
-            ParameterName::new_with_subname(&self.meta.name, Some("threshold"), Some(&self.meta.name))
+            ParameterName::new_with_subname(&self.meta.name, Some("threshold"), parent)
         } else {
             ParameterName::new(&self.meta.name, parent)
         };
 
-        let p = pywr_core::parameters::ThresholdParameter::new(
-            name,
-            metric,
-            threshold,
-            self.predicate.into(),
-            self.ratchet,
-        );
+        let mut builder = match self.phase {
+            ParameterPhase::Before => pywr_core::parameters::ThresholdParameterBuilder::before(
+                name.clone(),
+                metric,
+                threshold,
+                self.predicate.into(),
+            ),
+            ParameterPhase::After => pywr_core::parameters::ThresholdParameterBuilder::after(
+                name.clone(),
+                metric,
+                threshold,
+                self.predicate.into(),
+            ),
+            ParameterPhase::Both => pywr_core::parameters::ThresholdParameterBuilder::both(
+                name.clone(),
+                metric,
+                threshold,
+                self.predicate.into(),
+            ),
+        };
 
-        let p_idx = network.add_index_parameter(Box::new(p))?;
-
-        match self.returned_metrics {
-            Some(ref values) => {
-                let metrics = values
-                    .iter()
-                    .map(|v| v.load(network, args, None))
-                    .collect::<Result<Vec<_>, _>>()?;
-
-                let values_param = pywr_core::parameters::IndexedArrayParameter::new(
-                    ParameterName::new(&self.meta.name, parent),
-                    p_idx.into_metric_u64_before(),
-                    &metrics,
-                );
-                Ok(network.add_parameter(Box::new(values_param))?.into())
-            }
-            None => Ok(p_idx.into()),
+        if self.ratchet {
+            builder.ratchet();
         }
+
+        network.parameters().u64(Box::new(builder));
+
+        if let Some(values) = &self.returned_metrics {
+            let mut values_builder = match self.phase {
+                ParameterPhase::Before => pywr_core::parameters::IndexedArrayParameterBuilder::before(
+                    ParameterName::new(&self.meta.name, parent),
+                    UnresolvedMetricU64::new_parameter_before(name),
+                ),
+                ParameterPhase::After => pywr_core::parameters::IndexedArrayParameterBuilder::after(
+                    ParameterName::new(&self.meta.name, parent),
+                    UnresolvedMetricU64::new_parameter_after(name),
+                ),
+                ParameterPhase::Both => pywr_core::parameters::IndexedArrayParameterBuilder::both(
+                    ParameterName::new(&self.meta.name, parent),
+                    UnresolvedMetricU64::new_parameter_both(name),
+                ),
+            };
+
+            for v in values {
+                values_builder.metric(v.load(network, args, parent)?);
+            }
+            network.parameters().f64(Box::new(values_builder));
+        }
+
+        Ok(())
     }
 }
 
@@ -161,7 +188,7 @@ impl TryFromV1<ParameterThresholdParameterV1> for ThresholdParameter {
         parent_node: Option<&str>,
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: ParameterMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
+        let meta: NamedMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
 
         let metric = try_convert_parameter_attr(&meta.name, "parameter", v1.parameter, parent_node, conversion_data)?;
         let threshold =
@@ -194,6 +221,7 @@ impl TryFromV1<ParameterThresholdParameterV1> for ThresholdParameter {
             threshold,
             predicate: v1.predicate.into(),
             ratchet: false,
+            phase: ParameterPhase::Before,
         };
         Ok(p)
     }
@@ -207,7 +235,7 @@ impl TryFromV1<NodeThresholdParameterV1> for ThresholdParameter {
         parent_node: Option<&str>,
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: ParameterMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
+        let meta: NamedMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
 
         let metric = Metric::Node(NodeAttrReference::new(v1.node, None));
 
@@ -241,6 +269,7 @@ impl TryFromV1<NodeThresholdParameterV1> for ThresholdParameter {
             threshold,
             predicate: v1.predicate.into(),
             ratchet: false,
+            phase: ParameterPhase::Before,
         };
         Ok(p)
     }
@@ -254,7 +283,7 @@ impl TryFromV1<StorageThresholdParameterV1> for ThresholdParameter {
         parent_node: Option<&str>,
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: ParameterMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
+        let meta: NamedMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
 
         let metric = Metric::Node(NodeAttrReference::new(v1.storage_node, None));
 
@@ -288,6 +317,7 @@ impl TryFromV1<StorageThresholdParameterV1> for ThresholdParameter {
             threshold,
             predicate: v1.predicate.into(),
             ratchet: false,
+            phase: ParameterPhase::Before,
         };
         Ok(p)
     }
@@ -312,7 +342,8 @@ impl TryFromV1<StorageThresholdParameterV1> for ThresholdParameter {
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct MultiThresholdParameter {
-    pub meta: ParameterMeta,
+    pub meta: NamedMeta,
+    pub phase: ParameterPhase,
     /// The metric to compare against the threshold.
     pub metric: Metric,
     /// The thresholds to compare against.
@@ -327,52 +358,88 @@ pub struct MultiThresholdParameter {
     pub ratchet: bool,
 }
 
+impl MultiThresholdParameter {
+    /// Check that `returned_metrics`, when set, has one entry per position: one more than the
+    /// thresholds.
+    pub fn validate(&self) -> Result<(), Vec<ParameterProblem>> {
+        let required = self.thresholds.len() + 1;
+
+        match &self.returned_metrics {
+            Some(returned) if returned.len() != required => Err(vec![ParameterProblem::ReturnedMetricsCount {
+                required,
+                found: returned.len(),
+            }]),
+            _ => Ok(()),
+        }
+    }
+}
+
 #[cfg(feature = "core")]
 impl MultiThresholdParameter {
-    pub fn add_to_model(
+    pub fn add_to_network(
         &self,
-        network: &mut pywr_core::network::Network,
+        network: &mut pywr_core::network::NetworkBuilder,
         args: &LoadArgs,
         parent: Option<&str>,
-    ) -> Result<ParameterType, SchemaError> {
-        let metric = self.metric.load(network, args, None)?;
-        let thresholds = self
-            .thresholds
-            .iter()
-            .map(|v| v.load(network, args, None))
-            .collect::<Result<Vec<_>, _>>()?;
+    ) -> Result<(), SchemaError> {
+        let metric = self.metric.load(network, args, parent)?;
 
         let name = if self.returned_metrics.is_some() {
-            ParameterName::new_with_subname(&self.meta.name, Some("threshold"), Some(&self.meta.name))
+            ParameterName::new_with_subname(&self.meta.name, Some("threshold"), parent)
         } else {
-            self.meta.name.as_str().into()
+            ParameterName::new(&self.meta.name, parent)
         };
 
-        let p = pywr_core::parameters::MultiThresholdParameter::new(
-            name,
-            metric,
-            &thresholds,
-            self.predicate.into(),
-            self.ratchet,
-        );
-
-        let p_idx = network.add_index_parameter(Box::new(p))?;
-
-        match self.returned_metrics {
-            Some(ref values) => {
-                let metrics = values
-                    .iter()
-                    .map(|v| v.load(network, args, None))
-                    .collect::<Result<Vec<_>, _>>()?;
-                let values_param = pywr_core::parameters::IndexedArrayParameter::new(
-                    ParameterName::new(&self.meta.name, parent),
-                    p_idx.into_metric_u64_before(),
-                    &metrics,
-                );
-                Ok(network.add_parameter(Box::new(values_param))?.into())
+        let mut builder = match self.phase {
+            ParameterPhase::Before => pywr_core::parameters::MultiThresholdParameterBuilder::before(
+                name.clone(),
+                metric,
+                self.predicate.into(),
+            ),
+            ParameterPhase::After => pywr_core::parameters::MultiThresholdParameterBuilder::after(
+                name.clone(),
+                metric,
+                self.predicate.into(),
+            ),
+            ParameterPhase::Both => {
+                pywr_core::parameters::MultiThresholdParameterBuilder::both(name.clone(), metric, self.predicate.into())
             }
-            None => Ok(p_idx.into()),
+        };
+
+        for t in &self.thresholds {
+            builder.threshold(t.load(network, args, parent)?);
         }
+
+        if self.ratchet {
+            builder.ratchet();
+        }
+
+        network.parameters().u64(Box::new(builder));
+
+        if let Some(values) = &self.returned_metrics {
+            let mut values_builder = match self.phase {
+                ParameterPhase::Before => pywr_core::parameters::IndexedArrayParameterBuilder::before(
+                    ParameterName::new(&self.meta.name, parent),
+                    UnresolvedMetricU64::new_parameter_before(name),
+                ),
+                ParameterPhase::After => pywr_core::parameters::IndexedArrayParameterBuilder::after(
+                    ParameterName::new(&self.meta.name, parent),
+                    UnresolvedMetricU64::new_parameter_after(name),
+                ),
+                ParameterPhase::Both => pywr_core::parameters::IndexedArrayParameterBuilder::both(
+                    ParameterName::new(&self.meta.name, parent),
+                    UnresolvedMetricU64::new_parameter_both(name),
+                ),
+            };
+
+            for v in values {
+                values_builder.metric(v.load(network, args, parent)?);
+            }
+
+            network.parameters().f64(Box::new(values_builder));
+        }
+
+        Ok(())
     }
 }
 
@@ -384,7 +451,7 @@ impl TryFromV1<MultiThresholdIndexParameterV1> for MultiThresholdParameter {
         parent_node: Option<&str>,
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: ParameterMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
+        let meta: NamedMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
 
         let metric = Metric::Node(NodeAttrReference::new(v1.node, None));
 
@@ -401,6 +468,7 @@ impl TryFromV1<MultiThresholdIndexParameterV1> for MultiThresholdParameter {
             thresholds,
             predicate: Predicate::GE, // v1 assumed GE and this was not configurable
             ratchet: false,
+            phase: ParameterPhase::Before,
         };
         Ok(p)
     }
@@ -414,7 +482,7 @@ impl TryFromV1<MultipleThresholdParameterIndexParameterV1> for MultiThresholdPar
         parent_node: Option<&str>,
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: ParameterMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
+        let meta: NamedMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
 
         let metric = try_convert_parameter_attr(&meta.name, "parameter", v1.parameter, parent_node, conversion_data)?;
 
@@ -431,6 +499,7 @@ impl TryFromV1<MultipleThresholdParameterIndexParameterV1> for MultiThresholdPar
             thresholds,
             predicate: Predicate::GE, // v1 assumed GE and this was not configurable
             ratchet: false,
+            phase: ParameterPhase::Before,
         };
         Ok(p)
     }

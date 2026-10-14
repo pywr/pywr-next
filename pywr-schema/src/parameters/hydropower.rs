@@ -1,14 +1,15 @@
 #[cfg(feature = "core")]
 use crate::SchemaError;
 use crate::error::ComponentConversionError;
+use crate::meta::NamedMeta;
 use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::network::LoadArgs;
-use crate::parameters::{ConversionData, ParameterMeta};
+use crate::parameters::ConversionData;
 use crate::v1::{TryFromV1, TryIntoV2, try_convert_parameter_attr};
-
+use crate::validation::ParameterProblem;
 #[cfg(feature = "core")]
-use pywr_core::parameters::{HydropowerTargetData, ParameterIndex, ParameterName};
+use pywr_core::parameters::{HydropowerTargetData, ParameterName};
 use pywr_schema_macros::{PywrVisitAll, skip_serializing_none};
 use pywr_v1_schema::parameters::HydropowerTargetParameter as HydropowerTargetParameterV1;
 use schemars::JsonSchema;
@@ -43,7 +44,7 @@ use schemars::JsonSchema;
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct HydropowerTargetParameter {
-    pub meta: ParameterMeta,
+    pub meta: NamedMeta,
     /// The flow through the turbine node. If provided, this is used as the actual flow to
     /// compute the actual power output in the "after" method of the parameter. This is optional
     /// and if not provided then no power output is calculated.
@@ -83,54 +84,104 @@ pub struct HydropowerTargetParameter {
     pub energy_unit_conversion: Option<f64>,
 }
 
+impl HydropowerTargetParameter {
+    pub const DEFAULT_TURBINE_ELEVATION: f64 = 0.0;
+    pub const DEFAULT_MIN_HEAD: f64 = 0.0;
+    pub const DEFAULT_EFFICIENCY: f64 = 1.0;
+    pub const DEFAULT_WATER_DENSITY: f64 = 1000.0;
+    pub const DEFAULT_FLOW_UNIT_CONVERSION: f64 = 1.0;
+    pub const DEFAULT_ENERGY_UNIT_CONVERSION: f64 = 1e-6;
+
+    /// Check that the parameter has a flow to calculate from, bounds only a `target`, and that
+    /// its constants are above 0: core divides by them, and a negative flow is an error.
+    pub fn validate(&self) -> Result<(), Vec<ParameterProblem>> {
+        let mut problems = Vec::new();
+
+        if self.target.is_none() {
+            if self.actual_flow.is_none() {
+                problems.push(ParameterProblem::NoTargetOrActualFlow);
+            }
+            if self.min_flow.is_some() {
+                problems.push(ParameterProblem::FlowBoundWithoutTarget("min_flow"));
+            }
+            if self.max_flow.is_some() {
+                problems.push(ParameterProblem::FlowBoundWithoutTarget("max_flow"));
+            }
+        }
+
+        let constants = [
+            ("efficiency", self.efficiency),
+            ("water_density", self.water_density),
+            ("flow_unit_conversion", self.flow_unit_conversion),
+            ("energy_unit_conversion", self.energy_unit_conversion),
+        ];
+        for (field, value) in constants {
+            if value.is_some_and(|value| value <= 0.0) {
+                problems.push(ParameterProblem::NotPositive(field));
+            }
+        }
+
+        if problems.is_empty() { Ok(()) } else { Err(problems) }
+    }
+}
+
 #[cfg(feature = "core")]
 impl HydropowerTargetParameter {
-    pub fn add_to_model(
+    pub fn add_to_network(
         &self,
-        network: &mut pywr_core::network::Network,
+        network: &mut pywr_core::network::NetworkBuilder,
         args: &LoadArgs,
         parent: Option<&str>,
-    ) -> Result<ParameterIndex<f64>, SchemaError> {
-        let target = self.target.as_ref().map(|t| t.load(network, args, None)).transpose()?;
+    ) -> Result<(), SchemaError> {
+        let target = self
+            .target
+            .as_ref()
+            .map(|t| t.load(network, args, parent))
+            .transpose()?;
         let water_elevation = self
             .water_elevation
             .as_ref()
-            .map(|t| t.load(network, args, None))
+            .map(|t| t.load(network, args, parent))
             .transpose()?;
         let max_flow = self
             .max_flow
             .as_ref()
-            .map(|t| t.load(network, args, None))
+            .map(|t| t.load(network, args, parent))
             .transpose()?;
         let min_flow = self
             .min_flow
             .as_ref()
-            .map(|t| t.load(network, args, None))
+            .map(|t| t.load(network, args, parent))
             .transpose()?;
         let actual_flow = self
             .actual_flow
             .as_ref()
-            .map(|t| t.load(network, args, None))
+            .map(|t| t.load(network, args, parent))
             .transpose()?;
 
         let turbine_data = HydropowerTargetData {
             actual_flow,
             target,
             water_elevation,
-            elevation: self.turbine_elevation,
-            min_head: self.min_head,
+            elevation: self.turbine_elevation.unwrap_or(Self::DEFAULT_TURBINE_ELEVATION),
+            min_head: self.min_head.unwrap_or(Self::DEFAULT_MIN_HEAD),
             max_flow,
             min_flow,
-            efficiency: self.efficiency,
-            water_density: self.water_density,
-            flow_unit_conversion: self.flow_unit_conversion,
-            energy_unit_conversion: self.energy_unit_conversion,
+            efficiency: self.efficiency.unwrap_or(Self::DEFAULT_EFFICIENCY),
+            water_density: self.water_density.unwrap_or(Self::DEFAULT_WATER_DENSITY),
+            flow_unit_conversion: self.flow_unit_conversion.unwrap_or(Self::DEFAULT_FLOW_UNIT_CONVERSION),
+            energy_unit_conversion: self
+                .energy_unit_conversion
+                .unwrap_or(Self::DEFAULT_ENERGY_UNIT_CONVERSION),
         };
-        let p = pywr_core::parameters::HydropowerTargetParameter::new(
+        let p = pywr_core::parameters::HydropowerTargetParameterBuilder::new(
             ParameterName::new(&self.meta.name, parent),
             turbine_data,
         );
-        Ok(network.add_parameter(Box::new(p))?)
+
+        network.parameters().f64(Box::new(p));
+
+        Ok(())
     }
 }
 
@@ -142,7 +193,7 @@ impl TryFromV1<HydropowerTargetParameterV1> for HydropowerTargetParameter {
         parent_node: Option<&str>,
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: ParameterMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
+        let meta: NamedMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
         let target = try_convert_parameter_attr(&meta.name, "target", v1.target, parent_node, conversion_data)?;
         let water_elevation = try_convert_parameter_attr(
             &meta.name,

@@ -1,6 +1,6 @@
+use crate::FileProvider;
 use crate::data_tables::TableError;
 use std::collections::HashMap;
-use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
 use std::str::FromStr;
@@ -51,45 +51,51 @@ where
         }
     }
 
-    pub fn from_csv_row(path: &Path, rows: usize) -> Result<Self, TableError>
+    pub fn from_csv_row(files: &dyn FileProvider, path: &Path, key_size: usize) -> Result<Self, TableError>
     where
         T: FromStr,
         TableError: From<T::Err>,
     {
-        match rows {
-            1 => Ok(LoadedVecTable::One(load_csv_row_vec_table(path)?)),
-            2 => Ok(LoadedVecTable::Two(load_csv_row_vec_table(path)?)),
-            3 => Ok(LoadedVecTable::Three(load_csv_row_vec_table(path)?)),
-            4 => Ok(LoadedVecTable::Four(load_csv_row_vec_table(path)?)),
+        match key_size {
+            1 => Ok(LoadedVecTable::One(load_csv_row_vec_table(files, path)?)),
+            2 => Ok(LoadedVecTable::Two(load_csv_row_vec_table(files, path)?)),
+            3 => Ok(LoadedVecTable::Three(load_csv_row_vec_table(files, path)?)),
+            4 => Ok(LoadedVecTable::Four(load_csv_row_vec_table(files, path)?)),
             _ => Err(TableError::FormatNotSupported(
                 "CSV row array table with more than four index columns is not supported.".to_string(),
             )),
         }
     }
 
-    pub fn from_csv_col(path: &Path, cols: usize) -> Result<Self, TableError>
+    pub fn from_csv_col(files: &dyn FileProvider, path: &Path, key_size: usize) -> Result<Self, TableError>
     where
         T: FromStr,
         TableError: From<T::Err>,
     {
-        match cols {
-            1 => Ok(LoadedVecTable::One(load_csv_col_vec_table(path)?)),
-            2 => Ok(LoadedVecTable::Two(load_csv_col_vec_table(path)?)),
-            3 => Ok(LoadedVecTable::Three(load_csv_col_vec_table(path)?)),
-            4 => Ok(LoadedVecTable::Four(load_csv_col_vec_table(path)?)),
+        match key_size {
+            1 => Ok(LoadedVecTable::One(load_csv_col_vec_table(files, path)?)),
+            2 => Ok(LoadedVecTable::Two(load_csv_col_vec_table(files, path)?)),
+            3 => Ok(LoadedVecTable::Three(load_csv_col_vec_table(files, path)?)),
+            4 => Ok(LoadedVecTable::Four(load_csv_col_vec_table(files, path)?)),
             _ => Err(TableError::FormatNotSupported(
-                "CSV row array table with more than four index columns is not supported.".to_string(),
+                "CSV column array table with more than four index rows is not supported.".to_string(),
             )),
         }
     }
 }
 
-fn load_csv_row_vec_table<const N: usize, T>(path: &Path) -> Result<VecTable<N, T>, TableError>
+fn load_csv_row_vec_table<const N: usize, T>(
+    files: &dyn FileProvider,
+    path: &Path,
+) -> Result<VecTable<N, T>, TableError>
 where
     T: FromStr,
     TableError: From<T::Err>,
 {
-    let file = File::open(path).map_err(|e| TableError::IO(e.to_string()))?;
+    let file = files.open(path).map_err(|source| TableError::IO {
+        path: path.to_path_buf(),
+        source,
+    })?;
     let buf_reader = BufReader::new(file);
     let mut rdr = csv::Reader::from_reader(buf_reader);
 
@@ -98,7 +104,10 @@ where
         .map(|result| {
             // The iterator yields Result<StringRecord, Error>, so we check the
             // error here.
-            let record = result.map_err(|e| TableError::Csv(e.to_string()))?;
+            let record = result.map_err(|source| TableError::Csv {
+                path: path.to_path_buf(),
+                source,
+            })?;
 
             let key: [String; N] = (0..N)
                 .map(|i| Ok(record.get(i).ok_or(TableError::KeyParse)?.to_string()))
@@ -115,12 +124,18 @@ where
     Ok(VecTable { values })
 }
 
-fn load_csv_col_vec_table<const N: usize, T>(path: &Path) -> Result<VecTable<N, T>, TableError>
+fn load_csv_col_vec_table<const N: usize, T>(
+    files: &dyn FileProvider,
+    path: &Path,
+) -> Result<VecTable<N, T>, TableError>
 where
     T: FromStr + Copy,
     TableError: From<T::Err>,
 {
-    let file = File::open(path).map_err(|e| TableError::IO(e.to_string()))?;
+    let file = files.open(path).map_err(|source| TableError::IO {
+        path: path.to_path_buf(),
+        source,
+    })?;
     let buf_reader = BufReader::new(file);
     let mut rdr = csv::Reader::from_reader(buf_reader);
 
@@ -129,7 +144,10 @@ where
     // Each header is a vector of strings, one for each row header
     let mut col_headers: Vec<Vec<String>> = rdr
         .headers()
-        .map_err(|e| TableError::Csv(e.to_string()))?
+        .map_err(|source| TableError::Csv {
+            path: path.to_path_buf(),
+            source,
+        })?
         .iter()
         .map(|s| {
             let mut h = Vec::with_capacity(N);
@@ -141,14 +159,18 @@ where
     let mut records = rdr.records();
 
     // Read the next N-1 header rows
-    for _ in 1..N {
+    for r in 1..N {
         let next_headers = records.next();
         if let Some(Ok(record)) = next_headers {
             for (i, header) in record.iter().enumerate() {
                 col_headers[i].push(header.to_string());
             }
         } else {
-            return Err(TableError::Csv("Not enough header rows".to_string()));
+            return Err(TableError::NotEnoughHeaderRows {
+                path: path.to_path_buf(),
+                found: r,
+                expected: N,
+            });
         }
     }
 
@@ -156,7 +178,10 @@ where
         .map(|result| {
             // The iterator yields Result<StringRecord, Error>, so we check the
             // error here.
-            let record = result.map_err(|e| TableError::Csv(e.to_string()))?;
+            let record = result.map_err(|source| TableError::Csv {
+                path: path.to_path_buf(),
+                source,
+            })?;
 
             let values: Vec<T> = record
                 .iter()
@@ -164,7 +189,11 @@ where
                 .collect::<Result<_, <T as FromStr>::Err>>()?;
 
             if values.len() != col_headers.len() {
-                return Err(TableError::Csv("Row length does not match header length".to_string()));
+                return Err(TableError::RowLengthMismatch {
+                    path: path.to_path_buf(),
+                    found: values.len(),
+                    expected: col_headers.len(),
+                });
             }
 
             Ok(values)

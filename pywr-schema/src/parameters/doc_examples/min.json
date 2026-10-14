@@ -3,6 +3,7 @@
     "name": "my-min"
   },
   "type": "Min",
+  "phase": "Before",
   "parameter": {
     "type": "Parameter",
     "name": "my-monthly-profile"

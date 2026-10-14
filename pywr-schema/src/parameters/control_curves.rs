@@ -5,11 +5,13 @@ use crate::metric::{Metric, NodeAttrReference, VirtualNodeAttrReference};
 #[cfg(feature = "core")]
 use crate::network::LoadArgs;
 use crate::nodes::NodeAttribute;
-use crate::parameters::{ConversionData, ParameterMeta};
+use crate::parameters::{ConversionData, ParameterPhase};
 use crate::v1::{TryFromV1, TryIntoV2, try_convert_control_curves, try_convert_parameter_attr};
+use crate::validation::ParameterProblem;
 
+use crate::meta::NamedMeta;
 #[cfg(feature = "core")]
-use pywr_core::parameters::{ParameterIndex, ParameterName};
+use pywr_core::parameters::ParameterName;
 use pywr_schema_macros::{PywrVisitAll, skip_serializing_none};
 use pywr_v1_schema::parameters::{
     ControlCurveIndexParameter as ControlCurveIndexParameterV1,
@@ -19,44 +21,77 @@ use pywr_v1_schema::parameters::{
 };
 use schemars::JsonSchema;
 
+/// Check that a control curve parameter has the number of values its control curves require.
+fn check_value_count(required: usize, found: usize) -> Result<(), Vec<ParameterProblem>> {
+    if found == required {
+        Ok(())
+    } else {
+        Err(vec![ParameterProblem::ControlCurveValues { required, found }])
+    }
+}
+
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct ControlCurveInterpolatedParameter {
-    pub meta: ParameterMeta,
+    pub meta: NamedMeta,
+    pub phase: ParameterPhase,
     pub control_curves: Vec<Metric>,
     pub storage_metric: Metric,
     pub values: Vec<Metric>,
 }
 
+impl ControlCurveInterpolatedParameter {
+    /// Check that `values` has one entry per zone edge: two more than the control curves.
+    pub fn validate(&self) -> Result<(), Vec<ParameterProblem>> {
+        check_value_count(self.control_curves.len() + 2, self.values.len())
+    }
+}
+
 #[cfg(feature = "core")]
 impl ControlCurveInterpolatedParameter {
-    pub fn add_to_model(
+    pub fn add_to_network(
         &self,
-        network: &mut pywr_core::network::Network,
+        network: &mut pywr_core::network::NetworkBuilder,
         args: &LoadArgs,
         parent: Option<&str>,
-    ) -> Result<ParameterIndex<f64>, SchemaError> {
-        let metric = self.storage_metric.load(network, args, None)?;
+    ) -> Result<(), SchemaError> {
+        let metric = self.storage_metric.load(network, args, parent)?;
 
         let control_curves = self
             .control_curves
             .iter()
-            .map(|cc| cc.load(network, args, None))
-            .collect::<Result<_, _>>()?;
+            .map(|cc| cc.load(network, args, parent))
+            .collect::<Result<Vec<_>, _>>()?;
 
         let values = self
             .values
             .iter()
-            .map(|val| val.load(network, args, None))
-            .collect::<Result<_, _>>()?;
+            .map(|val| val.load(network, args, parent))
+            .collect::<Result<Vec<_>, _>>()?;
 
-        let p = pywr_core::parameters::ControlCurveInterpolatedParameter::new(
-            ParameterName::new(&self.meta.name, parent),
-            metric,
-            control_curves,
-            values,
-        );
-        Ok(network.add_parameter(Box::new(p))?)
+        let name = ParameterName::new(&self.meta.name, parent);
+
+        let mut p = match self.phase {
+            ParameterPhase::Before => {
+                pywr_core::parameters::ControlCurveInterpolatedParameterBuilder::before(name, metric)
+            }
+            ParameterPhase::After => {
+                pywr_core::parameters::ControlCurveInterpolatedParameterBuilder::after(name, metric)
+            }
+            ParameterPhase::Both => pywr_core::parameters::ControlCurveInterpolatedParameterBuilder::both(name, metric),
+        };
+
+        for cc in control_curves {
+            p.control_curve(cc);
+        }
+
+        for v in values {
+            p.value(v);
+        }
+
+        network.parameters().f64(Box::new(p));
+
+        Ok(())
     }
 }
 
@@ -68,7 +103,7 @@ impl TryFromV1<ControlCurveInterpolatedParameterV1> for ControlCurveInterpolated
         parent_node: Option<&str>,
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: ParameterMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
+        let meta: NamedMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
 
         let control_curves = try_convert_control_curves(
             &meta.name,
@@ -125,6 +160,7 @@ impl TryFromV1<ControlCurveInterpolatedParameterV1> for ControlCurveInterpolated
             control_curves,
             storage_metric,
             values,
+            phase: ParameterPhase::Before,
         };
         Ok(p)
     }
@@ -133,33 +169,47 @@ impl TryFromV1<ControlCurveInterpolatedParameterV1> for ControlCurveInterpolated
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct ControlCurveIndexParameter {
-    pub meta: ParameterMeta,
+    pub meta: NamedMeta,
+    pub phase: ParameterPhase,
     pub control_curves: Vec<Metric>,
     pub storage_metric: Metric,
 }
 
+impl ControlCurveIndexParameter {
+    /// Check that there are `control_curves`; with none, the index is always 0.
+    pub fn validate(&self) -> Result<(), Vec<ParameterProblem>> {
+        if self.control_curves.is_empty() {
+            Err(vec![ParameterProblem::NoControlCurves])
+        } else {
+            Ok(())
+        }
+    }
+}
+
 #[cfg(feature = "core")]
 impl ControlCurveIndexParameter {
-    pub fn add_to_model(
+    pub fn add_to_network(
         &self,
-        network: &mut pywr_core::network::Network,
+        network: &mut pywr_core::network::NetworkBuilder,
         args: &LoadArgs,
         parent: Option<&str>,
-    ) -> Result<ParameterIndex<u64>, SchemaError> {
-        let metric = self.storage_metric.load(network, args, None)?;
+    ) -> Result<(), SchemaError> {
+        let metric = self.storage_metric.load(network, args, parent)?;
+        let name = ParameterName::new(&self.meta.name, parent);
 
-        let control_curves = self
-            .control_curves
-            .iter()
-            .map(|cc| cc.load(network, args, None))
-            .collect::<Result<_, _>>()?;
+        let mut builder = match self.phase {
+            ParameterPhase::Before => pywr_core::parameters::ControlCurveIndexParameterBuilder::before(name, metric),
+            ParameterPhase::After => pywr_core::parameters::ControlCurveIndexParameterBuilder::after(name, metric),
+            ParameterPhase::Both => pywr_core::parameters::ControlCurveIndexParameterBuilder::both(name, metric),
+        };
 
-        let p = pywr_core::parameters::ControlCurveIndexParameter::new(
-            ParameterName::new(&self.meta.name, parent),
-            metric,
-            control_curves,
-        );
-        Ok(network.add_index_parameter(Box::new(p))?)
+        for cc in self.control_curves.iter() {
+            builder.control_curve(cc.load(network, args, parent)?);
+        }
+
+        network.parameters().u64(Box::new(builder));
+
+        Ok(())
     }
 }
 
@@ -171,7 +221,7 @@ impl TryFromV1<ControlCurveIndexParameterV1> for ControlCurveIndexParameter {
         parent_node: Option<&str>,
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: ParameterMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
+        let meta: NamedMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
 
         let control_curves = v1
             .control_curves
@@ -198,6 +248,7 @@ impl TryFromV1<ControlCurveIndexParameterV1> for ControlCurveIndexParameter {
             meta,
             control_curves,
             storage_metric,
+            phase: ParameterPhase::Before,
         };
         Ok(p)
     }
@@ -213,7 +264,7 @@ impl TryFromV1<ControlCurveParameterV1> for ControlCurveIndexParameter {
         parent_node: Option<&str>,
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: ParameterMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
+        let meta: NamedMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
 
         let control_curves = try_convert_control_curves(
             &meta.name,
@@ -243,6 +294,7 @@ impl TryFromV1<ControlCurveParameterV1> for ControlCurveIndexParameter {
             meta,
             control_curves,
             storage_metric: storage_node.into(),
+            phase: ParameterPhase::Before,
         };
         Ok(p)
     }
@@ -251,41 +303,47 @@ impl TryFromV1<ControlCurveParameterV1> for ControlCurveIndexParameter {
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct ControlCurveParameter {
-    pub meta: ParameterMeta,
+    pub meta: NamedMeta,
+    pub phase: ParameterPhase,
     pub control_curves: Vec<Metric>,
     pub storage_metric: Metric,
     pub values: Vec<Metric>,
 }
 
+impl ControlCurveParameter {
+    /// Check that `values` has one entry per zone: one more than the control curves.
+    pub fn validate(&self) -> Result<(), Vec<ParameterProblem>> {
+        check_value_count(self.control_curves.len() + 1, self.values.len())
+    }
+}
+
 #[cfg(feature = "core")]
 impl ControlCurveParameter {
-    pub fn add_to_model(
+    pub fn add_to_network(
         &self,
-        network: &mut pywr_core::network::Network,
+        network: &mut pywr_core::network::NetworkBuilder,
         args: &LoadArgs,
         parent: Option<&str>,
-    ) -> Result<ParameterIndex<f64>, SchemaError> {
-        let metric = self.storage_metric.load(network, args, None)?;
+    ) -> Result<(), SchemaError> {
+        let metric = self.storage_metric.load(network, args, parent)?;
+        let name = ParameterName::new(&self.meta.name, parent);
+        let mut builder = match self.phase {
+            ParameterPhase::Before => pywr_core::parameters::ControlCurveParameterBuilder::before(name, metric),
+            ParameterPhase::After => pywr_core::parameters::ControlCurveParameterBuilder::after(name, metric),
+            ParameterPhase::Both => pywr_core::parameters::ControlCurveParameterBuilder::both(name, metric),
+        };
 
-        let control_curves = self
-            .control_curves
-            .iter()
-            .map(|cc| cc.load(network, args, None))
-            .collect::<Result<_, _>>()?;
+        for cc in self.control_curves.iter() {
+            builder.control_curve(cc.load(network, args, parent)?);
+        }
 
-        let values = self
-            .values
-            .iter()
-            .map(|val| val.load(network, args, None))
-            .collect::<Result<_, _>>()?;
+        for v in self.values.iter() {
+            builder.value(v.load(network, args, parent)?);
+        }
 
-        let p = pywr_core::parameters::ControlCurveParameter::new(
-            ParameterName::new(&self.meta.name, parent),
-            metric,
-            control_curves,
-            values,
-        );
-        Ok(network.add_parameter(Box::new(p))?)
+        network.parameters().f64(Box::new(builder));
+
+        Ok(())
     }
 }
 
@@ -297,7 +355,7 @@ impl TryFromV1<ControlCurveParameterV1> for ControlCurveParameter {
         parent_node: Option<&str>,
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: ParameterMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
+        let meta: NamedMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
 
         let control_curves = try_convert_control_curves(
             &meta.name,
@@ -344,6 +402,7 @@ impl TryFromV1<ControlCurveParameterV1> for ControlCurveParameter {
             control_curves,
             storage_metric,
             values,
+            phase: ParameterPhase::Before,
         };
         Ok(p)
     }
@@ -353,44 +412,61 @@ impl TryFromV1<ControlCurveParameterV1> for ControlCurveParameter {
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct ControlCurvePiecewiseInterpolatedParameter {
-    pub meta: ParameterMeta,
+    pub meta: NamedMeta,
+    pub phase: ParameterPhase,
     pub control_curves: Vec<Metric>,
     pub storage_metric: Metric,
-    pub values: Option<Vec<[f64; 2]>>,
+    pub values: Vec<[f64; 2]>,
     pub minimum: Option<f64>,
     pub maximum: Option<f64>,
 }
 
+impl ControlCurvePiecewiseInterpolatedParameter {
+    pub const DEFAULT_MINIMUM: f64 = 0.0;
+    pub const DEFAULT_MAXIMUM: f64 = 1.0;
+
+    /// Check that `values` has one pair per zone: one more than the control curves.
+    pub fn validate(&self) -> Result<(), Vec<ParameterProblem>> {
+        check_value_count(self.control_curves.len() + 1, self.values.len())
+    }
+}
+
 #[cfg(feature = "core")]
 impl ControlCurvePiecewiseInterpolatedParameter {
-    pub fn add_to_model(
+    pub fn add_to_network(
         &self,
-        network: &mut pywr_core::network::Network,
+        network: &mut pywr_core::network::NetworkBuilder,
         args: &LoadArgs,
         parent: Option<&str>,
-    ) -> Result<ParameterIndex<f64>, SchemaError> {
-        let metric = self.storage_metric.load(network, args, None)?;
+    ) -> Result<(), SchemaError> {
+        let metric = self.storage_metric.load(network, args, parent)?;
+        let name = ParameterName::new(&self.meta.name, parent);
 
-        let control_curves = self
-            .control_curves
-            .iter()
-            .map(|cc| cc.load(network, args, None))
-            .collect::<Result<_, _>>()?;
+        let maximum = self.maximum.unwrap_or(Self::DEFAULT_MAXIMUM);
+        let minimum = self.minimum.unwrap_or(Self::DEFAULT_MINIMUM);
 
-        let values = match &self.values {
-            None => Vec::new(),
-            Some(values) => values.clone(),
+        let mut builder = match self.phase {
+            ParameterPhase::Before => {
+                pywr_core::parameters::PiecewiseInterpolatedParameterBuilder::before(name, metric, maximum, minimum)
+            }
+            ParameterPhase::After => {
+                pywr_core::parameters::PiecewiseInterpolatedParameterBuilder::after(name, metric, maximum, minimum)
+            }
+            ParameterPhase::Both => {
+                pywr_core::parameters::PiecewiseInterpolatedParameterBuilder::both(name, metric, maximum, minimum)
+            }
         };
 
-        let p = pywr_core::parameters::PiecewiseInterpolatedParameter::new(
-            ParameterName::new(&self.meta.name, parent),
-            metric,
-            control_curves,
-            values,
-            self.maximum.unwrap_or(1.0),
-            self.minimum.unwrap_or(0.0),
-        );
-        Ok(network.add_parameter(Box::new(p))?)
+        for cc in &self.control_curves {
+            builder.control_curve(cc.load(network, args, parent)?);
+        }
+
+        for value in &self.values {
+            builder.value(*value);
+        }
+
+        network.parameters().f64(Box::new(builder));
+        Ok(())
     }
 }
 
@@ -402,7 +478,7 @@ impl TryFromV1<ControlCurvePiecewiseInterpolatedParameterV1> for ControlCurvePie
         parent_node: Option<&str>,
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: ParameterMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
+        let meta: NamedMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
 
         let control_curves = try_convert_control_curves(
             &meta.name,
@@ -427,13 +503,24 @@ impl TryFromV1<ControlCurvePiecewiseInterpolatedParameterV1> for ControlCurvePie
             .into()
         };
 
+        let Some(values) = v1.values else {
+            return Err(Box::new(ComponentConversionError::Parameter {
+                name: meta.name,
+                attr: "values".to_string(),
+                error: ConversionError::MissingAttribute {
+                    attrs: vec!["values".to_string()],
+                },
+            }));
+        };
+
         let p = Self {
             meta,
             control_curves,
             storage_metric: storage_node,
-            values: v1.values,
+            values,
             minimum: v1.minimum,
             maximum: None,
+            phase: ParameterPhase::Before,
         };
         Ok(p)
     }
@@ -454,6 +541,7 @@ mod tests {
                     "name": "My control curve",
                     "comment": "A witty comment"
                 },
+                "phase": "Before",
                 "storage_metric": {
                     "type": "Node",
                     "name": "storage1",

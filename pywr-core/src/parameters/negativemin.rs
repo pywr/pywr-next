@@ -1,25 +1,18 @@
-use crate::metric::MetricF64;
-use crate::network::Network;
-use crate::parameters::errors::ParameterCalculationError;
-use crate::parameters::{GeneralParameter, Parameter, ParameterMeta, ParameterName, ParameterState};
-use crate::scenario::ScenarioIndex;
-use crate::state::State;
-use crate::timestep::Timestep;
+use crate::metric::{MetricConsumerPhase, MetricF64, UnresolvedMetricF64};
+use crate::network::ResolutionMaps;
+use crate::parameters::errors::GeneralCalculationError;
+use crate::parameters::{
+    BuiltParameter, GeneralAfterParameter, GeneralBeforeParameter, GeneralParameter, GeneralParameterContext,
+    GeneralParameterEntry, MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder, ParameterMeta,
+    ParameterName, ParameterState,
+};
+use crate::resolve_metric_f64;
 
+#[derive(Debug)]
 pub struct NegativeMinParameter {
     meta: ParameterMeta,
     metric: MetricF64,
     threshold: f64,
-}
-
-impl NegativeMinParameter {
-    pub fn new(name: ParameterName, metric: MetricF64, threshold: f64) -> Self {
-        Self {
-            meta: ParameterMeta::new(name),
-            metric,
-            threshold,
-        }
-    }
 }
 
 impl Parameter for NegativeMinParameter {
@@ -27,23 +20,101 @@ impl Parameter for NegativeMinParameter {
         &self.meta
     }
 }
-impl GeneralParameter<f64> for NegativeMinParameter {
-    fn before(
-        &self,
-        _timestep: &Timestep,
-        _scenario_index: &ScenarioIndex,
-        network: &Network,
-        state: &State,
-        _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<Option<f64>, ParameterCalculationError> {
-        let x = -self.metric.get_value(network, state)?;
-        Ok(Some(x.min(self.threshold)))
-    }
-
+impl GeneralParameter for NegativeMinParameter {
     fn as_parameter(&self) -> &dyn Parameter
     where
         Self: Sized,
     {
         self
+    }
+}
+
+impl GeneralBeforeParameter<f64> for NegativeMinParameter {
+    fn before(
+        &self,
+        ctx: GeneralParameterContext<'_>,
+        _internal_state: &mut Option<Box<dyn ParameterState>>,
+    ) -> Result<f64, GeneralCalculationError> {
+        let x = -self.metric.get_value(ctx.network, ctx.state)?;
+        Ok(x.min(self.threshold))
+    }
+}
+
+impl GeneralAfterParameter<f64> for NegativeMinParameter {
+    fn after(
+        &self,
+        ctx: GeneralParameterContext<'_>,
+        _internal_state: &mut Option<Box<dyn ParameterState>>,
+    ) -> Result<f64, GeneralCalculationError> {
+        let x = -self.metric.get_value(ctx.network, ctx.state)?;
+        Ok(x.min(self.threshold))
+    }
+}
+
+/// Builder for creating a [`NegativeMinParameter`].
+#[derive(Debug)]
+pub struct NegativeMinParameterBuilder {
+    meta: ParameterMeta,
+    metric: UnresolvedMetricF64,
+    threshold: f64,
+    phase: MetricConsumerPhase,
+}
+
+impl NegativeMinParameterBuilder {
+    /// Create a new builder for [`NegativeMinParameter`] that is evaluated in "before" phase.
+    pub fn before(name: ParameterName, metric: UnresolvedMetricF64, threshold: f64) -> Self {
+        Self {
+            meta: ParameterMeta::new(name),
+            metric,
+            threshold,
+            phase: MetricConsumerPhase::Before,
+        }
+    }
+
+    /// Create a new builder for [`NegativeMinParameter`] that is evaluated in "after" phase.
+    pub fn after(name: ParameterName, metric: UnresolvedMetricF64, threshold: f64) -> Self {
+        Self {
+            meta: ParameterMeta::new(name),
+            metric,
+            threshold,
+            phase: MetricConsumerPhase::After,
+        }
+    }
+
+    /// Create a new builder for [`NegativeMinParameter`] that is evaluated in both "before" and "after" phases.
+    pub fn both(name: ParameterName, metric: UnresolvedMetricF64, threshold: f64) -> Self {
+        Self {
+            meta: ParameterMeta::new(name),
+            metric,
+            threshold,
+            phase: MetricConsumerPhase::Both,
+        }
+    }
+}
+
+impl ParameterBuilder<f64> for NegativeMinParameterBuilder {
+    fn name(&self) -> &ParameterName {
+        &self.meta.name
+    }
+
+    fn build(
+        self: Box<Self>,
+        resolution_maps: &ResolutionMaps,
+    ) -> Result<MaybeBuiltParameter<f64>, ParameterBuildError> {
+        let metric = resolve_metric_f64!(self, self.metric, resolution_maps, self.phase, "metric");
+
+        let p = NegativeMinParameter {
+            meta: self.meta,
+            metric,
+            threshold: self.threshold,
+        };
+
+        let built = match self.phase {
+            MetricConsumerPhase::Before => BuiltParameter::General(GeneralParameterEntry::before(p)),
+            MetricConsumerPhase::After => BuiltParameter::General(GeneralParameterEntry::after(p)),
+            MetricConsumerPhase::Both => BuiltParameter::General(GeneralParameterEntry::both(p)),
+        };
+
+        Ok(built.into())
     }
 }

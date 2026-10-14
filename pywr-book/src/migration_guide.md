@@ -13,8 +13,8 @@ The migration of larger and/or more complex models will require an iterative pro
 The overall process will follow these steps:
 
 1. Convert the JSON from v1.x to v2.x using the provided conversion tool.
-2. Handle any errors or warnings from the conversion tool.
-3. Apply any other manual changes to the converted JSON.
+2. Inspect and resolve component conversion errors; the returned schema may be incomplete.
+3. Serialize the schema to JSON and apply any other manual changes.
 4. (Optional) Save the converted JSON as a new file.
 5. Load and run the new JSON file in Pywr v2.x.
 6. Compare model outputs to ensure it behaves as expected. If necessary, make further changes to the above process and
@@ -31,12 +31,12 @@ the model at runtime, and does not replace the existing v1.x model with a v2.x d
 The function in the listing below is an example of the overall conversion process.
 The function takes a path to a JSON file containing a v1 Pywr model, and then converts it to v2.x.
 
-1. The function reads the JSON, and applies the conversion function (`convert_model_from_v1_json_string`).
-2. The conversion function that takes a JSON string and returns a tuple of the converted JSON string and a list of
-   errors.
-3. The function then handles these errors using the `handle_conversion_error` function.
-4. After the errors are handled other arbitrary changes are applied using the `patch_model` function.
-5. Finally, the converted JSON can be saved to a new file and run using Pywr v2.x.
+1. The function reads the v1 JSON and calls `convert_model_from_v1_json_string`.
+2. The converter returns a tuple of a v2 `ModelSchema` and a list of `ComponentConversionError` objects.
+3. The function serializes the schema with `schema.to_json_string()` and handles component errors using
+   `handle_conversion_error`.
+4. It applies further changes to the JSON data using `patch_model`.
+5. Finally, the patched JSON can be saved to a new file, loaded as a `ModelSchema`, and run using Pywr v2.x.
 
 [//]: # (@formatter:off)
 
@@ -46,11 +46,23 @@ The function takes a path to a JSON file containing a v1 Pywr model, and then co
 
 [//]: # (@formatter:on)
 
+Alternatively, from a checkout of the repository with Rust and the bundled solver submodules installed, use the
+**Rust CLI** to write a converted model:
+
+```bash
+cargo run --release -p pywr-cli -- convert old-model.json converted-model.json --stop-on-error
+```
+
+The Python CLI (`python -m pywr`) does not provide a `convert` command. With `--stop-on-error`, the Rust CLI does not
+write a converted file if component conversion errors occur. Without it, the output may be a partial model.
+
 ### Handling conversion errors
 
-The `convert_model_from_v1_json_string` function returns a list of errors that occurred during the conversion process.
-These errors can be handled in a variety of ways, such as modifying the model definition, raising exceptions, or
-ignoring them.
+`convert_model_from_v1_json_string` returns a schema and a list of component conversion errors. A malformed v1 JSON
+model can raise an exception instead of returning this tuple. Even if a schema is returned, conversion errors may mean
+it is incomplete; do not run or rely on the result until you have reviewed and repaired it.
+Component errors can be handled by modifying the model definition or raising exceptions. Only ignore an error after
+verifying that the missing component is not needed.
 It is suggested to implement a function that can handle these errors in a way that is appropriate for your use case.
 Begin by matching a few types of errors and then expand the matching as needed. By raising exceptions
 for unhandled errors, you can ensure that all errors are eventually accounted for, and that new errors are not missed.
@@ -76,10 +88,11 @@ and type (class name) as the original parameter.
 
 ### Other changes
 
-The upgrade to v2.x may require other changes to the model.
-For example, the conversion process does not currently handle recorders and other model outputs.
-These will need to be manually added to the model definition.
-Such manual changes can be applied using, for example a `patch_model` function.
+The conversion process does not automatically migrate v1 tables, recorders or other outputs. Configure v2 data sources,
+metric sets and outputs manually, and update custom Python parameters for the v2 interface. Check that input time series
+contain timestamps at the model's resolution: v2 does not automatically resample, aggregate, interpolate or fill missing
+values. Compare the migrated model's results against those of the v1 model before using them.
+Such manual changes can be applied using, for example, a `patch_model` function.
 This function will make arbitrary changes to the model definition.
 The example, below updates the metadata of the model to modify the description.
 

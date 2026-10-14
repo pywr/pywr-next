@@ -1,23 +1,17 @@
-use crate::metric::MetricF64;
-use crate::network::Network;
-use crate::parameters::errors::ParameterCalculationError;
-use crate::parameters::{GeneralParameter, Parameter, ParameterMeta, ParameterName, ParameterState};
-use crate::scenario::ScenarioIndex;
-use crate::state::State;
-use crate::timestep::Timestep;
+use crate::metric::{MetricConsumerPhase, MetricF64, UnresolvedMetricF64};
+use crate::network::ResolutionMaps;
+use crate::parameters::errors::GeneralCalculationError;
+use crate::parameters::{
+    BuiltParameter, GeneralAfterParameter, GeneralBeforeParameter, GeneralParameter, GeneralParameterContext,
+    GeneralParameterEntry, MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder, ParameterMeta,
+    ParameterName, ParameterState,
+};
+use crate::resolve_metric_f64;
 
+#[derive(Debug)]
 pub struct NegativeParameter {
     meta: ParameterMeta,
     metric: MetricF64,
-}
-
-impl NegativeParameter {
-    pub fn new(name: ParameterName, metric: MetricF64) -> Self {
-        Self {
-            meta: ParameterMeta::new(name),
-            metric,
-        }
-    }
 }
 
 impl Parameter for NegativeParameter {
@@ -26,24 +20,98 @@ impl Parameter for NegativeParameter {
     }
 }
 
-impl GeneralParameter<f64> for NegativeParameter {
-    fn before(
-        &self,
-        _timestep: &Timestep,
-        _scenario_index: &ScenarioIndex,
-        model: &Network,
-        state: &State,
-        _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<Option<f64>, ParameterCalculationError> {
-        // Current value
-        let x = self.metric.get_value(model, state)?;
-        Ok(Some(-x))
-    }
-
+impl GeneralParameter for NegativeParameter {
     fn as_parameter(&self) -> &dyn Parameter
     where
         Self: Sized,
     {
         self
+    }
+}
+
+impl GeneralBeforeParameter<f64> for NegativeParameter {
+    fn before(
+        &self,
+        ctx: GeneralParameterContext<'_>,
+        _internal_state: &mut Option<Box<dyn ParameterState>>,
+    ) -> Result<f64, GeneralCalculationError> {
+        // Current value
+        let x = self.metric.get_value(ctx.network, ctx.state)?;
+        Ok(-x)
+    }
+}
+
+impl GeneralAfterParameter<f64> for NegativeParameter {
+    fn after(
+        &self,
+        ctx: GeneralParameterContext<'_>,
+        _internal_state: &mut Option<Box<dyn ParameterState>>,
+    ) -> Result<f64, GeneralCalculationError> {
+        // Current value
+        let x = self.metric.get_value(ctx.network, ctx.state)?;
+        Ok(-x)
+    }
+}
+
+/// Builder for creating a [`NegativeParameter`].
+#[derive(Debug)]
+pub struct NegativeParameterBuilder {
+    meta: ParameterMeta,
+    metric: UnresolvedMetricF64,
+    phase: MetricConsumerPhase,
+}
+
+impl NegativeParameterBuilder {
+    /// Create a new builder for [`NegativeParameter`] that is evaluated in "before" phase.
+    pub fn before(name: ParameterName, metric: UnresolvedMetricF64) -> Self {
+        Self {
+            meta: ParameterMeta::new(name),
+            metric,
+            phase: MetricConsumerPhase::Before,
+        }
+    }
+
+    /// Create a new builder for [`NegativeParameter`] that is evaluated in "after" phase.
+    pub fn after(name: ParameterName, metric: UnresolvedMetricF64) -> Self {
+        Self {
+            meta: ParameterMeta::new(name),
+            metric,
+            phase: MetricConsumerPhase::After,
+        }
+    }
+
+    /// Create a new builder for [`NegativeParameter`] that is evaluated in "both" phase.
+    pub fn both(name: ParameterName, metric: UnresolvedMetricF64) -> Self {
+        Self {
+            meta: ParameterMeta::new(name),
+            metric,
+            phase: MetricConsumerPhase::Both,
+        }
+    }
+}
+
+impl ParameterBuilder<f64> for NegativeParameterBuilder {
+    fn name(&self) -> &ParameterName {
+        &self.meta.name
+    }
+
+    fn build(
+        self: Box<Self>,
+        resolution_maps: &ResolutionMaps,
+    ) -> Result<MaybeBuiltParameter<f64>, ParameterBuildError> {
+        let metric = resolve_metric_f64!(self, self.metric, resolution_maps, self.phase, "metric");
+
+        let p = NegativeParameter {
+            meta: self.meta,
+            metric,
+        };
+
+        let built = match self.phase {
+            MetricConsumerPhase::Before => BuiltParameter::General(GeneralParameterEntry::before(p)),
+            MetricConsumerPhase::After => BuiltParameter::General(GeneralParameterEntry::after(p)),
+            MetricConsumerPhase::Both => BuiltParameter::General(GeneralParameterEntry::both(p)),
+        };
+
+        Ok(built.into())
     }
 }

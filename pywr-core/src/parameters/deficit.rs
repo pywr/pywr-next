@@ -1,30 +1,21 @@
-use crate::metric::MetricF64;
-use crate::network::Network;
+use crate::metric::{MetricConsumerPhase, MetricF64, UnresolvedMetricF64};
+use crate::network::ResolutionMaps;
 use crate::parameters::{
-    GeneralParameter, Parameter, ParameterCalculationError, ParameterMeta, ParameterName, ParameterState,
+    BuiltParameter, GeneralAfterParameter, GeneralCalculationError, GeneralParameter, GeneralParameterContext,
+    GeneralParameterEntry, MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder, ParameterMeta,
+    ParameterName, ParameterState,
 };
-use crate::scenario::ScenarioIndex;
-use crate::state::State;
-use crate::timestep::Timestep;
+use crate::resolve_metric_f64;
 
 /// A parameter representing the deficit between a flow metric and a max metric.
 ///
 /// Typically used to represent the deficit between actual inflow and requested max flow at
 /// a node.
+#[derive(Debug)]
 pub struct DeficitParameter {
     meta: ParameterMeta,
     flow: MetricF64,
     max_flow: MetricF64,
-}
-
-impl DeficitParameter {
-    pub fn new(name: ParameterName, flow: MetricF64, max_flow: MetricF64) -> Self {
-        Self {
-            meta: ParameterMeta::new(name),
-            flow,
-            max_flow,
-        }
-    }
 }
 
 impl Parameter for DeficitParameter {
@@ -33,26 +24,66 @@ impl Parameter for DeficitParameter {
     }
 }
 
-impl GeneralParameter<f64> for DeficitParameter {
-    fn after(
-        &self,
-        _timestep: &Timestep,
-        _scenario_index: &ScenarioIndex,
-        model: &Network,
-        state: &State,
-        _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<Option<f64>, ParameterCalculationError> {
-        let actual_flow = self.flow.get_value(model, state)?;
-        let max_flow = self.max_flow.get_value(model, state)?;
-
-        let deficit = (max_flow - actual_flow).max(0.0);
-        Ok(Some(deficit))
-    }
-
+impl GeneralParameter for DeficitParameter {
     fn as_parameter(&self) -> &dyn Parameter
     where
         Self: Sized,
     {
         self
+    }
+}
+
+impl GeneralAfterParameter<f64> for DeficitParameter {
+    fn after(
+        &self,
+        ctx: GeneralParameterContext<'_>,
+        _internal_state: &mut Option<Box<dyn ParameterState>>,
+    ) -> Result<f64, GeneralCalculationError> {
+        let actual_flow = self.flow.get_value(ctx.network, ctx.state)?;
+        let max_flow = self.max_flow.get_value(ctx.network, ctx.state)?;
+
+        let deficit = (max_flow - actual_flow).max(0.0);
+        Ok(deficit)
+    }
+}
+
+#[derive(Debug)]
+pub struct DeficitParameterBuilder {
+    meta: ParameterMeta,
+    flow: UnresolvedMetricF64,
+    max_flow: UnresolvedMetricF64,
+}
+
+impl DeficitParameterBuilder {
+    pub fn new(name: ParameterName, flow: UnresolvedMetricF64, max_flow: UnresolvedMetricF64) -> Self {
+        Self {
+            meta: ParameterMeta::new(name),
+            flow,
+            max_flow,
+        }
+    }
+}
+
+impl ParameterBuilder<f64> for DeficitParameterBuilder {
+    fn name(&self) -> &ParameterName {
+        &self.meta.name
+    }
+
+    fn build(
+        self: Box<Self>,
+        resolution_maps: &ResolutionMaps,
+    ) -> Result<MaybeBuiltParameter<f64>, ParameterBuildError> {
+        // Phase is hardcoded to "after" for this parameter, as it only implements the `GeneralAfterParameter` trait.
+        let phase = MetricConsumerPhase::After;
+        let flow = resolve_metric_f64!(self, self.flow, resolution_maps, phase, "flow");
+        let max_flow = resolve_metric_f64!(self, self.max_flow, resolution_maps, phase, "max_flow");
+
+        let p = DeficitParameter {
+            meta: self.meta,
+            flow,
+            max_flow,
+        };
+
+        Ok(BuiltParameter::General(GeneralParameterEntry::after(p)).into())
     }
 }

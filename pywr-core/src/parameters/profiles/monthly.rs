@@ -1,16 +1,18 @@
+use crate::network::ResolutionMaps;
 use crate::parameters::errors::SimpleCalculationError;
 use crate::parameters::{
-    Parameter, ParameterMeta, ParameterName, ParameterSetupError, ParameterState, SimpleParameter, VariableConfig,
+    BuiltParameter, MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder, ParameterMeta,
+    ParameterName, ParameterSetupError, ParameterState, SimpleParameter, SimpleParameterContext, VariableConfig,
     VariableParameter, VariableParameterError, VariableParameterValues, downcast_internal_state_mut,
     downcast_internal_state_ref, downcast_variable_config_ref,
 };
 use crate::scenario::ScenarioIndex;
-use crate::state::SimpleParameterValues;
 use crate::timestep::Timestep;
-use chrono::{Datelike, NaiveDateTime, Timelike};
+use jiff::ToSpan;
+use jiff::civil::DateTime;
 use std::any::Any;
 
-#[derive(Copy, Clone)]
+#[derive(Debug, Copy, Clone)]
 pub enum MonthlyInterpDay {
     First,
     Last,
@@ -19,6 +21,7 @@ pub enum MonthlyInterpDay {
 // We store this internal value as an Option<f64> so that it can be updated by the variable API
 type InternalValue = Option<[f64; 12]>;
 
+#[derive(Debug)]
 pub struct MonthlyProfileParameter {
     meta: ParameterMeta,
     values: [f64; 12],
@@ -26,14 +29,6 @@ pub struct MonthlyProfileParameter {
 }
 
 impl MonthlyProfileParameter {
-    pub fn new(name: ParameterName, values: [f64; 12], interp_day: Option<MonthlyInterpDay>) -> Self {
-        Self {
-            meta: ParameterMeta::new(name),
-            values,
-            interp_day,
-        }
-    }
-
     /// Return the current value for a given month0 (0-based index).
     ///
     /// If the internal state is None, the value is returned directly. Otherwise, the value is
@@ -46,46 +41,38 @@ impl MonthlyProfileParameter {
     }
 }
 
-fn days_in_year_month(datetime: &NaiveDateTime) -> u32 {
-    match datetime.month() {
-        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
-        4 | 6 | 9 | 11 => 30,
-        2 if datetime.date().leap_year() => 29,
-        2 => 28,
-        _ => panic!("Invalid month"),
-    }
-}
-
-/// Interpolate between first_value and last value based on the day of the month. The last
+/// Interpolate between `first_value` and `last_value` based on the day of the month. The last
 /// value is assumed to correspond to the first day of the next month.
-fn interpolate_first(date: &NaiveDateTime, first_value: f64, last_value: f64) -> f64 {
-    let days_in_month = days_in_year_month(date);
+fn interpolate_first(date: &DateTime, first_value: f64, last_value: f64) -> f64 {
+    let start_of_month = date.first_of_month().start_of_day();
+    let start_of_next_month = date
+        .checked_add(1.months())
+        .expect("Datetime overflowed!")
+        .first_of_month()
+        .start_of_day();
 
-    if date.day() <= 1 {
-        first_value
-    } else if date.day() > days_in_month {
-        last_value
-    } else {
-        first_value
-            + (last_value - first_value) * (date.day() as f64 + date.num_seconds_from_midnight() as f64 / 86400.0 - 1.0)
-                / days_in_month as f64
-    }
+    let duration_of_month = start_of_next_month.duration_since(start_of_month);
+    let since_start_of_month = date.duration_since(start_of_month);
+    let fraction_of_month = since_start_of_month.as_secs_f64() / duration_of_month.as_secs_f64();
+
+    first_value + (last_value - first_value) * fraction_of_month
 }
 
-/// Interpolate between first_value and last value based on the day of the month. The first
+/// Interpolate between `first_value` and `last_value` based on the day of the month. The first
 /// value is assumed to correspond to the last day of the previous month.
-fn interpolate_last(date: &NaiveDateTime, first_value: f64, last_value: f64) -> f64 {
-    let days_in_month = days_in_year_month(date);
+fn interpolate_last(date: &DateTime, first_value: f64, last_value: f64) -> f64 {
+    let end_of_last_month = date
+        .checked_add(-1.months())
+        .expect("Datetime overflowed!")
+        .last_of_month()
+        .start_of_day();
+    let end_of_month = date.last_of_month().start_of_day();
 
-    if date.day() < 1 {
-        first_value
-    } else if date.day() >= days_in_month {
-        last_value
-    } else {
-        first_value
-            + (last_value - first_value) * (date.day() as f64 + date.num_seconds_from_midnight() as f64 / 86400.0)
-                / days_in_month as f64
-    }
+    let duration_of_month = end_of_month.duration_since(end_of_last_month);
+    let since_end_of_last_month = date.duration_since(end_of_last_month);
+    let fraction_of_month = since_end_of_last_month.as_secs_f64() / duration_of_month.as_secs_f64();
+
+    first_value + (last_value - first_value) * fraction_of_month
 }
 
 impl Parameter for MonthlyProfileParameter {
@@ -105,41 +92,78 @@ impl Parameter for MonthlyProfileParameter {
     }
 }
 impl SimpleParameter<f64> for MonthlyProfileParameter {
-    fn before(
+    fn compute(
         &self,
-        timestep: &Timestep,
-        _scenario_index: &ScenarioIndex,
-        _values: &SimpleParameterValues,
+        ctx: SimpleParameterContext<'_>,
         internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<Option<f64>, SimpleCalculationError> {
+    ) -> Result<f64, SimpleCalculationError> {
         let v = match &self.interp_day {
             Some(interp_day) => match interp_day {
                 MonthlyInterpDay::First => {
-                    let next_month0 = (timestep.date.month0() + 1) % 12;
-                    let first_value = self.value_for_month0(timestep.date.month0() as usize, internal_state);
+                    let next_month0 = ctx.timestep.date.month() % 12;
+                    let first_value = self.value_for_month0((ctx.timestep.date.month() - 1) as usize, internal_state);
                     let last_value = self.value_for_month0(next_month0 as usize, internal_state);
 
-                    interpolate_first(&timestep.date, first_value, last_value)
+                    interpolate_first(&ctx.timestep.date, first_value, last_value)
                 }
                 MonthlyInterpDay::Last => {
-                    let current_month = timestep.date.month();
+                    let current_month = ctx.timestep.date.month();
                     let last_month = if current_month == 1 { 12 } else { current_month - 1 };
                     let first_value = self.value_for_month0(last_month as usize - 1, internal_state);
-                    let last_value = self.value_for_month0(timestep.date.month() as usize - 1, internal_state);
+                    let last_value = self.value_for_month0(ctx.timestep.date.month() as usize - 1, internal_state);
 
-                    interpolate_last(&timestep.date, first_value, last_value)
+                    interpolate_last(&ctx.timestep.date, first_value, last_value)
                 }
             },
-            None => self.value_for_month0(timestep.date.month() as usize - 1, internal_state),
+            None => self.value_for_month0(ctx.timestep.date.month() as usize - 1, internal_state),
         };
-        Ok(Some(v))
+        Ok(v)
     }
-
     fn as_parameter(&self) -> &dyn Parameter
     where
         Self: Sized,
     {
         self
+    }
+}
+
+#[derive(Debug)]
+pub struct MonthlyProfileParameterBuilder {
+    meta: ParameterMeta,
+    values: [f64; 12],
+    interp_day: Option<MonthlyInterpDay>,
+}
+
+impl MonthlyProfileParameterBuilder {
+    pub fn new(name: ParameterName, values: [f64; 12]) -> Self {
+        Self {
+            meta: ParameterMeta::new(name),
+            values,
+            interp_day: None,
+        }
+    }
+
+    pub fn interp_day(&mut self, interp_day: MonthlyInterpDay) -> &mut Self {
+        self.interp_day = Some(interp_day);
+        self
+    }
+}
+
+impl ParameterBuilder<f64> for MonthlyProfileParameterBuilder {
+    fn name(&self) -> &ParameterName {
+        &self.meta.name
+    }
+
+    fn build(
+        self: Box<Self>,
+        _resolution_maps: &ResolutionMaps,
+    ) -> Result<MaybeBuiltParameter<f64>, ParameterBuildError> {
+        let p = MonthlyProfileParameter {
+            meta: self.meta,
+            values: self.values,
+            interp_day: self.interp_day,
+        };
+        Ok(BuiltParameter::Simple(Box::new(p)).into())
     }
 }
 

@@ -1,13 +1,16 @@
-use crate::metric::MetricF64;
-use crate::network::Network;
-use crate::parameters::errors::ParameterCalculationError;
+use crate::metric::{MetricConsumerPhase, MetricF64, UnresolvedMetricF64};
+use crate::network::ResolutionMaps;
+use crate::parameters::errors::GeneralCalculationError;
 use crate::parameters::interpolate::linear_interpolation;
-use crate::parameters::{GeneralParameter, Parameter, ParameterMeta, ParameterName, ParameterState};
-use crate::scenario::ScenarioIndex;
-use crate::state::State;
-use crate::timestep::Timestep;
+use crate::parameters::{
+    BuiltParameter, GeneralAfterParameter, GeneralBeforeParameter, GeneralParameter, GeneralParameterContext,
+    GeneralParameterEntry, MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder, ParameterMeta,
+    ParameterName, ParameterState,
+};
+use crate::resolve_metric_f64;
 
 /// A parameter that interpolates a value to a function with given discrete data points.
+#[derive(Debug)]
 pub struct InterpolatedParameter {
     meta: ParameterMeta,
     x: MetricF64,
@@ -15,53 +18,162 @@ pub struct InterpolatedParameter {
     error_on_bounds: bool,
 }
 
-impl InterpolatedParameter {
-    pub fn new(name: ParameterName, x: MetricF64, points: Vec<(MetricF64, MetricF64)>, error_on_bounds: bool) -> Self {
-        Self {
-            meta: ParameterMeta::new(name),
-            x,
-            points,
-            error_on_bounds,
-        }
-    }
-}
 impl Parameter for InterpolatedParameter {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }
 }
-impl GeneralParameter<f64> for InterpolatedParameter {
-    fn before(
-        &self,
-        _timestep: &Timestep,
-        _scenario_index: &ScenarioIndex,
-        network: &Network,
-        state: &State,
-        _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<Option<f64>, ParameterCalculationError> {
-        // Current value
-        let x = self.x.get_value(network, state)?;
-
-        let points = self
-            .points
-            .iter()
-            .map(|(x, f)| {
-                let xp = x.get_value(network, state)?;
-                let fp = f.get_value(network, state)?;
-
-                Ok::<(f64, f64), ParameterCalculationError>((xp, fp))
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-
-        let f = linear_interpolation(x, &points, self.error_on_bounds)?;
-
-        Ok(Some(f))
-    }
-
+impl GeneralParameter for InterpolatedParameter {
     fn as_parameter(&self) -> &dyn Parameter
     where
         Self: Sized,
     {
         self
+    }
+}
+
+impl GeneralBeforeParameter<f64> for InterpolatedParameter {
+    fn before(
+        &self,
+        ctx: GeneralParameterContext<'_>,
+        _internal_state: &mut Option<Box<dyn ParameterState>>,
+    ) -> Result<f64, GeneralCalculationError> {
+        // Current value
+        let x = self.x.get_value(ctx.network, ctx.state)?;
+
+        let points = self
+            .points
+            .iter()
+            .map(|(x, f)| {
+                let xp = x.get_value(ctx.network, ctx.state)?;
+                let fp = f.get_value(ctx.network, ctx.state)?;
+
+                Ok::<(f64, f64), GeneralCalculationError>((xp, fp))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let f = linear_interpolation(x, &points, self.error_on_bounds)?;
+
+        Ok(f)
+    }
+}
+
+impl GeneralAfterParameter<f64> for InterpolatedParameter {
+    fn after(
+        &self,
+        ctx: GeneralParameterContext<'_>,
+        _internal_state: &mut Option<Box<dyn ParameterState>>,
+    ) -> Result<f64, GeneralCalculationError> {
+        // Current value
+        let x = self.x.get_value(ctx.network, ctx.state)?;
+
+        let points = self
+            .points
+            .iter()
+            .map(|(x, f)| {
+                let xp = x.get_value(ctx.network, ctx.state)?;
+                let fp = f.get_value(ctx.network, ctx.state)?;
+
+                Ok::<(f64, f64), GeneralCalculationError>((xp, fp))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let f = linear_interpolation(x, &points, self.error_on_bounds)?;
+
+        Ok(f)
+    }
+}
+
+#[derive(Debug)]
+pub struct InterpolatedParameterBuilder {
+    meta: ParameterMeta,
+    x: UnresolvedMetricF64,
+    points: Vec<(UnresolvedMetricF64, UnresolvedMetricF64)>,
+    error_on_bounds: bool,
+    phase: MetricConsumerPhase,
+}
+
+impl InterpolatedParameterBuilder {
+    /// Create a new [`InterpolatedParameter`] that is evaluated in the "before" phase.
+    pub fn before(
+        name: ParameterName,
+        x: UnresolvedMetricF64,
+        points: Vec<(UnresolvedMetricF64, UnresolvedMetricF64)>,
+        error_on_bounds: bool,
+    ) -> Self {
+        Self {
+            meta: ParameterMeta::new(name),
+            x,
+            points,
+            error_on_bounds,
+            phase: MetricConsumerPhase::Before,
+        }
+    }
+
+    /// Create a new [`InterpolatedParameter`] that is evaluated in the "after" phase.
+    pub fn after(
+        name: ParameterName,
+        x: UnresolvedMetricF64,
+        points: Vec<(UnresolvedMetricF64, UnresolvedMetricF64)>,
+        error_on_bounds: bool,
+    ) -> Self {
+        Self {
+            meta: ParameterMeta::new(name),
+            x,
+            points,
+            error_on_bounds,
+            phase: MetricConsumerPhase::After,
+        }
+    }
+
+    /// Create a new [`InterpolatedParameter`] that is evaluated in "before" and "after" phases.
+    pub fn both(
+        name: ParameterName,
+        x: UnresolvedMetricF64,
+        points: Vec<(UnresolvedMetricF64, UnresolvedMetricF64)>,
+        error_on_bounds: bool,
+    ) -> Self {
+        Self {
+            meta: ParameterMeta::new(name),
+            x,
+            points,
+            error_on_bounds,
+            phase: MetricConsumerPhase::Both,
+        }
+    }
+}
+
+impl ParameterBuilder<f64> for InterpolatedParameterBuilder {
+    fn name(&self) -> &ParameterName {
+        &self.meta.name
+    }
+
+    fn build(
+        self: Box<Self>,
+        resolution_maps: &ResolutionMaps,
+    ) -> Result<MaybeBuiltParameter<f64>, ParameterBuildError> {
+        let x = resolve_metric_f64!(self, self.x, resolution_maps, self.phase, "x");
+
+        let mut points = Vec::with_capacity(self.points.len());
+        for (i, (uxp, ufp)) in self.points.iter().enumerate() {
+            let xp = resolve_metric_f64!(self, uxp, resolution_maps, self.phase, &format!("points[{i}].x"));
+            let fp = resolve_metric_f64!(self, ufp, resolution_maps, self.phase, &format!("points[{i}].f"));
+            points.push((xp, fp));
+        }
+
+        let p = InterpolatedParameter {
+            meta: self.meta,
+            x,
+            points,
+            error_on_bounds: self.error_on_bounds,
+        };
+
+        let built = match self.phase {
+            MetricConsumerPhase::Before => BuiltParameter::General(GeneralParameterEntry::before(p)),
+            MetricConsumerPhase::After => BuiltParameter::General(GeneralParameterEntry::after(p)),
+            MetricConsumerPhase::Both => BuiltParameter::General(GeneralParameterEntry::both(p)),
+        };
+
+        Ok(built.into())
     }
 }

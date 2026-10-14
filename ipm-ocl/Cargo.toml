@@ -4,11 +4,12 @@ version = "0.1.0"
 authors.workspace = true
 edition.workspace = true
 repository.workspace = true
+license.workspace = true
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 ipm-common = { path = "../ipm-common" }
-log = "0.4.30"
-nalgebra-sparse = "0.12.0"
-ocl = "0.19"
+log = { workspace = true }
+nalgebra-sparse = { workspace = true }
+ocl = { workspace = true }

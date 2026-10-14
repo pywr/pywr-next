@@ -4,7 +4,7 @@
     "description": "An example of a seasonal licence that resets to full on 15th Dec and 20th Jan each year.",
     "minimum_version": "0.1"
   },
-  "timestepper": {
+  "time": {
     "start": "2014-12-01",
     "end": "2015-01-31",
     "timestep": {
@@ -97,7 +97,7 @@
     ],
     "metric_sets": [
       {
-        "name": "nodes",
+        "meta": {"name": "nodes"},
         "metrics": [
           {
             "type": "VirtualNode",
@@ -108,7 +108,7 @@
     ],
     "outputs": [
       {
-        "name": "my-outputs",
+        "meta": {"name": "my-outputs"},
         "type": "CSV",
         "format": "Long",
         "filename": "seasonal-vs2-expected.csv",

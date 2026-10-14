@@ -1,8 +1,10 @@
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
+use crate::meta::NamedMeta;
+use crate::visit::{Reference, ReferenceMut, VisitReferences};
 #[cfg(feature = "core")]
-use pywr_core::recorders::{CsvLongFmtOutput, CsvWideFmtOutput, Recorder};
-use pywr_schema_macros::{PywrVisitPaths, skip_serializing_none};
+use pywr_core::recorders::{CsvLongFmtOutputBuilder, CsvWideFmtOutputBuilder, RecorderBuilder};
+use pywr_schema_macros::{PywrVisitPaths, PywrVisitReferences, skip_serializing_none};
 use schemars::JsonSchema;
 #[cfg(feature = "core")]
 use std::num::NonZeroU32;
@@ -12,7 +14,16 @@ use std::path::PathBuf;
 use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumString, IntoStaticStr};
 
 #[derive(
-    serde::Deserialize, serde::Serialize, Debug, Clone, Default, JsonSchema, PywrVisitPaths, Display, EnumIter,
+    serde::Deserialize,
+    serde::Serialize,
+    Debug,
+    Clone,
+    Default,
+    JsonSchema,
+    PywrVisitPaths,
+    PywrVisitReferences,
+    Display,
+    EnumIter,
 )]
 pub enum CsvFormat {
     Wide,
@@ -31,6 +42,31 @@ pub enum CsvMetricSet {
     Multiple(Vec<String>),
 }
 
+/// Written out rather than derived: a derive would walk the names as plain `String`s.
+impl VisitReferences for CsvMetricSet {
+    fn visit_references<F: FnMut(Reference<'_>)>(&self, visitor: &mut F) {
+        match self {
+            Self::Single(metric_set) => visitor(Reference::MetricSet(metric_set)),
+            Self::Multiple(metric_sets) => {
+                for metric_set in metric_sets {
+                    visitor(Reference::MetricSet(metric_set));
+                }
+            }
+        }
+    }
+
+    fn visit_references_mut<F: FnMut(ReferenceMut<'_>)>(&mut self, visitor: &mut F) {
+        match self {
+            Self::Single(metric_set) => visitor(ReferenceMut::MetricSet(metric_set)),
+            Self::Multiple(metric_sets) => {
+                for metric_set in metric_sets {
+                    visitor(ReferenceMut::MetricSet(metric_set));
+                }
+            }
+        }
+    }
+}
+
 /// Output data to a CSV file.
 ///
 /// This output will write the output data to a CSV file. The output data is written in either
@@ -43,9 +79,9 @@ pub enum CsvMetricSet {
 /// the wide format only supports a single metric set.
 ///
 #[skip_serializing_none]
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitPaths)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitPaths, PywrVisitReferences)]
 pub struct CsvOutput {
-    pub name: String,
+    pub meta: NamedMeta,
     pub filename: PathBuf,
     pub format: CsvFormat,
     pub metric_set: CsvMetricSet,
@@ -54,9 +90,9 @@ pub struct CsvOutput {
 
 #[cfg(feature = "core")]
 impl CsvOutput {
-    pub fn add_to_model(
+    pub fn add_to_network(
         &self,
-        network: &mut pywr_core::network::Network,
+        network: &mut pywr_core::network::NetworkBuilder,
         output_path: Option<&Path>,
     ) -> Result<(), SchemaError> {
         let filename = match (output_path, self.filename.is_relative()) {
@@ -64,37 +100,40 @@ impl CsvOutput {
             _ => self.filename.to_path_buf(),
         };
 
-        let recorder: Box<dyn Recorder> = match self.format {
+        let recorder: Box<dyn RecorderBuilder> = match self.format {
             CsvFormat::Wide => match &self.metric_set {
                 CsvMetricSet::Single(metric_set) => {
-                    let metric_set_idx = network.get_metric_set_index_by_name(metric_set)?;
-                    Box::new(CsvWideFmtOutput::new(&self.name, filename, metric_set_idx))
+                    Box::new(CsvWideFmtOutputBuilder::new(&self.meta.name, filename, metric_set))
                 }
                 CsvMetricSet::Multiple(_) => {
-                    return Err(SchemaError::MissingMetricSet(
+                    return Err(SchemaError::MultipleMetricSetsNotSupported(
                         "Wide format CSV output requires a single `metric_set`".to_string(),
                     ));
                 }
             },
             CsvFormat::Long => {
-                let metric_set_indices = match &self.metric_set {
-                    CsvMetricSet::Single(metric_set) => vec![network.get_metric_set_index_by_name(metric_set)?],
-                    CsvMetricSet::Multiple(metric_sets) => metric_sets
-                        .iter()
-                        .map(|ms| network.get_metric_set_index_by_name(ms))
-                        .collect::<Result<Vec<_>, _>>()?,
-                };
-
-                Box::new(CsvLongFmtOutput::new(
-                    &self.name,
+                let mut builder = CsvLongFmtOutputBuilder::new(
+                    &self.meta.name,
                     filename,
-                    &metric_set_indices,
                     self.decimal_places.and_then(NonZeroU32::new),
-                ))
+                );
+
+                match &self.metric_set {
+                    CsvMetricSet::Single(metric_set) => {
+                        builder.metric_set(metric_set);
+                    }
+                    CsvMetricSet::Multiple(metric_sets) => {
+                        for metric_set in metric_sets {
+                            builder.metric_set(metric_set);
+                        }
+                    }
+                }
+
+                Box::new(builder)
             }
         };
 
-        network.add_recorder(recorder)?;
+        network.recorder(recorder);
 
         Ok(())
     }

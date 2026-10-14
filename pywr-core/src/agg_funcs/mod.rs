@@ -11,7 +11,7 @@ use thiserror::Error;
 pub enum AggFuncError {
     /// Error occurred in a Python aggregation function.
     #[cfg(feature = "pyo3")]
-    #[error("Error in Python aggregation function '{object}': {py_error}")]
+    #[error("Error in Python aggregation function '{object}'.")]
     PythonError {
         object: String,
         #[source]

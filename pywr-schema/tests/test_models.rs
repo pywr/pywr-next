@@ -1,6 +1,8 @@
 #[cfg(feature = "core")]
 use pywr_core::test_utils::{ExpectedOutputsLong, ExpectedOutputsWide, VerifyExpected, run_all_solvers};
 use pywr_schema::{ComponentConversionError, ModelSchema};
+#[cfg(feature = "core")]
+use pywr_schema::{FileProvider, FileSystem, MemoryFiles, VisitPaths};
 use std::fs;
 use std::path::Path;
 #[cfg(feature = "core")]
@@ -26,7 +28,8 @@ macro_rules! model_tests {
                 let input_pth = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join(input);
                 let expected_paths = expected.into_iter().map(|(p, shape)| (Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join(p), shape)).collect::<Vec<_>>();
                 let schema = deserialise_test_model(&input_pth);
-                run_test_model(&schema, expected_paths.as_slice(), &solvers_without_features, &solvers_to_skip);
+                let data_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests");
+                run_test_model(&schema, &FileSystem, &data_dir, expected_paths.as_slice(), &solvers_without_features, &solvers_to_skip);
             }
 
             // Just deserialise the schema
@@ -49,71 +52,82 @@ model_tests! {
     test_csv1: ("csv1.json", vec![("csv1-outputs-long.csv", ResultsShape::Long), ("csv1-outputs-wide.csv", ResultsShape::Wide)], vec![], vec![]),
     test_csv2: ("csv2.json", vec![("csv2-outputs-long.csv", ResultsShape::Long), ("csv2-outputs-wide.csv", ResultsShape::Wide)], vec![], vec![]),
     test_csv3: ("csv3.json", vec![("csv3-outputs-long.csv", ResultsShape::Long)], vec![], vec![]),
+    test_deficit_agg1: ("deficit-agg1.json", vec![("deficit-agg1-expected.csv", ResultsShape::Long)], vec![], vec![]),
+    test_deficit_agg2: ("deficit-agg2.json", vec![("deficit-agg2-expected.csv", ResultsShape::Long)], vec![], vec![]),
+    test_deficit_agg3: ("deficit-agg3.json", vec![("deficit-agg3-expected.csv", ResultsShape::Long)], vec![], vec![]),
+    test_flow_agg1: ("flow-agg1.json", vec![("flow-agg1-expected.csv", ResultsShape::Long)], vec![], vec![]),
     test_hdf1: ("hdf1.json", vec![], vec![], vec![]), // TODO asserting h5 results not possible with this framework
     test_memory1: ("memory1.json", vec![], vec![], vec![]),  // TODO asserting memory results not possible with this framework
-    test_timeseries: ("timeseries.json", vec![("timeseries-expected.csv", ResultsShape::Long)], vec![], vec![]),
-    test_timeseries2: ("timeseries2.json", vec![("timeseries2-expected.csv", ResultsShape::Long)], vec![], vec![]),
-    test_timeseries3: ("timeseries3.json", vec![("timeseries3-expected.csv", ResultsShape::Long)], vec![], vec![]),
-    test_timeseries4: ("timeseries4.json", vec![("timeseries4-expected.csv", ResultsShape::Long)], vec![], vec![]),
-    test_timeseries5: ("timeseries5.json", vec![("timeseries5-expected.csv", ResultsShape::Long)], vec![], vec![]),
-    test_timeseries2_hourly: ("timeseries2-hourly.json", vec![("timeseries2-hourly-expected.csv", ResultsShape::Long)], vec![], vec![]),
+    test_time_series: ("time-series.json", vec![("time-series-expected.csv", ResultsShape::Long)], vec![], vec![]),
+    test_time_series2: ("time-series2.json", vec![("time-series2-expected.csv", ResultsShape::Long)], vec![], vec![]),
+    test_time_series3: ("time-series3.json", vec![("time-series3-expected.csv", ResultsShape::Long)], vec![], vec![]),
+    test_time_series4: ("time-series4.json", vec![("time-series4-expected.csv", ResultsShape::Long)], vec![], vec![]),
+    test_time_series5: ("time-series5.json", vec![("time-series5-expected.csv", ResultsShape::Long)], vec![], vec![]),
+    test_time_series2_hourly: ("time-series2-hourly.json", vec![("time-series2-hourly-expected.csv", ResultsShape::Long)], vec![], vec![]),
     test_storage_max_volumes: ("storage_max_volumes.json", vec![], vec![], vec![]),
-    test_mutual_exclusivity1: ("mutual-exclusivity1.json", vec![("mutual-exclusivity1.csv", ResultsShape::Long)], vec!["clp", "ipm-simd", "ipm-ocl"], vec![]),
-    test_mutual_exclusivity2: ("mutual-exclusivity2.json", vec![("mutual-exclusivity2.csv", ResultsShape::Long)], vec!["clp", "ipm-simd", "ipm-ocl"], vec![]),
-    test_mutual_exclusivity3: ("mutual-exclusivity3.json", vec![("mutual-exclusivity3.csv", ResultsShape::Long)], vec!["clp", "ipm-simd", "ipm-ocl"], vec![]),
-    test_mutual_exclusivity4: ("mutual-exclusivity4.json", vec![("mutual-exclusivity4.csv", ResultsShape::Long)], vec!["clp", "ipm-simd", "ipm-ocl"], vec![]),
-    test_link_with_soft_min: ("link_with_soft_min.json", vec![], vec!["ipm-simd", "ipm-ocl"], vec![]),
-    test_link_with_soft_max: ("link_with_soft_max.json", vec![], vec!["ipm-simd", "ipm-ocl"], vec![]),
+    test_mutual_exclusivity1: ("mutual-exclusivity1.json", vec![("mutual-exclusivity1.csv", ResultsShape::Long)], vec!["clp", "ipm-simd", "ipm-ocl-f64"], vec![]),
+    test_mutual_exclusivity2: ("mutual-exclusivity2.json", vec![("mutual-exclusivity2.csv", ResultsShape::Long)], vec!["clp", "ipm-simd", "ipm-ocl-f64"], vec![]),
+    test_mutual_exclusivity3: ("mutual-exclusivity3.json", vec![("mutual-exclusivity3.csv", ResultsShape::Long)], vec!["clp", "ipm-simd", "ipm-ocl-f64"], vec![]),
+    test_mutual_exclusivity4: ("mutual-exclusivity4.json", vec![("mutual-exclusivity4.csv", ResultsShape::Long)], vec!["clp", "ipm-simd", "ipm-ocl-f64"], vec![]),
+    test_link_with_soft_min: ("link_with_soft_min.json", vec![], vec!["ipm-simd", "ipm-ocl-f64"], vec![]),
+    test_link_with_soft_max: ("link_with_soft_max.json", vec![], vec!["ipm-simd", "ipm-ocl-f64"], vec![]),
     test_delay1: ("delay1.json", vec![("delay1-expected.csv", ResultsShape::Long)], vec![], vec![]),
-    test_loss_link1: ("loss_link1.json", vec![("loss_link1-expected.csv", ResultsShape::Long)], vec!["ipm-simd", "ipm-ocl"], vec![]),
-    test_loss_link2: ("loss_link2.json", vec![("loss_link2-expected.csv", ResultsShape::Long)], vec!["ipm-simd", "ipm-ocl"], vec![]),
-    test_muskingum: ("muskingum1.json", vec![("muskingum1-expected.csv", ResultsShape::Long)], vec!["cbc", "ipm-simd", "ipm-ocl"], vec![]),
+    test_loss_link1: ("loss_link1.json", vec![("loss_link1-expected.csv", ResultsShape::Long)], vec!["ipm-simd", "ipm-ocl-f64"], vec![]),
+    test_loss_link2: ("loss_link2.json", vec![("loss_link2-expected.csv", ResultsShape::Long)], vec!["ipm-simd", "ipm-ocl-f64"], vec![]),
+    test_muskingum: ("muskingum1.json", vec![("muskingum1-expected.csv", ResultsShape::Long)], vec!["cbc", "ipm-simd", "ipm-ocl-f64"], vec![]),
     // TODO this asserted internal flows in the previous test
     test_piecewise_link1: ("piecewise_link1.json", vec![("piecewise-link1-nodes.csv", ResultsShape::Long), ("piecewise-link1-edges.csv", ResultsShape::Long)], vec![], vec![]),
     // TODO not sure why this is failing in IPM solvers (https://github.com/pywr/pywr-next/issues/293)
-    test_piecewise_storage1: ("piecewise_storage1.json", vec![("piecewise_storage1-expected.csv", ResultsShape::Long)], vec![], vec!["ipm-simd", "ipm-ocl"]),
+    test_piecewise_storage1: ("piecewise_storage1.json", vec![("piecewise_storage1-expected.csv", ResultsShape::Long)], vec![], vec!["ipm-simd", "ipm-ocl-f64"]),
     // TODO not sure why this is failing in IPM solvers (https://github.com/pywr/pywr-next/issues/293)
-    test_piecewise_storage2: ("piecewise_storage2.json", vec![("piecewise_storage2-expected.csv", ResultsShape::Long)], vec![], vec!["ipm-simd", "ipm-ocl"]),
-    test_piecewise_storage3: ("piecewise_storage3.json", vec![("piecewise_storage3-expected.csv", ResultsShape::Long)], vec![], vec!["ipm-simd", "ipm-ocl"]),
-    test_piecewise_storage4: ("piecewise_storage4.json", vec![("piecewise_storage4-expected.csv", ResultsShape::Long)], vec![], vec!["ipm-simd", "ipm-ocl"]),
+    test_piecewise_storage2: ("piecewise_storage2.json", vec![("piecewise_storage2-expected.csv", ResultsShape::Long)], vec![], vec!["ipm-simd", "ipm-ocl-f64"]),
+    test_piecewise_storage3: ("piecewise_storage3.json", vec![("piecewise_storage3-expected.csv", ResultsShape::Long)], vec![], vec!["ipm-simd", "ipm-ocl-f64"]),
+    test_piecewise_storage4: ("piecewise_storage4.json", vec![("piecewise_storage4-expected.csv", ResultsShape::Long)], vec![], vec!["ipm-simd", "ipm-ocl-f64"]),
     test_reservoir_with_river1: ("reservoir_with_river1.json", vec![("reservoir_with_river1-expected.csv", ResultsShape::Long)], vec![], vec![]),
     test_reservoir_with_river2: ("reservoir_with_river2.json", vec![("reservoir_with_river2-expected.csv", ResultsShape::Long)], vec![], vec![]),
     test_reservoir_with_spill1: ("reservoir_with_spill1.json", vec![("reservoir_with_spill1-expected.csv", ResultsShape::Long)], vec![], vec![]),
-    test_river_loss1: ("river_loss1.json", vec![("river_loss1-expected.csv", ResultsShape::Long)], vec!["ipm-simd", "ipm-ocl"], vec![]),
+    test_reservoir_with_evaporation1: ("reservoir_with_evaporation1.json", vec![("reservoir_with_evaporation1-expected.csv", ResultsShape::Long)], vec![], vec![]),
+    test_river_loss1: ("river_loss1.json", vec![("river_loss1-expected.csv", ResultsShape::Long)], vec!["ipm-simd", "ipm-ocl-f64"], vec![]),
     test_river_gauge1: ("river_gauge1.json", vec![("river_gauge1-expected.csv", ResultsShape::Long)], vec![], vec![]),
-    test_river_split_with_gauge1: ("river_split_with_gauge1.json", vec![("river_split_with_gauge1-expected.csv", ResultsShape::Long)], vec!["ipm-simd", "ipm-ocl"], vec![]),
-    test_river_split_with_gauge2: ("river_split_with_gauge2.json", vec![("river_split_with_gauge2-expected.csv", ResultsShape::Long)], vec!["ipm-simd", "ipm-ocl"], vec![]),
-    test_seasonal_vs1: ("seasonal-vs1.json", vec![("seasonal-vs1-expected.csv", ResultsShape::Long)], vec!["ipm-simd", "ipm-ocl"], vec![]),
-    test_seasonal_vs2: ("seasonal-vs2.json", vec![("seasonal-vs2-expected.csv", ResultsShape::Long)], vec!["ipm-simd", "ipm-ocl"], vec![]),
-    test_thirty_day_licence: ("30-day-licence.json", vec![], vec!["ipm-simd", "ipm-ocl"], vec![]),
-    test_wtw1: ("wtw1.json", vec![("wtw1-expected.csv", ResultsShape::Long)], vec!["ipm-simd", "ipm-ocl"], vec![]),
-    test_wtw2: ("wtw2.json", vec![("wtw2-expected.csv", ResultsShape::Long)], vec!["ipm-simd", "ipm-ocl"], vec![]),
+    test_river_split_with_gauge1: ("river_split_with_gauge1.json", vec![("river_split_with_gauge1-expected.csv", ResultsShape::Long)], vec!["ipm-simd", "ipm-ocl-f64"], vec![]),
+    test_river_split_with_gauge2: ("river_split_with_gauge2.json", vec![("river_split_with_gauge2-expected.csv", ResultsShape::Long)], vec!["ipm-simd", "ipm-ocl-f64"], vec![]),
+    test_seasonal_vs1: ("seasonal-vs1.json", vec![("seasonal-vs1-expected.csv", ResultsShape::Long)], vec!["ipm-simd", "ipm-ocl-f64"], vec![]),
+    test_seasonal_vs2: ("seasonal-vs2.json", vec![("seasonal-vs2-expected.csv", ResultsShape::Long)], vec!["ipm-simd", "ipm-ocl-f64"], vec![]),
+    test_thirty_day_licence: ("30-day-licence.json", vec![], vec!["ipm-simd", "ipm-ocl-f64"], vec![]),
+    test_wtw1: ("wtw1.json", vec![("wtw1-expected.csv", ResultsShape::Long)], vec!["ipm-simd", "ipm-ocl-f64"], vec![]),
+    test_wtw2: ("wtw2.json", vec![("wtw2-expected.csv", ResultsShape::Long)], vec![], vec![]),
     test_local_parameter1: ("local-parameter1.json", vec![("local-parameter1-expected.csv", ResultsShape::Long)], vec![], vec![]),
+    test_local_parameter2: ("local-parameter2.json", vec![("local-parameter2-expected.csv", ResultsShape::Long)], vec![], vec![]),
+    // IPM solvers currently do not support virtual storage nodes
+    test_local_parameter3: ("local-parameter3.json", vec![("local-parameter3-expected.csv", ResultsShape::Long)], vec!["ipm-simd", "ipm-ocl-f64"], vec![]),
+    test_local_parameter4: ("local-parameter4.json", vec![("local-parameter4-expected.csv", ResultsShape::Long)], vec![], vec![]),
     test_python_agg_func1: ("python-agg-func1.json", vec![("python-agg-func1-expected.csv", ResultsShape::Long)], vec![], vec![]),
     test_python_parameter2: ("python-parameter2.json", vec![("python-parameter2-expected.csv", ResultsShape::Long)], vec![], vec![]),
     test_python_parameter1: ("python-parameter1.json", vec![("python-parameter1-expected.csv", ResultsShape::Long)], vec![], vec![]),
-    test_local_parameter2: ("local-parameter2.json", vec![("local-parameter2-expected.csv", ResultsShape::Long)], vec![], vec![]),
+    test_python_parameter3: ("python-parameter3.json", vec![("python-parameter3-expected.csv", ResultsShape::Long)], vec![], vec![]),
     test_tbl_formats1: ("tbl-formats1.json", vec![("tbl-formats1-expected.csv", ResultsShape::Long)], vec![], vec![]),
     // IPM solvers currently do not support virtual storage nodes
-    test_vs_with_piecewise_link: ("vs-with-piecewise-link.json", vec![("vs-with-piecewise-link-expected.csv", ResultsShape::Long)], vec!["ipm-simd", "ipm-ocl"], vec![]),
-    test_vs_wtw1: ("vs-with-wtw1.json", vec![("vs-with-wtw1-expected.csv", ResultsShape::Long)], vec!["ipm-simd", "ipm-ocl"], vec![]),
-    test_vs_wtw2: ("vs-with-wtw2.json", vec![("vs-with-wtw2-expected.csv", ResultsShape::Long)], vec!["ipm-simd", "ipm-ocl"], vec![]),
-    test_vs_wtw3: ("vs-with-wtw3.json", vec![("vs-with-wtw3-expected.csv", ResultsShape::Long)], vec!["ipm-simd", "ipm-ocl"], vec![]),
-    test_abstraction1: ("abstraction1.json", vec![("abstraction1-expected.csv", ResultsShape::Long)], vec!["ipm-simd", "ipm-ocl"], vec![]),
-    test_abstraction2: ("abstraction2.json", vec![("abstraction2-expected.csv", ResultsShape::Long)], vec!["ipm-simd", "ipm-ocl"], vec![]),
+    test_vs_with_piecewise_link: ("vs-with-piecewise-link.json", vec![("vs-with-piecewise-link-expected.csv", ResultsShape::Long)], vec!["ipm-simd", "ipm-ocl-f64"], vec![]),
+    test_vs_wtw1: ("vs-with-wtw1.json", vec![("vs-with-wtw1-expected.csv", ResultsShape::Long)], vec!["ipm-simd", "ipm-ocl-f64"], vec![]),
+    test_vs_wtw2: ("vs-with-wtw2.json", vec![("vs-with-wtw2-expected.csv", ResultsShape::Long)], vec!["ipm-simd", "ipm-ocl-f64"], vec![]),
+    test_vs_wtw3: ("vs-with-wtw3.json", vec![("vs-with-wtw3-expected.csv", ResultsShape::Long)], vec!["ipm-simd", "ipm-ocl-f64"], vec![]),
+    test_member_components1: ("member-components1.json", vec![], vec!["ipm-simd", "ipm-ocl-f64"], vec![]),
+    test_abstraction1: ("abstraction1.json", vec![("abstraction1-expected.csv", ResultsShape::Long)], vec!["ipm-simd", "ipm-ocl-f64"], vec![]),
+    test_abstraction2: ("abstraction2.json", vec![("abstraction2-expected.csv", ResultsShape::Long)], vec!["ipm-simd", "ipm-ocl-f64"], vec![]),
     test_reservoir_failure_levels1: ("reservoir-failure-levels1.json", vec![("reservoir-failure-levels1-expected.csv", ResultsShape::Long)], vec![], vec![]),
     test_daily_profile1: ("daily-profile1.json", vec![("daily-profile1-expected.csv", ResultsShape::Long)], vec![], vec![]),
     test_turbine1: ("turbine1.json", vec![("turbine1-expected.csv", ResultsShape::Long)], vec![], vec![]),
+    test_hydropower1: ("hydropower1.json", vec![("hydropower1-expected.csv", ResultsShape::Long)], vec![], vec![]),
 }
 
-/// Test Pandas backend for reading timeseries data.
+/// Test Pandas backend for reading time series data.
 ///
 /// This test requires Python environment with Pandas
 #[test]
-fn test_timeseries_pandas() {
-    let input = "timeseries_pandas.json";
+fn test_time_series_pandas() {
+    let input = "time-series_pandas.json";
     let input_pth = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join(input);
-    let expected = [("timeseries-expected.csv", ResultsShape::Long)];
+    let expected = [("time-series-expected.csv", ResultsShape::Long)];
     let _expected_paths = expected
         .into_iter()
         .map(|(p, shape)| (Path::new(env!("CARGO_MANIFEST_DIR")).join("tests").join(p), shape))
@@ -122,7 +136,39 @@ fn test_timeseries_pandas() {
 
     // TODO - fix issue with pyo3 failing to find the active venv so this feature gate can be removed
     #[cfg(feature = "test-python")]
-    run_test_model(&_schema, &_expected_paths, &[], &[]);
+    run_test_model(
+        &_schema,
+        &FileSystem,
+        &Path::new(env!("CARGO_MANIFEST_DIR")).join("tests"),
+        &_expected_paths,
+        &[],
+        &[],
+    );
+}
+
+/// Run models with their input files only in memory, as the browser runner does: listed by
+/// `VisitPaths` with the outputs cleared, and keyed by the data path joined with the path in the
+/// model. Nothing is on disk at the data path, so a read that bypasses the provider fails.
+#[cfg(feature = "core")]
+#[test]
+fn test_input_files_in_memory() {
+    let tests_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests");
+    let data_dir = Path::new("in-memory");
+
+    for (input, expected) in [
+        ("time-series.json", "time-series-expected.csv"),
+        ("tbl-formats1.json", "tbl-formats1-expected.csv"),
+    ] {
+        let schema = deserialise_test_model(&tests_dir.join(input));
+
+        let mut inputs = schema.clone();
+        inputs.network.outputs = None;
+        let mut files = MemoryFiles::default();
+        inputs.visit_paths(&mut |path| files.insert(data_dir.join(path), fs::read(tests_dir.join(path)).unwrap()));
+
+        let expected = [(tests_dir.join(expected), ResultsShape::Long)];
+        run_test_model(&schema, &files, data_dir, &expected, &[], &[]);
+    }
 }
 
 fn deserialise_test_model(model_path: &Path) -> ModelSchema {
@@ -133,13 +179,16 @@ fn deserialise_test_model(model_path: &Path) -> ModelSchema {
 #[cfg(feature = "core")]
 fn run_test_model(
     schema: &ModelSchema,
+    files: &dyn FileProvider,
+    data_dir: &Path,
     result_paths: &[(PathBuf, ResultsShape)],
     solvers_without_features: &[&str],
     solvers_to_skip: &[&str],
 ) {
     let temp_dir = TempDir::new().unwrap();
-    let data_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests");
-    let model = schema.build_model(Some(&data_dir), Some(temp_dir.path())).unwrap();
+    let builder = schema
+        .create_model_builder(files, Some(data_dir), Some(temp_dir.path()))
+        .unwrap();
     // After model run there should be an output file.
     let expected_outputs: Vec<Box<dyn VerifyExpected>> = result_paths
         .iter()
@@ -154,6 +203,8 @@ fn run_test_model(
             )) as Box<dyn VerifyExpected>,
         })
         .collect();
+
+    let model = builder.build().unwrap();
 
     // Test all solvers
     run_all_solvers(&model, solvers_without_features, solvers_to_skip, &expected_outputs);
@@ -175,11 +226,12 @@ macro_rules! convert_tests {
 }
 
 convert_tests! {
-    test_convert_timeseries: ("v1/timeseries.json", "v1/timeseries-converted.json"),
+    test_convert_time_series: ("v1/time-series.json", "v1/time-series-converted.json"),
     test_convert_inline_parameter: ("v1/inline-parameter.json", "v1/inline-parameter-converted.json"),
     test_convert_river_split_with_gauge1: ("v1/river_split_with_gauge1.json", "v1/river_split_with_gauge1-converted.json"),
     test_convert_breaklink: ("v1/breaklink.json", "v1/breaklink-converted.json"),
     test_convert_scenarios: ("v1/scenarios.json", "v1/scenarios-converted.json"),
+    test_convert_scenarios_with_combinations: ("v1/scenarios-with-combinations.json", "v1/scenarios-with-combinations-converted.json"),
 }
 
 fn convert_model(v1_path: &Path, v2_path: &Path) {

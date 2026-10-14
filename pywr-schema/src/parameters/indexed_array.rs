@@ -1,14 +1,15 @@
 use crate::error::ComponentConversionError;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
+use crate::meta::NamedMeta;
 use crate::metric::{IndexMetric, Metric};
 #[cfg(feature = "core")]
 use crate::network::LoadArgs;
-use crate::parameters::{ConversionData, ParameterMeta};
+use crate::parameters::{ConversionData, ParameterPhase};
 use crate::v1::{TryFromV1, TryIntoV2, try_convert_parameter_attr};
-
+use crate::validation::ParameterProblem;
 #[cfg(feature = "core")]
-use pywr_core::parameters::{ParameterIndex, ParameterName};
+use pywr_core::parameters::ParameterName;
 use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::parameters::IndexedArrayParameter as IndexedArrayParameterV1;
 use schemars::JsonSchema;
@@ -16,35 +17,59 @@ use schemars::JsonSchema;
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct IndexedArrayParameter {
-    pub meta: ParameterMeta,
+    pub meta: NamedMeta,
+    pub phase: ParameterPhase,
     #[serde(alias = "params")]
     pub metrics: Vec<Metric>,
-    pub index_parameter: IndexMetric,
+    pub index_metric: IndexMetric,
+}
+
+impl IndexedArrayParameter {
+    /// Check that `metrics` is not empty, and has an entry for a literal `index_metric`.
+    pub fn validate(&self) -> Result<(), Vec<ParameterProblem>> {
+        let count = self.metrics.len();
+
+        if count == 0 {
+            return Err(vec![ParameterProblem::NoMetrics]);
+        }
+
+        match self.index_metric {
+            IndexMetric::Constant { value } if value >= count as u64 => {
+                Err(vec![ParameterProblem::IndexOutOfRange { index: value, count }])
+            }
+            _ => Ok(()),
+        }
+    }
 }
 
 #[cfg(feature = "core")]
 impl IndexedArrayParameter {
-    pub fn add_to_model(
+    pub fn add_to_network(
         &self,
-        network: &mut pywr_core::network::Network,
+        network: &mut pywr_core::network::NetworkBuilder,
         args: &LoadArgs,
         parent: Option<&str>,
-    ) -> Result<ParameterIndex<f64>, SchemaError> {
-        let index_parameter = self.index_parameter.load(network, args, None)?;
+    ) -> Result<(), SchemaError> {
+        let index_parameter = self.index_metric.load(network, args, parent)?;
 
-        let metrics = self
-            .metrics
-            .iter()
-            .map(|v| v.load(network, args, None))
-            .collect::<Result<Vec<_>, _>>()?;
+        let name = ParameterName::new(&self.meta.name, parent);
 
-        let p = pywr_core::parameters::IndexedArrayParameter::new(
-            ParameterName::new(&self.meta.name, parent),
-            index_parameter,
-            &metrics,
-        );
+        let mut builder = match self.phase {
+            ParameterPhase::Before => {
+                pywr_core::parameters::IndexedArrayParameterBuilder::before(name, index_parameter)
+            }
+            ParameterPhase::After => pywr_core::parameters::IndexedArrayParameterBuilder::after(name, index_parameter),
+            ParameterPhase::Both => pywr_core::parameters::IndexedArrayParameterBuilder::both(name, index_parameter),
+        };
 
-        Ok(network.add_parameter(Box::new(p))?)
+        for metric in &self.metrics {
+            let m = metric.load(network, args, parent)?;
+            builder.metric(m);
+        }
+
+        network.parameters().f64(Box::new(builder));
+
+        Ok(())
     }
 }
 
@@ -56,7 +81,7 @@ impl TryFromV1<IndexedArrayParameterV1> for IndexedArrayParameter {
         parent_node: Option<&str>,
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: ParameterMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
+        let meta: NamedMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
 
         let metrics = v1
             .parameters
@@ -74,8 +99,9 @@ impl TryFromV1<IndexedArrayParameterV1> for IndexedArrayParameter {
 
         let p = Self {
             meta,
-            index_parameter,
+            index_metric: index_parameter,
             metrics,
+            phase: ParameterPhase::Before,
         };
         Ok(p)
     }

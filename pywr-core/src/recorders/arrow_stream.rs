@@ -1,0 +1,965 @@
+use super::{
+    MetricSetState, OutputMetric, Recorder, RecorderBuilder, RecorderBuilderError, RecorderFinalResult,
+    RecorderFinaliseError, RecorderInternalState, RecorderMeta, RecorderSaveError, RecorderSetupError, Timestep,
+    downcast_internal_state, downcast_internal_state_mut, jiff_datetime_to_arrow_timestamp_ms,
+};
+use crate::models::ModelDomain;
+use crate::network::{MetricSetIndex, Network, ResolutionMaps};
+use crate::scenario::{ScenarioDomain, ScenarioIndex};
+use crate::state::State;
+use arrow::array::{ArrayRef, FixedSizeListArray, Float64Array, TimestampMillisecondArray};
+use arrow::datatypes::{DataType, Field, Schema, TimeUnit};
+use arrow::error::ArrowError;
+use arrow::ipc::writer::StreamWriter;
+use arrow::record_batch::RecordBatch;
+use arrow_schema::Metadata;
+use arrow_schema::extension::{EXTENSION_TYPE_METADATA_KEY, EXTENSION_TYPE_NAME_KEY, ExtensionType};
+use jiff::civil::DateTime;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::fs::{File, OpenOptions};
+use std::io::{self, Write};
+use std::num::NonZeroUsize;
+use std::ops::Deref;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
+use std::thread::{self, JoinHandle};
+use thiserror::Error;
+
+/// Metadata identifying a metric column in an [`ArrowStreamOutput`] schema.
+///
+/// The physical Arrow type is `FixedSizeList<Float64>`; this metadata is encoded as the
+/// `org.pywr.metric` Arrow extension type on the corresponding field.
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+pub struct MetricColumnMetadata {
+    pub metric_set: String,
+    pub name: String,
+    pub attribute: String,
+    #[serde(rename = "type")]
+    pub ty: String,
+    pub sub_type: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+struct ScenarioMetadata {
+    simulation_id: usize,
+    simulation_indices: Vec<usize>,
+    scenario_labels: Vec<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+struct ScenarioGroupMetadata<'a> {
+    name: &'a str,
+    size: usize,
+}
+
+/// Arrow extension type used for Pywr metric columns.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MetricColumnExtension(MetricColumnMetadata);
+
+impl MetricColumnExtension {
+    pub fn new(metadata: MetricColumnMetadata) -> Self {
+        Self(metadata)
+    }
+
+    /// Create the extension-typed Arrow field for this metric.
+    pub fn field(&self, column_name: impl Into<String>, scenario_count: i32) -> Field {
+        let mut metadata = HashMap::new();
+        metadata.insert(EXTENSION_TYPE_NAME_KEY.to_string(), Self::NAME.to_string());
+        metadata.insert(
+            EXTENSION_TYPE_METADATA_KEY.to_string(),
+            self.serialize_metadata()
+                .expect("metric extension metadata is serializable"),
+        );
+        Field::new(
+            column_name,
+            DataType::FixedSizeList(Arc::new(Field::new("value", DataType::Float64, true)), scenario_count),
+            false,
+        )
+        .with_metadata(metadata)
+    }
+}
+
+impl ExtensionType for MetricColumnExtension {
+    const NAME: &'static str = "org.pywr.metric";
+    type Metadata = MetricColumnMetadata;
+
+    fn metadata(&self) -> &Self::Metadata {
+        &self.0
+    }
+
+    fn serialize_metadata(&self) -> Option<String> {
+        serde_json::to_string(&self.0).ok()
+    }
+
+    fn deserialize_metadata(metadata: Option<&str>) -> Result<Self::Metadata, ArrowError> {
+        let metadata = metadata
+            .ok_or_else(|| ArrowError::InvalidArgumentError("Pywr metric extension metadata is missing".to_string()))?;
+        serde_json::from_str(metadata).map_err(|error| {
+            ArrowError::InvalidArgumentError(format!("Invalid Pywr metric extension metadata: {error}"))
+        })
+    }
+
+    fn supports_data_type(&self, data_type: &DataType) -> Result<(), ArrowError> {
+        if matches!(data_type, DataType::FixedSizeList(field, size) if *size > 0 && field.data_type() == &DataType::Float64)
+        {
+            Ok(())
+        } else {
+            Err(ArrowError::InvalidArgumentError(format!(
+                "Pywr metric extension requires FixedSizeList<Float64> storage, got {data_type:?}"
+            )))
+        }
+    }
+
+    fn try_new(data_type: &DataType, metadata: Self::Metadata) -> Result<Self, ArrowError> {
+        let extension = Self(metadata);
+        extension.supports_data_type(data_type)?;
+        Ok(extension)
+    }
+}
+
+/// A notification sent after a complete record batch has been written and flushed.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ArrowStreamCommit {
+    /// The name of the recorder that wrote the batch.
+    pub name: String,
+    /// Zero-based record batch sequence number.
+    pub batch_index: u64,
+    /// Number of timestep rows in this record batch.
+    pub row_count: usize,
+    /// Exclusive byte offset of the flushed data in the IPC stream.
+    pub byte_offset: u64,
+    /// The bytes written since the previous commit, from an [`ArrowStreamSink::Memory`] output.
+    /// `None` from a file output, whose file holds them.
+    pub bytes: Option<Vec<u8>>,
+}
+
+/// Where an [`ArrowStreamOutput`] writes its IPC stream.
+#[derive(Clone, Debug)]
+pub enum ArrowStreamSink {
+    /// This file, through a writer thread.
+    File(PathBuf),
+    /// A buffer on the calling thread, drained into each commit. Needs a commit sender.
+    Memory,
+}
+
+/// Errors produced by the Arrow IPC stream output.
+#[derive(Debug, Error)]
+pub enum ArrowStreamError {
+    #[error("I/O error with Arrow stream at `{path}`.")]
+    Io {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
+    #[error("Arrow stream output already exists at `{path}`")]
+    OutputAlreadyExists { path: PathBuf },
+    #[error("Arrow IPC error.")]
+    Arrow(#[from] ArrowError),
+    #[error("Metric set index `{index}` not found")]
+    MetricSetIndexNotFound { index: MetricSetIndex },
+    #[error("Metric set produced {actual} values, but its schema has {expected} metrics")]
+    MetricCount { expected: usize, actual: usize },
+    #[error("Expected {expected} scenarios, but received {actual}")]
+    ScenarioCount { expected: usize, actual: usize },
+    #[error("Metrics in one metric-set row have inconsistent reporting periods")]
+    InconsistentPeriods,
+    #[error("Arrow stream writer thread terminated: {0}")]
+    WorkerFailed(String),
+    #[error("Arrow stream writer thread disconnected")]
+    WorkerDisconnected,
+    #[error("Arrow stream writer thread panicked")]
+    WorkerPanicked,
+    #[error("An in-memory Arrow stream needs a commit sender to hand its bytes to")]
+    MemorySinkWithoutCommitSender,
+    #[error("An in-memory Arrow stream's commit receiver was dropped, losing its bytes")]
+    MemorySinkDisconnected,
+}
+
+#[derive(Clone, Debug)]
+struct ArrowStreamRow {
+    time_start: i64,
+    time_end: i64,
+    values: Vec<Option<f64>>,
+}
+
+#[derive(Debug, Default)]
+struct PendingBatch {
+    rows: Vec<ArrowStreamRow>,
+    timestep_count: usize,
+}
+
+#[derive(Debug)]
+enum WorkerMessage {
+    Batch(PendingBatch),
+    Flush(Sender<()>),
+    Finish,
+}
+
+#[derive(Debug)]
+enum WorkerStatus {
+    Failed(String),
+}
+
+#[derive(Debug)]
+struct CountingWriter<W> {
+    inner: W,
+    position: u64,
+}
+
+impl<W> CountingWriter<W> {
+    fn new(inner: W) -> Self {
+        Self { inner, position: 0 }
+    }
+}
+
+impl<W: Write> Write for CountingWriter<W> {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        let written = self.inner.write(bytes)?;
+        self.position += written as u64;
+        Ok(written)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.inner.flush()
+    }
+}
+
+fn make_schema(metric_set_name: &str, scenario_domain: &ScenarioDomain, metrics: &[OutputMetric]) -> Schema {
+    let mut fields = vec![
+        Field::new("time_start", DataType::Timestamp(TimeUnit::Millisecond, None), false),
+        Field::new("time_end", DataType::Timestamp(TimeUnit::Millisecond, None), false),
+    ];
+    let mut used_names = HashMap::<String, usize>::new();
+
+    let scenario_count = i32::try_from(scenario_domain.len()).expect("scenario count must fit in Arrow list size");
+    for metric in metrics {
+        let base_name = format!("{}.{}", metric_set_name, metric.fully_qualified_name());
+        let count = used_names.entry(base_name.clone()).or_default();
+        let column_name = if *count == 0 {
+            base_name
+        } else {
+            format!("{base_name}_{count}")
+        };
+        *count += 1;
+        let metadata = MetricColumnMetadata {
+            metric_set: metric_set_name.to_string(),
+            name: metric.name().to_string(),
+            attribute: metric.attribute().to_string(),
+            ty: metric.ty().to_string(),
+            sub_type: metric.sub_type().map(ToString::to_string),
+        };
+        fields.push(MetricColumnExtension::new(metadata).field(column_name, scenario_count));
+    }
+
+    let mut metadata = Metadata::new();
+    metadata.insert("PYWR_VERSION", env!("CARGO_PKG_VERSION"));
+    let scenarios: Vec<_> = scenario_domain
+        .indices()
+        .iter()
+        .map(|s| ScenarioMetadata {
+            simulation_id: s.simulation_id(),
+            simulation_indices: s.simulation_indices().to_vec(),
+            scenario_labels: s.labels().to_vec(),
+        })
+        .collect();
+    metadata.insert(
+        "PYWR_SCENARIOS",
+        serde_json::to_string(&scenarios).expect("scenario metadata is serializable"),
+    );
+
+    let groups: Vec<_> = scenario_domain
+        .groups()
+        .iter()
+        .map(|group| ScenarioGroupMetadata {
+            name: group.name(),
+            size: group.size(),
+        })
+        .collect();
+    metadata.insert(
+        "PYWR_SCENARIO_GROUPS",
+        serde_json::to_string(&groups).expect("scenario group metadata is serializable"),
+    );
+
+    Schema::new_with_metadata(fields, metadata)
+}
+
+fn record_batch(
+    schema: Arc<Schema>,
+    scenario_count: usize,
+    pending: PendingBatch,
+) -> Result<RecordBatch, ArrowStreamError> {
+    let metric_count = schema.fields().len() - 2; // Exclude time_start and time_end
+    let row_count = pending.rows.len();
+    let mut starts = Vec::with_capacity(row_count);
+    let mut ends = Vec::with_capacity(row_count);
+    let mut values = (0..metric_count)
+        .map(|_| Vec::with_capacity(row_count * scenario_count))
+        .collect::<Vec<_>>();
+
+    for row in pending.rows {
+        if row.values.len() != metric_count * scenario_count {
+            return Err(ArrowStreamError::MetricCount {
+                expected: metric_count * scenario_count,
+                actual: row.values.len(),
+            });
+        }
+        starts.push(row.time_start);
+        ends.push(row.time_end);
+        for scenario_values in row.values.chunks_exact(metric_count) {
+            for (column, value) in values.iter_mut().zip(scenario_values) {
+                column.push(*value);
+            }
+        }
+    }
+
+    let mut columns: Vec<ArrayRef> = vec![
+        Arc::new(TimestampMillisecondArray::from(starts)),
+        Arc::new(TimestampMillisecondArray::from(ends)),
+    ];
+    for (field, column) in schema.fields().iter().skip(2).zip(values) {
+        let DataType::FixedSizeList(child, size) = field.data_type() else {
+            return Err(ArrowStreamError::Arrow(ArrowError::SchemaError(
+                "Expected fixed-size list metric".into(),
+            )));
+        };
+        columns.push(Arc::new(FixedSizeListArray::try_new(
+            Arc::clone(child),
+            *size,
+            Arc::new(Float64Array::from(column)),
+            None,
+        )?));
+    }
+    Ok(RecordBatch::try_new(schema, columns)?)
+}
+
+fn worker(
+    receiver: Receiver<WorkerMessage>,
+    status_sender: Sender<WorkerStatus>,
+    file: File,
+    schema: Arc<Schema>,
+    scenario_count: usize,
+    name: String,
+    commits: Option<Sender<ArrowStreamCommit>>,
+) -> Result<(), ArrowStreamError> {
+    let mut writer = StreamWriter::try_new_buffered(CountingWriter::new(file), &schema)?;
+    let mut batch_index = 0;
+    while let Ok(message) = receiver.recv() {
+        match message {
+            WorkerMessage::Batch(pending) if pending.rows.is_empty() => {}
+            WorkerMessage::Batch(pending) => {
+                let row_count = pending.rows.len();
+                let batch = record_batch(Arc::clone(&schema), scenario_count, pending)?;
+                writer.write(&batch)?;
+                writer.flush()?;
+                let commit = ArrowStreamCommit {
+                    name: name.clone(),
+                    batch_index,
+                    row_count,
+                    byte_offset: writer.get_ref().get_ref().position,
+                    bytes: None,
+                };
+                batch_index += 1;
+                if let Some(commits) = &commits {
+                    let _ = commits.send(commit);
+                }
+            }
+            WorkerMessage::Flush(response) => {
+                // Channel ordering makes this a barrier for all earlier batches.
+                // Each batch is flushed before its commit is sent, so acknowledging
+                // the barrier also guarantees commit publication.
+                let _ = response.send(());
+            }
+            WorkerMessage::Finish => {
+                writer.finish()?;
+                return Ok(());
+            }
+        }
+    }
+    let error = ArrowStreamError::WorkerDisconnected;
+    let _ = status_sender.send(WorkerStatus::Failed(error.to_string()));
+    Err(error)
+}
+
+/// Writes a batch the way its output's [`ArrowStreamSink`] says.
+enum BatchWriter {
+    /// A thread running [`worker`], writing to the output's file.
+    Thread {
+        sender: Sender<WorkerMessage>,
+        status_receiver: Receiver<WorkerStatus>,
+        worker: JoinHandle<Result<(), ArrowStreamError>>,
+    },
+    Memory(Box<MemoryWriter>),
+}
+
+/// Writes batches into a buffer on the calling thread, and drains it into the commit that
+/// follows each, so the stream is never held twice.
+struct MemoryWriter {
+    writer: StreamWriter<CountingWriter<Vec<u8>>>,
+    schema: Arc<Schema>,
+    scenario_count: usize,
+    name: String,
+    batch_index: u64,
+    commits: Sender<ArrowStreamCommit>,
+}
+
+impl MemoryWriter {
+    fn new(
+        schema: Arc<Schema>,
+        scenario_count: usize,
+        name: String,
+        commits: Sender<ArrowStreamCommit>,
+    ) -> Result<Self, ArrowStreamError> {
+        // Writes the schema message, which the first commit carries.
+        let writer = StreamWriter::try_new(CountingWriter::new(Vec::new()), &schema)?;
+        Ok(Self {
+            writer,
+            schema,
+            scenario_count,
+            name,
+            batch_index: 0,
+            commits,
+        })
+    }
+
+    fn write(&mut self, pending: PendingBatch) -> Result<(), ArrowStreamError> {
+        let row_count = pending.rows.len();
+        let batch = record_batch(Arc::clone(&self.schema), self.scenario_count, pending)?;
+        self.writer.write(&batch)?;
+        self.commit(row_count)
+    }
+
+    /// Ends the stream, committing its end-of-stream marker as a batch of no rows.
+    fn finish(mut self) -> Result<(), ArrowStreamError> {
+        self.writer.finish()?;
+        self.commit(0)
+    }
+
+    /// Sends the bytes written since the previous commit, which exist nowhere else, so a
+    /// missing receiver is an error.
+    fn commit(&mut self, row_count: usize) -> Result<(), ArrowStreamError> {
+        let buffer = self.writer.get_mut();
+        let commit = ArrowStreamCommit {
+            name: self.name.clone(),
+            batch_index: self.batch_index,
+            row_count,
+            byte_offset: buffer.position,
+            bytes: Some(std::mem::take(&mut buffer.inner)),
+        };
+        self.batch_index += 1;
+        self.commits
+            .send(commit)
+            .map_err(|_| ArrowStreamError::MemorySinkDisconnected)
+    }
+}
+
+struct Internal {
+    pending: PendingBatch,
+    writer: BatchWriter,
+    metric_count: usize,
+    scenario_count: usize,
+}
+
+/// Output one metric set as a batched Arrow IPC stream, to a file through a worker thread or to
+/// memory (see [`ArrowStreamSink`]).
+#[derive(Debug)]
+pub struct ArrowStreamOutput {
+    meta: RecorderMeta,
+    metric_set_idx: MetricSetIndex,
+    batch_size: NonZeroUsize,
+    commits: Option<Sender<ArrowStreamCommit>>,
+    sink: ArrowStreamSink,
+}
+
+impl ArrowStreamOutput {
+    fn check_worker(internal: &Internal) -> Result<(), ArrowStreamError> {
+        let BatchWriter::Thread {
+            status_receiver,
+            worker,
+            ..
+        } = &internal.writer
+        else {
+            return Ok(());
+        };
+        match status_receiver.try_recv() {
+            Ok(WorkerStatus::Failed(message)) => Err(ArrowStreamError::WorkerFailed(message)),
+            Err(TryRecvError::Disconnected) if worker.is_finished() => Err(ArrowStreamError::WorkerDisconnected),
+            Err(_) => Ok(()),
+        }
+    }
+
+    /// Creates `filename` and starts a [`worker`] thread writing to it.
+    fn spawn_file_writer(
+        &self,
+        filename: &Path,
+        schema: Arc<Schema>,
+        scenario_count: usize,
+    ) -> Result<BatchWriter, ArrowStreamError> {
+        let file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(filename)
+            .map_err(|source| {
+                if source.kind() == io::ErrorKind::AlreadyExists {
+                    ArrowStreamError::OutputAlreadyExists {
+                        path: filename.to_path_buf(),
+                    }
+                } else {
+                    ArrowStreamError::Io {
+                        path: filename.to_path_buf(),
+                        source,
+                    }
+                }
+            })?;
+        let (sender, receiver) = mpsc::channel();
+        let (status_sender, status_receiver) = mpsc::channel();
+        let name = self.meta.name.clone();
+        let commits = self.commits.clone();
+        let worker = thread::spawn(move || {
+            let result = worker(
+                receiver,
+                status_sender.clone(),
+                file,
+                schema,
+                scenario_count,
+                name,
+                commits,
+            );
+            if let Err(error) = &result {
+                let _ = status_sender.send(WorkerStatus::Failed(error.to_string()));
+            }
+            result
+        });
+        Ok(BatchWriter::Thread {
+            sender,
+            status_receiver,
+            worker,
+        })
+    }
+
+    fn queue_pending(&self, internal: &mut Internal, force: bool) -> Result<(), ArrowStreamError> {
+        if internal.pending.rows.is_empty() || (!force && internal.pending.timestep_count < self.batch_size.get()) {
+            return Ok(());
+        }
+        let pending = std::mem::take(&mut internal.pending);
+        match &mut internal.writer {
+            BatchWriter::Thread { sender, .. } => sender
+                .send(WorkerMessage::Batch(pending))
+                .map_err(|_| ArrowStreamError::WorkerDisconnected),
+            BatchWriter::Memory(writer) => writer.write(pending),
+        }
+    }
+
+    fn append_values(
+        &self,
+        metric_set_states: &[Vec<MetricSetState>],
+        internal: &mut Internal,
+    ) -> Result<(), ArrowStreamError> {
+        let mut time_start_end: Option<(DateTime, DateTime)> = None;
+        if metric_set_states.len() != internal.scenario_count {
+            return Err(ArrowStreamError::ScenarioCount {
+                expected: internal.scenario_count,
+                actual: metric_set_states.len(),
+            });
+        }
+        let mut all_values: Vec<Option<f64>> = Vec::with_capacity(internal.metric_count * internal.scenario_count);
+
+        for scenario_states in metric_set_states.iter() {
+            let values = scenario_states
+                .get(*self.metric_set_idx.deref())
+                .ok_or(ArrowStreamError::MetricSetIndexNotFound {
+                    index: self.metric_set_idx,
+                })?
+                .current_values();
+            match values {
+                None => {
+                    // If the metric set is missing for this scenario, fill in `None` values for all metrics.
+                    all_values.extend(std::iter::repeat_n(None, internal.metric_count));
+                }
+                Some(values) => {
+                    if values.len() != internal.metric_count {
+                        return Err(ArrowStreamError::MetricCount {
+                            expected: internal.metric_count,
+                            actual: values.len(),
+                        });
+                    }
+                    if let Some((start, end)) = time_start_end {
+                        if values.iter().any(|value| value.start != start || value.end() != end) {
+                            return Err(ArrowStreamError::InconsistentPeriods);
+                        }
+                    } else {
+                        let first = values
+                            .first()
+                            .ok_or(ArrowStreamError::MetricCount { expected: 1, actual: 0 })?;
+
+                        if values
+                            .iter()
+                            .any(|value| value.start != first.start || value.end() != first.end())
+                        {
+                            return Err(ArrowStreamError::InconsistentPeriods);
+                        }
+
+                        time_start_end = Some((first.start, first.end()));
+                    }
+
+                    all_values.extend(values.iter().map(|value| Some(value.value)));
+                }
+            };
+        }
+
+        if let Some((start, end)) = time_start_end {
+            internal.pending.rows.push(ArrowStreamRow {
+                time_start: jiff_datetime_to_arrow_timestamp_ms(&start)
+                    .map_err(|error| ArrowStreamError::WorkerFailed(error.to_string()))?,
+                time_end: jiff_datetime_to_arrow_timestamp_ms(&end)
+                    .map_err(|error| ArrowStreamError::WorkerFailed(error.to_string()))?,
+                values: all_values,
+            });
+        }
+        Ok(())
+    }
+}
+
+impl Recorder for ArrowStreamOutput {
+    fn meta(&self) -> &RecorderMeta {
+        &self.meta
+    }
+
+    fn setup(
+        &self,
+        domain: &ModelDomain,
+        network: &Network,
+    ) -> Result<Option<Box<dyn RecorderInternalState>>, RecorderSetupError> {
+        let metric_set =
+            network
+                .get_metric_set(self.metric_set_idx)
+                .ok_or(ArrowStreamError::MetricSetIndexNotFound {
+                    index: self.metric_set_idx,
+                })?;
+
+        let schema = Arc::new(make_schema(metric_set.name(), domain.scenarios(), metric_set.metrics()));
+        let scenario_count = domain.scenarios().len();
+        let writer = match &self.sink {
+            ArrowStreamSink::File(filename) => self.spawn_file_writer(filename, schema, scenario_count)?,
+            ArrowStreamSink::Memory => {
+                let commits = self
+                    .commits
+                    .clone()
+                    .ok_or(ArrowStreamError::MemorySinkWithoutCommitSender)?;
+                BatchWriter::Memory(Box::new(MemoryWriter::new(
+                    schema,
+                    scenario_count,
+                    self.meta.name.clone(),
+                    commits,
+                )?))
+            }
+        };
+        Ok(Some(Box::new(Internal {
+            pending: PendingBatch::default(),
+            writer,
+            metric_count: metric_set.metrics().len(),
+            scenario_count,
+        })))
+    }
+
+    fn save(
+        &self,
+        _timestep: &Timestep,
+        _scenario_indices: &[ScenarioIndex],
+        _network: &Network,
+        _state: &[State],
+        metric_set_states: &[Vec<MetricSetState>],
+        internal_state: &mut Option<Box<dyn RecorderInternalState>>,
+    ) -> Result<(), RecorderSaveError> {
+        let internal = downcast_internal_state_mut::<Internal>(internal_state);
+        Self::check_worker(internal)?;
+        self.append_values(metric_set_states, internal)?;
+        internal.pending.timestep_count += 1;
+        self.queue_pending(internal, false)?;
+        Ok(())
+    }
+
+    fn flush(&self, internal_state: &mut Option<Box<dyn RecorderInternalState>>) -> Result<(), RecorderSaveError> {
+        let internal = downcast_internal_state_mut::<Internal>(internal_state);
+        Self::check_worker(internal)?;
+        self.queue_pending(internal, true)?;
+        // A memory writer committed the batch as it wrote it; a thread must be waited for.
+        if let BatchWriter::Thread { sender, .. } = &internal.writer {
+            let (response_sender, response_receiver) = mpsc::channel();
+            sender
+                .send(WorkerMessage::Flush(response_sender))
+                .map_err(|_| ArrowStreamError::WorkerDisconnected)?;
+            response_receiver
+                .recv()
+                .map_err(|_| ArrowStreamError::WorkerDisconnected)?;
+            Self::check_worker(internal)?;
+        }
+        Ok(())
+    }
+
+    fn finalise(
+        &self,
+        _network: &Network,
+        _scenario_indices: &[ScenarioIndex],
+        metric_set_states: &[Vec<MetricSetState>],
+        internal_state: Option<Box<dyn RecorderInternalState>>,
+    ) -> Result<Option<Box<dyn RecorderFinalResult>>, RecorderFinaliseError> {
+        let mut internal = downcast_internal_state::<Internal>(internal_state);
+        Self::check_worker(&internal)?;
+        self.append_values(metric_set_states, &mut internal)?;
+        self.queue_pending(&mut internal, true)?;
+        match internal.writer {
+            BatchWriter::Thread { sender, worker, .. } => {
+                sender
+                    .send(WorkerMessage::Finish)
+                    .map_err(|_| ArrowStreamError::WorkerDisconnected)?;
+                worker.join().map_err(|_| ArrowStreamError::WorkerPanicked)??;
+            }
+            BatchWriter::Memory(writer) => writer.finish()?,
+        }
+        Ok(None)
+    }
+}
+
+/// Builder for [`ArrowStreamOutput`].
+#[derive(Debug)]
+pub struct ArrowStreamOutputBuilder {
+    meta: RecorderMeta,
+    sink: ArrowStreamSink,
+    metric_set: String,
+    batch_size: NonZeroUsize,
+    commits: Option<Sender<ArrowStreamCommit>>,
+}
+
+impl ArrowStreamOutputBuilder {
+    pub fn new(name: &str, sink: ArrowStreamSink, metric_set: &str, batch_size: NonZeroUsize) -> Self {
+        Self {
+            meta: RecorderMeta::new(name),
+            sink,
+            metric_set: metric_set.to_string(),
+            batch_size,
+            commits: None,
+        }
+    }
+
+    /// Send a commit after every flushed record batch.
+    ///
+    /// A file's commits are best-effort notifications: dropping the receiver never stops the
+    /// run or the file's output. A memory sink's commits carry its output, so dropping the
+    /// receiver fails the recorder.
+    pub fn commit_sender(&mut self, sender: Sender<ArrowStreamCommit>) -> &mut Self {
+        self.commits = Some(sender);
+        self
+    }
+}
+
+impl RecorderBuilder for ArrowStreamOutputBuilder {
+    fn name(&self) -> &str {
+        &self.meta.name
+    }
+
+    fn build(self: Box<Self>, resolution_maps: &ResolutionMaps) -> Result<Box<dyn Recorder>, RecorderBuilderError> {
+        let metric_set_idx = resolution_maps
+            .metric_sets
+            .get(&self.metric_set)
+            .copied()
+            .ok_or_else(|| RecorderBuilderError::MetricSetNotFound {
+                name: self.metric_set.clone(),
+            })?;
+        Ok(Box::new(ArrowStreamOutput {
+            meta: self.meta,
+            metric_set_idx,
+            batch_size: self.batch_size,
+            commits: self.commits,
+            sink: self.sink,
+        }))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use arrow::ipc::reader::StreamReader;
+    use std::fs;
+
+    #[test]
+    fn metric_extension_round_trips_through_field_metadata() {
+        let metadata = MetricColumnMetadata {
+            metric_set: "outputs".to_string(),
+            name: "reservoir".to_string(),
+            attribute: "volume".to_string(),
+            ty: "node".to_string(),
+            sub_type: Some("storage".to_string()),
+        };
+        let field = MetricColumnExtension::new(metadata.clone()).field("reservoir", 2);
+        assert_eq!(
+            MetricColumnExtension::try_new_from_field_metadata(field.data_type(), field.metadata())
+                .unwrap()
+                .metadata(),
+            &metadata
+        );
+    }
+
+    /// Two metrics over two scenarios.
+    fn two_metric_schema() -> Arc<Schema> {
+        Arc::new(Schema::new(vec![
+            Field::new("time_start", DataType::Timestamp(TimeUnit::Millisecond, None), false),
+            Field::new("time_end", DataType::Timestamp(TimeUnit::Millisecond, None), false),
+            MetricColumnExtension::new(MetricColumnMetadata {
+                metric_set: "outputs".to_string(),
+                name: "flow".to_string(),
+                attribute: "outflow".to_string(),
+                ty: "node".to_string(),
+                sub_type: None,
+            })
+            .field("flow", 2),
+            MetricColumnExtension::new(MetricColumnMetadata {
+                metric_set: "outputs".to_string(),
+                name: "volume".to_string(),
+                attribute: "volume".to_string(),
+                ty: "node".to_string(),
+                sub_type: None,
+            })
+            .field("volume", 2),
+        ]))
+    }
+
+    /// Two timesteps of [`two_metric_schema`]'s metrics, the first missing its second scenario.
+    fn two_row_batch() -> PendingBatch {
+        PendingBatch {
+            timestep_count: 2,
+            rows: vec![
+                ArrowStreamRow {
+                    time_start: 0,
+                    time_end: 1,
+                    values: vec![Some(1.0), Some(10.0), None, None],
+                },
+                ArrowStreamRow {
+                    time_start: 1,
+                    time_end: 2,
+                    values: vec![Some(2.0), Some(20.0), Some(3.0), Some(30.0)],
+                },
+            ],
+        }
+    }
+
+    #[test]
+    fn worker_writes_batched_rows_and_commits_after_flush() {
+        let path = std::env::temp_dir().join(format!("pywr-arrow-stream-{}.arrow", std::process::id()));
+        let (sender, receiver) = mpsc::channel();
+        let (status_sender, _status_receiver) = mpsc::channel();
+        let (commit_sender, commit_receiver) = mpsc::channel();
+        let file = File::create(&path).unwrap();
+        let handle = thread::spawn(move || {
+            worker(
+                receiver,
+                status_sender,
+                file,
+                two_metric_schema(),
+                2,
+                "results".to_string(),
+                Some(commit_sender),
+            )
+        });
+        sender.send(WorkerMessage::Batch(two_row_batch())).unwrap();
+        let (flush_sender, flush_receiver) = mpsc::channel();
+        sender.send(WorkerMessage::Flush(flush_sender)).unwrap();
+        flush_receiver.recv().unwrap();
+        let commit = commit_receiver.recv().unwrap();
+        assert_eq!(commit.name, "results");
+        assert_eq!(commit.batch_index, 0);
+        assert_eq!(commit.row_count, 2);
+        assert!(commit.byte_offset > 0);
+        assert!(commit.bytes.is_none());
+        assert_eq!(fs::metadata(&path).unwrap().len(), commit.byte_offset);
+        // With no commit receiver, the file worker writes on.
+        drop(commit_receiver);
+        sender.send(WorkerMessage::Batch(two_row_batch())).unwrap();
+        sender.send(WorkerMessage::Finish).unwrap();
+        handle.join().unwrap().unwrap();
+
+        let mut reader = StreamReader::try_new_buffered(File::open(&path).unwrap(), None).unwrap();
+        let batch = reader.next().unwrap().unwrap();
+        assert_eq!(batch.num_rows(), 2);
+        let values = batch.column(2).as_any().downcast_ref::<FixedSizeListArray>().unwrap();
+        assert_eq!(values.value_length(), 2);
+        assert_eq!(
+            values.values().as_any().downcast_ref::<Float64Array>().unwrap(),
+            &Float64Array::from(vec![Some(1.0), None, Some(2.0), Some(3.0)])
+        );
+        let volumes = batch.column(3).as_any().downcast_ref::<FixedSizeListArray>().unwrap();
+        assert_eq!(
+            volumes.values().as_any().downcast_ref::<Float64Array>().unwrap(),
+            &Float64Array::from(vec![Some(10.0), None, Some(20.0), Some(30.0)])
+        );
+        assert_eq!(reader.next().unwrap().unwrap().num_rows(), 2);
+        assert!(reader.next().is_none());
+        fs::remove_file(path).unwrap();
+    }
+
+    /// A memory writer over [`two_metric_schema`], and the receiver of its commits.
+    fn memory_writer() -> (MemoryWriter, Receiver<ArrowStreamCommit>) {
+        let (commit_sender, commit_receiver) = mpsc::channel();
+        let writer = MemoryWriter::new(two_metric_schema(), 2, "results".to_string(), commit_sender).unwrap();
+        (writer, commit_receiver)
+    }
+
+    #[test]
+    fn memory_writer_drains_each_batch_and_the_stream_end_into_commits() {
+        let (mut writer, commit_receiver) = memory_writer();
+        writer.write(two_row_batch()).unwrap();
+        writer.write(two_row_batch()).unwrap();
+        writer.finish().unwrap();
+
+        let commits: Vec<_> = commit_receiver.try_iter().collect();
+        let batch_rows: Vec<_> = commits
+            .iter()
+            .map(|commit| (commit.batch_index, commit.row_count))
+            .collect();
+        assert_eq!(batch_rows, [(0, 2), (1, 2), (2, 0)]);
+        let mut stream = Vec::new();
+        for commit in &commits {
+            stream.extend_from_slice(commit.bytes.as_deref().unwrap());
+            assert_eq!(commit.byte_offset, stream.len() as u64);
+        }
+        // The last commit is the end-of-stream marker alone.
+        assert_eq!(
+            commits[2].bytes.as_deref(),
+            Some([0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0].as_slice())
+        );
+
+        let batches: Vec<_> = StreamReader::try_new(stream.as_slice(), None)
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert_eq!(batches.len(), 2);
+    }
+
+    #[test]
+    fn memory_writer_with_no_batches_commits_a_readable_empty_stream() {
+        let (writer, commit_receiver) = memory_writer();
+        writer.finish().unwrap();
+
+        let commit = commit_receiver.try_recv().unwrap();
+        assert_eq!((commit.batch_index, commit.row_count), (0, 0));
+        let bytes = commit.bytes.unwrap();
+        let mut reader = StreamReader::try_new(bytes.as_slice(), None).unwrap();
+        assert_eq!(reader.schema(), two_metric_schema());
+        assert!(reader.next().is_none());
+    }
+
+    #[test]
+    fn memory_writer_fails_once_its_commits_have_no_receiver() {
+        let (mut writer, commit_receiver) = memory_writer();
+        drop(commit_receiver);
+        let result = writer.write(two_row_batch());
+        assert!(matches!(result, Err(ArrowStreamError::MemorySinkDisconnected)));
+
+        let (mut writer, commit_receiver) = memory_writer();
+        writer.write(two_row_batch()).unwrap();
+        drop(commit_receiver);
+        let result = writer.finish();
+        assert!(matches!(result, Err(ArrowStreamError::MemorySinkDisconnected)));
+    }
+}

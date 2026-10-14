@@ -1,28 +1,25 @@
-use crate::aggregated_node::AggregatedNodeIndex;
-use crate::aggregated_storage_node::AggregatedStorageNodeIndex;
-use crate::edge::EdgeIndex;
+use crate::NodeIndex;
 use crate::models::MultiNetworkTransferIndex;
-use crate::network::Network;
-use crate::node::{NodeError, NodeIndex};
-use crate::parameters::{ConstParameterIndex, GeneralParameterIndex, ParameterIndex, SimpleParameterIndex};
-use crate::state::{
-    ConstParameterValues, MultiValue, NetworkStateError, ParameterReturnValue, SimpleParameterValues, State, StateError,
+use crate::network::{
+    AggregatedNodeIndex, AggregatedStorageNodeIndex, EdgeIndex, Network, ResolutionMaps, UnresolvedEdge,
+    VirtualStorageIndex,
 };
-use crate::virtual_storage::VirtualStorageIndex;
+use crate::node::{NodeError, UnresolvedNode};
+use crate::parameters::{
+    ConstParameterIndex, GeneralAfterValueIndex, GeneralBeforeValueIndex, ParameterIndex, ParameterName,
+    SimpleParameterIndex, UnresolvedParameterReturnValue,
+};
+use crate::state::{
+    ConstParameterValues, ConstParameterValuesError, MultiValue, NetworkStateError, SimpleParameterValues,
+    SimpleParameterValuesError, State, StateError,
+};
 use num::Zero;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum ConstantMetricF64Error {
-    #[error("Parameter not found: {index}")]
-    ParameterNotFound { index: ConstParameterIndex<f64> },
-    #[error("Index parameter not found: {index}")]
-    IndexParameterNotFound { index: ConstParameterIndex<u64> },
-    #[error("Multi-parameter not found: {index}, key: {key}")]
-    MultiParameterNotFound {
-        index: ConstParameterIndex<MultiValue>,
-        key: String,
-    },
+    #[error("Simple parameter value error.")]
+    ConstParameterValuesError(#[from] ConstParameterValuesError),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -39,19 +36,9 @@ pub enum ConstantMetricF64 {
 impl ConstantMetricF64 {
     pub fn get_value(&self, values: &ConstParameterValues) -> Result<f64, ConstantMetricF64Error> {
         match self {
-            ConstantMetricF64::ParameterValue(idx) => values
-                .get_const_parameter_f64(*idx)
-                .ok_or(ConstantMetricF64Error::ParameterNotFound { index: *idx }),
-            ConstantMetricF64::IndexParameterValue(idx) => values
-                .get_const_parameter_u64(*idx)
-                .ok_or(ConstantMetricF64Error::IndexParameterNotFound { index: *idx })
-                .map(|v| v as f64),
-            ConstantMetricF64::MultiParameterValue { index, key } => values
-                .get_const_multi_parameter_f64(*index, key)
-                .ok_or_else(|| ConstantMetricF64Error::MultiParameterNotFound {
-                    index: *index,
-                    key: key.clone(),
-                }),
+            ConstantMetricF64::ParameterValue(idx) => Ok(values.get_f64(*idx)?),
+            ConstantMetricF64::IndexParameterValue(idx) => Ok(values.get_u64(*idx)? as f64),
+            ConstantMetricF64::MultiParameterValue { index, key } => Ok(values.get_multi_f64(*index, key)?),
             ConstantMetricF64::Constant(v) => Ok(*v),
         }
     }
@@ -67,25 +54,22 @@ impl ConstantMetricF64 {
 
 #[derive(Debug, Error)]
 pub enum SimpleMetricF64Error {
-    #[error("Parameter not found: {index}")]
-    ParameterNotFound { index: SimpleParameterIndex<f64> },
-    #[error("Index parameter not found: {index}")]
-    IndexParameterNotFound { index: SimpleParameterIndex<u64> },
-    #[error("Multi-parameter not found: {index}, key: {key}")]
-    MultiParameterNotFound {
-        index: SimpleParameterIndex<MultiValue>,
-        key: String,
-    },
-    #[error("Constant metric error: {0}")]
+    #[error("Simple parameter value error.")]
+    SimpleParameterValuesError(#[from] SimpleParameterValuesError),
+    #[error("Constant metric error.")]
     ConstantMetricError(#[from] ConstantMetricF64Error),
-    #[error("Cannot simplify metric to a constant metric")]
+    #[error("Cannot simplify metric to a constant metric.")]
     CannotSimplifyMetric,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum SimpleMetricF64 {
-    ParameterValue(SimpleParameterIndex<f64>),
-    IndexParameterValue(SimpleParameterIndex<u64>),
+    ParameterValue {
+        index: SimpleParameterIndex<f64>,
+    },
+    IndexParameterValue {
+        index: SimpleParameterIndex<u64>,
+    },
     MultiParameterValue {
         index: SimpleParameterIndex<MultiValue>,
         key: String,
@@ -96,19 +80,9 @@ pub enum SimpleMetricF64 {
 impl SimpleMetricF64 {
     pub fn get_value(&self, values: &SimpleParameterValues) -> Result<f64, SimpleMetricF64Error> {
         match self {
-            SimpleMetricF64::ParameterValue(idx) => values
-                .get_simple_parameter_f64(*idx)
-                .ok_or(SimpleMetricF64Error::ParameterNotFound { index: *idx }),
-            SimpleMetricF64::IndexParameterValue(idx) => values
-                .get_simple_parameter_u64(*idx)
-                .ok_or(SimpleMetricF64Error::IndexParameterNotFound { index: *idx })
-                .map(|v| v as f64),
-            SimpleMetricF64::MultiParameterValue { index, key } => values
-                .get_simple_multi_parameter_f64(*index, key)
-                .ok_or_else(|| SimpleMetricF64Error::MultiParameterNotFound {
-                    index: *index,
-                    key: key.clone(),
-                }),
+            SimpleMetricF64::ParameterValue { index } => Ok(values.get_f64(*index)?),
+            SimpleMetricF64::IndexParameterValue { index } => Ok(values.get_u64(*index)? as f64),
+            SimpleMetricF64::MultiParameterValue { index, key } => Ok(values.get_multi_f64(*index, key)?),
             SimpleMetricF64::Constant(m) => Ok(m.get_value(values.get_constant_values())?),
         }
     }
@@ -135,35 +109,40 @@ impl SimpleMetricF64 {
     }
 }
 
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub enum ParameterValueSource<T> {
+    Before(GeneralBeforeValueIndex<T>),
+    After(GeneralAfterValueIndex<T>),
+    // Returns the value corresponding to the requested phase.
+    Requested {
+        before: GeneralBeforeValueIndex<T>,
+        after: GeneralAfterValueIndex<T>,
+    },
+}
 #[derive(Debug, Error)]
 pub enum MetricF64Error {
-    #[error("Parameter not found: {index}")]
-    ParameterNotFound { index: SimpleParameterIndex<f64> },
-    #[error("Index parameter not found: {index}")]
-    IndexParameterNotFound { index: SimpleParameterIndex<u64> },
-    #[error("Multi-parameter not found: {index}, key: {key}")]
-    MultiParameterNotFound {
-        index: SimpleParameterIndex<MultiValue>,
-        key: String,
-    },
     #[error("Node index not found: {0}")]
     NodeIndexNotFound(NodeIndex),
     #[error("Virtual storage node index not found: {0}")]
     VirtualStorageIndexNotFound(VirtualStorageIndex),
-    #[error("Node error: {0}")]
-    NodeError(#[from] Box<NodeError>),
+    #[error("Error getting node max flow.")]
+    NodeGetMaxFlowError(#[source] Box<NodeError>),
+    #[error("Error getting node max volume.")]
+    NodeGetMaxVolumeError(#[source] Box<NodeError>),
     #[error("Aggregated node index not found: {0}")]
     AggregatedNodeIndexNotFound(AggregatedNodeIndex),
     #[error("Aggregated storage node index not found: {0}")]
     AggregatedStorageNodeIndexNotFound(AggregatedStorageNodeIndex),
-    #[error("Network state error: {0}")]
+    #[error("Network state error.")]
     NetworkStateError(#[from] NetworkStateError),
-    #[error("State error: {0}")]
+    #[error("State error.")]
     StateError(#[from] StateError),
-    #[error("Constant metric error: {0}")]
+    #[error("Simple metric error.")]
     SimpleMetricError(#[from] SimpleMetricF64Error),
     #[error("Cannot simplify metric to a simple metric")]
     CannotSimplifyMetric,
+    #[error("General parameter with has no key: {key}")]
+    GeneralMultiValueParameterKeyNotFound { key: String },
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -176,25 +155,22 @@ pub enum MetricF64 {
     NodeMaxVolume(NodeIndex),
     AggregatedNodeInFlow(AggregatedNodeIndex),
     AggregatedNodeOutFlow(AggregatedNodeIndex),
-    AggregatedNodeVolume(AggregatedStorageNodeIndex),
-    AggregatedNodeProportionalVolume(AggregatedStorageNodeIndex),
+    AggregatedStorageNodeVolume(AggregatedStorageNodeIndex),
+    AggregatedStorageNodeProportionalVolume(AggregatedStorageNodeIndex),
     EdgeFlow(EdgeIndex),
     MultiEdgeFlow {
         indices: Vec<EdgeIndex>,
         name: String,
     },
-    ParameterValue {
-        index: GeneralParameterIndex<f64>,
-        return_value: ParameterReturnValue,
+    ParameterF64 {
+        source: ParameterValueSource<f64>,
     },
-    IndexParameterValue {
-        index: GeneralParameterIndex<u64>,
-        return_value: ParameterReturnValue,
+    ParameterU64 {
+        source: ParameterValueSource<u64>,
     },
-    MultiParameterValue {
-        index: GeneralParameterIndex<MultiValue>,
+    ParameterMulti {
+        source: ParameterValueSource<MultiValue>,
         key: String,
-        return_value: ParameterReturnValue,
     },
     VirtualStorageVolume(VirtualStorageIndex),
     VirtualStorageProportionalVolume(VirtualStorageIndex),
@@ -212,6 +188,12 @@ pub enum MetricF64 {
     Simple(SimpleMetricF64),
 }
 
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub enum CalculationPhase {
+    Before,
+    After,
+}
+
 impl MetricF64 {
     pub fn get_value(&self, network: &Network, state: &State) -> Result<f64, MetricF64Error> {
         match self {
@@ -221,7 +203,7 @@ impl MetricF64 {
                 .get_node(idx)
                 .ok_or(MetricF64Error::NodeIndexNotFound(*idx))?
                 .get_max_flow(network, state)
-                .map_err(|e| MetricF64Error::NodeError(Box::new(e)))?),
+                .map_err(|e| MetricF64Error::NodeGetMaxFlowError(Box::new(e)))?),
             MetricF64::NodeVolume(idx) => Ok(state.get_network_state().get_node_volume(idx)?),
             MetricF64::NodeProportionalVolume(idx) => {
                 Ok(state.get_network_state().get_node_proportional_volume(idx)?)
@@ -230,7 +212,7 @@ impl MetricF64 {
                 .get_node(idx)
                 .ok_or(MetricF64Error::NodeIndexNotFound(*idx))?
                 .get_max_volume(state)
-                .map_err(|e| MetricF64Error::NodeError(Box::new(e)))?),
+                .map_err(|e| MetricF64Error::NodeGetMaxVolumeError(Box::new(e)))?),
             MetricF64::AggregatedNodeInFlow(idx) => {
                 let node = network
                     .get_aggregated_node(idx)
@@ -270,15 +252,36 @@ impl MetricF64 {
                     .sum::<Result<_, _>>()?;
                 Ok(flow)
             }
-            MetricF64::ParameterValue { index, return_value } => Ok(state.get_parameter_value(*index, *return_value)?),
-            MetricF64::IndexParameterValue { index, return_value } => {
-                Ok(state.get_parameter_index(*index, *return_value)? as f64)
+            MetricF64::ParameterF64 { source } => match source {
+                ParameterValueSource::Before(index) => Ok(state.get_general_parameter_f64_before(*index)?),
+                ParameterValueSource::After(index) => Ok(state.get_general_parameter_f64_after(*index)?),
+                ParameterValueSource::Requested { before, after } => match state.get_calculation_phase() {
+                    CalculationPhase::Before => Ok(state.get_general_parameter_f64_before(*before)?),
+                    CalculationPhase::After => Ok(state.get_general_parameter_f64_after(*after)?),
+                },
+            },
+            MetricF64::ParameterU64 { source } => match source {
+                ParameterValueSource::Before(index) => Ok(state.get_general_parameter_u64_before(*index)? as f64),
+                ParameterValueSource::After(index) => Ok(state.get_general_parameter_u64_after(*index)? as f64),
+                ParameterValueSource::Requested { before, after } => match state.get_calculation_phase() {
+                    CalculationPhase::Before => Ok(state.get_general_parameter_u64_before(*before)? as f64),
+                    CalculationPhase::After => Ok(state.get_general_parameter_u64_after(*after)? as f64),
+                },
+            },
+            MetricF64::ParameterMulti { source, key } => {
+                let mv = match source {
+                    ParameterValueSource::Before(index) => state.get_general_parameter_multi_before(*index)?,
+                    ParameterValueSource::After(index) => state.get_general_parameter_multi_after(*index)?,
+                    ParameterValueSource::Requested { before, after } => match state.get_calculation_phase() {
+                        CalculationPhase::Before => state.get_general_parameter_multi_before(*before)?,
+                        CalculationPhase::After => state.get_general_parameter_multi_after(*after)?,
+                    },
+                };
+                let value = mv
+                    .get_value(key)
+                    .ok_or_else(|| MetricF64Error::GeneralMultiValueParameterKeyNotFound { key: key.clone() })?;
+                Ok(*value)
             }
-            MetricF64::MultiParameterValue {
-                index,
-                key,
-                return_value,
-            } => Ok(state.get_multi_parameter_value(*index, key, *return_value)?),
             MetricF64::VirtualStorageVolume(idx) => Ok(state.get_network_state().get_virtual_storage_volume(idx)?),
             MetricF64::VirtualStorageProportionalVolume(idx) => {
                 Ok(state.get_network_state().get_virtual_storage_proportional_volume(idx)?)
@@ -287,7 +290,7 @@ impl MetricF64 {
                 .get_virtual_storage_node(idx)
                 .ok_or(MetricF64Error::VirtualStorageIndexNotFound(*idx))?
                 .get_max_volume(state)?),
-            MetricF64::AggregatedNodeVolume(idx) => {
+            MetricF64::AggregatedStorageNodeVolume(idx) => {
                 let node = network
                     .get_aggregated_storage_node(*idx)
                     .ok_or(MetricF64Error::AggregatedStorageNodeIndexNotFound(*idx))?;
@@ -301,7 +304,7 @@ impl MetricF64 {
 
                 Ok(volume)
             }
-            MetricF64::AggregatedNodeProportionalVolume(idx) => {
+            MetricF64::AggregatedStorageNodeProportionalVolume(idx) => {
                 let node = network
                     .get_aggregated_storage_node(*idx)
                     .ok_or(MetricF64Error::AggregatedStorageNodeIndexNotFound(*idx))?;
@@ -392,6 +395,36 @@ impl TryFrom<SimpleMetricF64> for ConstantMetricF64 {
     }
 }
 
+impl TryFrom<MetricF64> for ConstantMetricF64 {
+    type Error = MetricF64Error;
+
+    fn try_from(value: MetricF64) -> Result<Self, Self::Error> {
+        let simple_metric: SimpleMetricF64 = value.try_into()?;
+        let constant_metric: ConstantMetricF64 = simple_metric.try_into()?;
+        Ok(constant_metric)
+    }
+}
+
+/// Try to convert a slice of [`MetricF64`] into a vector of [`ConstantMetricF64`].
+/// If any of the metrics cannot be converted, return `None`.
+pub fn try_into_constant_metrics_f64(metrics: &[MetricF64]) -> Option<Vec<ConstantMetricF64>> {
+    metrics
+        .iter()
+        .map(|m| m.clone().try_into())
+        .collect::<Result<Vec<_>, _>>()
+        .ok()
+}
+
+/// Try to convert a slice of [`MetricF64`] into a vector of [`SimpleMetricF64`].
+/// If any of the metrics cannot be converted, return `None`.
+pub fn try_into_simple_metrics_f64(metrics: &[MetricF64]) -> Option<Vec<SimpleMetricF64>> {
+    metrics
+        .iter()
+        .map(|m| m.clone().try_into())
+        .collect::<Result<Vec<_>, _>>()
+        .ok()
+}
+
 impl From<f64> for ConstantMetricF64 {
     fn from(v: f64) -> Self {
         ConstantMetricF64::Constant(v)
@@ -415,37 +448,571 @@ where
     }
 }
 
-impl TryFrom<ParameterIndex<f64>> for SimpleMetricF64 {
-    type Error = MetricF64Error;
-    fn try_from(idx: ParameterIndex<f64>) -> Result<Self, Self::Error> {
-        match idx {
-            ParameterIndex::Simple(idx) => Ok(Self::ParameterValue(idx)),
-            ParameterIndex::Const(idx) => Ok(Self::Constant(ConstantMetricF64::ParameterValue(idx))),
-            ParameterIndex::General(_) => Err(MetricF64Error::CannotSimplifyMetric),
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum MetricConsumerPhase {
+    #[default]
+    Before,
+    After,
+    Both,
+}
+
+#[derive(Debug, Error)]
+pub enum MetricF64ResolutionError {
+    #[error("Node not found when resolving F64 metric: {node}")]
+    NodeNotFound { node: UnresolvedNode },
+    #[error("Parameter not found when resolving F64 metric: {parameter}")]
+    ParameterNotFound { parameter: ParameterName },
+    #[error("Aggregated node not found when resolving F64 metric: {aggregated_node}")]
+    AggregatedNodeNotFound { aggregated_node: UnresolvedNode },
+    #[error("Aggregated storage node not found when resolving F64 metric: {aggregated_node}")]
+    AggregatedStorageNodeNotFound { aggregated_node: UnresolvedNode },
+    #[error("Edge not found when resolving F64 metric: {edge}")]
+    EdgeNotFound { edge: UnresolvedEdge },
+    #[error("Virtual storage node not found when resolving F64 metric: {node}")]
+    VirtualStorageNodeNotFound { node: UnresolvedNode },
+    #[error("Inter-network transfer not found when resolving F64 metric: {transfer}")]
+    InterNetworkTransferNotFound { transfer: String },
+    #[error(
+        "Parameter not registered in the correct phase when resolving F64 metric: {parameter}, consumer phase: {consumer_phase:?}, return value: {return_value:?}"
+    )]
+    ParameterNotRegisteredInCorrectPhase {
+        parameter: ParameterName,
+        consumer_phase: MetricConsumerPhase,
+        return_value: UnresolvedParameterReturnValue,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum UnresolvedMetricF64 {
+    NodeInFlow(UnresolvedNode),
+    NodeOutFlow(UnresolvedNode),
+    NodeVolume(UnresolvedNode),
+    NodeProportionalVolume(UnresolvedNode),
+    NodeMaxVolume(UnresolvedNode),
+    NodeMaxFlow(UnresolvedNode),
+    AggregatedNodeInFlow(UnresolvedNode),
+    AggregatedNodeOutFlow(UnresolvedNode),
+    AggregatedStorageNodeVolume(UnresolvedNode),
+    AggregatedStorageNodeProportionalVolume(UnresolvedNode),
+    EdgeFlow(UnresolvedEdge),
+    MultiEdgeFlow {
+        edges: Vec<UnresolvedEdge>,
+        name: String,
+    },
+    ParameterValue {
+        name: ParameterName,
+        return_value: UnresolvedParameterReturnValue,
+    },
+    MultiParameterValue {
+        name: ParameterName,
+        key: String,
+        return_value: UnresolvedParameterReturnValue,
+    },
+    VirtualStorageVolume(UnresolvedNode),
+    VirtualStorageProportionalVolume(UnresolvedNode),
+    MultiNodeInFlow {
+        nodes: Vec<UnresolvedNode>,
+        name: String,
+    },
+    MultiNodeOutFlow {
+        nodes: Vec<UnresolvedNode>,
+        name: String,
+    },
+
+    InterNetworkTransfer(String),
+    Constant(f64),
+}
+
+impl UnresolvedMetricF64 {
+    /// Create a new [`Self::ParameterValue`] variant with the given parameter name and a return
+    /// value of [`UnresolvedParameterReturnValue::Before`].
+    pub fn new_parameter_before<N: Into<ParameterName>>(name: N) -> Self {
+        Self::ParameterValue {
+            name: name.into(),
+            return_value: UnresolvedParameterReturnValue::Before,
+        }
+    }
+
+    /// Create a new [`Self::MultiParameterValue`] variant with the given parameter name and a return
+    /// value of [`UnresolvedParameterReturnValue::Before`].
+    pub fn new_parameter_before_key<N: Into<ParameterName>>(name: N, key: &str) -> Self {
+        Self::MultiParameterValue {
+            name: name.into(),
+            key: key.to_string(),
+            return_value: UnresolvedParameterReturnValue::Before,
+        }
+    }
+
+    /// Create a new [`Self::ParameterValue`] variant with the given parameter name and a return
+    /// value of [`UnresolvedParameterReturnValue::After`].
+    pub fn new_parameter_after<N: Into<ParameterName>>(name: N) -> Self {
+        Self::ParameterValue {
+            name: name.into(),
+            return_value: UnresolvedParameterReturnValue::After,
+        }
+    }
+
+    /// Create a new [`Self::ParameterValue`] variant with the given parameter name and a return
+    /// value of [`UnresolvedParameterReturnValue::AfterOrElseInitial`].
+    pub fn new_parameter_after_else_initial<N: Into<ParameterName>>(name: N) -> Self {
+        Self::ParameterValue {
+            name: name.into(),
+            return_value: UnresolvedParameterReturnValue::AfterOrElseInitial,
+        }
+    }
+
+    /// Create a new [`Self::MultiParameterValue`] variant with the given parameter name and a return
+    /// value of [`UnresolvedParameterReturnValue::After`].
+    pub fn new_parameter_after_key<N: Into<ParameterName>>(name: N, key: &str) -> Self {
+        Self::MultiParameterValue {
+            name: name.into(),
+            key: key.to_string(),
+            return_value: UnresolvedParameterReturnValue::After,
+        }
+    }
+
+    /// Returns true if the constant value is a [`UnresolvedMetricF64::Constant`].
+    pub fn is_constant(&self) -> bool {
+        matches!(self, UnresolvedMetricF64::Constant(_))
+    }
+
+    /// Returns true if the constant value is a [`UnresolvedMetricF64::Constant`] with a value of zero.
+    pub fn is_constant_zero(&self) -> bool {
+        matches!(self, UnresolvedMetricF64::Constant(v) if *v == 0.0)
+    }
+
+    /// Resolve the [`UnresolvedMetricF64`] into a [`MetricF64`] using the provided [`ResolutionMaps`].
+    ///
+    /// The `consumer_phase` parameter is used to determine which phase the consumer will be using
+    /// the metric in. This is important for resolving parameter metrics, as the phase determines whether
+    /// the value of the parameter to use is available. If the consumer phase is
+    /// [`MetricConsumerPhase::Before`], the metric will must be available in the "before" phase.
+    /// If the consumer phase is [`MetricConsumerPhase::After`], the metric must be available in the
+    /// "after" phase.
+    /// An error will be returned if the consumer phase is not compatible with what the parameter
+    /// supports.
+    ///
+    /// If any data required to resolve the metric is missing, an error will be returned.
+    pub fn resolve(
+        &self,
+        maps: &ResolutionMaps,
+        consumer_phase: MetricConsumerPhase,
+    ) -> Result<MetricF64, MetricF64ResolutionError> {
+        let m = match self {
+            UnresolvedMetricF64::NodeInFlow(unresolved) => {
+                let idx = maps
+                    .nodes
+                    .get(unresolved)
+                    .ok_or_else(|| MetricF64ResolutionError::NodeNotFound {
+                        node: unresolved.clone(),
+                    })?;
+                MetricF64::NodeInFlow(*idx)
+            }
+            UnresolvedMetricF64::NodeOutFlow(unresolved) => {
+                let idx = maps
+                    .nodes
+                    .get(unresolved)
+                    .ok_or_else(|| MetricF64ResolutionError::NodeNotFound {
+                        node: unresolved.clone(),
+                    })?;
+                MetricF64::NodeOutFlow(*idx)
+            }
+            UnresolvedMetricF64::NodeVolume(unresolved) => {
+                let idx = maps
+                    .nodes
+                    .get(unresolved)
+                    .ok_or_else(|| MetricF64ResolutionError::NodeNotFound {
+                        node: unresolved.clone(),
+                    })?;
+                MetricF64::NodeVolume(*idx)
+            }
+            UnresolvedMetricF64::NodeProportionalVolume(unresolved) => {
+                let idx = maps
+                    .nodes
+                    .get(unresolved)
+                    .ok_or_else(|| MetricF64ResolutionError::NodeNotFound {
+                        node: unresolved.clone(),
+                    })?;
+
+                MetricF64::NodeProportionalVolume(*idx)
+            }
+            UnresolvedMetricF64::NodeMaxVolume(unresolved) => {
+                let idx = maps
+                    .nodes
+                    .get(unresolved)
+                    .ok_or_else(|| MetricF64ResolutionError::NodeNotFound {
+                        node: unresolved.clone(),
+                    })?;
+                MetricF64::NodeMaxVolume(*idx)
+            }
+            UnresolvedMetricF64::NodeMaxFlow(unresolved) => {
+                let idx = maps
+                    .nodes
+                    .get(unresolved)
+                    .ok_or_else(|| MetricF64ResolutionError::NodeNotFound {
+                        node: unresolved.clone(),
+                    })?;
+                MetricF64::NodeMaxFlow(*idx)
+            }
+            UnresolvedMetricF64::AggregatedNodeInFlow(unresolved) => {
+                let idx = maps.aggregated_nodes.get(unresolved).ok_or_else(|| {
+                    MetricF64ResolutionError::AggregatedNodeNotFound {
+                        aggregated_node: unresolved.clone(),
+                    }
+                })?;
+                MetricF64::AggregatedNodeInFlow(*idx)
+            }
+            UnresolvedMetricF64::AggregatedNodeOutFlow(unresolved) => {
+                let idx = maps.aggregated_nodes.get(unresolved).ok_or_else(|| {
+                    MetricF64ResolutionError::AggregatedNodeNotFound {
+                        aggregated_node: unresolved.clone(),
+                    }
+                })?;
+                MetricF64::AggregatedNodeOutFlow(*idx)
+            }
+            UnresolvedMetricF64::AggregatedStorageNodeVolume(unresolved) => {
+                let idx = maps.aggregated_storage_nodes.get(unresolved).ok_or_else(|| {
+                    MetricF64ResolutionError::AggregatedStorageNodeNotFound {
+                        aggregated_node: unresolved.clone(),
+                    }
+                })?;
+                MetricF64::AggregatedStorageNodeVolume(*idx)
+            }
+            UnresolvedMetricF64::AggregatedStorageNodeProportionalVolume(unresolved) => {
+                let idx = maps.aggregated_storage_nodes.get(unresolved).ok_or_else(|| {
+                    MetricF64ResolutionError::AggregatedStorageNodeNotFound {
+                        aggregated_node: unresolved.clone(),
+                    }
+                })?;
+                MetricF64::AggregatedStorageNodeProportionalVolume(*idx)
+            }
+            UnresolvedMetricF64::EdgeFlow(unresolved) => {
+                let idx = maps
+                    .edges
+                    .get(unresolved)
+                    .ok_or_else(|| MetricF64ResolutionError::EdgeNotFound {
+                        edge: unresolved.clone(),
+                    })?;
+                MetricF64::EdgeFlow(*idx)
+            }
+            UnresolvedMetricF64::MultiEdgeFlow { edges, name } => {
+                let resolved = edges
+                    .iter()
+                    .map(|unresolved| {
+                        maps.edges
+                            .get(unresolved)
+                            .copied()
+                            .ok_or_else(|| MetricF64ResolutionError::EdgeNotFound {
+                                edge: unresolved.clone(),
+                            })
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                MetricF64::MultiEdgeFlow {
+                    indices: resolved,
+                    name: name.clone(),
+                }
+            }
+            UnresolvedMetricF64::ParameterValue { name, return_value } => {
+                match maps.parameters_f64.get(name) {
+                    Some(idx) => resolve_parameter_index_f64_to_metric_f64(name, *idx, *return_value, consumer_phase)?,
+                    None => {
+                        // Not found as a F64 parameter; try index parameter instead.
+                        let idx = maps.parameters_u64.get(name).ok_or_else(|| {
+                            MetricF64ResolutionError::ParameterNotFound {
+                                parameter: name.clone(),
+                            }
+                        })?;
+
+                        resolve_parameter_index_u64_to_metric_f64(name, *idx, *return_value, consumer_phase)?
+                    }
+                }
+            }
+            UnresolvedMetricF64::MultiParameterValue {
+                name,
+                key,
+                return_value,
+            } => {
+                let idx =
+                    maps.parameters_multi
+                        .get(name)
+                        .ok_or_else(|| MetricF64ResolutionError::ParameterNotFound {
+                            parameter: name.clone(),
+                        })?;
+
+                resolve_parameter_index_multi_to_metric_f64(name, idx.clone(), key, *return_value, consumer_phase)?
+            }
+            UnresolvedMetricF64::VirtualStorageVolume(unresolved) => {
+                let idx = maps.virtual_storage_node.get(unresolved).ok_or_else(|| {
+                    MetricF64ResolutionError::VirtualStorageNodeNotFound {
+                        node: unresolved.clone(),
+                    }
+                })?;
+
+                MetricF64::VirtualStorageVolume(*idx)
+            }
+            UnresolvedMetricF64::VirtualStorageProportionalVolume(unresolved) => {
+                let idx = maps.virtual_storage_node.get(unresolved).ok_or_else(|| {
+                    MetricF64ResolutionError::VirtualStorageNodeNotFound {
+                        node: unresolved.clone(),
+                    }
+                })?;
+
+                MetricF64::VirtualStorageProportionalVolume(*idx)
+            }
+            UnresolvedMetricF64::MultiNodeInFlow { name, nodes: indices } => {
+                let resolved = indices
+                    .iter()
+                    .map(|unresolved| {
+                        maps.nodes
+                            .get(unresolved)
+                            .copied()
+                            .ok_or_else(|| MetricF64ResolutionError::NodeNotFound {
+                                node: unresolved.clone(),
+                            })
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+
+                MetricF64::MultiNodeInFlow {
+                    indices: resolved,
+                    name: name.clone(),
+                }
+            }
+            UnresolvedMetricF64::MultiNodeOutFlow { name, nodes: indices } => {
+                let resolved = indices
+                    .iter()
+                    .map(|unresolved| {
+                        maps.nodes
+                            .get(unresolved)
+                            .copied()
+                            .ok_or_else(|| MetricF64ResolutionError::NodeNotFound {
+                                node: unresolved.clone(),
+                            })
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+
+                MetricF64::MultiNodeOutFlow {
+                    indices: resolved,
+                    name: name.clone(),
+                }
+            }
+            UnresolvedMetricF64::InterNetworkTransfer(unresolved) => {
+                let idx = maps.inter_network_transfers.get(unresolved).ok_or_else(|| {
+                    MetricF64ResolutionError::InterNetworkTransferNotFound {
+                        transfer: unresolved.clone(),
+                    }
+                })?;
+
+                MetricF64::InterNetworkTransfer(*idx)
+            }
+            UnresolvedMetricF64::Constant(value) => (*value).into(),
+        };
+
+        Ok(m)
+    }
+}
+
+impl From<f64> for UnresolvedMetricF64 {
+    fn from(v: f64) -> Self {
+        Self::Constant(v)
+    }
+}
+
+/// Resolve a [`ParameterIndex<f64>`] to a [`MetricF64`] using the provided [`UnresolvedParameterReturnValue`]
+/// and [`MetricConsumerPhase`]. This function is used to determine if a parameter can be resolved to a metric
+/// based on the phase in which the consumer is using the metric and the return value of the parameter.
+///
+/// If the parameter cannot be resolved to a metric, an error is returned.
+fn resolve_parameter_index_f64_to_metric_f64(
+    name: &ParameterName,
+    idx: ParameterIndex<f64>,
+    parameter_return_value: UnresolvedParameterReturnValue,
+    consumer_phase: MetricConsumerPhase,
+) -> Result<MetricF64, MetricF64ResolutionError> {
+    match idx {
+        // Constant and simple can always be resolved to a metric, regardless of the consumer phase
+        // as long as the parameter return value is "before".
+        ParameterIndex::Const(idx) => match parameter_return_value {
+            UnresolvedParameterReturnValue::Before => Ok(ConstantMetricF64::ParameterValue(idx).into()),
+            UnresolvedParameterReturnValue::After
+            | UnresolvedParameterReturnValue::AfterOrElseInitial
+            | UnresolvedParameterReturnValue::Both => {
+                Err(MetricF64ResolutionError::ParameterNotRegisteredInCorrectPhase {
+                    parameter: name.clone(),
+                    consumer_phase,
+                    return_value: parameter_return_value,
+                })
+            }
+        },
+        ParameterIndex::Simple(idx) => match parameter_return_value {
+            UnresolvedParameterReturnValue::Before => Ok(SimpleMetricF64::ParameterValue { index: idx }.into()),
+            UnresolvedParameterReturnValue::After
+            | UnresolvedParameterReturnValue::AfterOrElseInitial
+            | UnresolvedParameterReturnValue::Both => {
+                Err(MetricF64ResolutionError::ParameterNotRegisteredInCorrectPhase {
+                    parameter: name.clone(),
+                    consumer_phase,
+                    return_value: parameter_return_value,
+                })
+            }
+        },
+        // General parameters must be validated against the consumer phase to determine if they can be resolved to a metric.
+        ParameterIndex::General(idx) => {
+            let source = resolve_parameter_return_value(idx.before, idx.after, parameter_return_value, consumer_phase)
+                .ok_or_else(|| MetricF64ResolutionError::ParameterNotRegisteredInCorrectPhase {
+                    parameter: name.clone(),
+                    consumer_phase,
+                    return_value: parameter_return_value,
+                })?;
+
+            Ok(MetricF64::ParameterF64 { source })
         }
     }
 }
 
-impl TryFrom<ParameterIndex<u64>> for SimpleMetricU64 {
-    type Error = MetricU64Error;
-    fn try_from(idx: ParameterIndex<u64>) -> Result<Self, Self::Error> {
-        match idx {
-            ParameterIndex::Simple(idx) => Ok(Self::IndexParameterValue(idx)),
-            ParameterIndex::Const(idx) => Ok(Self::Constant(ConstantMetricU64::IndexParameterValue(idx))),
-            ParameterIndex::General(_) => Err(MetricU64Error::CannotSimplifyMetric),
+/// Resolve a [`ParameterIndex<u64>`] to a [`MetricF64`] using the provided [`UnresolvedParameterReturnValue`]
+/// and [`MetricConsumerPhase`]. This function is used to determine if a parameter can be resolved to a metric
+/// based on the phase in which the consumer is using the metric and the return value of the parameter.
+///
+/// If the parameter cannot be resolved to a metric, an error is returned.
+fn resolve_parameter_index_u64_to_metric_f64(
+    name: &ParameterName,
+    idx: ParameterIndex<u64>,
+    parameter_return_value: UnresolvedParameterReturnValue,
+    consumer_phase: MetricConsumerPhase,
+) -> Result<MetricF64, MetricF64ResolutionError> {
+    match idx {
+        // Constant and simple can always be resolved to a metric, regardless of the consumer phase
+        // as long as the parameter return value is "before".
+        ParameterIndex::Const(idx) => match parameter_return_value {
+            UnresolvedParameterReturnValue::Before => Ok(ConstantMetricF64::IndexParameterValue(idx).into()),
+            UnresolvedParameterReturnValue::After
+            | UnresolvedParameterReturnValue::AfterOrElseInitial
+            | UnresolvedParameterReturnValue::Both => {
+                Err(MetricF64ResolutionError::ParameterNotRegisteredInCorrectPhase {
+                    parameter: name.clone(),
+                    consumer_phase,
+                    return_value: parameter_return_value,
+                })
+            }
+        },
+        ParameterIndex::Simple(idx) => match parameter_return_value {
+            UnresolvedParameterReturnValue::Before => Ok(SimpleMetricF64::IndexParameterValue { index: idx }.into()),
+            UnresolvedParameterReturnValue::After
+            | UnresolvedParameterReturnValue::AfterOrElseInitial
+            | UnresolvedParameterReturnValue::Both => {
+                Err(MetricF64ResolutionError::ParameterNotRegisteredInCorrectPhase {
+                    parameter: name.clone(),
+                    consumer_phase,
+                    return_value: parameter_return_value,
+                })
+            }
+        },
+        // General parameters must be validated against the consumer phase to determine if they can be resolved to a metric.
+        ParameterIndex::General(idx) => {
+            let source = resolve_parameter_return_value(idx.before, idx.after, parameter_return_value, consumer_phase)
+                .ok_or_else(|| MetricF64ResolutionError::ParameterNotRegisteredInCorrectPhase {
+                    parameter: name.clone(),
+                    consumer_phase,
+                    return_value: parameter_return_value,
+                })?;
+
+            Ok(MetricF64::ParameterU64 { source })
         }
+    }
+}
+
+/// Resolve a [`ParameterIndex<MultiValue>`] to a [`MetricF64`] using the provided [`UnresolvedParameterReturnValue`]
+/// and [`MetricConsumerPhase`]. This function is used to determine if a parameter can be resolved to a metric
+/// based on the phase in which the consumer is using the metric and the return value of the parameter.
+///
+/// If the parameter cannot be resolved to a metric, an error is returned.
+fn resolve_parameter_index_multi_to_metric_f64(
+    name: &ParameterName,
+    idx: ParameterIndex<MultiValue>,
+    key: &str,
+    parameter_return_value: UnresolvedParameterReturnValue,
+    consumer_phase: MetricConsumerPhase,
+) -> Result<MetricF64, MetricF64ResolutionError> {
+    match idx {
+        // Constant and simple can always be resolved to a metric, regardless of the consumer phase
+        // as long as the parameter return value is "before".
+        ParameterIndex::Const(index) => match parameter_return_value {
+            UnresolvedParameterReturnValue::Before => Ok(ConstantMetricF64::MultiParameterValue {
+                index,
+                key: key.to_string(),
+            }
+            .into()),
+            UnresolvedParameterReturnValue::After
+            | UnresolvedParameterReturnValue::AfterOrElseInitial
+            | UnresolvedParameterReturnValue::Both => {
+                Err(MetricF64ResolutionError::ParameterNotRegisteredInCorrectPhase {
+                    parameter: name.clone(),
+                    consumer_phase,
+                    return_value: parameter_return_value,
+                })
+            }
+        },
+        ParameterIndex::Simple(index) => match parameter_return_value {
+            UnresolvedParameterReturnValue::Before => Ok(SimpleMetricF64::MultiParameterValue {
+                index,
+                key: key.to_string(),
+            }
+            .into()),
+            UnresolvedParameterReturnValue::After
+            | UnresolvedParameterReturnValue::AfterOrElseInitial
+            | UnresolvedParameterReturnValue::Both => {
+                Err(MetricF64ResolutionError::ParameterNotRegisteredInCorrectPhase {
+                    parameter: name.clone(),
+                    consumer_phase,
+                    return_value: parameter_return_value,
+                })
+            }
+        },
+        // General parameters must be validated against the consumer phase to determine if they can be resolved to a metric.
+        ParameterIndex::General(idx) => {
+            let source = resolve_parameter_return_value(idx.before, idx.after, parameter_return_value, consumer_phase)
+                .ok_or_else(|| MetricF64ResolutionError::ParameterNotRegisteredInCorrectPhase {
+                    parameter: name.clone(),
+                    consumer_phase,
+                    return_value: parameter_return_value,
+                })?;
+
+            Ok(MetricF64::ParameterMulti {
+                source,
+                key: key.to_string(),
+            })
+        }
+    }
+}
+
+fn resolve_parameter_return_value<T>(
+    before: Option<GeneralBeforeValueIndex<T>>,
+    after: Option<GeneralAfterValueIndex<T>>,
+    requested: UnresolvedParameterReturnValue,
+    consumer: MetricConsumerPhase,
+) -> Option<ParameterValueSource<T>> {
+    match (requested, consumer) {
+        (UnresolvedParameterReturnValue::Before, _) => before.map(ParameterValueSource::Before),
+
+        (UnresolvedParameterReturnValue::After, MetricConsumerPhase::After)
+        | (UnresolvedParameterReturnValue::AfterOrElseInitial, _) => after.map(ParameterValueSource::After),
+
+        (UnresolvedParameterReturnValue::Both, MetricConsumerPhase::Before) => before.map(ParameterValueSource::Before),
+
+        (UnresolvedParameterReturnValue::Both, MetricConsumerPhase::After) => after.map(ParameterValueSource::After),
+
+        (UnresolvedParameterReturnValue::Both, MetricConsumerPhase::Both) => before
+            .zip(after)
+            .map(|(before, after)| ParameterValueSource::Requested { before, after }),
+
+        _ => None,
     }
 }
 
 #[derive(Debug, Error)]
 pub enum ConstantMetricU64Error {
-    #[error("Index parameter not found: {index}")]
-    IndexParameterNotFound { index: ConstParameterIndex<u64> },
-    #[error("Multi-parameter not found: {index}, key: {key}")]
-    MultiParameterNotFound {
-        index: ConstParameterIndex<MultiValue>,
-        key: String,
-    },
+    #[error("Simple parameter value error.")]
+    ConstParameterValuesError(#[from] ConstParameterValuesError),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -461,15 +1028,8 @@ pub enum ConstantMetricU64 {
 impl ConstantMetricU64 {
     pub fn get_value(&self, values: &ConstParameterValues) -> Result<u64, ConstantMetricU64Error> {
         match self {
-            ConstantMetricU64::IndexParameterValue(idx) => values
-                .get_const_parameter_u64(*idx)
-                .ok_or(ConstantMetricU64Error::IndexParameterNotFound { index: *idx }),
-            ConstantMetricU64::MultiParameterValue { index, key } => values
-                .get_const_multi_parameter_u64(*index, key)
-                .ok_or_else(|| ConstantMetricU64Error::MultiParameterNotFound {
-                    index: *index,
-                    key: key.clone(),
-                }),
+            ConstantMetricU64::IndexParameterValue(idx) => Ok(values.get_u64(*idx)?),
+            ConstantMetricU64::MultiParameterValue { index, key } => Ok(values.get_multi_u64(*index, key)?),
             ConstantMetricU64::Constant(v) => Ok(*v),
         }
     }
@@ -477,14 +1037,9 @@ impl ConstantMetricU64 {
 
 #[derive(Debug, Error)]
 pub enum SimpleMetricU64Error {
-    #[error("Index parameter not found: {index}")]
-    IndexParameterNotFound { index: SimpleParameterIndex<u64> },
-    #[error("Multi-parameter not found: {index}, key: {key}")]
-    MultiParameterNotFound {
-        index: SimpleParameterIndex<MultiValue>,
-        key: String,
-    },
-    #[error("Constant metric error: {0}")]
+    #[error("Simple parameter value error.")]
+    SimpleParameterValuesError(#[from] SimpleParameterValuesError),
+    #[error("Constant metric error.")]
     ConstantMetricError(#[from] ConstantMetricU64Error),
     #[error("Cannot simplify metric to a constant metric")]
     CannotSimplifyMetric,
@@ -492,7 +1047,9 @@ pub enum SimpleMetricU64Error {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum SimpleMetricU64 {
-    IndexParameterValue(SimpleParameterIndex<u64>),
+    IndexParameterValue {
+        index: SimpleParameterIndex<u64>,
+    },
     MultiParameterValue {
         index: SimpleParameterIndex<MultiValue>,
         key: String,
@@ -503,15 +1060,8 @@ pub enum SimpleMetricU64 {
 impl SimpleMetricU64 {
     pub fn get_value(&self, values: &SimpleParameterValues) -> Result<u64, SimpleMetricU64Error> {
         match self {
-            SimpleMetricU64::IndexParameterValue(idx) => values
-                .get_simple_parameter_u64(*idx)
-                .ok_or(SimpleMetricU64Error::IndexParameterNotFound { index: *idx }),
-            SimpleMetricU64::MultiParameterValue { index, key } => values
-                .get_simple_multi_parameter_u64(*index, key)
-                .ok_or_else(|| SimpleMetricU64Error::MultiParameterNotFound {
-                    index: *index,
-                    key: key.clone(),
-                }),
+            SimpleMetricU64::IndexParameterValue { index } => Ok(values.get_u64(*index)?),
+            SimpleMetricU64::MultiParameterValue { index, key } => Ok(values.get_multi_u64(*index, key)?),
             SimpleMetricU64::Constant(m) => Ok(m.get_value(values.get_constant_values())?),
         }
     }
@@ -526,38 +1076,54 @@ pub enum MetricU64Error {
         index: SimpleParameterIndex<MultiValue>,
         key: String,
     },
-    #[error("State error: {0}")]
+    #[error("State error.")]
     StateError(#[from] StateError),
-    #[error("Constant metric error: {0}")]
+    #[error("Simple metric error.")]
     SimpleMetricError(#[from] SimpleMetricU64Error),
     #[error("Cannot simplify metric to a simple metric")]
     CannotSimplifyMetric,
+    #[error("General parameter with has no key: {key}")]
+    GeneralMultiValueParameterKeyNotFound { key: String },
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum MetricU64 {
-    IndexParameterValue {
-        index: GeneralParameterIndex<u64>,
-        return_value: ParameterReturnValue,
+    ParameterU64 {
+        source: ParameterValueSource<u64>,
+    },
+    ParameterMulti {
+        source: ParameterValueSource<MultiValue>,
+        key: String,
     },
     Simple(SimpleMetricU64),
-    MultiParameterValue {
-        index: GeneralParameterIndex<MultiValue>,
-        key: String,
-        return_value: ParameterReturnValue,
-    },
     InterNetworkTransfer(MultiNetworkTransferIndex),
 }
 
 impl MetricU64 {
     pub fn get_value(&self, _network: &Network, state: &State) -> Result<u64, MetricU64Error> {
         match self {
-            Self::IndexParameterValue { index, return_value } => Ok(state.get_parameter_index(*index, *return_value)?),
-            Self::MultiParameterValue {
-                index,
-                key,
-                return_value,
-            } => Ok(state.get_multi_parameter_index(*index, key, *return_value)?),
+            Self::ParameterU64 { source } => match source {
+                ParameterValueSource::Before(index) => Ok(state.get_general_parameter_u64_before(*index)?),
+                ParameterValueSource::After(index) => Ok(state.get_general_parameter_u64_after(*index)?),
+                ParameterValueSource::Requested { before, after } => match state.get_calculation_phase() {
+                    CalculationPhase::Before => Ok(state.get_general_parameter_u64_before(*before)?),
+                    CalculationPhase::After => Ok(state.get_general_parameter_u64_after(*after)?),
+                },
+            },
+            Self::ParameterMulti { source, key } => {
+                let mv = match source {
+                    ParameterValueSource::Before(index) => state.get_general_parameter_multi_before(*index)?,
+                    ParameterValueSource::After(index) => state.get_general_parameter_multi_after(*index)?,
+                    ParameterValueSource::Requested { before, after } => match state.get_calculation_phase() {
+                        CalculationPhase::Before => state.get_general_parameter_multi_before(*before)?,
+                        CalculationPhase::After => state.get_general_parameter_multi_after(*after)?,
+                    },
+                };
+                let value = mv
+                    .get_index(key)
+                    .ok_or_else(|| MetricU64Error::GeneralMultiValueParameterKeyNotFound { key: key.clone() })?;
+                Ok(*value)
+            }
             Self::Simple(s) => Ok(s.get_value(&state.get_simple_parameter_values())?),
             Self::InterNetworkTransfer(_idx) => todo!("Support usize for inter-network transfers"),
         }
@@ -606,6 +1172,256 @@ impl TryFrom<SimpleMetricU64> for ConstantMetricU64 {
         match value {
             SimpleMetricU64::Constant(c) => Ok(c),
             _ => Err(SimpleMetricU64Error::CannotSimplifyMetric),
+        }
+    }
+}
+
+impl TryFrom<MetricU64> for ConstantMetricU64 {
+    type Error = MetricU64Error;
+
+    fn try_from(value: MetricU64) -> Result<Self, Self::Error> {
+        let simple_metric: SimpleMetricU64 = value.try_into()?;
+        let constant_metric: ConstantMetricU64 = simple_metric.try_into()?;
+        Ok(constant_metric)
+    }
+}
+
+/// Try to convert a slice of [`MetricU64`] into a vector of [`ConstantMetricU64`].
+/// If any of the metrics cannot be converted, return `None`.
+pub fn try_into_constant_metrics_u64(metrics: &[MetricU64]) -> Option<Vec<ConstantMetricU64>> {
+    metrics
+        .iter()
+        .map(|m| m.clone().try_into())
+        .collect::<Result<Vec<_>, _>>()
+        .ok()
+}
+
+/// Try to convert a slice of [`MetricU64`] into a vector of [`SimpleMetricU64`].
+/// If any of the metrics cannot be converted, return `None`.
+pub fn try_into_simple_metrics_u64(metrics: &[MetricU64]) -> Option<Vec<SimpleMetricU64>> {
+    metrics
+        .iter()
+        .map(|m| m.clone().try_into())
+        .collect::<Result<Vec<_>, _>>()
+        .ok()
+}
+
+#[derive(Debug, Error)]
+pub enum MetricU64ResolutionError {
+    #[error("Node not found when resolving U64 metric: {node}")]
+    NodeNotFound { node: UnresolvedNode },
+    #[error("Parameter not found when resolving U64 metric: {parameter}")]
+    ParameterNotFound { parameter: ParameterName },
+    #[error("Inter-network transfer not found when resolving U64 metric: {transfer}")]
+    InterNetworkTransferNotFound { transfer: String },
+    #[error(
+        "Parameter not registered in the correct phase when resolving U64 metric: {parameter}, consumer phase: {consumer_phase:?}, return value: {return_value:?}"
+    )]
+    ParameterNotRegisteredInCorrectPhase {
+        parameter: ParameterName,
+        consumer_phase: MetricConsumerPhase,
+        return_value: UnresolvedParameterReturnValue,
+    },
+}
+
+#[derive(Debug)]
+pub enum UnresolvedMetricU64 {
+    ParameterValue {
+        name: ParameterName,
+        return_value: UnresolvedParameterReturnValue,
+    },
+    MultiParameterValue {
+        name: ParameterName,
+        key: String,
+        return_value: UnresolvedParameterReturnValue,
+    },
+    InterNetworkTransfer(String),
+    Constant(u64),
+}
+
+impl UnresolvedMetricU64 {
+    pub fn new_parameter_before<N: Into<ParameterName>>(name: N) -> Self {
+        Self::ParameterValue {
+            name: name.into(),
+            return_value: UnresolvedParameterReturnValue::Before,
+        }
+    }
+
+    pub fn new_parameter_after<N: Into<ParameterName>>(name: N) -> Self {
+        Self::ParameterValue {
+            name: name.into(),
+            return_value: UnresolvedParameterReturnValue::After,
+        }
+    }
+
+    pub fn new_parameter_both<N: Into<ParameterName>>(name: N) -> Self {
+        Self::ParameterValue {
+            name: name.into(),
+            return_value: UnresolvedParameterReturnValue::Both,
+        }
+    }
+    pub fn resolve(
+        &self,
+        resolution_maps: &ResolutionMaps,
+        consumer_phase: MetricConsumerPhase,
+    ) -> Result<MetricU64, MetricU64ResolutionError> {
+        let m = match self {
+            UnresolvedMetricU64::ParameterValue { name, return_value } => {
+                let idx = resolution_maps.parameters_u64.get(name).ok_or_else(|| {
+                    MetricU64ResolutionError::ParameterNotFound {
+                        parameter: name.clone(),
+                    }
+                })?;
+
+                resolve_parameter_index_u64_to_metric_u64(name, *idx, *return_value, consumer_phase)?
+            }
+            UnresolvedMetricU64::MultiParameterValue {
+                name,
+                key,
+                return_value,
+            } => {
+                let idx = resolution_maps.parameters_multi.get(name).ok_or_else(|| {
+                    MetricU64ResolutionError::ParameterNotFound {
+                        parameter: name.clone(),
+                    }
+                })?;
+
+                resolve_parameter_index_multi_to_metric_u64(name, idx.clone(), key, *return_value, consumer_phase)?
+            }
+            UnresolvedMetricU64::InterNetworkTransfer(unresolved) => {
+                let idx = resolution_maps.inter_network_transfers.get(unresolved).ok_or_else(|| {
+                    MetricU64ResolutionError::InterNetworkTransferNotFound {
+                        transfer: unresolved.clone(),
+                    }
+                })?;
+
+                MetricU64::InterNetworkTransfer(*idx)
+            }
+            UnresolvedMetricU64::Constant(value) => (*value).into(),
+        };
+
+        Ok(m)
+    }
+}
+
+impl From<u64> for UnresolvedMetricU64 {
+    fn from(v: u64) -> Self {
+        Self::Constant(v)
+    }
+}
+
+/// Resolve a [`ParameterIndex<u64>`] to a [`MetricU64`] using the provided [`UnresolvedParameterReturnValue`]
+/// and [`MetricConsumerPhase`]. This function is used to determine if a parameter can be resolved to a metric
+/// based on the phase in which the consumer is using the metric and the return value of the parameter.
+///
+/// If the parameter cannot be resolved to a metric, an error is returned.
+fn resolve_parameter_index_u64_to_metric_u64(
+    name: &ParameterName,
+    idx: ParameterIndex<u64>,
+    parameter_return_value: UnresolvedParameterReturnValue,
+    consumer_phase: MetricConsumerPhase,
+) -> Result<MetricU64, MetricU64ResolutionError> {
+    match idx {
+        // Constant and simple can always be resolved to a metric, regardless of the consumer phase
+        // as long as the parameter return value is "before".
+        ParameterIndex::Const(idx) => match parameter_return_value {
+            UnresolvedParameterReturnValue::Before => Ok(ConstantMetricU64::IndexParameterValue(idx).into()),
+            UnresolvedParameterReturnValue::After
+            | UnresolvedParameterReturnValue::AfterOrElseInitial
+            | UnresolvedParameterReturnValue::Both => {
+                Err(MetricU64ResolutionError::ParameterNotRegisteredInCorrectPhase {
+                    parameter: name.clone(),
+                    consumer_phase,
+                    return_value: parameter_return_value,
+                })
+            }
+        },
+        ParameterIndex::Simple(idx) => match parameter_return_value {
+            UnresolvedParameterReturnValue::Before => Ok(SimpleMetricU64::IndexParameterValue { index: idx }.into()),
+            UnresolvedParameterReturnValue::After
+            | UnresolvedParameterReturnValue::AfterOrElseInitial
+            | UnresolvedParameterReturnValue::Both => {
+                Err(MetricU64ResolutionError::ParameterNotRegisteredInCorrectPhase {
+                    parameter: name.clone(),
+                    consumer_phase,
+                    return_value: parameter_return_value,
+                })
+            }
+        },
+        // General parameters must be validated against the consumer phase to determine if they can be resolved to a metric.
+        ParameterIndex::General(idx) => {
+            let source = resolve_parameter_return_value(idx.before, idx.after, parameter_return_value, consumer_phase)
+                .ok_or_else(|| MetricU64ResolutionError::ParameterNotRegisteredInCorrectPhase {
+                    parameter: name.clone(),
+                    consumer_phase,
+                    return_value: parameter_return_value,
+                })?;
+
+            Ok(MetricU64::ParameterU64 { source })
+        }
+    }
+}
+
+/// Resolve a [`ParameterIndex<MultiValue>`] to a [`MetricU64`] using the provided [`UnresolvedParameterReturnValue`]
+/// and [`MetricConsumerPhase`]. This function is used to determine if a parameter can be resolved to a metric
+/// based on the phase in which the consumer is using the metric and the return value of the parameter.
+///
+/// If the parameter cannot be resolved to a metric, an error is returned.
+fn resolve_parameter_index_multi_to_metric_u64(
+    name: &ParameterName,
+    idx: ParameterIndex<MultiValue>,
+    key: &str,
+    parameter_return_value: UnresolvedParameterReturnValue,
+    consumer_phase: MetricConsumerPhase,
+) -> Result<MetricU64, MetricU64ResolutionError> {
+    match idx {
+        // Constant and simple can always be resolved to a metric, regardless of the consumer phase
+        // as long as the parameter return value is "before".
+        ParameterIndex::Const(index) => match parameter_return_value {
+            UnresolvedParameterReturnValue::Before => Ok(ConstantMetricU64::MultiParameterValue {
+                index,
+                key: key.to_string(),
+            }
+            .into()),
+            UnresolvedParameterReturnValue::After
+            | UnresolvedParameterReturnValue::AfterOrElseInitial
+            | UnresolvedParameterReturnValue::Both => {
+                Err(MetricU64ResolutionError::ParameterNotRegisteredInCorrectPhase {
+                    parameter: name.clone(),
+                    consumer_phase,
+                    return_value: parameter_return_value,
+                })
+            }
+        },
+        ParameterIndex::Simple(index) => match parameter_return_value {
+            UnresolvedParameterReturnValue::Before => Ok(SimpleMetricU64::MultiParameterValue {
+                index,
+                key: key.to_string(),
+            }
+            .into()),
+            UnresolvedParameterReturnValue::After
+            | UnresolvedParameterReturnValue::AfterOrElseInitial
+            | UnresolvedParameterReturnValue::Both => {
+                Err(MetricU64ResolutionError::ParameterNotRegisteredInCorrectPhase {
+                    parameter: name.clone(),
+                    consumer_phase,
+                    return_value: parameter_return_value,
+                })
+            }
+        },
+        // General parameters must be validated against the consumer phase to determine if they can be resolved to a metric.
+        ParameterIndex::General(idx) => {
+            let source = resolve_parameter_return_value(idx.before, idx.after, parameter_return_value, consumer_phase)
+                .ok_or_else(|| MetricU64ResolutionError::ParameterNotRegisteredInCorrectPhase {
+                    parameter: name.clone(),
+                    consumer_phase,
+                    return_value: parameter_return_value,
+                })?;
+
+            Ok(MetricU64::ParameterMulti {
+                source,
+                key: key.to_string(),
+            })
         }
     }
 }

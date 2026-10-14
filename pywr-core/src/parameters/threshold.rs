@@ -1,13 +1,17 @@
-use crate::metric::MetricF64;
-use crate::network::Network;
-use crate::parameters::errors::{ParameterCalculationError, ParameterSetupError};
+use crate::FLOAT_EQ_TOLERANCE;
+use crate::metric::{MetricConsumerPhase, MetricF64, UnresolvedMetricF64};
+use crate::network::ResolutionMaps;
+use crate::parameters::errors::{GeneralCalculationError, ParameterSetupError};
 use crate::parameters::{
-    GeneralParameter, Parameter, ParameterMeta, ParameterName, ParameterState, downcast_internal_state_mut,
+    BuiltParameter, GeneralAfterParameter, GeneralBeforeParameter, GeneralParameter, GeneralParameterContext,
+    GeneralParameterEntry, MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder, ParameterMeta,
+    ParameterName, ParameterState, downcast_internal_state_mut,
 };
+use crate::resolve_metric_f64;
 use crate::scenario::ScenarioIndex;
-use crate::state::State;
 use crate::timestep::Timestep;
 
+#[derive(Debug)]
 pub enum Predicate {
     LessThan,
     GreaterThan,
@@ -17,42 +21,29 @@ pub enum Predicate {
 }
 
 impl Predicate {
-    /// Apply the predicate to a value and a threshold.
+    /// Applies the predicate to a `value` against a `threshold`.
+    ///
+    /// Equality comparison uses an absolute tolerance equal to [`FLOAT_EQ_TOLERANCE`].
+    ///
+    /// Note: Comparisons involving `NaN` will always return `false`.
     pub fn apply(&self, value: f64, threshold: f64) -> bool {
         match self {
             Predicate::LessThan => value < threshold,
             Predicate::GreaterThan => value > threshold,
-            Predicate::EqualTo => (value - threshold).abs() < 1E-6, // TODO make this a global constant
+            Predicate::EqualTo => (value - threshold).abs() <= FLOAT_EQ_TOLERANCE,
             Predicate::LessThanOrEqualTo => value <= threshold,
             Predicate::GreaterThanOrEqualTo => value >= threshold,
         }
     }
 }
 
+#[derive(Debug)]
 pub struct ThresholdParameter {
     meta: ParameterMeta,
     metric: MetricF64,
     threshold: MetricF64,
     predicate: Predicate,
     ratchet: bool,
-}
-
-impl ThresholdParameter {
-    pub fn new(
-        name: ParameterName,
-        metric: MetricF64,
-        threshold: MetricF64,
-        predicate: Predicate,
-        ratchet: bool,
-    ) -> Self {
-        Self {
-            meta: ParameterMeta::new(name),
-            metric,
-            threshold,
-            predicate,
-            ratchet,
-        }
-    }
 }
 
 impl Parameter for ThresholdParameter {
@@ -71,40 +62,166 @@ impl Parameter for ThresholdParameter {
     }
 }
 
-impl GeneralParameter<u64> for ThresholdParameter {
-    fn before(
-        &self,
-        _timestep: &Timestep,
-        _scenario_index: &ScenarioIndex,
-        model: &Network,
-        state: &State,
-        internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<Option<u64>, ParameterCalculationError> {
-        // Downcast the internal state to the correct type
-        let previously_activated = downcast_internal_state_mut::<bool>(internal_state);
-
-        // Return early if ratchet has been hit
-        if self.ratchet & *previously_activated {
-            return Ok(Some(1));
-        }
-
-        let threshold = self.threshold.get_value(model, state)?;
-        let value = self.metric.get_value(model, state)?;
-        let active = self.predicate.apply(value, threshold);
-
-        if active {
-            // Update the internal state to remember we've been triggered!
-            *previously_activated = true;
-            Ok(Some(1))
-        } else {
-            Ok(Some(0))
-        }
-    }
-
+impl GeneralParameter for ThresholdParameter {
     fn as_parameter(&self) -> &dyn Parameter
     where
         Self: Sized,
     {
         self
+    }
+}
+
+impl GeneralBeforeParameter<u64> for ThresholdParameter {
+    fn before(
+        &self,
+        ctx: GeneralParameterContext<'_>,
+        internal_state: &mut Option<Box<dyn ParameterState>>,
+    ) -> Result<u64, GeneralCalculationError> {
+        // Downcast the internal state to the correct type
+        let previously_activated = downcast_internal_state_mut::<bool>(internal_state);
+
+        // Return early if ratchet has been hit
+        if self.ratchet & *previously_activated {
+            return Ok(1);
+        }
+
+        let threshold = self.threshold.get_value(ctx.network, ctx.state)?;
+        let value = self.metric.get_value(ctx.network, ctx.state)?;
+        let active = self.predicate.apply(value, threshold);
+
+        if active {
+            // Update the internal state to remember we've been triggered!
+            *previously_activated = true;
+            Ok(1)
+        } else {
+            Ok(0)
+        }
+    }
+}
+
+impl GeneralAfterParameter<u64> for ThresholdParameter {
+    fn after(
+        &self,
+        ctx: GeneralParameterContext<'_>,
+        internal_state: &mut Option<Box<dyn ParameterState>>,
+    ) -> Result<u64, GeneralCalculationError> {
+        // Downcast the internal state to the correct type
+        let previously_activated = downcast_internal_state_mut::<bool>(internal_state);
+
+        // Return early if ratchet has been hit
+        if self.ratchet & *previously_activated {
+            return Ok(1);
+        }
+
+        let threshold = self.threshold.get_value(ctx.network, ctx.state)?;
+        let value = self.metric.get_value(ctx.network, ctx.state)?;
+        let active = self.predicate.apply(value, threshold);
+
+        if active {
+            // Update the internal state to remember we've been triggered!
+            *previously_activated = true;
+            Ok(1)
+        } else {
+            Ok(0)
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct ThresholdParameterBuilder {
+    meta: ParameterMeta,
+    metric: UnresolvedMetricF64,
+    threshold: UnresolvedMetricF64,
+    predicate: Predicate,
+    ratchet: bool,
+    phase: MetricConsumerPhase,
+}
+
+impl ThresholdParameterBuilder {
+    /// Create new builder for [`ThresholdParameter`] this is evaluated in "before" phase.
+    pub fn before(
+        name: ParameterName,
+        metric: UnresolvedMetricF64,
+        threshold: UnresolvedMetricF64,
+        predicate: Predicate,
+    ) -> Self {
+        Self {
+            meta: ParameterMeta::new(name),
+            metric,
+            threshold,
+            predicate,
+            ratchet: false,
+            phase: MetricConsumerPhase::Before,
+        }
+    }
+
+    /// Create new builder for [`ThresholdParameter`] this is evaluated in "after" phase.
+    pub fn after(
+        name: ParameterName,
+        metric: UnresolvedMetricF64,
+        threshold: UnresolvedMetricF64,
+        predicate: Predicate,
+    ) -> Self {
+        Self {
+            meta: ParameterMeta::new(name),
+            metric,
+            threshold,
+            predicate,
+            ratchet: false,
+            phase: MetricConsumerPhase::After,
+        }
+    }
+
+    /// Create new builder for [`ThresholdParameter`] this is evaluated in both "before" and "after" phases.
+    pub fn both(
+        name: ParameterName,
+        metric: UnresolvedMetricF64,
+        threshold: UnresolvedMetricF64,
+        predicate: Predicate,
+    ) -> Self {
+        Self {
+            meta: ParameterMeta::new(name),
+            metric,
+            threshold,
+            predicate,
+            ratchet: false,
+            phase: MetricConsumerPhase::Both,
+        }
+    }
+
+    /// Enable ratchet
+    pub fn ratchet(&mut self) -> &mut Self {
+        self.ratchet = true;
+        self
+    }
+}
+
+impl ParameterBuilder<u64> for ThresholdParameterBuilder {
+    fn name(&self) -> &ParameterName {
+        &self.meta.name
+    }
+
+    fn build(
+        self: Box<Self>,
+        resolution_maps: &ResolutionMaps,
+    ) -> Result<MaybeBuiltParameter<u64>, ParameterBuildError> {
+        let metric = resolve_metric_f64!(self, self.metric, resolution_maps, self.phase, "metric");
+        let threshold = resolve_metric_f64!(self, self.threshold, resolution_maps, self.phase, "threshold");
+
+        let p = ThresholdParameter {
+            meta: self.meta,
+            metric,
+            threshold,
+            predicate: self.predicate,
+            ratchet: self.ratchet,
+        };
+
+        let built = match self.phase {
+            MetricConsumerPhase::Before => BuiltParameter::General(GeneralParameterEntry::before(p)),
+            MetricConsumerPhase::After => BuiltParameter::General(GeneralParameterEntry::after(p)),
+            MetricConsumerPhase::Both => BuiltParameter::General(GeneralParameterEntry::both(p)),
+        };
+
+        Ok(built.into())
     }
 }

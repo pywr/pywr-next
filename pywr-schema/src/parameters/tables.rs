@@ -1,27 +1,31 @@
+#[cfg(all(feature = "core", feature = "hdf5"))]
+use crate::FileSystem;
 use crate::digest::Checksum;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
+use crate::meta::NamedMeta;
 #[cfg(feature = "core")]
 use crate::network::LoadArgs;
-use crate::parameters::{ConversionData, ParameterMeta};
-#[cfg(all(feature = "core", feature = "hdf5"))]
-use crate::timeseries::subset_array2;
+use crate::parameters::ConversionData;
 use crate::v1::{TryIntoV2, try_convert_parameter_attr};
+use crate::visit::{Reference, ReferenceMut, VisitReferences};
 use crate::{ComponentConversionError, TryFromV1};
 #[cfg(all(feature = "core", feature = "hdf5"))]
-use ndarray::s;
+use arrow::array::Float64Array;
+#[cfg(all(feature = "core", feature = "hdf5"))]
+use ndarray::Array2;
 #[cfg(all(feature = "core", feature = "hdf5"))]
 use pywr_core::parameters::ParameterName;
-use pywr_schema_macros::{PywrVisitAll, skip_serializing_none};
+use pywr_schema_macros::{PywrVisitMetrics, PywrVisitPaths, skip_serializing_none};
 use pywr_v1_schema::parameters::TablesArrayParameter as TablesArrayParameterV1;
 use schemars::JsonSchema;
 use std::path::PathBuf;
 
 #[skip_serializing_none]
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitMetrics, PywrVisitPaths)]
 #[serde(deny_unknown_fields)]
 pub struct TablesArrayParameter {
-    pub meta: ParameterMeta,
+    pub meta: NamedMeta,
     pub node: String,
     #[serde(rename = "where")]
     pub wh: String,
@@ -31,15 +35,29 @@ pub struct TablesArrayParameter {
     pub timestep_offset: Option<i32>,
 }
 
+impl VisitReferences for TablesArrayParameter {
+    fn visit_references<F: FnMut(Reference<'_>)>(&self, visitor: &mut F) {
+        if let Some(scenario) = &self.scenario {
+            visitor(Reference::ScenarioGroup(scenario));
+        }
+    }
+
+    fn visit_references_mut<F: FnMut(ReferenceMut<'_>)>(&mut self, visitor: &mut F) {
+        if let Some(scenario) = &mut self.scenario {
+            visitor(ReferenceMut::ScenarioGroup(scenario));
+        }
+    }
+}
+
 #[cfg(all(feature = "core", feature = "hdf5"))]
 impl TablesArrayParameter {
-    pub fn add_to_model(
+    pub fn add_to_network(
         &self,
-        network: &mut pywr_core::network::Network,
+        network: &mut pywr_core::network::NetworkBuilder,
         args: &LoadArgs,
         parent: Option<&str>,
-    ) -> Result<pywr_core::parameters::ParameterIndex<f64>, SchemaError> {
-        // 1. Load the file from the HDF5 file (NB this is not Pandas format).
+    ) -> Result<(), SchemaError> {
+        // Load the file from the HDF5 file (NB this is not Pandas format).
 
         // Handle the case of an optional data path with a relative url.
         let pth = if let Some(dp) = args.data_path {
@@ -53,59 +71,61 @@ impl TablesArrayParameter {
         };
 
         if let Some(checksum) = &self.checksum {
-            checksum.check(&pth)?;
+            checksum.check(&FileSystem, &pth)?;
         }
 
-        let file = hdf5_metno::File::open(pth).map_err(|e| SchemaError::HDF5Error(e.to_string()))?; // open for reading
+        let hdf5_err = |source| SchemaError::HDF5Error {
+            path: pth.clone(),
+            source,
+        };
 
-        let grp = file
-            .group(&self.wh)
-            .map_err(|e| SchemaError::HDF5Error(e.to_string()))?; // find the group
-        let ds = grp
-            .dataset(&self.node)
-            .map_err(|e| SchemaError::HDF5Error(e.to_string()))?; // find the dataset
+        let file = hdf5_metno::File::open(&pth).map_err(hdf5_err)?; // open for reading
+        let grp = file.group(&self.wh).map_err(hdf5_err)?; // find the group
+        let ds = grp.dataset(&self.node).map_err(hdf5_err)?; // find the dataset
+        let array = ds.read_2d::<f64>().map_err(hdf5_err)?;
 
-        let mut array = ds.read_2d::<f64>().map_err(|e| SchemaError::HDF5Error(e.to_string()))?;
-        // 2. TODO Validate the shape of the data array. I.e. check number of columns matches scenario
-        //    and number of rows matches time-steps.
-
-        // 3. Create an ArrayParameter using the loaded array.
+        // Create an ArrayParameter using the loaded array.
         if let Some(scenario) = &self.scenario {
-            let scenario_group_index = args.domain.scenarios().group_index(scenario)?;
+            // Convert to array of Float64Array for each column (scenario) in the 2D array.
+            let array = array2_to_vec_array(array);
+            let mut builder = pywr_core::parameters::Array2ParameterBuilder::from_primitive_arrays(
+                ParameterName::new(&self.meta.name, parent),
+                &array,
+                scenario,
+            );
 
-            // If there is a scenario subset then we can reduce the data to align with the scenarios
-            // that are actually used in the model.
-            if let Some(subset) = args.domain.scenarios().group_scenario_subset(scenario)? {
-                array = subset_array2(&array, subset)?;
+            if let Some(to) = &self.timestep_offset {
+                builder.timestep_offset(*to);
             }
 
-            let p = pywr_core::parameters::Array2Parameter::new(
-                ParameterName::new(&self.meta.name, parent),
-                array,
-                scenario_group_index,
-                self.timestep_offset,
-            );
-            Ok(network.add_simple_parameter(Box::new(p))?)
+            network.parameters().f64(Box::new(builder));
         } else {
-            let array = array.slice_move(s![.., 0]);
-            let p = pywr_core::parameters::Array1Parameter::new(
+            // Convert only the first column to a Float64Array for the 1D array parameter.
+            let array = Float64Array::from_iter(array.column(0).iter().copied());
+
+            let mut builder = pywr_core::parameters::Array1ParameterBuilder::from_primitive_array(
                 ParameterName::new(&self.meta.name, parent),
                 array,
-                self.timestep_offset,
             );
-            Ok(network.add_simple_parameter(Box::new(p))?)
+            if let Some(to) = &self.timestep_offset {
+                builder.timestep_offset(*to);
+            }
+
+            network.parameters().f64(Box::new(builder));
         }
+
+        Ok(())
     }
 }
 
 #[cfg(all(feature = "core", not(feature = "hdf5")))]
 impl TablesArrayParameter {
-    pub fn add_to_model(
+    pub fn add_to_network(
         &self,
-        _network: &mut pywr_core::network::Network,
+        _network: &mut pywr_core::network::NetworkBuilder,
         _args: &LoadArgs,
         _parent: Option<&str>,
-    ) -> Result<pywr_core::parameters::ParameterIndex<f64>, SchemaError> {
+    ) -> Result<(), SchemaError> {
         Err(SchemaError::FeatureNotEnabled("hdf5".to_string()))
     }
 }
@@ -117,7 +137,7 @@ impl TryFromV1<TablesArrayParameterV1> for TablesArrayParameter {
         parent_node: Option<&str>,
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: ParameterMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
+        let meta: NamedMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
 
         let checksum = match v1.checksum {
             Some(checksum) => Some(try_convert_parameter_attr(
@@ -140,4 +160,13 @@ impl TryFromV1<TablesArrayParameterV1> for TablesArrayParameter {
             timestep_offset: None,
         })
     }
+}
+
+#[cfg(all(feature = "core", feature = "hdf5"))]
+fn array2_to_vec_array(array: Array2<f64>) -> Vec<Float64Array> {
+    array
+        .columns()
+        .into_iter()
+        .map(|col| Float64Array::from_iter(col.iter().copied()))
+        .collect()
 }

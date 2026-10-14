@@ -1,39 +1,26 @@
-use crate::metric::{MetricF64, MetricF64Error};
+use crate::metric::{MetricConsumerPhase, MetricF64, MetricF64Error, MetricF64ResolutionError, UnresolvedMetricF64};
 use crate::models::ModelDomain;
 use crate::network::{
-    Network, NetworkFinaliseError, NetworkRecorderSaveError, NetworkRecorderSetupError, NetworkResult,
-    NetworkSetupError, NetworkSolverSetupError, NetworkState, NetworkTimings, RunDuration,
+    Network, NetworkBuildError, NetworkBuilder, NetworkFinaliseError, NetworkRecorderSaveError,
+    NetworkRecorderSetupError, NetworkResult, NetworkSetupError, NetworkSolverSetupError, NetworkState,
+    NetworkStepError, NetworkTimings, RunDuration,
 };
+use crate::parameters::ParameterCollectionIdMismatchError;
 use crate::recorders::RecorderInternalState;
 use crate::scenario::ScenarioIndex;
-#[cfg(all(feature = "cbc", feature = "pyo3"))]
-use crate::solvers::{CbcSolver, build_cbc_settings_py};
-#[cfg(all(feature = "ipm-ocl", feature = "pyo3"))]
-use crate::solvers::{ClIpmF32Solver, ClIpmF64Solver, ClIpmSolverSettings};
-#[cfg(all(feature = "clp", feature = "pyo3"))]
-use crate::solvers::{ClpSolver, build_clp_settings_py};
-#[cfg(all(feature = "highs", feature = "pyo3"))]
-use crate::solvers::{HighsSolver, build_highs_settings_py};
-use crate::solvers::{MultiStateSolver, Solver, SolverSettings};
-#[cfg(all(feature = "ipm-simd", feature = "pyo3"))]
-use crate::solvers::{SimdIpmF64Solver, build_ipm_simd_settings_py};
+use crate::solvers::{MultiStateSolver, MultiStateSolverConfig, Solver, SolverConfig};
 use crate::state::StateError;
 use crate::timestep::Timestep;
-#[cfg(feature = "pyo3")]
-use pyo3::{
-    Bound, PyErr, PyResult, Python,
-    exceptions::{PyKeyError, PyRuntimeError},
-    pyclass, pymethods,
-    types::PyDict,
-};
+use log::info;
+use rayon::ThreadPool;
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::num::NonZeroUsize;
 use std::ops::Deref;
+use std::sync::Arc;
 use thiserror::Error;
-use tracing::info;
 
 /// An index to another model
 ///
@@ -45,11 +32,14 @@ enum OtherNetworkIndex {
 }
 
 impl OtherNetworkIndex {
-    fn new(from_idx: usize, to_idx: usize) -> Self {
+    /// Create an [`OtherNetworkIndex`] from two indices.
+    ///
+    /// If `from_idx` is equal to `to_idx` then `None` is returned, as a model cannot reference itself.
+    fn from_indices(from_idx: usize, to_idx: usize) -> Option<Self> {
         match from_idx.cmp(&to_idx) {
-            Ordering::Equal => panic!("Cannot create OtherNetworkIndex to self."),
-            Ordering::Less => Self::Before(NonZeroUsize::new(to_idx - from_idx).unwrap()),
-            Ordering::Greater => Self::After(NonZeroUsize::new(from_idx - to_idx).unwrap()),
+            Ordering::Equal => None,
+            Ordering::Less => Some(Self::Before(NonZeroUsize::new(to_idx - from_idx).unwrap())),
+            Ordering::Greater => Some(Self::After(NonZeroUsize::new(from_idx - to_idx).unwrap())),
         }
     }
 }
@@ -73,7 +63,7 @@ impl Display for MultiNetworkTransferIndex {
 
 /// A special parameter that retrieves a value from a metric in another model.
 struct MultiNetworkTransfer {
-    /// The model to get the value from.
+    /// The network to get the value from.
     from_model_idx: OtherNetworkIndex,
     /// The metric to get the value from.
     from_metric: MetricF64,
@@ -81,10 +71,65 @@ struct MultiNetworkTransfer {
     initial_value: Option<f64>,
 }
 
+pub struct MultiNetworkTransferBuilder {
+    /// Name of this transfer
+    name: String,
+    /// Name of the network to get the value from.
+    from_model: String,
+    /// Metric to get the value from.
+    from_metric: UnresolvedMetricF64,
+    /// Optional initial value to use on the first time-step
+    initial_value: Option<f64>,
+}
+
+impl MultiNetworkTransferBuilder {
+    pub fn new(name: &str, from_model: &str, from_metric: UnresolvedMetricF64) -> Self {
+        Self {
+            name: name.to_string(),
+            from_model: from_model.to_string(),
+            from_metric,
+            initial_value: None,
+        }
+    }
+
+    pub fn initial_value(&mut self, initial_value: f64) -> &mut Self {
+        self.initial_value = Some(initial_value);
+        self
+    }
+}
+
 struct MultiNetworkEntry {
     name: String,
     network: Network,
     transfers: Vec<MultiNetworkTransfer>,
+}
+
+pub struct MultiNetworkEntryBuilder {
+    name: String,
+    network: NetworkBuilder,
+    transfers: Vec<MultiNetworkTransferBuilder>,
+}
+
+impl MultiNetworkEntryBuilder {
+    /// Create a new builder.
+    pub fn new(name: &str, network: NetworkBuilder) -> Self {
+        Self {
+            name: name.to_string(),
+            network,
+            transfers: Vec::new(),
+        }
+    }
+
+    /// Get a reference to the [`NetworkBuilder`]
+    pub fn network_builder(&mut self) -> &mut NetworkBuilder {
+        &mut self.network
+    }
+
+    /// Add a new unresolved transfer to the builder.
+    pub fn transfer(&mut self, transfer: MultiNetworkTransferBuilder) -> &mut Self {
+        self.transfers.push(transfer);
+        self
+    }
 }
 
 pub struct MultiNetworkModelState<S> {
@@ -97,19 +142,19 @@ pub struct MultiNetworkModelState<S> {
 /// Errors that can occur when setting up a multi-network model.
 #[derive(Debug, Error)]
 pub enum MultiNetworkModelSetupError {
-    #[error("Failed to setup network `{network}`: {source}")]
+    #[error("Failed to setup network `{network}`.")]
     NetworkSetupError {
         network: String,
         #[source]
         source: Box<NetworkSetupError>,
     },
-    #[error("Error setting up recorder for network `{network}`: {source}")]
+    #[error("Error setting up recorder for network `{network}`.")]
     RecorderSetupError {
         network: String,
         #[source]
         source: Box<NetworkRecorderSetupError>,
     },
-    #[error("Failed to setup solver for network `{network}`: {source}")]
+    #[error("Failed to setup solver for network `{network}`.")]
     SolverSetupError {
         network: String,
         #[source]
@@ -120,7 +165,14 @@ pub enum MultiNetworkModelSetupError {
 /// Errors that can occur when stepping through (simulating) a multi-network model.
 #[derive(Debug, Error)]
 pub enum MultiNetworkModelStepError {
-    #[error("Failed to transfer value to `{to_network}`: {source}")]
+    #[error("Error stepping through network `{network}` at timestep {timestep:#?}.")]
+    NetworkStepError {
+        network: String,
+        timestep: Timestep,
+        #[source]
+        source: Box<NetworkStepError>,
+    },
+    #[error("Failed to transfer value to `{to_network}`.")]
     TransferError {
         to_network: String,
         #[source]
@@ -128,7 +180,7 @@ pub enum MultiNetworkModelStepError {
     },
     #[error("No more timesteps")]
     EndOfTimesteps,
-    #[error("Error saving recorder for network `{network}` at timestep {timestep:#?}: {source}")]
+    #[error("Error saving recorder for network `{network}` at timestep {timestep:#?}.")]
     RecorderSaveError {
         network: String,
         timestep: Timestep,
@@ -140,37 +192,34 @@ pub enum MultiNetworkModelStepError {
 /// Errors that can occur when finalising a multi-network model.
 #[derive(Debug, Error)]
 pub enum MultiNetworkModelFinaliseError {
-    #[error("Error finalising network `{network}`: {source}")]
+    #[error("Error finalising network `{network}`.")]
     NetworkFinaliseError {
         network: String,
         #[source]
         source: Box<NetworkFinaliseError>,
     },
+    #[error("Timing data from a different network.")]
+    TimingMismatchError {
+        #[source]
+        source: ParameterCollectionIdMismatchError,
+    },
 }
 
 #[derive(Debug, Error)]
 pub enum MultiNetworkModelRunError {
-    #[error("Error setting up multi-network model: {0}")]
+    #[error("Error setting up multi-network model.")]
     SetupError(#[from] MultiNetworkModelSetupError),
-    #[error("Error stepping through multi-network model: {0}")]
+    #[error("Error stepping through multi-network model.")]
     StepError(#[from] Box<MultiNetworkModelStepError>),
-    #[error("Error finalising multi-network model: {0}")]
+    #[error("Error finalising multi-network model.")]
     FinaliseError(#[from] MultiNetworkModelFinaliseError),
 }
 
-#[cfg(feature = "pyo3")]
-impl From<MultiNetworkModelRunError> for PyErr {
-    fn from(err: MultiNetworkModelRunError) -> PyErr {
-        PyRuntimeError::new_err(err.to_string())
-    }
-}
-
 /// Internal struct for tracking model timings.
-#[cfg_attr(feature = "pyo3", pyclass)]
 #[derive(Clone)]
 pub struct MultiNetworkModelTimings {
-    run_duration: RunDuration,
-    network_timings: HashMap<String, NetworkTimings>,
+    pub run_duration: RunDuration,
+    pub network_timings: HashMap<String, NetworkTimings>,
 }
 
 impl MultiNetworkModelTimings {
@@ -190,91 +239,54 @@ impl MultiNetworkModelTimings {
         self.run_duration = self.run_duration.finish();
     }
 
+    /// Total duration of the model run in seconds.
+    pub fn total_duration(&self) -> f64 {
+        self.run_duration.total_duration().as_secs_f64()
+    }
+
+    pub fn timesteps_completed(&self) -> usize {
+        self.network_timings
+            .values()
+            .map(|t| t.timesteps_completed())
+            .max()
+            .unwrap_or(0)
+    }
+
+    pub fn speed(&self) -> f64 {
+        self.timesteps_completed() as f64 / self.total_duration()
+    }
+
     /// Print summary statistics of the model run.
-    fn print_summary_statistics(&self, entries: &[MultiNetworkEntry]) {
+    fn print_summary_statistics(
+        &self,
+        entries: &[MultiNetworkEntry],
+    ) -> Result<(), ParameterCollectionIdMismatchError> {
         info!("Run timing statistics:");
-        let total_duration = self.run_duration.total_duration().as_secs_f64();
         info!("{: <24} | {: <10}", "Metric", "Value");
-        self.run_duration.print_table();
+        self.run_duration.print_table(self.timesteps_completed());
         for entry in entries {
             let timing = self
                 .network_timings
                 .get(&entry.name)
                 .expect("Network timings not found for network.");
             info!("Network: {}", entry.name);
-            timing.print_table(total_duration, &entry.network);
+            timing.print_table(&entry.network)?;
         }
-    }
-}
 
-#[cfg(feature = "pyo3")]
-#[pymethods]
-impl MultiNetworkModelTimings {
-    /// Total duration of the model run in seconds.
-    #[getter]
-    fn total_duration(&self) -> f64 {
-        self.run_duration.total_duration().as_secs_f64()
+        Ok(())
     }
-
-    #[getter]
-    fn speed(&self) -> f64 {
-        self.run_duration.speed()
-    }
-
-    fn __repr__(&self) -> String {
-        format!(
-            "<MultiNetworkModelTimings completed in {:.2} seconds with speed {:.2} time-steps/second>",
-            self.total_duration(),
-            self.speed()
-        )
-    }
-}
-
-#[derive(Debug, Error)]
-pub enum MultiNetworkModelError {
-    #[error("Network name `{0}` already exists")]
-    NetworkNameAlreadyExists(String),
 }
 
 /// The results of a model run.
 ///
 /// Only recorders which produced a result will be present.
-#[cfg_attr(feature = "pyo3", pyclass)]
 #[derive(Clone)]
 pub struct MultiNetworkModelResult {
     pub timings: MultiNetworkModelTimings,
-    pub network_results: HashMap<String, NetworkResult>,
-}
-
-#[cfg(feature = "pyo3")]
-#[pymethods]
-impl MultiNetworkModelResult {
-    #[getter]
-    #[pyo3(name = "timings")]
-    fn timings_py(&self) -> MultiNetworkModelTimings {
-        self.timings.clone()
-    }
-    /// Get a reference to the results map.
-    #[pyo3(name = "network_results")]
-    pub fn network_results_py(&self, name: &str) -> PyResult<NetworkResult> {
-        self.network_results
-            .get(name)
-            .ok_or_else(|| PyKeyError::new_err(format!("Network result `{}` not found", name)))
-            .cloned()
-    }
-
-    fn __rep__(&self) -> String {
-        format!(
-            "<MultiNetworkModelResult with {} network results; completed in {:.2} seconds with speed {:.2} time-steps/second>",
-            self.network_results.len(),
-            self.timings.total_duration(),
-            self.timings.speed()
-        )
-    }
+    pub network_results: HashMap<String, Arc<NetworkResult>>,
 }
 
 /// A MultiNetwork is a collection of models that can be run together.
-#[cfg_attr(feature = "pyo3", pyclass)]
 pub struct MultiNetworkModel {
     domain: ModelDomain,
     networks: Vec<MultiNetworkEntry>,
@@ -308,49 +320,15 @@ impl MultiNetworkModel {
         self.networks.iter().position(|n| n.name == name)
     }
 
-    /// Add a [`Network`] to the model. The name must be unique.
-    pub fn add_network(&mut self, name: &str, network: Network) -> Result<usize, MultiNetworkModelError> {
-        if self.get_network_index_by_name(name).is_some() {
-            return Err(MultiNetworkModelError::NetworkNameAlreadyExists(name.to_string()));
-        }
-
-        let idx = self.networks.len();
-        self.networks.push(MultiNetworkEntry {
-            name: name.to_string(),
-            network,
-            transfers: Vec::new(),
-        });
-
-        Ok(idx)
-    }
-
-    /// Add a transfer of data from one network to another.
-    pub fn add_inter_network_transfer(
-        &mut self,
-        from_network_idx: usize,
-        from_metric: MetricF64,
-        to_network_idx: usize,
-        initial_value: Option<f64>,
-    ) {
-        let parameter = MultiNetworkTransfer {
-            from_model_idx: OtherNetworkIndex::new(from_network_idx, to_network_idx),
-            from_metric,
-            initial_value,
-        };
-
-        self.networks[to_network_idx].transfers.push(parameter);
-    }
-
-    pub fn setup<S>(
+    pub fn setup<C>(
         &self,
-        settings: &S::Settings,
-    ) -> Result<MultiNetworkModelState<Vec<Box<S>>>, MultiNetworkModelSetupError>
+        solver_config: &C,
+    ) -> Result<MultiNetworkModelState<Vec<Box<C::Solver>>>, MultiNetworkModelSetupError>
     where
-        S: Solver,
-        <S as Solver>::Settings: SolverSettings,
+        C: SolverConfig,
     {
         let timesteps = self.domain.time.timesteps();
-        let scenario_indices = self.domain.scenarios.indices();
+        let scenario_indices = self.domain.scenario.indices();
 
         let mut states = Vec::with_capacity(self.networks.len());
         let mut recorder_states = Vec::with_capacity(self.networks.len());
@@ -372,7 +350,7 @@ impl MultiNetworkModel {
             })?;
             let solver = entry
                 .network
-                .setup_solver::<S>(scenario_indices, &state, settings)
+                .setup_solver(scenario_indices, &state, solver_config)
                 .map_err(|source| MultiNetworkModelSetupError::SolverSetupError {
                     network: entry.name.clone(),
                     source: Box::new(source),
@@ -391,16 +369,15 @@ impl MultiNetworkModel {
         })
     }
 
-    pub fn setup_multi_scenario<S>(
+    pub fn setup_multi_scenario<C>(
         &self,
-        settings: &S::Settings,
-    ) -> Result<MultiNetworkModelState<Box<S>>, MultiNetworkModelSetupError>
+        solver_config: &C,
+    ) -> Result<MultiNetworkModelState<Box<C::Solver>>, MultiNetworkModelSetupError>
     where
-        S: MultiStateSolver,
-        <S as MultiStateSolver>::Settings: SolverSettings,
+        C: MultiStateSolverConfig,
     {
         let timesteps = self.domain.time.timesteps();
-        let scenario_indices = self.domain.scenarios.indices();
+        let scenario_indices = self.domain.scenario.indices();
 
         let mut states = Vec::with_capacity(self.networks.len());
         let mut recorder_states = Vec::with_capacity(self.networks.len());
@@ -424,7 +401,7 @@ impl MultiNetworkModel {
 
             let solver = entry
                 .network
-                .setup_multi_scenario_solver::<S>(scenario_indices, settings)
+                .setup_multi_scenario_solver(scenario_indices, solver_config)
                 .map_err(|source| MultiNetworkModelSetupError::SolverSetupError {
                     network: entry.name.clone(),
                     source: Box::new(source),
@@ -483,6 +460,7 @@ impl MultiNetworkModel {
     pub fn step<S>(
         &self,
         state: &mut MultiNetworkModelState<Vec<Box<S>>>,
+        thread_pool: Option<&ThreadPool>,
         timings: &mut MultiNetworkModelTimings,
     ) -> Result<(), MultiNetworkModelStepError>
     where
@@ -495,9 +473,11 @@ impl MultiNetworkModel {
             .get(state.current_time_step_idx)
             .ok_or(MultiNetworkModelStepError::EndOfTimesteps)?;
 
-        let scenario_indices = self.domain.scenarios.indices();
+        let scenario_indices = self.domain.scenario.indices();
 
         for (idx, entry) in self.networks.iter().enumerate() {
+            let step_start = crate::clock::Instant::now();
+
             let timing = timings
                 .network_timings
                 .get_mut(&entry.name)
@@ -510,10 +490,27 @@ impl MultiNetworkModel {
             let sub_model_states = state.states.get_mut(idx).unwrap();
 
             // Perform sub-model step
-            entry
-                .network
-                .step(timestep, scenario_indices, sub_model_solvers, sub_model_states, timing)
-                .unwrap();
+            match thread_pool {
+                Some(pool) => pool
+                    .install(|| {
+                        entry
+                            .network
+                            .step_par(timestep, scenario_indices, sub_model_solvers, sub_model_states, timing)
+                    })
+                    .map_err(|source| MultiNetworkModelStepError::NetworkStepError {
+                        network: entry.name.clone(),
+                        timestep: *timestep,
+                        source: Box::new(source),
+                    })?,
+                None => entry
+                    .network
+                    .step(timestep, scenario_indices, sub_model_solvers, sub_model_states, timing)
+                    .map_err(|source| MultiNetworkModelStepError::NetworkStepError {
+                        network: entry.name.clone(),
+                        timestep: *timestep,
+                        source: Box::new(source),
+                    })?,
+            }
 
             let sub_model_recorder_states = state.recorder_states.get_mut(idx).unwrap();
 
@@ -531,6 +528,8 @@ impl MultiNetworkModel {
                     timestep: *timestep,
                     source: Box::new(source),
                 })?;
+
+            timing.complete_step(step_start.elapsed(), scenario_indices.len());
         }
 
         // Finally increment the time-step index
@@ -542,6 +541,7 @@ impl MultiNetworkModel {
     pub fn step_multi_scenario<S>(
         &self,
         state: &mut MultiNetworkModelState<Box<S>>,
+        thread_pool: &ThreadPool,
         timings: &mut MultiNetworkModelTimings,
     ) -> Result<(), MultiNetworkModelStepError>
     where
@@ -554,9 +554,11 @@ impl MultiNetworkModel {
             .get(state.current_time_step_idx)
             .ok_or(MultiNetworkModelStepError::EndOfTimesteps)?;
 
-        let scenario_indices = self.domain.scenarios.indices();
+        let scenario_indices = self.domain.scenario.indices();
 
         for (idx, entry) in self.networks.iter().enumerate() {
+            let step_start = crate::clock::Instant::now();
+
             let timing = timings
                 .network_timings
                 .get_mut(&entry.name)
@@ -569,10 +571,21 @@ impl MultiNetworkModel {
             let sub_model_states = state.states.get_mut(idx).unwrap();
 
             // Perform sub-model step
-            entry
-                .network
-                .step_multi_scenario(timestep, scenario_indices, sub_model_solvers, sub_model_states, timing)
-                .unwrap();
+            thread_pool
+                .install(|| {
+                    entry.network.step_multi_scenario(
+                        timestep,
+                        scenario_indices,
+                        sub_model_solvers,
+                        sub_model_states,
+                        timing,
+                    )
+                })
+                .map_err(|source| MultiNetworkModelStepError::NetworkStepError {
+                    network: entry.name.clone(),
+                    timestep: *timestep,
+                    source: Box::new(source),
+                })?;
 
             let sub_model_recorder_states = state.recorder_states.get_mut(idx).unwrap();
 
@@ -590,6 +603,8 @@ impl MultiNetworkModel {
                     timestep: *timestep,
                     source: Box::new(source),
                 })?;
+
+            timing.complete_step(step_start.elapsed(), scenario_indices.len());
         }
 
         // Finally increment the time-step index
@@ -617,7 +632,7 @@ impl MultiNetworkModel {
                 let result = entry
                     .network
                     .finalise(
-                        self.domain.scenarios.indices(),
+                        self.domain.scenario.indices(),
                         sub_model_ms_states,
                         sub_model_recorder_states,
                     )
@@ -626,12 +641,14 @@ impl MultiNetworkModel {
                         source: Box::new(source),
                     })?;
 
-                Ok((entry.name.clone(), result))
+                Ok((entry.name.clone(), Arc::new(result)))
             })
             .collect::<Result<HashMap<_, _>, _>>()?;
 
         timings.finish();
-        timings.print_summary_statistics(&self.networks);
+        timings
+            .print_summary_statistics(&self.networks)
+            .map_err(|source| MultiNetworkModelFinaliseError::TimingMismatchError { source })?;
 
         Ok(MultiNetworkModelResult {
             network_results,
@@ -658,7 +675,7 @@ impl MultiNetworkModel {
                 let result = entry
                     .network
                     .finalise(
-                        self.domain.scenarios.indices(),
+                        self.domain.scenario.indices(),
                         sub_model_ms_states,
                         sub_model_recorder_states,
                     )
@@ -667,12 +684,14 @@ impl MultiNetworkModel {
                         source: Box::new(source),
                     })?;
 
-                Ok((entry.name.clone(), result))
+                Ok((entry.name.clone(), Arc::new(result)))
             })
             .collect::<Result<HashMap<_, _>, _>>()?;
 
         timings.finish();
-        timings.print_summary_statistics(&self.networks);
+        timings
+            .print_summary_statistics(&self.networks)
+            .map_err(|source| MultiNetworkModelFinaliseError::TimingMismatchError { source })?;
 
         Ok(MultiNetworkModelResult {
             network_results,
@@ -683,15 +702,14 @@ impl MultiNetworkModel {
     /// Run the model through the given time-steps.
     ///
     /// This method will setup state and solvers, and then run the model through the time-steps.
-    pub fn run<S>(&self, settings: &S::Settings) -> Result<MultiNetworkModelResult, MultiNetworkModelRunError>
+    pub fn run<C>(&self, solver_config: &C) -> Result<MultiNetworkModelResult, MultiNetworkModelRunError>
     where
-        S: Solver,
-        <S as Solver>::Settings: SolverSettings,
+        C: SolverConfig,
     {
-        let mut state = self.setup::<S>(settings)?;
+        let mut state = self.setup(solver_config)?;
         let mut timings = MultiNetworkModelTimings::new_with_component_timings(&self.networks);
 
-        self.run_with_state::<S>(&mut state, settings, &mut timings)?;
+        self.run_with_state(&mut state, solver_config, &mut timings)?;
 
         let result = self.finalise(state, timings)?;
 
@@ -699,28 +717,33 @@ impl MultiNetworkModel {
     }
 
     /// Run the model with the provided states and solvers.
-    pub fn run_with_state<S>(
+    pub fn run_with_state<C>(
         &self,
-        state: &mut MultiNetworkModelState<Vec<Box<S>>>,
-        _settings: &S::Settings,
+        state: &mut MultiNetworkModelState<Vec<Box<C::Solver>>>,
+        solver_config: &C,
         timings: &mut MultiNetworkModelTimings,
     ) -> Result<(), MultiNetworkModelRunError>
     where
-        S: Solver,
-        <S as Solver>::Settings: SolverSettings,
+        C: SolverConfig,
     {
-        // TODO: Setup thread pool if running in parallel
+        // Setup thread pool if running in parallel
+        let pool = if solver_config.parallel() {
+            Some(
+                rayon::ThreadPoolBuilder::new()
+                    .num_threads(solver_config.threads())
+                    .build()
+                    .unwrap(),
+            )
+        } else {
+            None
+        };
 
         loop {
-            match self.step::<S>(state, timings) {
+            match self.step(state, pool.as_ref(), timings) {
                 Ok(_) => {}
                 Err(MultiNetworkModelStepError::EndOfTimesteps) => break,
                 Err(e) => return Err(MultiNetworkModelRunError::StepError(Box::new(e))),
             }
-
-            timings
-                .run_duration
-                .complete_scenarios(self.domain.scenarios.indices().len());
         }
 
         Ok(())
@@ -729,18 +752,14 @@ impl MultiNetworkModel {
     /// Run the model through the given time-steps.
     ///
     /// This method will setup state and solvers, and then run the model through the time-steps.
-    pub fn run_multi_scenario<S>(
-        &self,
-        settings: &S::Settings,
-    ) -> Result<MultiNetworkModelResult, MultiNetworkModelRunError>
+    pub fn run_multi_scenario<C>(&self, solver_config: &C) -> Result<MultiNetworkModelResult, MultiNetworkModelRunError>
     where
-        S: MultiStateSolver,
-        <S as MultiStateSolver>::Settings: SolverSettings,
+        C: MultiStateSolverConfig,
     {
-        let mut state = self.setup_multi_scenario::<S>(settings)?;
+        let mut state = self.setup_multi_scenario(solver_config)?;
         let mut timings = MultiNetworkModelTimings::new_with_component_timings(&self.networks);
 
-        self.run_multi_scenario_with_state::<S>(&mut state, settings, &mut timings)?;
+        self.run_multi_scenario_with_state(&mut state, solver_config, &mut timings)?;
 
         let result = self.finalise_multi_scenario(state, timings)?;
 
@@ -748,129 +767,187 @@ impl MultiNetworkModel {
     }
 
     /// Run the model with the provided states and solvers.
-    pub fn run_multi_scenario_with_state<S>(
+    pub fn run_multi_scenario_with_state<C>(
         &self,
-        state: &mut MultiNetworkModelState<Box<S>>,
-        _settings: &S::Settings,
+        state: &mut MultiNetworkModelState<Box<C::Solver>>,
+        settings: &C,
         timings: &mut MultiNetworkModelTimings,
     ) -> Result<(), MultiNetworkModelRunError>
     where
-        S: MultiStateSolver,
-        <S as MultiStateSolver>::Settings: SolverSettings,
+        C: MultiStateSolverConfig,
     {
-        // TODO: Setup thread pool if running in parallel
+        let num_threads = if settings.parallel() { settings.threads() } else { 1 };
+        // Setup thread pool
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(num_threads)
+            .build()
+            .unwrap();
 
         loop {
-            match self.step_multi_scenario::<S>(state, timings) {
+            match self.step_multi_scenario(state, &pool, timings) {
                 Ok(_) => {}
                 Err(MultiNetworkModelStepError::EndOfTimesteps) => break,
                 Err(e) => return Err(MultiNetworkModelRunError::StepError(Box::new(e))),
             }
-
-            timings
-                .run_duration
-                .complete_scenarios(self.domain.scenarios.indices().len());
         }
 
         Ok(())
     }
-
-    /// Run a model using the specified solver unlocking the GIL
-    #[cfg(any(feature = "clp", feature = "highs"))]
-    #[cfg(feature = "pyo3")]
-    fn run_allowing_threads_py<S>(
-        &self,
-        py: Python<'_>,
-        settings: &S::Settings,
-    ) -> Result<MultiNetworkModelResult, PyErr>
-    where
-        S: Solver,
-        <S as Solver>::Settings: SolverSettings + Sync,
-    {
-        let result = py.detach(|| self.run::<S>(settings))?;
-        Ok(result)
-    }
-
-    /// Run a model using the specified multi solver unlocking the GIL
-    #[cfg(any(feature = "ipm-simd", feature = "ipm-ocl"))]
-    #[cfg(feature = "pyo3")]
-    fn run_multi_allowing_threads_py<S>(
-        &self,
-        py: Python<'_>,
-        settings: &S::Settings,
-    ) -> Result<MultiNetworkModelResult, PyErr>
-    where
-        S: MultiStateSolver,
-        <S as MultiStateSolver>::Settings: SolverSettings + Sync,
-    {
-        let result = py.detach(|| self.run_multi_scenario::<S>(settings))?;
-        Ok(result)
-    }
 }
 
-/// Run a model using the specified multi solver unlocking the GIL
-#[cfg(feature = "pyo3")]
-#[pymethods]
-impl MultiNetworkModel {
-    #[pyo3(name = "run", signature = (solver_name, solver_kwargs=None))]
-    fn run_py(
-        &self,
-        #[cfg_attr(
-            not(any(feature = "clp", feature = "highs", feature = "ipm-simd", feature = "ipm-ocl")),
-            allow(unused_variables)
-        )]
-        py: Python<'_>,
-        #[cfg_attr(
-            not(any(feature = "clp", feature = "highs", feature = "ipm-simd", feature = "ipm-ocl")),
-            allow(unused_variables)
-        )]
-        solver_name: &str,
-        #[cfg_attr(
-            not(any(feature = "clp", feature = "highs", feature = "ipm-simd", feature = "ipm-ocl")),
-            allow(unused_variables)
-        )]
-        solver_kwargs: Option<&Bound<'_, PyDict>>,
-    ) -> PyResult<MultiNetworkModelResult> {
-        match solver_name {
-            #[cfg(feature = "clp")]
-            "clp" => {
-                let settings = build_clp_settings_py(solver_kwargs)?;
-                self.run_allowing_threads_py::<ClpSolver>(py, &settings)
-            }
-            #[cfg(feature = "cbc")]
-            "cbc" => {
-                let settings = build_cbc_settings_py(solver_kwargs)?;
-                self.run_allowing_threads_py::<CbcSolver>(py, &settings)
-            }
-            #[cfg(feature = "highs")]
-            "highs" => {
-                let settings = build_highs_settings_py(solver_kwargs)?;
-                self.run_allowing_threads_py::<HighsSolver>(py, &settings)
-            }
-            #[cfg(feature = "ipm-simd")]
-            "ipm-simd" => {
-                let settings = build_ipm_simd_settings_py(solver_kwargs)?;
-                self.run_multi_allowing_threads_py::<SimdIpmF64Solver>(py, &settings)
-            }
-            #[cfg(feature = "ipm-ocl")]
-            "clipm-f32" => self.run_multi_allowing_threads_py::<ClIpmF32Solver>(py, &ClIpmSolverSettings::default()),
+#[derive(Debug, Error)]
+pub enum MultiNetworkModelBuilderError {
+    #[error("Error building network `{name}`.")]
+    NetworkBuilderError {
+        name: String,
+        #[source]
+        source: Box<NetworkBuildError>,
+    },
+    #[error("Network `{network_name}` not found when resolving transfer.")]
+    NetworkNotFoundForTransfer { name: String, network_name: String },
+    #[error("Could not resolve f64 metric for transfer `{name}` attribute.")]
+    ResolveMetricF64ForTransferError {
+        name: String,
+        #[source]
+        source: MetricF64ResolutionError,
+    },
+    #[error("Duplicate network name `{name}` found.")]
+    DuplicateNetworkName { name: String },
+    #[error("Duplicate transfer name `{transfer}` found in network `{network}`.")]
+    DuplicateTransferName { transfer: String, network: String },
+    #[error("Transfer `{name}` in network `{network}` cannot transfer from itself.")]
+    TransferToSelf { name: String, network: String },
+}
 
-            #[cfg(feature = "ipm-ocl")]
-            "clipm-f64" => self.run_multi_allowing_threads_py::<ClIpmF64Solver>(py, &ClIpmSolverSettings::default()),
-            _ => Err(PyRuntimeError::new_err(format!("Unknown solver: {solver_name}",))),
+pub struct MultiNetworkModelBuilder {
+    domain: ModelDomain,
+    networks: Vec<MultiNetworkEntryBuilder>,
+}
+
+impl MultiNetworkModelBuilder {
+    pub fn new(domain: ModelDomain) -> Self {
+        Self {
+            domain,
+            networks: Vec::new(),
         }
+    }
+
+    /// Get a reference to the [`MultiNetworkEntryBuilder`]
+    pub fn entry_builder(&mut self, name: &str) -> Option<&mut MultiNetworkEntryBuilder> {
+        self.networks.iter_mut().find(|nb| nb.name == name)
+    }
+
+    pub fn network(&mut self, network: MultiNetworkEntryBuilder) -> &mut Self {
+        self.networks.push(network);
+        self
+    }
+
+    pub fn build(self) -> Result<MultiNetworkModel, MultiNetworkModelBuilderError> {
+        let mut networks = Vec::with_capacity(self.networks.len());
+        let mut network_map = HashMap::with_capacity(self.networks.len());
+        let mut resolution_maps = Vec::with_capacity(self.networks.len());
+
+        for (i, entry_builder) in self.networks.into_iter().enumerate() {
+            let name = entry_builder.name;
+            // Build a map of transfer names to their indices for this network
+            let mut transfers_map = HashMap::with_capacity(entry_builder.transfers.len());
+            for (i, t) in entry_builder.transfers.iter().enumerate() {
+                let idx = MultiNetworkTransferIndex(i);
+                let transfer_name = t.name.clone();
+                if transfers_map.contains_key(&transfer_name) {
+                    return Err(MultiNetworkModelBuilderError::DuplicateTransferName {
+                        transfer: transfer_name,
+                        network: name,
+                    });
+                }
+
+                transfers_map.insert(transfer_name, idx);
+            }
+
+            let (network, resolution_map) =
+                entry_builder
+                    .network
+                    .build(&self.domain, &transfers_map)
+                    .map_err(|source| MultiNetworkModelBuilderError::NetworkBuilderError {
+                        name: name.clone(),
+                        source: Box::new(source),
+                    })?;
+
+            networks.push((name.clone(), network, entry_builder.transfers));
+            resolution_maps.push(resolution_map);
+
+            if network_map.contains_key(&name) {
+                return Err(MultiNetworkModelBuilderError::DuplicateNetworkName { name });
+            }
+
+            network_map.insert(name.clone(), i);
+        }
+
+        let mut entries = Vec::with_capacity(networks.len());
+        for (name, network, unresolved_transfers) in networks {
+            let transfers = unresolved_transfers
+                .iter()
+                .map(|t| {
+                    let idx = network_map.get(&t.from_model).copied().ok_or_else(|| {
+                        MultiNetworkModelBuilderError::NetworkNotFoundForTransfer {
+                            name: t.name.clone(),
+                            network_name: t.from_model.clone(),
+                        }
+                    })?;
+
+                    let r_map = &resolution_maps[idx];
+
+                    // The consumer phase is after the "from" model has been stepped, so we resolve the metric in the "after" phase.
+                    let metric = t
+                        .from_metric
+                        .resolve(r_map, MetricConsumerPhase::After)
+                        .map_err(
+                            |source| MultiNetworkModelBuilderError::ResolveMetricF64ForTransferError {
+                                name: t.name.clone(),
+                                source,
+                            },
+                        )?;
+
+                    let from_model_idx = OtherNetworkIndex::from_indices(idx, entries.len()).ok_or_else(|| {
+                        MultiNetworkModelBuilderError::TransferToSelf {
+                            name: t.name.clone(),
+                            network: name.clone(),
+                        }
+                    })?;
+
+                    Ok(MultiNetworkTransfer {
+                        from_model_idx,
+                        from_metric: metric,
+                        initial_value: t.initial_value,
+                    })
+                })
+                .collect::<Result<Vec<_>, MultiNetworkModelBuilderError>>()?;
+
+            entries.push({
+                MultiNetworkEntry {
+                    name,
+                    network,
+                    transfers,
+                }
+            })
+        }
+
+        Ok(MultiNetworkModel {
+            domain: self.domain,
+            networks: entries,
+        })
     }
 }
 
 #[derive(Debug, Error)]
 pub enum InterNetworkTransferError {
-    #[error("Error retrieving value to transfer to other network: {source}")]
+    #[error("Error retrieving value to transfer to other network `{other_network}`.")]
     RetrievingTransferValue {
         other_network: String,
         #[source]
         source: MetricF64Error,
     },
-    #[error("Error setting transfer in receiving network: {source}")]
+    #[error("Error setting transfer in receiving network `{other_network}`.")]
     SettingTransferValue {
         other_network: String,
         #[source]
@@ -930,63 +1007,61 @@ fn compute_inter_network_transfers(
 
 #[cfg(test)]
 mod tests {
-    use super::{MultiNetworkModel, MultiNetworkModelTimings};
-    use crate::models::ModelDomain;
-    use crate::network::Network;
+    use super::{MultiNetworkEntryBuilder, MultiNetworkModelBuilder, MultiNetworkModelTimings};
+    use crate::models::ModelDomainBuilder;
+    use crate::network::NetworkBuilder;
     use crate::scenario::{ScenarioDomainBuilder, ScenarioGroupBuilder};
-    use crate::solvers::ClpSolver;
-    use crate::test_utils::{default_timestepper, simple_network};
+    use crate::solvers::ClpSolverSettings;
+    use crate::test_utils::{default_time_domain_builder, simple_network};
 
     /// Test basic [`MultiNetworkModel`] functionality by running two independent models.
     #[test]
     fn test_multi_model_step() {
         // Create two simple models
-        let timestepper = default_timestepper();
+        let time_builder = default_time_domain_builder();
 
         let mut scenario_builder = ScenarioDomainBuilder::default();
-        let scenario_group = ScenarioGroupBuilder::new("test-scenario", 2).build().unwrap();
-        scenario_builder = scenario_builder.with_group(scenario_group).unwrap();
+        let scenario_group = ScenarioGroupBuilder::new("test-scenario", 2);
+        scenario_builder.with_group(scenario_group);
 
-        let mut multi_model = MultiNetworkModel::new(ModelDomain::try_from(timestepper, scenario_builder).unwrap());
+        let mut domain_builder = ModelDomainBuilder::new(time_builder);
+        domain_builder.scenario(scenario_builder);
+        let domain = domain_builder.build().unwrap();
 
-        let test_scenario_group_idx = multi_model
-            .domain()
-            .scenarios
-            .group_index("test-scenario")
-            .expect("Scenario group not found.");
+        let mut builder = MultiNetworkModelBuilder::new(domain);
 
-        let mut network1 = Network::default();
-        simple_network(&mut network1, test_scenario_group_idx, 2);
+        let mut network1 = NetworkBuilder::default();
+        simple_network(&mut network1, "test-scenario", 2);
+        let network1_entry = MultiNetworkEntryBuilder::new("network1", network1);
+        builder.network(network1_entry);
 
-        let mut network2 = Network::default();
-        simple_network(&mut network2, test_scenario_group_idx, 2);
+        let mut network2 = NetworkBuilder::default();
+        simple_network(&mut network2, "test-scenario", 2);
+        let network2_entry = MultiNetworkEntryBuilder::new("network2", network2);
+        builder.network(network2_entry);
 
-        let _network1_idx = multi_model.add_network("network1", network1);
-        let _network2_idx = multi_model.add_network("network2", network2);
+        let multi_model = builder.build().unwrap();
 
         let mut state = multi_model
-            .setup::<ClpSolver>(&Default::default())
+            .setup(&ClpSolverSettings::default())
             .expect("Failed to setup multi1-model.");
 
         let mut timings = MultiNetworkModelTimings::new_with_component_timings(&multi_model.networks);
 
         multi_model
-            .step(&mut state, &mut timings)
-            .expect("Failed to step multi1-model.")
+            .step(&mut state, None, &mut timings)
+            .expect("Failed to step multi1-model.");
     }
 
     #[test]
     fn test_duplicate_network_names() {
-        let timestepper = default_timestepper();
-        let scenario_collection = ScenarioDomainBuilder::default();
+        let time_builder = default_time_domain_builder();
 
-        let mut multi_model = MultiNetworkModel::new(ModelDomain::try_from(timestepper, scenario_collection).unwrap());
+        let mut builder = MultiNetworkModelBuilder::new(ModelDomainBuilder::new(time_builder).build().unwrap());
 
-        let network = Network::default();
-        let _network1_idx = multi_model.add_network("network1", network);
-        let network = Network::default();
-        let result = multi_model.add_network("network1", network);
+        builder.network(MultiNetworkEntryBuilder::new("network1", NetworkBuilder::default()));
+        builder.network(MultiNetworkEntryBuilder::new("network1", NetworkBuilder::default()));
 
-        assert!(result.is_err());
+        assert!(builder.build().is_err());
     }
 }

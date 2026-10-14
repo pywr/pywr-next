@@ -1,21 +1,14 @@
+use crate::network::ResolutionMaps;
 use crate::parameters::errors::SimpleCalculationError;
-use crate::parameters::{Parameter, ParameterMeta, ParameterName, ParameterState, SimpleParameter};
-use crate::scenario::ScenarioIndex;
-use crate::state::SimpleParameterValues;
-use crate::timestep::Timestep;
+use crate::parameters::{
+    BuiltParameter, MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder, ParameterMeta,
+    ParameterName, ParameterState, SimpleParameter, SimpleParameterContext,
+};
 
+#[derive(Debug)]
 pub struct DailyProfileParameter {
     meta: ParameterMeta,
     values: [f64; 366],
-}
-
-impl DailyProfileParameter {
-    pub fn new(name: ParameterName, values: [f64; 366]) -> Self {
-        Self {
-            meta: ParameterMeta::new(name),
-            values,
-        }
-    }
 }
 
 impl Parameter for DailyProfileParameter {
@@ -25,20 +18,50 @@ impl Parameter for DailyProfileParameter {
 }
 
 impl SimpleParameter<f64> for DailyProfileParameter {
-    fn before(
+    fn compute(
         &self,
-        timestep: &Timestep,
-        _scenario_index: &ScenarioIndex,
-        _values: &SimpleParameterValues,
+        ctx: SimpleParameterContext<'_>,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<Option<f64>, SimpleCalculationError> {
-        Ok(Some(self.values[timestep.day_of_year_index()]))
+    ) -> Result<f64, SimpleCalculationError> {
+        Ok(self.values[ctx.timestep.day_of_year_index()])
     }
-
     fn as_parameter(&self) -> &dyn Parameter
     where
         Self: Sized,
     {
         self
+    }
+}
+
+#[derive(Debug)]
+pub struct DailyProfileParameterBuilder {
+    meta: ParameterMeta,
+    values: [f64; 366],
+}
+
+impl DailyProfileParameterBuilder {
+    pub fn new(name: ParameterName, values: [f64; 366]) -> Self {
+        Self {
+            meta: ParameterMeta::new(name),
+            values,
+        }
+    }
+}
+
+impl ParameterBuilder<f64> for DailyProfileParameterBuilder {
+    fn name(&self) -> &ParameterName {
+        &self.meta.name
+    }
+
+    fn build(
+        self: Box<Self>,
+        _resolution_maps: &ResolutionMaps,
+    ) -> Result<MaybeBuiltParameter<f64>, ParameterBuildError> {
+        let p = DailyProfileParameter {
+            meta: self.meta,
+            values: self.values,
+        };
+
+        Ok(BuiltParameter::Simple(Box::new(p)).into())
     }
 }

@@ -3,6 +3,7 @@ use crate::SchemaError;
 use crate::py_utils::PythonSource;
 #[cfg(all(feature = "core", feature = "pyo3"))]
 use crate::py_utils::{try_load_optional_py_args, try_load_optional_py_kwargs};
+use crate::validation::ParameterProblem;
 #[cfg(all(feature = "core", feature = "pyo3"))]
 use pyo3::{Python, types::PyAnyMethods};
 use pywr_schema_macros::PywrVisitAll;
@@ -41,22 +42,26 @@ impl PythonAggFunc {
         })?;
 
         let args = Python::attach(|py| try_load_optional_py_args(py, &self.args))?;
-        let kwargs = Python::attach(|py| try_load_optional_py_kwargs(py, &self.kwargs))?;
+        let kwargs = Python::attach(|py| try_load_optional_py_kwargs(py, self.kwargs.as_ref()))?;
 
         Ok(pywr_core::agg_funcs::PyAggFunc::new(function, args, kwargs))
     }
 }
 
-#[derive(Deserialize, Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
+#[derive(Deserialize, Serialize, Debug, Default, Clone, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct AnyNonZero {
-    tolerance: Option<f64>,
+    pub tolerance: Option<f64>,
+}
+
+impl AnyNonZero {
+    pub const DEFAULT_TOLERANCE: f64 = 1e-6;
 }
 
 #[cfg(feature = "core")]
 impl AnyNonZero {
     fn load(&self) -> Result<pywr_core::agg_funcs::AggFuncF64, SchemaError> {
-        let tolerance = self.tolerance.unwrap_or(1e-6);
+        let tolerance = self.tolerance.unwrap_or(Self::DEFAULT_TOLERANCE);
 
         Ok(pywr_core::agg_funcs::AggFuncF64::AnyNonZero { tolerance })
     }
@@ -81,6 +86,18 @@ pub enum AggFunc {
     CountNonZero,
     AnyNonZero(AnyNonZero),
     Python(PythonAggFunc),
+}
+
+impl AggFunc {
+    /// Check that an `AnyNonZero` tolerance is not negative, which would count every value as non-zero.
+    pub fn validate(&self) -> Result<(), Vec<ParameterProblem>> {
+        match self {
+            Self::AnyNonZero(AnyNonZero {
+                tolerance: Some(tolerance),
+            }) if *tolerance < 0.0 => Err(vec![ParameterProblem::NegativeTolerance]),
+            _ => Ok(()),
+        }
+    }
 }
 
 #[cfg(feature = "core")]

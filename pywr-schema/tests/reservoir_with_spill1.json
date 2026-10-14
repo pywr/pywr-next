@@ -4,7 +4,7 @@
     "description": "A test of the ReservoirNode with a spill to an internal output node.",
     "minimum_version": "0.1"
   },
-  "timestepper": {
+  "time": {
     "start": "2015-01-01",
     "end": "2015-01-06",
     "timestep": {
@@ -42,10 +42,17 @@
           "proportion": 1.0
         },
         "compensation": {
-          "type": "Literal",
-          "value": 1.0
+          "flow": {
+            "type": "Literal",
+            "value": 1.0
+          },
+          "cost": {
+            "type": "Literal",
+            "value": -15.0
+          }
         },
-        "spill": "OutputNode"
+        "spill": {},
+        "outflow_node_type": "OutputNode"
       },
       {
         "meta": {
@@ -74,7 +81,9 @@
     ],
     "metric_sets": [
       {
-        "name": "nodes",
+        "meta": {
+          "name": "nodes"
+        },
         "metrics": [
           {
             "type": "Node",
@@ -89,7 +98,9 @@
     ],
     "outputs": [
       {
-        "name": "node-outputs",
+        "meta": {
+          "name": "node-outputs"
+        },
         "type": "CSV",
         "format": "Long",
         "filename": "reservoir_with_spill1-expected.csv",

@@ -1,15 +1,12 @@
-use crate::aggregated_node::AggregatedNodeIndex;
-use crate::edge::EdgeIndex;
-use crate::network::Network;
-use crate::node::{Node, NodeBounds, NodeIndex, NodeType};
+use crate::clock::Instant;
+use crate::network::{AggregatedNodeIndex, EdgeIndex, Network, NodeIndex};
+use crate::node::{Node, NodeBounds, NodeType};
 use crate::solvers::col_edge_map::{ColumnEdgeMap, ColumnEdgeMapBuilder};
 use crate::solvers::{SolverSetupError, SolverSolveError, SolverTimings};
 use crate::state::{ConstParameterValues, State};
 use crate::timestep::Timestep;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::Debug;
-use std::ops::Deref;
-use std::time::Instant;
 
 enum Bounds {
     // Free,
@@ -444,7 +441,7 @@ where
     /// Update edge objective coefficients
     fn update_edge_objectives(&mut self, network: &Network, state: &State) -> Result<(), SolverSolveError> {
         self.builder.zero_obj_coefficients();
-        for edge in network.edges().deref() {
+        for edge in network.edges() {
             let obj_coef: f64 = edge.cost(network.nodes(), network, state).map_err(|source| {
                 let from_node = match network.get_node(&edge.from_node_index()) {
                     Some(n) => n,
@@ -497,6 +494,15 @@ where
                     NodeBounds::Volume(bounds) => (-bounds.available / dt, bounds.missing / dt),
                 };
 
+            if lb > ub {
+                return Err(SolverSolveError::NodeBoundsInfeasible {
+                    name: node.name().to_string(),
+                    sub_name: node.sub_name().map(|s| s.to_string()),
+                    lower_bound: lb,
+                    upper_bound: ub,
+                });
+            }
+
             match row.row_type {
                 NodeRowType::Continuous => {
                     // Regular node constraint
@@ -529,47 +535,51 @@ where
                 .get_aggregated_node(&agg_node_row.agg_node_idx)
                 .ok_or(SolverSolveError::AggregatedNodeIndexNotFound(agg_node_row.agg_node_idx))?;
 
-            // Only create row for nodes that have factors
-            if let Some(Ok(node_pairs)) = agg_node.get_norm_factor_pairs(network, state) {
-                assert_eq!(
-                    agg_node_row.row_indices.len(),
-                    node_pairs.len(),
-                    "Row indices and node pairs do not match!"
-                );
+            let node_pairs = agg_node
+                .get_norm_factor_pairs(network, state)
+                .expect("No factor pairs found for an aggregated node that was setup with factors?!")
+                .map_err(|source| SolverSolveError::AggregatedNodeFactorError {
+                    name: agg_node.name().to_string(),
+                    sub_name: agg_node.sub_name().map(|s| s.to_string()),
+                    source,
+                })?;
 
-                for (node_pair, row_idx) in node_pairs.iter().zip(agg_node_row.row_indices.iter()) {
-                    // Only update pairs with a row index (i.e. not fixed)
-                    if let Some(row_idx) = row_idx {
-                        // Modify the constraint matrix coefficients for the nodes
-                        // TODO error handling?
-                        let nodes = network.nodes();
-                        for node0_idx in node_pair.node0_indices() {
-                            let node0 = nodes.get(node0_idx).expect("Node index not found!");
-                            self.builder.update_row_coefficients(
-                                *row_idx,
-                                node0,
-                                node_pair.node0_factor(),
-                                &self.col_edge_map,
-                            );
-                        }
+            assert_eq!(
+                agg_node_row.row_indices.len(),
+                node_pairs.len(),
+                "Row indices and node pairs do not match!"
+            );
 
-                        for node1_idx in node_pair.node1_indices() {
-                            let node1 = nodes.get(node1_idx).expect("Node index not found!");
-                            self.builder.update_row_coefficients(
-                                *row_idx,
-                                node1,
-                                node_pair.node1_factor(),
-                                &self.col_edge_map,
-                            );
-                        }
-
-                        // Apply the bounds to the row
-                        self.builder
-                            .apply_row_bounds(row_idx.to_usize().unwrap(), node_pair.rhs(), node_pair.rhs());
+            for (node_pair, row_idx) in node_pairs.iter().zip(agg_node_row.row_indices.iter()) {
+                // Only update pairs with a row index (i.e. not fixed)
+                if let Some(row_idx) = row_idx {
+                    // Modify the constraint matrix coefficients for the nodes
+                    // TODO error handling?
+                    let nodes = network.nodes();
+                    for node0_idx in node_pair.node0_indices() {
+                        let node0 = nodes.get(**node0_idx).expect("Node index not found!");
+                        self.builder.update_row_coefficients(
+                            *row_idx,
+                            node0,
+                            node_pair.node0_factor(),
+                            &self.col_edge_map,
+                        );
                     }
+
+                    for node1_idx in node_pair.node1_indices() {
+                        let node1 = nodes.get(**node1_idx).expect("Node index not found!");
+                        self.builder.update_row_coefficients(
+                            *row_idx,
+                            node1,
+                            node_pair.node1_factor(),
+                            &self.col_edge_map,
+                        );
+                    }
+
+                    // Apply the bounds to the row
+                    self.builder
+                        .apply_row_bounds(row_idx.to_usize().unwrap(), node_pair.rhs(), node_pair.rhs());
                 }
-            } else {
-                panic!("No factor pairs found for an aggregated node that was setup with factors?!");
             }
         }
 
@@ -582,11 +592,7 @@ where
         network: &Network,
         state: &State,
     ) -> Result<(), SolverSolveError> {
-        for (row_id, agg_node) in self
-            .agg_node_constraint_row_ids
-            .iter()
-            .zip(network.aggregated_nodes().deref())
-        {
+        for (row_id, agg_node) in self.agg_node_constraint_row_ids.iter().zip(network.aggregated_nodes()) {
             let (lb, ub): (f64, f64) =
                 agg_node
                     .get_flow_bounds(network, state)
@@ -612,7 +618,7 @@ where
         for (row_id, node) in self
             .virtual_storage_constraint_row_ids
             .iter()
-            .zip(network.virtual_storage_nodes().deref())
+            .zip(network.virtual_storage_nodes())
         {
             let (lb, ub) = if node.is_active(timestep) {
                 let (avail, missing) = node.get_available_volume_bounds(state)?;
@@ -621,6 +627,15 @@ where
                 // Node is inactive, so set bounds to be unbounded
                 (self.builder.f64_neg_max, self.builder.f64_max)
             };
+
+            if lb > ub {
+                return Err(SolverSolveError::VirtualStorageBoundsInfeasible {
+                    name: node.name().to_string(),
+                    sub_name: node.sub_name().map(|s| s.to_string()),
+                    lower_bound: lb,
+                    upper_bound: ub,
+                });
+            }
 
             self.builder.apply_row_bounds(*row_id, lb, ub);
         }
@@ -668,7 +683,7 @@ where
         // Create the aggregated node constraints
         let agg_node_constraint_row_ids = self.create_aggregated_node_constraints(network);
         // Create the aggregated node factor constraints
-        let agg_node_factor_constraint_row_ids = self.create_aggregated_node_factor_constraints(network, values);
+        let agg_node_factor_constraint_row_ids = self.create_aggregated_node_factor_constraints(network, values)?;
         // Create virtual storage constraints
         let virtual_storage_constraint_row_ids = self.create_virtual_storage_constraints(network);
         // Create mutual exclusivity constraints
@@ -733,7 +748,7 @@ where
         // majority of cases the nodes will only be in one set. However, if a node is in different
         // sets then we need to create separate binary variables and associated them with that node.
         let mut node_sets_in_a_mutual_exclusivity = HashSet::new();
-        for agg_node in network.aggregated_nodes().deref() {
+        for agg_node in network.aggregated_nodes() {
             if agg_node.has_exclusivity() {
                 for node_set in agg_node.iter_nodes() {
                     node_sets_in_a_mutual_exclusivity.insert(node_set);
@@ -756,7 +771,7 @@ where
 
     /// Create mass balance constraints for each edge
     fn create_mass_balance_constraints(&mut self, network: &Network) {
-        for node in network.nodes().deref() {
+        for node in network.nodes() {
             // Only link nodes create mass-balance constraints
 
             if let NodeType::Link = node.node_type() {
@@ -849,13 +864,24 @@ where
     ) -> Result<Vec<NodeRowId<I>>, SolverSetupError> {
         let mut row_ids = Vec::with_capacity(network.nodes().len());
 
-        for node in network.nodes().deref() {
+        for node in network.nodes() {
             // Get the node's flow bounds if they are constants
             // Storage nodes cannot have constant bounds
             let bounds = match node.get_const_bounds(values)? {
                 Some(NodeBounds::Flow(bounds)) => Some(bounds),
                 _ => None,
             };
+
+            if let Some(bounds) = bounds
+                && bounds.min_flow > bounds.max_flow
+            {
+                return Err(SolverSetupError::NodeBoundsInfeasible {
+                    name: node.name().to_string(),
+                    sub_name: node.sub_name().map(|s| s.to_string()),
+                    lower_bound: bounds.min_flow,
+                    upper_bound: bounds.max_flow,
+                });
+            }
 
             // If there are binary variables associated with this node, then we need to add a row
             // that enforces each binary variable's constraints
@@ -947,12 +973,21 @@ where
         &mut self,
         network: &Network,
         values: &ConstParameterValues,
-    ) -> Vec<AggNodeFactorRow<I>> {
+    ) -> Result<Vec<AggNodeFactorRow<I>>, SolverSetupError> {
         let mut row_ids = Vec::new();
 
-        for agg_node in network.aggregated_nodes().deref() {
+        for agg_node in network.aggregated_nodes() {
+            let node_pairs = agg_node
+                .get_const_norm_factor_pairs(values)
+                .transpose()
+                .map_err(|source| SolverSetupError::AggregatedNodeFactorError {
+                    name: agg_node.name().to_string(),
+                    sub_name: agg_node.sub_name().map(|s| s.to_string()),
+                    source,
+                })?;
+
             // Only create row for nodes that have factors
-            if let Some(Ok(node_pairs)) = agg_node.get_const_norm_factor_pairs(values) {
+            if let Some(node_pairs) = node_pairs {
                 let mut row_indices_for_agg_node = Vec::with_capacity(node_pairs.len());
 
                 for node_pair in node_pairs {
@@ -966,14 +1001,14 @@ where
                     let f0 = node_pair.node0_factor();
 
                     for node0_idx in node_pair.node0_indices() {
-                        let node0 = nodes.get(node0_idx).expect("Node index not found!");
+                        let node0 = nodes.get(**node0_idx).expect("Node index not found!");
                         self.add_node(node0, f0.unwrap_or(1.0), &mut row);
                     }
 
                     let f1 = node_pair.node1_factor();
 
                     for node1_idx in node_pair.node1_indices() {
-                        let node1 = nodes.get(node1_idx).expect("Node index not found!");
+                        let node1 = nodes.get(**node1_idx).expect("Node index not found!");
                         self.add_node(node1, f1.unwrap_or(1.0), &mut row);
                     }
 
@@ -1001,7 +1036,7 @@ where
             }
         }
 
-        row_ids
+        Ok(row_ids)
     }
 
     /// Create aggregated node constraints
@@ -1012,14 +1047,14 @@ where
     fn create_aggregated_node_constraints(&mut self, network: &Network) -> Vec<usize> {
         let mut row_ids = Vec::with_capacity(network.aggregated_nodes().len());
 
-        for agg_node in network.aggregated_nodes().deref() {
+        for agg_node in network.aggregated_nodes() {
             // Create empty arrays to store the matrix data
             let mut row: RowBuilder<I> = RowBuilder::default();
 
             for node_indices in agg_node.iter_nodes() {
                 // TODO error handling?
                 for node_idx in node_indices {
-                    let node = network.nodes().get(node_idx).expect("Node index not found!");
+                    let node = network.nodes().get(**node_idx).expect("Node index not found!");
                     self.add_node(node, 1.0, &mut row);
                 }
             }
@@ -1035,7 +1070,7 @@ where
     fn create_virtual_storage_constraints(&mut self, network: &Network) -> Vec<usize> {
         let mut row_ids = Vec::with_capacity(network.virtual_storage_nodes().len());
 
-        for virtual_storage in network.virtual_storage_nodes().deref() {
+        for virtual_storage in network.virtual_storage_nodes() {
             // Create empty arrays to store the matrix data
 
             let mut row: RowBuilder<I> = RowBuilder::default();
@@ -1046,7 +1081,7 @@ where
                         virtual_storage.full_name()
                     );
                 }
-                let node = network.nodes().get(node_index).expect("Node index not found!");
+                let node = network.nodes().get(**node_index).expect("Node index not found!");
                 self.add_node(node, -factor, &mut row);
             }
             let row_id = self.builder.add_variable_row(row);

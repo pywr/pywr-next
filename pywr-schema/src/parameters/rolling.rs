@@ -1,14 +1,15 @@
 use crate::agg_funcs::{AggFunc, IndexAggFunc};
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
+use crate::meta::NamedMeta;
 use crate::metric::{IndexMetric, Metric, NodeAttrReference};
 #[cfg(feature = "core")]
 use crate::network::LoadArgs;
-use crate::parameters::ParameterMeta;
 use crate::v1::TryIntoV2;
+use crate::validation::ParameterProblem;
 use crate::{ComponentConversionError, ConversionData, ConversionError, TryFromV1};
 #[cfg(feature = "core")]
-use pywr_core::parameters::{ParameterIndex, ParameterName};
+use pywr_core::parameters::ParameterName;
 use pywr_schema_macros::{PywrVisitAll, skip_serializing_none};
 use pywr_v1_schema::parameters::RollingMeanFlowNodeParameter as RollingMeanFlowNodeParameterV1;
 use schemars::JsonSchema;
@@ -24,7 +25,7 @@ use schemars::JsonSchema;
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct RollingParameter {
-    pub meta: ParameterMeta,
+    pub meta: NamedMeta,
     pub metric: Metric,
     pub window_size: u64,
     pub initial_value: f64,
@@ -32,16 +33,44 @@ pub struct RollingParameter {
     pub agg_func: AggFunc,
 }
 
+/// Check that the window holds a value, and can hold `min_values` of them.
+fn check_window(window_size: u64, min_values: Option<u64>) -> Result<(), Vec<ParameterProblem>> {
+    let mut problems = Vec::new();
+
+    if window_size == 0 {
+        problems.push(ParameterProblem::ZeroWindowSize);
+    }
+    if let Some(min_values) = min_values.filter(|min_values| *min_values > window_size) {
+        problems.push(ParameterProblem::MinValuesAboveWindow {
+            min_values,
+            window_size,
+        });
+    }
+
+    if problems.is_empty() { Ok(()) } else { Err(problems) }
+}
+
+impl RollingParameter {
+    pub fn validate(&self) -> Result<(), Vec<ParameterProblem>> {
+        let mut problems = check_window(self.window_size, self.min_values)
+            .err()
+            .unwrap_or_default();
+        problems.extend(self.agg_func.validate().err().unwrap_or_default());
+
+        if problems.is_empty() { Ok(()) } else { Err(problems) }
+    }
+}
+
 #[cfg(feature = "core")]
 impl RollingParameter {
-    pub fn add_to_model(
+    pub fn add_to_network(
         &self,
-        network: &mut pywr_core::network::Network,
+        network: &mut pywr_core::network::NetworkBuilder,
         args: &LoadArgs,
         parent: Option<&str>,
-    ) -> Result<ParameterIndex<f64>, SchemaError> {
-        let metric = self.metric.load(network, args, None)?;
-        let p = pywr_core::parameters::RollingParameter::new(
+    ) -> Result<(), SchemaError> {
+        let metric = self.metric.load(network, args, parent)?;
+        let p = pywr_core::parameters::RollingParameterBuilder::new(
             ParameterName::new(&self.meta.name, parent),
             metric,
             self.window_size as usize,
@@ -49,7 +78,10 @@ impl RollingParameter {
             self.min_values.unwrap_or(self.window_size) as usize,
             self.agg_func.load(args.data_path)?,
         );
-        Ok(network.add_parameter(Box::new(p))?)
+
+        network.parameters().f64(Box::new(p));
+
+        Ok(())
     }
 }
 
@@ -64,7 +96,7 @@ impl RollingParameter {
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct RollingIndexParameter {
-    pub meta: ParameterMeta,
+    pub meta: NamedMeta,
     pub metric: IndexMetric,
     pub window_size: u64,
     pub initial_value: u64,
@@ -72,16 +104,22 @@ pub struct RollingIndexParameter {
     pub agg_func: IndexAggFunc,
 }
 
+impl RollingIndexParameter {
+    pub fn validate(&self) -> Result<(), Vec<ParameterProblem>> {
+        check_window(self.window_size, self.min_values)
+    }
+}
+
 #[cfg(feature = "core")]
 impl RollingIndexParameter {
-    pub fn add_to_model(
+    pub fn add_to_network(
         &self,
-        network: &mut pywr_core::network::Network,
+        network: &mut pywr_core::network::NetworkBuilder,
         args: &LoadArgs,
         parent: Option<&str>,
-    ) -> Result<ParameterIndex<u64>, SchemaError> {
-        let metric = self.metric.load(network, args, None)?;
-        let p = pywr_core::parameters::RollingParameter::new(
+    ) -> Result<(), SchemaError> {
+        let metric = self.metric.load(network, args, parent)?;
+        let p = pywr_core::parameters::RollingParameterBuilder::new(
             ParameterName::new(&self.meta.name, parent),
             metric,
             self.window_size as usize,
@@ -89,7 +127,9 @@ impl RollingIndexParameter {
             self.min_values.unwrap_or(self.window_size) as usize,
             self.agg_func.load(args.data_path)?,
         );
-        Ok(network.add_index_parameter(Box::new(p))?)
+        network.parameters().u64(Box::new(p));
+
+        Ok(())
     }
 }
 
@@ -101,7 +141,7 @@ impl TryFromV1<RollingMeanFlowNodeParameterV1> for RollingParameter {
         parent_node: Option<&str>,
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: ParameterMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
+        let meta: NamedMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
 
         let window_size = match (v1.timesteps, v1.days) {
             (Some(timesteps), None) => timesteps as u64,

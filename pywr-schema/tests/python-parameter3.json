@@ -1,0 +1,96 @@
+{
+  "metadata": {
+    "title": "Python parameters",
+    "description": "An example of the all_parameters filter recording the phases custom Python classes calculate.",
+    "minimum_version": "0.1"
+  },
+  "time": {
+    "start": "2015-01-01",
+    "end": "2015-01-01",
+    "timestep": {
+      "type": "Days",
+      "days": 1
+    }
+  },
+  "network": {
+    "nodes": [
+      {
+        "meta": {
+          "name": "supply1"
+        },
+        "type": "Input",
+        "max_flow": {
+          "type": "Literal",
+          "value": 15.0
+        }
+      },
+      {
+        "meta": {
+          "name": "demand1"
+        },
+        "type": "Output",
+        "max_flow": {
+          "type": "Literal",
+          "value": 10
+        },
+        "cost": {
+          "type": "Literal",
+          "value": -10
+        }
+      }
+    ],
+    "edges": [
+      {
+        "from_node": "supply1",
+        "to_node": "demand1"
+      }
+    ],
+    "parameters": [
+      {
+        "meta": {
+          "name": "my-after-parameter"
+        },
+        "type": "Python",
+        "source": {
+          "type": "Path",
+          "path": "test_parameters.py"
+        },
+        "object": {
+          "type": "Class",
+          "class": "AfterParameter"
+        }
+      },
+      {
+        "meta": {
+          "name": "my-before-and-after-parameter"
+        },
+        "type": "Python",
+        "source": {
+          "type": "Path",
+          "path": "test_parameters.py"
+        },
+        "object": {
+          "type": "Class",
+          "class": "BeforeAndAfterParameter"
+        }
+      }
+    ],
+    "metric_sets": [
+      {
+        "meta": {"name": "parameters"},
+        "filters": {
+          "all_parameters": true
+        }
+      }
+    ],
+    "outputs": [
+      {
+        "meta": {"name": "parameters"},
+        "type": "CSV",
+        "format": "Long",
+        "filename": "python-parameter3-expected.csv",
+        "metric_set": "parameters"
+      }
+    ]
+  }
+}

@@ -1,10 +1,8 @@
-use crate::node::NodeIndex;
-use crate::recorders::RecorderIndex;
-pub use network::NetworkError;
-
+pub use network::{NetworkError, NodeIndex};
 pub mod agg_funcs;
 pub mod aggregated_node;
 mod aggregated_storage_node;
+pub mod clock;
 pub mod edge;
 pub mod metric;
 pub mod models;
@@ -20,3 +18,16 @@ pub mod test_utils;
 pub mod timestep;
 pub mod utils;
 pub mod virtual_storage;
+
+pub use aggregated_node::{AggregatedNode, AggregatedNodeBuilder, AggregatedNodeBuilderError};
+pub use aggregated_storage_node::{
+    AggregatedStorageNode, AggregatedStorageNodeBuilder, AggregatedStorageNodeBuilderError,
+};
+pub use node::NodeBuilder;
+
+/// Absolute tolerance for floating-point equality checks.
+/// For values with large magnitudes, consider using relative tolerance instead.
+const FLOAT_EQ_TOLERANCE: f64 = 1e-6;
+
+/// Absolute tolerance for detecting mass-balance discrepancies on storage nodes.
+const STORAGE_MASS_BALANCE_TOLERANCE: f64 = 1e-6;

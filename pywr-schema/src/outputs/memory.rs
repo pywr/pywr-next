@@ -1,8 +1,10 @@
 #[cfg(feature = "core")]
 use crate::SchemaError;
 use crate::agg_funcs::AggFunc;
+use crate::meta::NamedMeta;
+use crate::visit::{Reference, ReferenceMut, VisitReferences};
 #[cfg(feature = "core")]
-use pywr_core::recorders::MemoryRecorder;
+use pywr_core::recorders::MemoryRecorderBuilder;
 use pywr_schema_macros::{PywrVisitPaths, skip_serializing_none};
 use schemars::JsonSchema;
 #[cfg(feature = "core")]
@@ -48,29 +50,42 @@ impl From<MemoryAggregationOrder> for pywr_core::recorders::AggregationOrder {
 #[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitPaths)]
 pub struct MemoryOutput {
-    pub name: String,
+    pub meta: NamedMeta,
     pub metric_set: String,
     pub aggregation: Option<MemoryAggregation>,
     pub order: Option<MemoryAggregationOrder>,
 }
 
+impl MemoryOutput {
+    pub const DEFAULT_ORDER: MemoryAggregationOrder = MemoryAggregationOrder::MetricTimeScenario;
+}
+
+/// Written out rather than derived: a derive would walk `metric_set` as a plain `String`.
+impl VisitReferences for MemoryOutput {
+    fn visit_references<F: FnMut(Reference<'_>)>(&self, visitor: &mut F) {
+        visitor(Reference::MetricSet(&self.metric_set));
+    }
+
+    fn visit_references_mut<F: FnMut(ReferenceMut<'_>)>(&mut self, visitor: &mut F) {
+        visitor(ReferenceMut::MetricSet(&mut self.metric_set));
+    }
+}
+
 #[cfg(feature = "core")]
 impl MemoryOutput {
-    pub fn add_to_model(
+    pub fn add_to_network(
         &self,
-        network: &mut pywr_core::network::Network,
+        network: &mut pywr_core::network::NetworkBuilder,
         data_path: Option<&Path>,
     ) -> Result<(), SchemaError> {
-        let metric_set_idx = network.get_metric_set_index_by_name(&self.metric_set)?;
-
-        let recorder = MemoryRecorder::new(
-            &self.name,
-            metric_set_idx,
+        let recorder = MemoryRecorderBuilder::new(
+            &self.meta.name,
+            &self.metric_set,
             self.aggregation.clone().unwrap_or_default().load(data_path)?,
-            self.order.map(|o| o.into()).unwrap_or_default(),
+            self.order.unwrap_or(Self::DEFAULT_ORDER).into(),
         );
 
-        network.add_recorder(Box::new(recorder))?;
+        network.recorder(Box::new(recorder));
 
         Ok(())
     }
@@ -78,11 +93,13 @@ impl MemoryOutput {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(feature = "core")]
+    use crate::FileSystem;
     use crate::ModelSchema;
     #[cfg(feature = "core")]
     use float_cmp::assert_approx_eq;
     #[cfg(feature = "core")]
-    use pywr_core::solvers::{ClpSolver, ClpSolverSettings};
+    use pywr_core::solvers::ClpSolverSettings;
     use std::fs::read_to_string;
     use std::str::FromStr;
     #[cfg(feature = "core")]
@@ -110,9 +127,12 @@ mod tests {
 
         let temp_dir = TempDir::new().unwrap();
 
-        let model = schema.build_model(None, Some(temp_dir.path())).unwrap();
+        let builder = schema
+            .create_model_builder(&FileSystem, None, Some(temp_dir.path()))
+            .unwrap();
+        let model = builder.build().unwrap();
 
-        let result = model.run::<ClpSolver>(&ClpSolverSettings::default()).unwrap();
+        let result = model.run(&ClpSolverSettings::default()).unwrap();
 
         let result = result
             .network_result
@@ -121,6 +141,7 @@ mod tests {
             .aggregated_value()
             .expect("No results found");
 
-        assert_approx_eq!(f64, result, 91.0);
+        // 91 in each of the two scenarios, summed by the scenario function.
+        assert_approx_eq!(f64, result, 182.0);
     }
 }

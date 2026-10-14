@@ -46,9 +46,9 @@ impl PythonSource {
             PythonSource::Module { module } => PyModule::import(py, module.as_str()),
             PythonSource::Path { path } => {
                 let path = &make_path(path, data_path);
-                let code = CString::new(std::fs::read_to_string(path).map_err(|error| SchemaError::IO {
+                let code = CString::new(std::fs::read_to_string(path).map_err(|source| SchemaError::IO {
                     path: path.to_path_buf(),
-                    error,
+                    source,
                 })?)
                 .unwrap();
 
@@ -85,7 +85,7 @@ pub fn try_load_optional_py_args(py: Python, args: &Option<Vec<Value>>) -> Resul
 /// If `kwargs` is `None`, an empty dictionary is returned. If `kwargs` is `Some`, each value is converted
 /// to a Python object and returned as a dictionary.
 #[cfg(all(feature = "core", feature = "pyo3"))]
-pub fn try_load_optional_py_kwargs(py: Python, kwargs: &Option<HashMap<String, Value>>) -> Result<Py<PyDict>, PyErr> {
+pub fn try_load_optional_py_kwargs(py: Python, kwargs: Option<&HashMap<String, Value>>) -> Result<Py<PyDict>, PyErr> {
     match kwargs {
         None => Ok(PyDict::new(py).unbind()),
         Some(kwargs) => {

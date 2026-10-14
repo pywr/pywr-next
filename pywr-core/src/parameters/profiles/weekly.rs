@@ -1,16 +1,20 @@
+use crate::network::ResolutionMaps;
 use crate::parameters::errors::SimpleCalculationError;
-use crate::parameters::{Parameter, ParameterMeta, ParameterName, ParameterState, SimpleParameter};
-use crate::scenario::ScenarioIndex;
-use crate::state::SimpleParameterValues;
+use crate::parameters::{
+    BuiltParameter, MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder, ParameterMeta,
+    ParameterName, ParameterState, SimpleParameter, SimpleParameterContext,
+};
 use crate::timestep::Timestep;
 use thiserror::Error;
 
+#[derive(Debug)]
 pub enum WeeklyInterpDay {
     First,
     Last,
 }
 
 // A weekly profile can be 52 or 53 week long
+#[derive(Debug)]
 pub enum WeeklyProfileValues {
     FiftyTwo([f64; 52]),
     FiftyThree([f64; 53]),
@@ -153,20 +157,11 @@ impl TryFrom<&[f64]> for WeeklyProfileValues {
 }
 
 /// Weekly profile parameter. This supports a profile with either 52 or 53 weeks, with or without interpolation.
+#[derive(Debug)]
 pub struct WeeklyProfileParameter {
     meta: ParameterMeta,
     values: WeeklyProfileValues,
     interp_day: Option<WeeklyInterpDay>,
-}
-
-impl WeeklyProfileParameter {
-    pub fn new(name: ParameterName, values: WeeklyProfileValues, interp_day: Option<WeeklyInterpDay>) -> Self {
-        Self {
-            meta: ParameterMeta::new(name),
-            values,
-            interp_day,
-        }
-    }
 }
 
 impl Parameter for WeeklyProfileParameter {
@@ -176,16 +171,13 @@ impl Parameter for WeeklyProfileParameter {
 }
 
 impl SimpleParameter<f64> for WeeklyProfileParameter {
-    fn before(
+    fn compute(
         &self,
-        timestep: &Timestep,
-        _scenario_index: &ScenarioIndex,
-        _values: &SimpleParameterValues,
+        ctx: SimpleParameterContext<'_>,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<Option<f64>, SimpleCalculationError> {
-        Ok(Some(self.values.value(timestep, &self.interp_day)))
+    ) -> Result<f64, SimpleCalculationError> {
+        Ok(self.values.value(ctx.timestep, &self.interp_day))
     }
-
     fn as_parameter(&self) -> &dyn Parameter
     where
         Self: Sized,
@@ -194,39 +186,72 @@ impl SimpleParameter<f64> for WeeklyProfileParameter {
     }
 }
 
+#[derive(Debug)]
+pub struct WeeklyProfileParameterBuilder {
+    meta: ParameterMeta,
+    values: WeeklyProfileValues,
+    interp_day: Option<WeeklyInterpDay>,
+}
+
+impl WeeklyProfileParameterBuilder {
+    pub fn new(name: ParameterName, values: WeeklyProfileValues) -> Self {
+        Self {
+            meta: ParameterMeta::new(name),
+            values,
+            interp_day: None,
+        }
+    }
+
+    pub fn interp_day(&mut self, interp_day: WeeklyInterpDay) -> &mut Self {
+        self.interp_day = Some(interp_day);
+        self
+    }
+}
+
+impl ParameterBuilder<f64> for WeeklyProfileParameterBuilder {
+    fn name(&self) -> &ParameterName {
+        &self.meta.name
+    }
+
+    fn build(
+        self: Box<Self>,
+        _resolution_maps: &ResolutionMaps,
+    ) -> Result<MaybeBuiltParameter<f64>, ParameterBuildError> {
+        let p = WeeklyProfileParameter {
+            meta: self.meta,
+            values: self.values,
+            interp_day: self.interp_day,
+        };
+
+        Ok(BuiltParameter::Simple(Box::new(p)).into())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::parameters::profiles::weekly::{WeeklyInterpDay, WeeklyProfileValues};
     use crate::test_utils::assert_approx_array_eq;
     use crate::timestep::{PywrDuration, Timestep};
-    use chrono::{Datelike, NaiveDate, TimeDelta};
     use float_cmp::{F64Margin, assert_approx_eq};
+    use jiff::ToSpan;
+    use jiff::civil::date;
 
     /// Build a time-series from the weekly profile
     fn collect(week_size: &WeeklyProfileValues, interp_day: Option<WeeklyInterpDay>) -> Vec<f64> {
-        let dt0 = NaiveDate::from_ymd_opt(2020, 1, 1)
-            .unwrap()
-            .and_hms_opt(0, 0, 0)
-            .unwrap();
-        let dt1 = NaiveDate::from_ymd_opt(2020, 12, 31)
-            .unwrap()
-            .and_hms_opt(23, 59, 59)
-            .unwrap();
+        let dt0 = date(2020, 1, 1).at(0, 0, 0, 0);
+        let dt1 = date(2020, 12, 31).at(23, 59, 59, 0);
 
         let mut dt = dt0;
         let mut data: Vec<f64> = Vec::new();
         while dt <= dt1 {
-            let date = NaiveDate::from_ymd_opt(dt.year(), dt.month(), dt.day())
-                .unwrap()
-                .and_hms_opt(0, 0, 0)
-                .unwrap();
+            let date = date(dt.year(), dt.month(), dt.day()).at(0, 0, 0, 0);
 
             let timestep = Timestep::new(date, 0, PywrDuration::from_days(1));
 
             let value = week_size.value(&timestep, &interp_day);
             data.push(value);
 
-            dt += TimeDelta::days(1);
+            dt += 1.days();
         }
         data
     }
@@ -471,17 +496,11 @@ mod tests {
         ];
         let week_size = WeeklyProfileValues::FiftyTwo(profile);
 
-        let t0 = NaiveDate::from_ymd_opt(2016, 1, 1)
-            .unwrap()
-            .and_hms_opt(0, 0, 0)
-            .unwrap();
+        let t0 = date(2016, 1, 1).at(0, 0, 0, 0);
         let t0 = Timestep::new(t0, 0, PywrDuration::from_days(1));
         assert_eq!(week_size.interpolate(&t0, 0.0, 1.0), 0.0);
 
-        let t0 = NaiveDate::from_ymd_opt(2016, 1, 7)
-            .unwrap()
-            .and_hms_opt(12, 00, 00)
-            .unwrap();
+        let t0 = date(2016, 1, 7).at(12, 00, 00, 0);
         let margins = F64Margin {
             epsilon: 2.0,
             ulps: (f64::EPSILON * 2.0) as i64,

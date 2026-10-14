@@ -3,10 +3,10 @@ from pathlib import Path
 
 # ANCHOR: convert
 from pywr import (
-    convert_model_from_v1_json_string,
     ComponentConversionError,
     ConversionError,
     ModelSchema,
+    convert_model_from_v1_json_string,
 )
 
 
@@ -33,7 +33,7 @@ def convert(v1_path: Path):
     schema = ModelSchema.from_json_string(schema_data_str)
     model = schema.build(Path(__file__).parent, None)
     model.run("clp")
-    print("Model run complete 🎉")
+    print("Model run complete!")
 
 
 # ANCHOR_END: convert

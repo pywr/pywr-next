@@ -1,29 +1,42 @@
 use crate::agg_funcs::AggFunc;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
+use crate::meta::NamedMeta;
 use crate::metric::Metric;
 #[cfg(feature = "core")]
-use crate::metric::{EdgeReference, VirtualNodeAttrReference};
+use crate::metric::{EdgeReference, ParameterReferenceBuilder, ParameterReturnValue, VirtualNodeAttrReference};
 #[cfg(feature = "core")]
 use crate::network::LoadArgs;
 #[cfg(feature = "core")]
 use crate::parameters::{Parameter, PythonReturnType};
-use pywr_schema_macros::skip_serializing_none;
+use crate::validation::MetricSetProblem;
+use pywr_schema_macros::{PywrVisitPaths, PywrVisitReferences, skip_serializing_none};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use std::num::NonZeroUsize;
+use std::num::NonZeroI64;
 #[cfg(feature = "core")]
 use std::path::Path;
 use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumString, IntoStaticStr};
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Copy, Clone, JsonSchema, Display, EnumDiscriminants)]
+#[derive(
+    serde::Deserialize,
+    serde::Serialize,
+    Debug,
+    Copy,
+    Clone,
+    JsonSchema,
+    PywrVisitPaths,
+    PywrVisitReferences,
+    Display,
+    EnumDiscriminants,
+)]
 #[serde(tag = "type", deny_unknown_fields)]
 #[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
 #[strum_discriminants(name(MetricAggFrequencyType))]
 pub enum MetricAggFrequency {
     Monthly,
     Annual,
-    Days { days: NonZeroUsize },
+    Days { days: NonZeroI64 },
 }
 
 #[cfg(feature = "core")]
@@ -46,7 +59,7 @@ impl From<MetricAggFrequency> for pywr_core::recorders::AggregationFrequency {
 ///
 /// If the metric set has a child aggregator then the aggregation will be performed over the
 /// aggregated values of the child aggregator.
-#[derive(Deserialize, Serialize, Clone, JsonSchema)]
+#[derive(Deserialize, Serialize, Debug, Clone, JsonSchema, PywrVisitPaths, PywrVisitReferences)]
 #[serde(deny_unknown_fields)]
 pub struct MetricAggregator {
     /// Optional aggregation frequency.
@@ -73,8 +86,9 @@ impl MetricAggregator {
 /// Filters that allow multiple metrics to be added to a metric set.
 ///
 /// The filters allow the default metrics for all nodes, virtual nodes, parameters and/or edges in
-/// a model to be added to a metric set.
-#[derive(Deserialize, Serialize, Clone, JsonSchema, Default)]
+/// a model to be added to a metric set. A parameter adds each value it calculates, before and/or
+/// after.
+#[derive(Deserialize, Serialize, Debug, Clone, JsonSchema, Default, PywrVisitPaths, PywrVisitReferences)]
 #[serde(deny_unknown_fields)]
 pub struct MetricSetFilters {
     #[serde(default)]
@@ -90,7 +104,7 @@ pub struct MetricSetFilters {
 #[cfg(feature = "core")]
 impl MetricSetFilters {
     fn create_metrics(&self, args: &LoadArgs) -> Vec<Metric> {
-        use crate::metric::{NodeAttrReference, ParameterReference};
+        use crate::metric::NodeAttrReference;
 
         let mut metrics = vec![];
 
@@ -100,29 +114,35 @@ impl MetricSetFilters {
             }
         }
 
-        if self.all_virtual_nodes {
-            if let Some(virtual_nodes) = args.schema.virtual_nodes.as_ref() {
-                for node in virtual_nodes.iter() {
-                    metrics.push(Metric::VirtualNode(VirtualNodeAttrReference::new(
-                        node.name().to_string(),
-                        None,
-                    )));
-                }
+        if self.all_virtual_nodes
+            && let Some(virtual_nodes) = args.schema.virtual_nodes.as_ref()
+        {
+            for node in virtual_nodes.iter() {
+                metrics.push(Metric::VirtualNode(VirtualNodeAttrReference::new(
+                    node.name().to_string(),
+                    None,
+                )));
             }
         }
 
-        if self.all_parameters {
-            if let Some(parameters) = args.schema.parameters.as_ref() {
-                for parameter in parameters.iter() {
-                    // Skip Python parameters that return multiple values as the type or keys of these values is not
-                    // known at this point.
-                    if let Parameter::Python(param) = parameter {
-                        if matches!(param.return_type, PythonReturnType::Dict) {
-                            continue;
-                        }
-                    }
+        if self.all_parameters
+            && let Some(parameters) = args.schema.parameters.as_ref()
+        {
+            for parameter in parameters.iter() {
+                // Skip Python parameters that return multiple values as the type or keys of these values is not
+                // known at this point.
+                if let Parameter::Python(param) = parameter
+                    && matches!(param.return_type, PythonReturnType::Dict)
+                {
+                    continue;
+                }
 
-                    metrics.push(Metric::Parameter(ParameterReference::new(parameter.name(), None)));
+                // Which phases a parameter calculates is only known once it is built (e.g.
+                // from a Python class's methods), so ask for both.
+                for return_value in [ParameterReturnValue::Before, ParameterReturnValue::After] {
+                    let mut p_ref_builder = ParameterReferenceBuilder::new(parameter.name());
+                    p_ref_builder.return_value(return_value);
+                    metrics.push(Metric::Parameter(p_ref_builder.build()));
                 }
             }
         }
@@ -146,10 +166,10 @@ impl MetricSetFilters {
 /// Metrics added by the filters will be appended to any metrics specified for the metric attribute,
 /// if they are not a duplication.
 #[skip_serializing_none]
-#[derive(Deserialize, Serialize, Clone, JsonSchema)]
+#[derive(Deserialize, Serialize, Debug, Clone, JsonSchema, PywrVisitPaths, PywrVisitReferences)]
 #[serde(deny_unknown_fields)]
 pub struct MetricSet {
-    pub name: String,
+    pub meta: NamedMeta,
     pub metrics: Option<Vec<Metric>>,
     pub aggregator: Option<MetricAggregator>,
     #[serde(default)]
@@ -157,10 +177,39 @@ pub struct MetricSet {
 }
 
 impl MetricSet {
-    #[cfg(feature = "core")]
-    pub fn add_to_model(&self, network: &mut pywr_core::network::Network, args: &LoadArgs) -> Result<(), SchemaError> {
-        use pywr_core::recorders::OutputMetric;
+    pub fn name(&self) -> &str {
+        &self.meta.name
+    }
 
+    pub fn meta(&self) -> &NamedMeta {
+        &self.meta
+    }
+
+    pub fn meta_mut(&mut self) -> &mut NamedMeta {
+        &mut self.meta
+    }
+
+    /// Check the set's own fields and return every problem found. Whether it would be empty is
+    /// not checked, since that depends on the network its filters read.
+    pub fn validate(&self) -> Result<(), Vec<MetricSetProblem>> {
+        let problems: Vec<MetricSetProblem> = self
+            .metrics
+            .iter()
+            .flatten()
+            .enumerate()
+            .filter(|(_, metric)| matches!(metric, Metric::Literal { .. }))
+            .map(|(index, _)| MetricSetProblem::Literal { index })
+            .collect();
+
+        if problems.is_empty() { Ok(()) } else { Err(problems) }
+    }
+
+    #[cfg(feature = "core")]
+    pub fn add_to_network(
+        &self,
+        network: &mut pywr_core::network::NetworkBuilder,
+        args: &LoadArgs,
+    ) -> Result<(), SchemaError> {
         // Create metrics from filters and load them as output metrics
         let metrics_from_filters = self
             .filters
@@ -169,33 +218,62 @@ impl MetricSet {
             .map(|m| m.load_as_output(network, args, None))
             .collect::<Result<Vec<_>, _>>()?;
 
-        let output_metrics = match &self.metrics {
-            Some(metrics) => {
-                let mut output_metrics: Vec<OutputMetric> = metrics
-                    .iter()
-                    .map(|m| m.load_as_output(network, args, None))
-                    .collect::<Result<_, _>>()?;
+        let named_metrics = self
+            .metrics
+            .iter()
+            .flatten()
+            .map(|m| m.load_as_output(network, args, None))
+            .collect::<Result<Vec<_>, _>>()?;
 
-                for output_metric in metrics_from_filters.into_iter() {
-                    if !output_metrics.contains(&output_metric) {
-                        output_metrics.push(output_metric);
-                    }
-                }
+        let metrics_from_filters: Vec<_> = metrics_from_filters
+            .into_iter()
+            .filter(|m| !named_metrics.contains(m))
+            .collect();
 
-                output_metrics
-            }
-            None => metrics_from_filters,
-        };
-
-        if output_metrics.is_empty() {
-            return Err(SchemaError::EmptyMetricSet(self.name.clone()));
+        if named_metrics.is_empty() && metrics_from_filters.is_empty() {
+            return Err(SchemaError::EmptyMetricSet(self.name().to_string()));
         }
 
-        let aggregator = self.aggregator.clone().map(|a| a.load(args.data_path)).transpose()?;
+        let mut metric_set = pywr_core::recorders::MetricSetBuilder::new(self.name());
 
-        let metric_set = pywr_core::recorders::MetricSet::new(&self.name, aggregator, output_metrics);
-        let _ = network.add_metric_set(metric_set)?;
+        if let Some(aggregator) = &self.aggregator {
+            metric_set.aggregator(aggregator.load(args.data_path)?);
+        }
+
+        for m in named_metrics {
+            metric_set.metric(m);
+        }
+
+        // A filter's metric may ask for a phase its parameter does not calculate.
+        for m in metrics_from_filters {
+            metric_set.metric_if_calculated(m);
+        }
+
+        network.metric_set(metric_set);
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::MetricSet;
+    use crate::validation::MetricSetProblem::Literal;
+    use serde_json::json;
+
+    /// [`MetricSet::validate`] should refuse each literal in `metrics`, by its index.
+    #[test]
+    fn test_validate_refuses_each_literal() {
+        let metric_set = |metrics: serde_json::Value| -> MetricSet {
+            serde_json::from_value(json!({ "meta": { "name": "outputs" }, "metrics": metrics })).unwrap()
+        };
+        let literal = json!({ "type": "Literal", "value": 1.0 });
+        let node = json!({ "type": "Node", "name": "supply" });
+
+        assert_eq!(
+            metric_set(json!([node, literal, node, literal])).validate(),
+            Err(vec![Literal { index: 1 }, Literal { index: 3 }])
+        );
+        assert_eq!(metric_set(json!([node])).validate(), Ok(()));
     }
 }

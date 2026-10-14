@@ -4,7 +4,7 @@
     "description": "An example of using daily profiles with 365 and 366 values.",
     "minimum_version": "0.1"
   },
-  "timestepper": {
+  "time": {
     "start": "2015-01-01",
     "end": "2016-03-31",
     "timestep": {
@@ -112,6 +112,7 @@
         "agg_func": {
           "type": "Sum"
         },
+        "phase": "Before",
         "metrics": [
           {
             "type": "Parameter",
@@ -126,7 +127,7 @@
     ],
     "metric_sets": [
       {
-        "name": "profiles",
+        "meta": {"name": "profiles"},
         "metrics": [
           {
             "type": "Parameter",
@@ -141,7 +142,7 @@
     ],
     "outputs": [
       {
-        "name": "table-values",
+        "meta": {"name": "table-values"},
         "type": "CSV",
         "format": "Long",
         "filename": "daily-profile1-expected.csv",

@@ -1,29 +1,53 @@
 [project]
 name = "pywr"
-description = ""
+description = "Water resource network modelling with a Rust engine and Python interface"
 authors = [
     { name = "James Tomlinson", email = "tomo.bbe@gmail.com" }
 ]
 readme = "README.md"
-requires-python = ">=3.10"
-license = "MIT OR Apache-2.0"
+requires-python = ">=3.11"
+keywords = ["water resources", "modelling", "simulation", "optimisation"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Programming Language :: Rust",
+    "Topic :: Scientific/Engineering",
+]
+license = "(MIT OR Apache-2.0) AND EPL-2.0"
+license-files = [
+    "LICENSE-APACHE",
+    "LICENSE-MIT",
+    "NOTICE",
+    "coin-or-sys/vendor/Cbc/LICENSE"
+]
 dependencies = [
-    "pandas",
-    "polars>=1.42.0",
     "pyarrow",
     "click",
 ]
 dynamic = ["version"]
 
+[project.urls]
+Documentation = "https://pywr.github.io/pywr-next/"
+Source = "https://github.com/pywr/pywr-next"
+Issues = "https://github.com/pywr/pywr-next/issues"
+Changelog = "https://github.com/pywr/pywr-next/blob/main/CHANGELOG.md"
+
 [project.optional-dependencies]
+pandas = ["pandas"]
+polars = ["polars"]
 excel = ["openpyxl"]
-hdf = ["h5py"]
+hdf = ["h5py", "tables"]
 
 [dependency-groups]
 dev = [
     "pytest>=9.1.1",
-    "ruff>=0.15.18",
-    "maturin>=1.14.1,<2.0",
+    "ruff>=0.17.0",
+    "maturin>=1.15.0,<2.0",
 ]
 docs = [
     "json-schema-for-humans>=1.4.1",
@@ -31,12 +55,13 @@ docs = [
 ]
 
 [build-system]
-requires = ["maturin>=1.14.1,<2.0"]
+requires = ["maturin>=1.15.0,<2.0"]
 build-backend = "maturin"
 
 [tool.maturin]
 manifest-path = "pywr-python/Cargo.toml"
 python-source = "pywr-python"
+module-name = "pywr._pywr"
 # "extension-module" tells pyo3 we want to build an extension module (skips linking against libpython.so)
 features = ["pyo3/extension-module", "ipm-simd"]
 

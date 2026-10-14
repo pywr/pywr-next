@@ -9,9 +9,16 @@ use crate::nodes::NodeMeta;
 use crate::nodes::core::StorageInitialVolume;
 use crate::parameters::Parameter;
 use crate::v1::{ConversionData, TryFromV1, try_convert_initial_storage, try_convert_node_attr, try_convert_node_meta};
+use crate::validation::VirtualNodeProblem;
 use crate::{ConversionError, node_attribute_subset_enum};
+use jiff::civil::Date;
 #[cfg(feature = "core")]
-use pywr_core::{metric::MetricF64, timestep::TimeDomain, virtual_storage::VirtualStorageBuilder};
+use pywr_core::{
+    metric::UnresolvedMetricF64,
+    node::UnresolvedNode,
+    timestep::TimeDomain,
+    virtual_storage::{VirtualStorageActivePeriod, VirtualStorageNodeBuilder},
+};
 use pywr_schema_macros::PywrVisitAll;
 use pywr_schema_macros::skip_serializing_none;
 use pywr_v1_schema::nodes::{
@@ -20,7 +27,7 @@ use pywr_v1_schema::nodes::{
     SeasonalVirtualStorageNode as SeasonalVirtualStorageNodeV1, VirtualStorageNode as VirtualStorageNodeV1,
 };
 use schemars::JsonSchema;
-use std::num::NonZeroUsize;
+use std::num::{NonZeroU8, NonZeroUsize};
 use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumString, IntoStaticStr};
 
 // This macro generates a subset enum for the `VirtualStorageNode` attributes.
@@ -35,17 +42,17 @@ node_attribute_subset_enum! {
 #[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct AnnualReset {
-    pub day: u8,
-    pub month: u8,
+    pub day: i8,
+    pub month: i8,
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct SeasonalReset {
-    pub start_day: u8,
-    pub start_month: u8,
-    pub end_day: u8,
-    pub end_month: u8,
+    pub start_day: i8,
+    pub start_month: i8,
+    pub end_day: i8,
+    pub end_month: i8,
 }
 
 /// The reset behaviour for a virtual storage node.
@@ -61,9 +68,40 @@ pub enum VirtualStorageReset {
     Annual(AnnualReset),
     /// Reset every N months.
     Monthly {
-        months: u8,
+        months: NonZeroU8,
     },
     Seasonal(SeasonalReset),
+}
+
+impl VirtualStorageReset {
+    /// Check that each day and month make a date. Core matches them against each time-step's
+    /// date, so one that never comes means the store never resets.
+    pub fn validate(&self) -> Result<(), Vec<VirtualNodeProblem>> {
+        let mut problems = Vec::new();
+
+        let mut check = |day_field, month_field, day, month| {
+            // A leap year, so 29 February, which comes every four years, is a date.
+            if Date::new(2016, month, day).is_err() {
+                problems.push(VirtualNodeProblem::NotADate {
+                    day_field,
+                    month_field,
+                    day,
+                    month,
+                });
+            }
+        };
+
+        match self {
+            Self::Annual(annual) => check("day", "month", annual.day, annual.month),
+            Self::Seasonal(season) => {
+                check("start_day", "start_month", season.start_day, season.start_month);
+                check("end_day", "end_month", season.end_day, season.end_month);
+            }
+            Self::Never | Self::Monthly { .. } => {}
+        }
+
+        if problems.is_empty() { Ok(()) } else { Err(problems) }
+    }
 }
 
 #[cfg(feature = "core")]
@@ -72,23 +110,19 @@ impl TryInto<pywr_core::virtual_storage::VirtualStorageReset> for VirtualStorage
     fn try_into(self) -> Result<pywr_core::virtual_storage::VirtualStorageReset, Self::Error> {
         let r = match self {
             VirtualStorageReset::Never => pywr_core::virtual_storage::VirtualStorageReset::Never,
-            VirtualStorageReset::Annual(annual) => {
-                let reset_month = annual.month.try_into()?;
-                pywr_core::virtual_storage::VirtualStorageReset::DayOfYear {
-                    day: annual.day as u32,
-                    month: reset_month,
-                }
-            }
+            VirtualStorageReset::Annual(annual) => pywr_core::virtual_storage::VirtualStorageReset::DayOfYear {
+                day: annual.day,
+                month: annual.month,
+            },
             VirtualStorageReset::Monthly { months } => {
-                pywr_core::virtual_storage::VirtualStorageReset::NumberOfMonths { months: months.into() }
-            }
-            VirtualStorageReset::Seasonal(seasonal) => {
-                let reset_month = seasonal.start_month.try_into()?;
-                pywr_core::virtual_storage::VirtualStorageReset::DayOfYear {
-                    day: seasonal.start_day as u32,
-                    month: reset_month,
+                pywr_core::virtual_storage::VirtualStorageReset::NumberOfMonths {
+                    months: months.get().into(),
                 }
             }
+            VirtualStorageReset::Seasonal(seasonal) => pywr_core::virtual_storage::VirtualStorageReset::DayOfYear {
+                day: seasonal.start_day,
+                month: seasonal.start_month,
+            },
         };
 
         Ok(r)
@@ -123,12 +157,8 @@ impl RollingWindow {
     pub fn as_timesteps(&self, time: &TimeDomain) -> Option<NonZeroUsize> {
         match self {
             Self::Days { days } => {
-                let ts_days = match time.step_duration().whole_days() {
-                    Some(d) => d as usize,
-                    // If the timestep duration is not a whole number of days then the rolling window cannot be specified in days.
-                    None => return None,
-                };
-
+                // If the timestep duration is not a whole number of days then the rolling window cannot be specified in days.
+                let ts_days = time.fixed_step_duration()?.whole_days()? as usize;
                 let timesteps = days.get() / ts_days;
 
                 NonZeroUsize::new(timesteps)
@@ -206,6 +236,9 @@ pub struct VirtualStorageNode {
 
 impl VirtualStorageNode {
     const DEFAULT_ATTRIBUTE: VirtualStorageNodeAttribute = VirtualStorageNodeAttribute::Volume;
+    pub const DEFAULT_FACTOR: f64 = 1.0;
+    pub const DEFAULT_RESET: VirtualStorageReset = VirtualStorageReset::Never;
+    pub const DEFAULT_RESET_VOLUME: VirtualStorageResetVolume = VirtualStorageResetVolume::Initial;
 
     pub fn input_connectors(&self) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
         Ok(vec![])
@@ -218,6 +251,22 @@ impl VirtualStorageNode {
     pub fn default_attribute(&self) -> VirtualStorageNodeAttribute {
         Self::DEFAULT_ATTRIBUTE
     }
+
+    pub fn validate(&self) -> Result<(), Vec<VirtualNodeProblem>> {
+        let mut problems = Vec::new();
+
+        if let Err(problem) = self
+            .initial_volume
+            .validate(self.min_volume.as_ref(), self.max_volume.as_ref())
+        {
+            problems.push(VirtualNodeProblem::InitialVolume(problem));
+        }
+        if let Some(Err(reset_problems)) = self.reset.as_ref().map(VirtualStorageReset::validate) {
+            problems.extend(reset_problems);
+        }
+
+        if problems.is_empty() { Ok(()) } else { Err(problems) }
+    }
 }
 
 #[cfg(feature = "core")]
@@ -226,12 +275,8 @@ impl VirtualStorageNode {
     ///
     /// Note that this is a private function, as it is not supported using this node itself
     /// inside a flow constraint.
-    fn node_indices_for_flow_constraints(
-        &self,
-        network: &pywr_core::network::Network,
-        args: &LoadArgs,
-    ) -> Result<Vec<pywr_core::node::NodeIndex>, SchemaError> {
-        let indices = self
+    fn nodes_for_flow_constraints(&self, args: &LoadArgs) -> Result<Vec<UnresolvedNode>, SchemaError> {
+        let nodes = self
             .nodes
             .iter()
             .map(|node_ref| {
@@ -240,40 +285,59 @@ impl VirtualStorageNode {
                     .ok_or_else(|| SchemaError::NodeNotFound {
                         name: node_ref.name.to_string(),
                     })?
-                    .node_indices_for_flow_constraints(network, node_ref.component)
+                    .nodes_for_flow_constraints(node_ref.component)
             })
             .collect::<Result<Vec<_>, _>>()?
             .into_iter()
             .flatten()
             .collect();
-        Ok(indices)
+        Ok(nodes)
     }
-    pub fn add_to_model(&self, network: &mut pywr_core::network::Network, args: &LoadArgs) -> Result<(), SchemaError> {
-        let node_idxs = self.node_indices_for_flow_constraints(network, args)?;
+    pub fn add_to_network(
+        &self,
+        network: &mut pywr_core::network::NetworkBuilder,
+        args: &LoadArgs,
+    ) -> Result<(), SchemaError> {
+        let nodes = self.nodes_for_flow_constraints(args)?;
+        let factors = self
+            .factors
+            .clone()
+            .unwrap_or_else(|| vec![Self::DEFAULT_FACTOR; nodes.len()]);
 
-        let mut builder =
-            VirtualStorageBuilder::new(self.meta.name.as_str(), &node_idxs).initial_volume(self.initial_volume.into());
+        // A seasonal virtual storage is only active within its season
+        let active_period = match &self.reset {
+            Some(VirtualStorageReset::Seasonal(seasonal)) => VirtualStorageActivePeriod::Period {
+                start_day: seasonal.start_day,
+                start_month: seasonal.start_month,
+                end_day: seasonal.end_day,
+                end_month: seasonal.end_month,
+            },
+            _ => VirtualStorageActivePeriod::Always,
+        };
 
-        if let Some(r) = self.reset.clone() {
-            let reset = r.try_into()?;
-            builder = builder.reset(reset);
+        let mut builder = VirtualStorageNodeBuilder::new(
+            self.meta.name.as_str(),
+            &nodes,
+            &factors,
+            self.initial_volume.into(),
+            self.reset.clone().unwrap_or(Self::DEFAULT_RESET).try_into()?,
+            self.reset_volume.unwrap_or(Self::DEFAULT_RESET_VOLUME).into(),
+            active_period,
+        );
+
+        if let Some(cost) = &self.cost {
+            let value = cost.load(network, args, Some(&self.meta.name))?;
+            builder.cost(value);
         }
 
-        if let Some(rv) = &self.reset_volume {
-            builder = builder.reset_volume((*rv).into());
+        if let Some(min_volume) = &self.min_volume {
+            let value = min_volume.load(network, args, Some(&self.meta.name))?;
+            builder.min_volume(value);
         }
 
-        // Set the active period if this is a seasonal reset
-        if let Some(VirtualStorageReset::Seasonal(seasonal)) = &self.reset {
-            let start_month = seasonal.start_month.try_into()?;
-            let end_month = seasonal.end_month.try_into()?;
-            let period = pywr_core::virtual_storage::VirtualStorageActivePeriod::Period {
-                start_day: seasonal.start_day as u32,
-                start_month,
-                end_day: seasonal.end_day as u32,
-                end_month,
-            };
-            builder = builder.active_period(period);
+        if let Some(max_volume) = &self.max_volume {
+            let value = max_volume.load(network, args, Some(&self.meta.name))?;
+            builder.max_volume(value);
         }
 
         if let Some(window) = &self.window {
@@ -283,61 +347,27 @@ impl VirtualStorageNode {
                     .ok_or_else(|| SchemaError::InvalidRollingWindow {
                         name: self.meta.name.clone(),
                     })?;
-            builder = builder.rolling_window(rolling_window);
+            builder.rolling_window(rolling_window);
         }
 
-        if let Some(factors) = &self.factors {
-            builder = builder.factors(factors);
-        }
-
-        network.add_virtual_storage_node(builder)?;
+        network.virtual_storage_node(builder);
         Ok(())
     }
 
-    pub fn set_constraints(
-        &self,
-        network: &mut pywr_core::network::Network,
-        args: &LoadArgs,
-    ) -> Result<(), SchemaError> {
-        if let Some(cost) = &self.cost {
-            let value = cost.load(network, args, Some(&self.meta.name))?;
-            network.set_virtual_storage_cost(self.meta.name.as_str(), None, value.into())?;
-        }
-
-        if let Some(min_volume) = &self.min_volume {
-            let value = min_volume.load(network, args, Some(&self.meta.name))?;
-            network.set_virtual_storage_min_volume(self.meta.name.as_str(), None, Some(value.try_into()?))?;
-        }
-
-        if let Some(max_volume) = &self.max_volume {
-            let value = max_volume.load(network, args, Some(&self.meta.name))?;
-            network.set_virtual_storage_max_volume(self.meta.name.as_str(), None, Some(value.try_into()?))?;
-        }
-
-        Ok(())
-    }
-
-    pub fn create_metric(
-        &self,
-        network: &mut pywr_core::network::Network,
-        attribute: Option<NodeAttribute>,
-    ) -> Result<MetricF64, SchemaError> {
+    pub fn create_metric(&self, attribute: Option<NodeAttribute>) -> Result<UnresolvedMetricF64, SchemaError> {
         // Use the default attribute if none is specified
         let attr = match attribute {
             Some(attr) => attr.try_into()?,
             None => Self::DEFAULT_ATTRIBUTE,
         };
 
-        let idx = network
-            .get_virtual_storage_node_index_by_name(self.meta.name.as_str(), None)
-            .ok_or_else(|| SchemaError::CoreNodeNotFound {
-                name: self.meta.name.clone(),
-                sub_name: None,
-            })?;
+        let name = UnresolvedNode::new(self.meta.name.as_str(), None);
 
         let metric = match attr {
-            VirtualStorageNodeAttribute::Volume => MetricF64::VirtualStorageVolume(idx),
-            VirtualStorageNodeAttribute::ProportionalVolume => MetricF64::VirtualStorageProportionalVolume(idx),
+            VirtualStorageNodeAttribute::Volume => UnresolvedMetricF64::VirtualStorageVolume(name),
+            VirtualStorageNodeAttribute::ProportionalVolume => {
+                UnresolvedMetricF64::VirtualStorageProportionalVolume(name)
+            }
         };
 
         Ok(metric)
@@ -415,8 +445,8 @@ impl TryFromV1<AnnualVirtualStorageNodeV1> for VirtualStorageNode {
             cost,
             initial_volume,
             reset: Some(VirtualStorageReset::Annual(AnnualReset {
-                day: v1.reset_day as u8,
-                month: v1.reset_month as u8,
+                day: v1.reset_day as i8,
+                month: v1.reset_month as i8,
             })),
             reset_volume,
             window: None,
@@ -450,6 +480,16 @@ impl TryFromV1<MonthlyVirtualStorageNodeV1> for VirtualStorageNode {
             Some(VirtualStorageResetVolume::Max)
         };
 
+        let Some(months) = NonZeroU8::new(v1.months) else {
+            return Err(Box::new(ComponentConversionError::Node {
+                name: meta.name,
+                attr: "months".to_string(),
+                error: ConversionError::UnsupportedFeature {
+                    feature: "A reset every zero months is not supported".to_string(),
+                },
+            }));
+        };
+
         let n = Self {
             meta,
             parameters: None,
@@ -459,7 +499,7 @@ impl TryFromV1<MonthlyVirtualStorageNodeV1> for VirtualStorageNode {
             min_volume,
             cost,
             initial_volume,
-            reset: Some(VirtualStorageReset::Monthly { months: v1.months }),
+            reset: Some(VirtualStorageReset::Monthly { months }),
             reset_volume,
             window: None,
         };
@@ -563,10 +603,10 @@ impl TryFromV1<SeasonalVirtualStorageNodeV1> for VirtualStorageNode {
         };
 
         let reset = VirtualStorageReset::Seasonal(SeasonalReset {
-            start_day: v1.reset_day as u8,
-            start_month: v1.reset_month as u8,
-            end_day: v1.end_day as u8,
-            end_month: v1.end_month as u8,
+            start_day: v1.reset_day as i8,
+            start_month: v1.reset_month as i8,
+            end_day: v1.end_day as i8,
+            end_month: v1.end_month as i8,
         });
 
         let n = Self {

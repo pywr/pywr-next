@@ -1,27 +1,20 @@
-use crate::metric::MetricU64;
-use crate::network::Network;
-use crate::parameters::errors::{ParameterCalculationError, ParameterSetupError};
+use crate::metric::{MetricConsumerPhase, MetricU64, UnresolvedMetricU64};
+use crate::network::ResolutionMaps;
+use crate::parameters::errors::{GeneralCalculationError, ParameterSetupError};
 use crate::parameters::{
-    GeneralParameter, Parameter, ParameterMeta, ParameterName, ParameterState, downcast_internal_state_mut,
+    BuiltParameter, GeneralBeforeParameter, GeneralParameter, GeneralParameterContext, GeneralParameterEntry,
+    MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder, ParameterMeta, ParameterName,
+    ParameterState, downcast_internal_state_mut,
 };
+use crate::resolve_metric_u64;
 use crate::scenario::ScenarioIndex;
-use crate::state::State;
 use crate::timestep::Timestep;
 
+#[derive(Debug)]
 pub struct AsymmetricSwitchIndexParameter {
     meta: ParameterMeta,
     on_parameter: MetricU64,
     off_parameter: MetricU64,
-}
-
-impl AsymmetricSwitchIndexParameter {
-    pub fn new(name: ParameterName, on_parameter: MetricU64, off_parameter: MetricU64) -> Self {
-        Self {
-            meta: ParameterMeta::new(name),
-            on_parameter,
-            off_parameter,
-        }
-    }
 }
 
 impl Parameter for AsymmetricSwitchIndexParameter {
@@ -37,16 +30,21 @@ impl Parameter for AsymmetricSwitchIndexParameter {
     }
 }
 
-impl GeneralParameter<u64> for AsymmetricSwitchIndexParameter {
+impl GeneralParameter for AsymmetricSwitchIndexParameter {
+    fn as_parameter(&self) -> &dyn Parameter
+    where
+        Self: Sized,
+    {
+        self
+    }
+}
+impl GeneralBeforeParameter<u64> for AsymmetricSwitchIndexParameter {
     fn before(
         &self,
-        _timestep: &Timestep,
-        _scenario_index: &ScenarioIndex,
-        network: &Network,
-        state: &State,
+        ctx: GeneralParameterContext<'_>,
         internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<Option<u64>, ParameterCalculationError> {
-        let on_value = self.on_parameter.get_value(network, state)?;
+    ) -> Result<u64, GeneralCalculationError> {
+        let on_value = self.on_parameter.get_value(ctx.network, ctx.state)?;
 
         // Downcast the internal state to the correct type
         let current_state = downcast_internal_state_mut::<u64>(internal_state);
@@ -55,7 +53,7 @@ impl GeneralParameter<u64> for AsymmetricSwitchIndexParameter {
             if on_value > 0 {
                 // No change
             } else {
-                let off_value = self.off_parameter.get_value(network, state)?;
+                let off_value = self.off_parameter.get_value(ctx.network, ctx.state)?;
 
                 if off_value == 0 {
                     *current_state = 0;
@@ -65,13 +63,47 @@ impl GeneralParameter<u64> for AsymmetricSwitchIndexParameter {
             *current_state = 1;
         }
 
-        Ok(Some(*current_state))
+        Ok(*current_state)
+    }
+}
+#[derive(Debug)]
+pub struct AsymmetricSwitchIndexParameterBuilder {
+    meta: ParameterMeta,
+    on_parameter: UnresolvedMetricU64,
+    off_parameter: UnresolvedMetricU64,
+    phase: MetricConsumerPhase,
+}
+
+impl AsymmetricSwitchIndexParameterBuilder {
+    /// Create a new builder for [`AsymmetricSwitchIndexParameter`] that is evaluated in the "before" phase.
+    pub fn before(name: ParameterName, on_parameter: UnresolvedMetricU64, off_parameter: UnresolvedMetricU64) -> Self {
+        Self {
+            meta: ParameterMeta::new(name),
+            on_parameter,
+            off_parameter,
+            phase: MetricConsumerPhase::Before,
+        }
+    }
+}
+
+impl ParameterBuilder<u64> for AsymmetricSwitchIndexParameterBuilder {
+    fn name(&self) -> &ParameterName {
+        &self.meta.name
     }
 
-    fn as_parameter(&self) -> &dyn Parameter
-    where
-        Self: Sized,
-    {
-        self
+    fn build(
+        self: Box<Self>,
+        resolution_maps: &ResolutionMaps,
+    ) -> Result<MaybeBuiltParameter<u64>, ParameterBuildError> {
+        let on_parameter = resolve_metric_u64!(self, self.on_parameter, resolution_maps, self.phase, "on_parameter");
+        let off_parameter = resolve_metric_u64!(self, self.off_parameter, resolution_maps, self.phase, "off_parameter");
+
+        let p = AsymmetricSwitchIndexParameter {
+            meta: self.meta,
+            on_parameter,
+            off_parameter,
+        };
+
+        Ok(BuiltParameter::General(GeneralParameterEntry::before(p)).into())
     }
 }

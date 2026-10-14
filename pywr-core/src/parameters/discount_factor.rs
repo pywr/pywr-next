@@ -1,26 +1,18 @@
-use crate::metric::MetricF64;
-use crate::network::Network;
-use crate::parameters::errors::ParameterCalculationError;
-use crate::parameters::{GeneralParameter, Parameter, ParameterMeta, ParameterName, ParameterState};
-use crate::scenario::ScenarioIndex;
-use crate::state::State;
-use crate::timestep::Timestep;
-use chrono::Datelike;
+use crate::metric::{MetricConsumerPhase, MetricF64, UnresolvedMetricF64};
+use crate::network::ResolutionMaps;
+use crate::parameters::errors::GeneralCalculationError;
+use crate::parameters::{
+    BuiltParameter, GeneralBeforeParameter, GeneralParameter, GeneralParameterContext, GeneralParameterEntry,
+    MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder, ParameterMeta, ParameterName,
+    ParameterState,
+};
+use crate::resolve_metric_f64;
 
+#[derive(Debug)]
 pub struct DiscountFactorParameter {
     meta: ParameterMeta,
     discount_rate: MetricF64,
-    base_year: i32,
-}
-
-impl DiscountFactorParameter {
-    pub fn new(name: ParameterName, discount_rate: MetricF64, base_year: i32) -> Self {
-        Self {
-            meta: ParameterMeta::new(name),
-            discount_rate,
-            base_year,
-        }
-    }
+    base_year: i16,
 }
 
 impl Parameter for DiscountFactorParameter {
@@ -28,22 +20,7 @@ impl Parameter for DiscountFactorParameter {
         &self.meta
     }
 }
-impl GeneralParameter<f64> for DiscountFactorParameter {
-    fn before(
-        &self,
-        timestep: &Timestep,
-        _scenario_index: &ScenarioIndex,
-        network: &Network,
-        state: &State,
-        _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<Option<f64>, ParameterCalculationError> {
-        let year = timestep.date.year() - self.base_year;
-        let rate = self.discount_rate.get_value(network, state)?;
-
-        let factor = 1.0 / (1.0 + rate).powi(year);
-        Ok(Some(factor))
-    }
-
+impl GeneralParameter for DiscountFactorParameter {
     fn as_parameter(&self) -> &dyn Parameter
     where
         Self: Sized,
@@ -52,25 +29,79 @@ impl GeneralParameter<f64> for DiscountFactorParameter {
     }
 }
 
+impl GeneralBeforeParameter<f64> for DiscountFactorParameter {
+    fn before(
+        &self,
+        ctx: GeneralParameterContext<'_>,
+        _internal_state: &mut Option<Box<dyn ParameterState>>,
+    ) -> Result<f64, GeneralCalculationError> {
+        let year = ctx.timestep.date.year() - self.base_year;
+        let rate = self.discount_rate.get_value(ctx.network, ctx.state)?;
+
+        let factor = 1.0 / (1.0 + rate).powi(year as i32);
+        Ok(factor)
+    }
+}
+
+#[derive(Debug)]
+pub struct DiscountFactorParameterBuilder {
+    meta: ParameterMeta,
+    discount_rate: UnresolvedMetricF64,
+    base_year: i16,
+}
+
+impl DiscountFactorParameterBuilder {
+    pub fn new(name: ParameterName, discount_rate: UnresolvedMetricF64, base_year: i16) -> Self {
+        Self {
+            meta: ParameterMeta::new(name),
+            discount_rate,
+            base_year,
+        }
+    }
+}
+
+impl ParameterBuilder<f64> for DiscountFactorParameterBuilder {
+    fn name(&self) -> &ParameterName {
+        &self.meta.name
+    }
+    fn build(
+        self: Box<Self>,
+        resolution_maps: &ResolutionMaps,
+    ) -> Result<MaybeBuiltParameter<f64>, ParameterBuildError> {
+        // Phase is hardcoded to "before" for this parameter, as it only implements the `GeneralBeforeParameter` trait.
+        let phase = MetricConsumerPhase::Before;
+        let discount_rate = resolve_metric_f64!(self, self.discount_rate, resolution_maps, phase, "discount_rate");
+
+        let p = DiscountFactorParameter {
+            meta: self.meta,
+            discount_rate,
+            base_year: self.base_year,
+        };
+
+        let bp = BuiltParameter::General(GeneralParameterEntry::before(p));
+        Ok(bp.into())
+    }
+}
+
 #[cfg(test)]
 mod test {
-    use crate::parameters::{Array1Parameter, DiscountFactorParameter};
-    use crate::test_utils::{run_and_assert_parameter, simple_model};
+    use crate::parameters::Array1ParameterBuilder;
+    use crate::parameters::discount_factor::DiscountFactorParameterBuilder;
+    use crate::test_utils::{arrow_linspace_f64, run_and_assert_parameter, simple_model};
     use ndarray::{Array1, Array2, Axis};
 
     /// Basic functional test of the delay parameter.
     #[test]
     fn test_basic() {
-        let mut model = simple_model(1, None);
-        let network = model.network_mut();
+        let mut model_builder = simple_model(1, None);
 
         // Create an artificial volume series to use for the delay test
-        let volumes = Array1::linspace(1.0, 0.0, 21);
-        let volume = Array1Parameter::new("test-x".into(), volumes.clone(), None);
+        let volumes = arrow_linspace_f64(1.0, 0.0, 21);
+        let volume = Array1ParameterBuilder::from_primitive_array("test-x".into(), volumes);
 
-        let _volume_idx = network.add_simple_parameter(Box::new(volume)).unwrap();
+        model_builder.network_builder().parameters().f64(Box::new(volume));
 
-        let parameter = DiscountFactorParameter::new(
+        let parameter = DiscountFactorParameterBuilder::new(
             "test-parameter".into(),
             0.03.into(), // Interpolate with the parameter based values
             2020,
@@ -86,6 +117,6 @@ mod test {
 
         let expected_values: Array2<f64> = expected_values.insert_axis(Axis(1));
 
-        run_and_assert_parameter(&mut model, Box::new(parameter), expected_values, None, Some(1e-12));
+        run_and_assert_parameter(model_builder, Box::new(parameter), expected_values, None, Some(1e-12));
     }
 }

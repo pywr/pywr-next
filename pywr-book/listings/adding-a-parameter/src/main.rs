@@ -1,31 +1,22 @@
 #![allow(dead_code)]
-use pywr_core::metric::MetricF64;
-use pywr_core::network::Network;
+use pywr_core::metric::{MetricConsumerPhase, MetricF64, UnresolvedMetricF64};
+use pywr_core::network::ResolutionMaps;
 use pywr_core::parameters::{
-    GeneralParameter, Parameter, ParameterCalculationError, ParameterMeta, ParameterName, ParameterState,
+    BuiltParameter, GeneralAfterParameter, GeneralBeforeParameter, GeneralCalculationError, GeneralParameter,
+    GeneralParameterContext, GeneralParameterEntry, MaybeBuiltParameter, Parameter, ParameterBuildError,
+    ParameterBuilder, ParameterMeta, ParameterName, ParameterState,
 };
-use pywr_core::scenario::ScenarioIndex;
-use pywr_core::state::State;
-use pywr_core::timestep::Timestep;
+use pywr_core::resolve_metric_f64;
 
 // ANCHOR: parameter
+#[derive(Debug)]
 pub struct MaxParameter {
     meta: ParameterMeta,
     metric: MetricF64,
     threshold: f64,
 }
 // ANCHOR_END: parameter
-// ANCHOR: impl-new
-impl MaxParameter {
-    pub fn new(name: ParameterName, metric: MetricF64, threshold: f64) -> Self {
-        Self {
-            meta: ParameterMeta::new(name),
-            metric,
-            threshold,
-        }
-    }
-}
-// ANCHOR_END: impl-new
+
 // ANCHOR: impl-parameter
 impl Parameter for MaxParameter {
     fn meta(&self) -> &ParameterMeta {
@@ -33,20 +24,7 @@ impl Parameter for MaxParameter {
     }
 }
 
-impl GeneralParameter<f64> for MaxParameter {
-    fn before(
-        &self,
-        _timestep: &Timestep,
-        _scenario_index: &ScenarioIndex,
-        model: &Network,
-        state: &State,
-        _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<Option<f64>, ParameterCalculationError> {
-        // Current value
-        let x = self.metric.get_value(model, state)?;
-        Ok(Some(x.max(self.threshold)))
-    }
-
+impl GeneralParameter for MaxParameter {
     fn as_parameter(&self) -> &dyn Parameter
     where
         Self: Sized,
@@ -55,12 +33,105 @@ impl GeneralParameter<f64> for MaxParameter {
     }
 }
 
+impl GeneralBeforeParameter<f64> for MaxParameter {
+    fn before(
+        &self,
+        ctx: GeneralParameterContext<'_>,
+        _internal_state: &mut Option<Box<dyn ParameterState>>,
+    ) -> Result<f64, GeneralCalculationError> {
+        // Current value
+        let x = self.metric.get_value(ctx.network, ctx.state)?;
+        Ok(x.max(self.threshold))
+    }
+}
+
+impl GeneralAfterParameter<f64> for MaxParameter {
+    fn after(
+        &self,
+        ctx: GeneralParameterContext<'_>,
+        _internal_state: &mut Option<Box<dyn ParameterState>>,
+    ) -> Result<f64, GeneralCalculationError> {
+        // Current value
+        let x = self.metric.get_value(ctx.network, ctx.state)?;
+        Ok(x.max(self.threshold))
+    }
+}
+// ANCHOR: impl-builder
+#[derive(Debug)]
+pub struct MaxParameterBuilder {
+    meta: ParameterMeta,
+    metric: UnresolvedMetricF64,
+    threshold: f64,
+    phase: MetricConsumerPhase,
+}
+
+impl MaxParameterBuilder {
+    /// Create a new builder for [`MaxParameter`] that is evaluated in the "before" phase.
+    pub fn before(name: ParameterName, metric: UnresolvedMetricF64, threshold: f64) -> Self {
+        Self {
+            meta: ParameterMeta::new(name),
+            metric,
+            threshold,
+            phase: MetricConsumerPhase::Before,
+        }
+    }
+
+    /// Create a new builder for [`MaxParameter`] that is evaluated in the "after" phase.
+    pub fn after(name: ParameterName, metric: UnresolvedMetricF64, threshold: f64) -> Self {
+        Self {
+            meta: ParameterMeta::new(name),
+            metric,
+            threshold,
+            phase: MetricConsumerPhase::After,
+        }
+    }
+
+    /// Create a new builder for [`MaxParameter`] that is evaluated in both "before" and "after" phases.
+    pub fn both(name: ParameterName, metric: UnresolvedMetricF64, threshold: f64) -> Self {
+        Self {
+            meta: ParameterMeta::new(name),
+            metric,
+            threshold,
+            phase: MetricConsumerPhase::Both,
+        }
+    }
+}
+
+impl ParameterBuilder<f64> for MaxParameterBuilder {
+    fn name(&self) -> &ParameterName {
+        &self.meta.name
+    }
+
+    fn build(
+        self: Box<Self>,
+        resolution_maps: &ResolutionMaps,
+    ) -> Result<MaybeBuiltParameter<f64>, ParameterBuildError> {
+        let metric = resolve_metric_f64!(self, self.metric, resolution_maps, self.phase, "metric");
+
+        let p = MaxParameter {
+            meta: self.meta,
+            metric,
+            threshold: self.threshold,
+        };
+
+        let built = match self.phase {
+            MetricConsumerPhase::Before => BuiltParameter::General(GeneralParameterEntry::before(p)),
+            MetricConsumerPhase::After => BuiltParameter::General(GeneralParameterEntry::after(p)),
+            MetricConsumerPhase::Both => BuiltParameter::General(GeneralParameterEntry::both(p)),
+        };
+
+        Ok(built.into())
+    }
+}
+// ANCHOR_END: impl-builder
+
 // ANCHOR_END: impl-parameter
 mod schema {
     #[cfg(feature = "core")]
-    use pywr_core::parameters::ParameterIndex;
+    use pywr_core::parameters::ParameterName;
+    use pywr_schema::meta::NamedMeta;
     use pywr_schema::metric::Metric;
-    use pywr_schema::parameters::ParameterMeta;
+    use pywr_schema::parameters::ParameterPhase;
     #[cfg(feature = "core")]
     use pywr_schema::{LoadArgs, SchemaError};
     use schemars::JsonSchema;
@@ -68,8 +139,8 @@ mod schema {
     // ANCHOR: schema
     #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
     pub struct MaxParameter {
-        #[serde(flatten)]
-        pub meta: ParameterMeta,
+        pub meta: NamedMeta,
+        pub phase: ParameterPhase,
         pub parameter: Metric,
         pub threshold: Option<f64>,
     }
@@ -78,16 +149,25 @@ mod schema {
     // ANCHOR: schema-impl
     #[cfg(feature = "core")]
     impl MaxParameter {
-        pub fn add_to_model(
+        pub fn add_to_network(
             &self,
-            network: &mut pywr_core::network::Network,
+            network: &mut pywr_core::network::NetworkBuilder,
             args: &LoadArgs,
-        ) -> Result<ParameterIndex<f64>, SchemaError> {
-            let idx = self.parameter.load(network, args, Some(&self.meta.name))?;
+            parent: Option<&str>,
+        ) -> Result<(), SchemaError> {
+            let idx = self.parameter.load(network, args, None)?;
             let threshold = self.threshold.unwrap_or(0.0);
+            let name = ParameterName::new(&self.meta.name, parent);
 
-            let p = pywr_core::parameters::MaxParameter::new(self.meta.name.as_str().into(), idx, threshold);
-            Ok(network.add_parameter(Box::new(p))?)
+            let p = match self.phase {
+                ParameterPhase::Before => pywr_core::parameters::MaxParameterBuilder::before(name, idx, threshold),
+                ParameterPhase::After => pywr_core::parameters::MaxParameterBuilder::after(name, idx, threshold),
+                ParameterPhase::Both => pywr_core::parameters::MaxParameterBuilder::both(name, idx, threshold),
+            };
+
+            network.parameters().f64(Box::new(p));
+
+            Ok(())
         }
     }
     // ANCHOR_END: schema-impl

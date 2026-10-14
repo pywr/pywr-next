@@ -1,13 +1,13 @@
 use super::{
-    MetricSetState, Recorder, RecorderFinalResult, RecorderFinaliseError, RecorderInternalState, RecorderMeta,
-    RecorderSaveError, RecorderSetupError, Timestep, downcast_internal_state, downcast_internal_state_mut,
+    MetricSetState, Recorder, RecorderBuilder, RecorderBuilderError, RecorderFinalResult, RecorderFinaliseError,
+    RecorderInternalState, RecorderMeta, RecorderSaveError, RecorderSetupError, Timestep, downcast_internal_state,
+    downcast_internal_state_mut,
 };
 use crate::models::ModelDomain;
-use crate::network::Network;
-use crate::recorders::metric_set::MetricSetIndex;
+use crate::network::{MetricSetIndex, Network, ResolutionMaps};
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
-use chrono::NaiveDateTime;
+use jiff::civil::DateTime;
 use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::num::NonZeroU32;
@@ -20,7 +20,7 @@ use thiserror::Error;
 pub enum CsvError {
     #[error("Metric set index `{index}` not found")]
     MetricSetIndexNotFound { index: MetricSetIndex },
-    #[error("CSV error with file at `{path}`: {source}")]
+    #[error("CSV error with file at `{path}`.")]
     CSVError {
         path: PathBuf,
         #[source]
@@ -41,14 +41,6 @@ struct Internal {
 }
 
 impl CsvWideFmtOutput {
-    pub fn new<P: Into<PathBuf>>(name: &str, filename: P, metric_set_idx: MetricSetIndex) -> Self {
-        Self {
-            meta: RecorderMeta::new(name),
-            filename: filename.into(),
-            metric_set_idx,
-        }
-    }
-
     fn write_values(&self, metric_set_states: &[Vec<MetricSetState>], internal: &mut Internal) -> Result<(), CsvError> {
         let mut row = Vec::new();
 
@@ -112,7 +104,7 @@ impl Recorder for CsvWideFmtOutput {
                     index: self.metric_set_idx,
                 })?;
 
-        for metric in metric_set.iter_metrics() {
+        for metric in metric_set.metrics() {
             let name = metric.name().to_string();
             let attribute = metric.attribute().to_string();
 
@@ -131,8 +123,8 @@ impl Recorder for CsvWideFmtOutput {
             // Repeat the names, sub-names and attributes for every scenario
             header_name.extend(names.clone());
             header_attribute.extend(attributes.clone());
-            header_scenario.extend(vec![format!("{}", scenario_index.simulation_id()); names.len()]);
-            header_label.extend(vec![format!("{}", scenario_index.label()); names.len()]);
+            header_scenario.extend(vec![scenario_index.simulation_id().to_string(); names.len()]);
+            header_label.extend(vec![scenario_index.label(); names.len()]);
         }
 
         writer.write_record(header_name).map_err(|source| CsvError::CSVError {
@@ -191,10 +183,50 @@ impl Recorder for CsvWideFmtOutput {
     }
 }
 
+/// Output the values from a [`crate::recorders::MetricSet`] to a CSV file.
+#[derive(Clone, Debug)]
+pub struct CsvWideFmtOutputBuilder {
+    meta: RecorderMeta,
+    filename: PathBuf,
+    metric_set: String,
+}
+
+impl CsvWideFmtOutputBuilder {
+    pub fn new<P: Into<PathBuf>>(name: &str, filename: P, metric_set: &str) -> Self {
+        Self {
+            meta: RecorderMeta::new(name),
+            filename: filename.into(),
+            metric_set: metric_set.to_string(),
+        }
+    }
+}
+
+impl RecorderBuilder for CsvWideFmtOutputBuilder {
+    fn name(&self) -> &str {
+        &self.meta.name
+    }
+
+    fn build(self: Box<Self>, resolution_maps: &ResolutionMaps) -> Result<Box<dyn Recorder>, RecorderBuilderError> {
+        let metric_set_idx = resolution_maps.metric_sets.get(&self.metric_set).ok_or_else(|| {
+            RecorderBuilderError::MetricSetNotFound {
+                name: self.metric_set.clone(),
+            }
+        })?;
+
+        let r = CsvWideFmtOutput {
+            meta: self.meta,
+            filename: self.filename,
+            metric_set_idx: *metric_set_idx,
+        };
+
+        Ok(Box::new(r))
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CsvLongFmtRecord {
-    time_start: NaiveDateTime,
-    time_end: NaiveDateTime,
+    time_start: DateTime,
+    time_end: DateTime,
     simulation_id: usize,
     label: String,
     metric_set: String,
@@ -217,20 +249,6 @@ pub struct CsvLongFmtOutput {
 }
 
 impl CsvLongFmtOutput {
-    pub fn new<P: Into<PathBuf>>(
-        name: &str,
-        filename: P,
-        metric_set_indices: &[MetricSetIndex],
-        decimal_places: Option<NonZeroU32>,
-    ) -> Self {
-        Self {
-            meta: RecorderMeta::new(name),
-            filename: filename.into(),
-            metric_set_indices: metric_set_indices.to_vec(),
-            decimal_places,
-        }
-    }
-
     fn write_values(
         &self,
         network: &Network,
@@ -250,7 +268,7 @@ impl CsvLongFmtOutput {
                         .get_metric_set(*metric_set_idx)
                         .ok_or(CsvError::MetricSetIndexNotFound { index: *metric_set_idx })?;
 
-                    for (metric, value) in metric_set.iter_metrics().zip(current_values.iter()) {
+                    for (metric, value) in metric_set.metrics().iter().zip(current_values.iter()) {
                         let name = metric.name().to_string();
                         let attribute = metric.attribute().to_string();
 
@@ -330,5 +348,58 @@ impl Recorder for CsvLongFmtOutput {
         let mut internal = downcast_internal_state::<Internal>(internal_state);
         self.write_values(network, scenario_indices, metric_set_states, &mut internal)?;
         Ok(None)
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct CsvLongFmtOutputBuilder {
+    meta: RecorderMeta,
+    filename: PathBuf,
+    metric_sets: Vec<String>,
+    decimal_places: Option<NonZeroU32>,
+}
+
+impl CsvLongFmtOutputBuilder {
+    pub fn new<P: Into<PathBuf>>(name: &str, filename: P, decimal_places: Option<NonZeroU32>) -> Self {
+        Self {
+            meta: RecorderMeta::new(name),
+            filename: filename.into(),
+            metric_sets: vec![],
+            decimal_places,
+        }
+    }
+
+    pub fn metric_set(&mut self, metric_set: &str) -> &mut Self {
+        self.metric_sets.push(metric_set.to_string());
+        self
+    }
+}
+
+impl RecorderBuilder for CsvLongFmtOutputBuilder {
+    fn name(&self) -> &str {
+        &self.meta.name
+    }
+
+    fn build(self: Box<Self>, resolution_maps: &ResolutionMaps) -> Result<Box<dyn Recorder>, RecorderBuilderError> {
+        let metric_set_indices = self
+            .metric_sets
+            .iter()
+            .map(|ms| {
+                resolution_maps
+                    .metric_sets
+                    .get(ms)
+                    .copied()
+                    .ok_or_else(|| RecorderBuilderError::MetricSetNotFound { name: ms.clone() })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let r = CsvLongFmtOutput {
+            meta: self.meta,
+            filename: self.filename,
+            metric_set_indices,
+            decimal_places: self.decimal_places,
+        };
+
+        Ok(Box::new(r))
     }
 }

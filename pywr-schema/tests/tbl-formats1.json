@@ -4,7 +4,7 @@
     "description": "Examples of using data tables to define values in a model.",
     "minimum_version": "0.1"
   },
-  "timestepper": {
+  "time": {
     "start": "2015-01-01",
     "end": "2015-01-02",
     "timestep": {
@@ -106,6 +106,30 @@
           "cols": 1
         },
         "url": "tbl-scalar-row-col.csv"
+      },
+      {
+        "meta": {
+          "name": "scalar-row-row-row"
+        },
+        "type": "Scalar",
+        "format": "CSV",
+        "lookup": {
+          "type": "Row",
+          "cols": 3
+        },
+        "url": "tbl-scalar-row-row-row.csv"
+      },
+      {
+        "meta": {
+          "name": "scalar-col-col-col"
+        },
+        "type": "Scalar",
+        "format": "CSV",
+        "lookup": {
+          "type": "Col",
+          "rows": 3
+        },
+        "url": "tbl-scalar-col-col-col.csv"
       },
       {
         "meta": {
@@ -232,7 +256,7 @@
     ],
     "metric_sets": [
       {
-        "name": "table-values",
+        "meta": {"name": "table-values"},
         "metrics": [
           {
             "type": "Table",
@@ -259,6 +283,24 @@
             "column": "\uD83D\uDC0D"
           },
           {
+            "type": "Table",
+            "table": "scalar-row-row-row",
+            "row": [
+              "B",
+              "Y",
+              "P"
+            ]
+          },
+          {
+            "type": "Table",
+            "table": "scalar-col-col-col",
+            "column": [
+              "B",
+              "X",
+              "P"
+            ]
+          },
+          {
             "type": "Parameter",
             "name": "profile1"
           },
@@ -275,7 +317,7 @@
     ],
     "outputs": [
       {
-        "name": "table-values",
+        "meta": {"name": "table-values"},
         "type": "CSV",
         "format": "Long",
         "filename": "tbl-formats1-expected.csv",

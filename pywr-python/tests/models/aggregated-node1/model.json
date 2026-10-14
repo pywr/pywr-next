@@ -2,7 +2,7 @@
   "metadata": {
     "title": "Test of aggregated node."
   },
-  "timestepper": {
+  "time": {
     "start": "2021-01-01",
     "end": "2021-12-31",
     "timestep": {
@@ -18,7 +18,7 @@
         },
         "type": "Input",
         "max_flow": {
-          "type": "Timeseries",
+          "type": "TimeSeries",
           "name": "inflow",
           "columns": {
             "type": "Column",
@@ -111,18 +111,18 @@
         }
       }
     ],
-    "timeseries": [
+    "time_series": [
       {
         "meta": {
           "name": "inflow"
         },
         "type": "Polars",
-        "url": "inflow.csv"
+        "path": "inflow.csv"
       }
     ],
     "metric_sets": [
       {
-        "name": "nodes",
+        "meta": {"name": "nodes"},
         "metrics": [
           {
             "type": "Node",
@@ -149,7 +149,7 @@
     ],
     "outputs": [
       {
-        "name": "outputs",
+        "meta": {"name": "outputs"},
         "type": "HDF5",
         "filename": "outputs.h5",
         "metric_set": "nodes"

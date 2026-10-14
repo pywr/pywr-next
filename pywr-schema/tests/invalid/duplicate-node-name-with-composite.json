@@ -1,0 +1,72 @@
+{
+  "metadata": {
+    "title": "Invalid model with a simple and a composite node sharing a name",
+    "minimum_version": "0.1"
+  },
+  "time": {
+    "start": "2015-01-01",
+    "end": "2015-01-10",
+    "timestep": {
+      "type": "Days",
+      "days": 1
+    }
+  },
+  "network": {
+    "nodes": [
+      {
+        "meta": {
+          "name": "supply1"
+        },
+        "type": "Input",
+        "max_flow": {
+          "type": "Literal",
+          "value": 5
+        }
+      },
+      {
+        "meta": {
+          "name": "source1"
+        },
+        "type": "Input"
+      },
+      {
+        "meta": {
+          "name": "supply1"
+        },
+        "type": "Delay",
+        "delay": {
+          "type": "Literal",
+          "value": 3
+        },
+        "initial_value": {
+          "type": "Literal",
+          "value": 0.0
+        }
+      },
+      {
+        "meta": {
+          "name": "demand1"
+        },
+        "type": "Output",
+        "max_flow": {
+          "type": "Literal",
+          "value": 10
+        },
+        "cost": {
+          "type": "Literal",
+          "value": -10
+        }
+      }
+    ],
+    "edges": [
+      {
+        "from_node": "supply1",
+        "to_node": "demand1"
+      },
+      {
+        "from_node": "source1",
+        "to_node": "supply1"
+      }
+    ]
+  }
+}

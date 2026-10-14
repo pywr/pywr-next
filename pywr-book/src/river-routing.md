@@ -11,7 +11,7 @@ Currently available methods are:
 The delay routing method simply delays flow by a fixed number of time-steps. This can be implemented
 using either `DelayNode` or `RiverNode` with a routing method of `delay`. Internally, the delay
 is implemented using a `DelayParameter` which simply stores the flow values in a queue and returns
-the value from the appropriate time-step in the past.
+the value from the appropriate time-step in the past. The delay must be at least one time-step.
 
 ## Muskingum routing
 

@@ -4,7 +4,7 @@
     "description": "A very simple example.",
     "minimum_version": "0.1"
   },
-  "timestepper": {
+  "time": {
     "start": "2015-01-01",
     "end": "2015-12-31",
     "timestep": {
@@ -69,7 +69,7 @@
     ],
     "metric_sets": [
       {
-        "name": "nodes",
+        "meta": {"name": "nodes"},
         "metrics": [
           {
             "type": "Node",
@@ -80,14 +80,14 @@
     ],
     "outputs": [
       {
-        "name": "my-outputs",
+        "meta": {"name": "my-outputs"},
         "type": "CSV",
         "format": "Long",
         "filename": "csv1-outputs-long.csv",
         "metric_set": "nodes"
       },
       {
-        "name": "my-outputs",
+        "meta": {"name": "my-outputs"},
         "type": "CSV",
         "format": "Wide",
         "filename": "csv1-outputs-wide.csv",

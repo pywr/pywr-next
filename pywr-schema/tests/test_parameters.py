@@ -20,6 +20,23 @@ class IntParameter:
         return self.count + info.timestep.day
 
 
+class AfterParameter:
+    """A float parameter calculated only after the network is solved"""
+
+    def after(self, info) -> float:
+        return float(info.timestep.day)
+
+
+class BeforeAndAfterParameter:
+    """A float parameter calculated both before and after the network is solved"""
+
+    def before(self, info) -> float:
+        return float(info.timestep.day)
+
+    def after(self, info) -> float:
+        return float(info.timestep.day) + 0.5
+
+
 def multiple_values(info, factor: float) -> dict:
     """Return multiple values."""
     return {

@@ -4,7 +4,7 @@
     "description": "Examples of using local parameters to define cost on a Storage node.",
     "minimum_version": "0.1"
   },
-  "timestepper": {
+  "time": {
     "start": "2015-01-01",
     "end": "2015-01-31",
     "timestep": {
@@ -59,6 +59,7 @@
               "name": "cost"
             },
             "type": "ControlCurve",
+            "phase": "Before",
             "storage_metric": {
               "type": "Node",
               "name": "storage1",
@@ -118,7 +119,7 @@
     ],
     "metric_sets": [
       {
-        "name": "nodes",
+        "meta": {"name": "nodes"},
         "metrics": [
           {
             "type": "Node",
@@ -129,7 +130,7 @@
     ],
     "outputs": [
       {
-        "name": "node-outputs",
+        "meta": {"name": "node-outputs"},
         "type": "CSV",
         "format": "Long",
         "filename": "local-parameter2-expected.csv",

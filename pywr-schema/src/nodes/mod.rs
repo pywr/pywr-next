@@ -55,55 +55,61 @@ mod water_treatment_works;
 // `virtual` is a reserved keyword in Rust, so we use `virtual_nodes` as the module name
 mod virtual_nodes;
 
-use crate::error::SchemaError;
-use crate::error::{ComponentConversionError, ConversionError};
-use crate::metric::Metric;
+use crate::error::{ComponentConversionError, ConversionError, SchemaError};
+use crate::metric::{Metric, MetricValueType};
 #[cfg(feature = "core")]
 use crate::network::LoadArgs;
-use crate::network::NetworkSchema;
-use crate::parameters::Parameter;
+use crate::parameters::{Parameter, validate_each_parameter};
+use crate::util::duplicates;
 use crate::v1::{ConversionData, TryFromV1, TryIntoV2};
-use crate::visit::{VisitMetrics, VisitPaths};
-pub use abstraction::AbstractionNode;
+use crate::validation::{EdgeProblem, NodeProblem, NodeReferenceProblem};
+use crate::visit::{Reference, ReferenceMut, VisitMetrics, VisitPaths, VisitReferences};
+pub use abstraction::{AbstractionNode, AbstractionNodeAttribute, AbstractionNodeComponent, AbstractionOutputNodeSlot};
 pub use attributes::NodeAttribute;
 pub use components::NodeComponent;
 pub use core::{
     CatchmentNode, CatchmentNodeAttribute, CatchmentNodeComponent, InputNode, InputNodeAttribute, InputNodeComponent,
     LinkNode, LinkNodeAttribute, LinkNodeComponent, OutputNode, OutputNodeAttribute, OutputNodeComponent,
-    SoftConstraint, StorageInitialVolume, StorageNode, StorageNodeAttribute,
+    SoftConstraint, StorageInitialVolume, StorageInitialVolumeType, StorageNode, StorageNodeAttribute,
 };
 pub use delay::{DelayNode, DelayNodeAttribute, DelayNodeComponent};
-pub use loss_link::{LossFactor, LossLinkNode, LossLinkNodeAttribute, LossLinkNodeComponent};
+pub use loss_link::{LossFactor, LossFactorType, LossLinkNode, LossLinkNodeAttribute, LossLinkNodeComponent};
 pub use piecewise_link::{
     PiecewiseLinkNode, PiecewiseLinkNodeAttribute, PiecewiseLinkNodeComponent, PiecewiseLinkStep,
 };
 pub use piecewise_storage::{PiecewiseStorageNode, PiecewiseStorageNodeAttribute, PiecewiseStore};
 pub use placeholder::PlaceholderNode;
 #[cfg(feature = "core")]
-use pywr_core::metric::MetricF64;
+use pywr_core::{metric::UnresolvedMetricF64, node::UnresolvedNode};
 use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::nodes::{
     CoreNode as CoreNodeV1, Node as NodeV1, NodeMeta as NodeMetaV1, NodePosition as NodePositionV1,
 };
 pub use reservoir::{
-    Bathymetry, BathymetryType, Evaporation, Leakage, Rainfall, ReservoirNode, ReservoirNodeAttribute,
-    ReservoirNodeComponent, SpillNodeType,
+    Bathymetry, BathymetryType, Compensation, Evaporation, Leakage, OutflowNodeType, Rainfall, ReservoirNode,
+    ReservoirNodeAttribute, ReservoirNodeComponent, ReservoirOutputNodeSlot, Spill,
 };
-pub use river::{MuskingumInitialCondition, RiverNode, RiverNodeAttribute, RiverNodeComponent, RoutingMethod};
+pub use river::{
+    MuskingumInitialCondition, MuskingumInitialConditionType, RiverNode, RiverNodeAttribute, RiverNodeComponent,
+    RoutingMethod, RoutingMethodType,
+};
 pub use river_gauge::{RiverGaugeNode, RiverGaugeNodeAttribute, RiverGaugeNodeComponent};
 pub use river_split_with_gauge::{
     RiverSplit, RiverSplitWithGaugeNode, RiverSplitWithGaugeNodeAttribute, RiverSplitWithGaugeNodeComponent,
+    RiverSplitWithGaugeOutputNodeSlot,
 };
 use schemars::JsonSchema;
 pub use slots::NodeSlot;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use strum::IntoEnumIterator;
 use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumString, IntoStaticStr};
 pub use turbine::{TargetType, TurbineNode, TurbineNodeAttribute, TurbineNodeComponent};
 pub use virtual_nodes::{
     AggregatedNode, AggregatedNodeAttribute, AggregatedStorageNode, AggregatedStorageNodeAttribute, AnnualReset,
-    Relationship, RollingWindow, VirtualNode, VirtualNodeType, VirtualStorageNode, VirtualStorageNodeAttribute,
-    VirtualStorageReset, VirtualStorageResetVolume,
+    Relationship, RelationshipType, RollingWindow, RollingWindowType, SeasonalReset, VirtualNode, VirtualNodeType,
+    VirtualStorageNode, VirtualStorageNodeAttribute, VirtualStorageReset, VirtualStorageResetType,
+    VirtualStorageResetVolume, VirtualStorageResetVolumeType,
 };
 pub use water_treatment_works::{
     WaterTreatmentWorksNode, WaterTreatmentWorksNodeAttribute, WaterTreatmentWorksNodeComponent,
@@ -115,6 +121,32 @@ pub struct NodePosition {
     pub schematic: Option<(f32, f32)>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub geographic: Option<(f32, f32)>,
+}
+
+impl NodePosition {
+    /// Apply an offset to the schematic position of the node.
+    ///
+    /// If the node does not have a schematic position, the offset will be applied to the default position of (0.0, 0.0).
+    pub fn apply_schematic_offset(&mut self, offset: (f32, f32)) {
+        if let Some((x, y)) = &mut self.schematic {
+            *x += offset.0;
+            *y += offset.1;
+        } else {
+            self.schematic = Some(offset);
+        }
+    }
+
+    /// Apply an offset to the geographic position of the node.
+    ///
+    /// If the node does not have a geographic position, the offset will be applied to the default position of (0.0, 0.0).
+    pub fn apply_geographic_offset(&mut self, offset: (f32, f32)) {
+        if let Some((lat, lon)) = &mut self.geographic {
+            *lat += offset.0;
+            *lon += offset.1;
+        } else {
+            self.geographic = Some(offset);
+        }
+    }
 }
 
 impl From<NodePositionV1> for NodePosition {
@@ -135,6 +167,46 @@ pub struct NodeMeta {
     pub position: Option<NodePosition>,
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub tags: HashMap<String, String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub provenance: Option<crate::meta::ComponentProvenance>,
+}
+
+impl crate::meta::ComponentMeta for NodeMeta {
+    fn provenance(&self) -> Option<&crate::meta::ComponentProvenance> {
+        self.provenance.as_ref()
+    }
+
+    fn set_provenance(&mut self, provenance: crate::meta::ComponentProvenance) {
+        self.provenance = Some(provenance);
+    }
+
+    fn clear_provenance(&mut self) {
+        self.provenance = None;
+    }
+}
+
+impl NodeMeta {
+    pub fn apply_schematic_offset(&mut self, offset: (f32, f32)) {
+        if let Some(position) = &mut self.position {
+            position.apply_schematic_offset(offset);
+        } else {
+            self.position = Some(NodePosition {
+                schematic: Some(offset),
+                geographic: None,
+            });
+        }
+    }
+
+    pub fn apply_geographic_offset(&mut self, offset: (f32, f32)) {
+        if let Some(position) = &mut self.position {
+            position.apply_geographic_offset(offset);
+        } else {
+            self.position = Some(NodePosition {
+                schematic: None,
+                geographic: Some(offset),
+            });
+        }
+    }
 }
 
 impl TryFrom<NodeMetaV1> for NodeMeta {
@@ -146,132 +218,34 @@ impl TryFrom<NodeMetaV1> for NodeMeta {
             comment: v1.comment,
             position: v1.position.map(|p| p.into()),
             tags: crate::v1::convert_tags(v1.tags)?,
+            provenance: None,
         })
     }
 }
 
-pub struct NodeBuilder {
-    ty: NodeType,
-    position: Option<NodePosition>,
-    name: Option<String>,
-}
-
-/// A builder for creating a new node.
-impl NodeBuilder {
-    pub fn new(ty: NodeType) -> Self {
-        Self {
-            ty,
-            position: None,
-            name: None,
-        }
-    }
-
-    /// Define the position of the node.
-    pub fn position(mut self, position: NodePosition) -> Self {
-        self.position = Some(position);
-        self
-    }
-
-    /// Define the name of the node.
-    pub fn name(mut self, name: String) -> Self {
-        self.name = Some(name);
-        self
-    }
-
-    /// Create the next default name without duplicating an existing name in the model.
-    pub fn next_default_name_for_model(mut self, network: &NetworkSchema) -> Self {
-        let mut num = 1;
-        loop {
-            let name = format!("{}-{}", self.ty, num);
-            if network.get_node_by_name(&name).is_none() {
-                // No node with this name found!
-                self.name = Some(name);
-                break;
-            } else {
-                num += 1;
-            }
-        }
-        self
-    }
-
-    /// Build the [`Node`].
-    pub fn build(self) -> Node {
-        let name = self.name.unwrap_or_else(|| self.ty.to_string());
-        let meta = NodeMeta {
-            name,
-            position: self.position,
-            ..Default::default()
-        };
-
-        match self.ty {
-            NodeType::Input => Node::Input(InputNode {
-                meta,
-                ..Default::default()
-            }),
-            NodeType::Link => Node::Link(LinkNode {
-                meta,
-                ..Default::default()
-            }),
-            NodeType::Output => Node::Output(OutputNode {
-                meta,
-                ..Default::default()
-            }),
-            NodeType::Storage => Node::Storage(StorageNode {
-                meta,
-                ..Default::default()
-            }),
-            NodeType::Catchment => Node::Catchment(CatchmentNode {
-                meta,
-                ..Default::default()
-            }),
-            NodeType::RiverGauge => Node::RiverGauge(RiverGaugeNode {
-                meta,
-                ..Default::default()
-            }),
-            NodeType::LossLink => Node::LossLink(LossLinkNode {
-                meta,
-                ..Default::default()
-            }),
-            NodeType::Delay => Node::Delay(DelayNode {
-                meta,
-                ..Default::default()
-            }),
-            NodeType::PiecewiseLink => Node::PiecewiseLink(PiecewiseLinkNode {
-                meta,
-                ..Default::default()
-            }),
-            NodeType::PiecewiseStorage => Node::PiecewiseStorage(PiecewiseStorageNode {
-                meta,
-                ..Default::default()
-            }),
-            NodeType::River => Node::River(RiverNode {
-                meta,
-                ..Default::default()
-            }),
-            NodeType::RiverSplitWithGauge => Node::RiverSplitWithGauge(RiverSplitWithGaugeNode {
-                meta,
-                ..Default::default()
-            }),
-            NodeType::WaterTreatmentWorks => Node::WaterTreatmentWorks(WaterTreatmentWorksNode {
-                meta,
-                ..Default::default()
-            }),
-            NodeType::Turbine => Node::Turbine(TurbineNode {
-                meta,
-                ..Default::default()
-            }),
-            NodeType::Reservoir => Node::Reservoir(ReservoirNode {
-                storage: StorageNode {
-                    meta,
-                    ..Default::default()
-                },
-                ..Default::default()
-            }),
-            NodeType::Placeholder => Node::Placeholder(PlaceholderNode { meta }),
-            NodeType::Abstraction => Node::Abstraction(AbstractionNode {
-                meta,
-                ..Default::default()
-            }),
+/// Create a blank [`Node`] of the given type.
+///
+/// Every field of the returned node is at its default value, including the node's name.
+impl From<NodeType> for Node {
+    fn from(node_type: NodeType) -> Self {
+        match node_type {
+            NodeType::Input => Node::Input(InputNode::default()),
+            NodeType::Link => Node::Link(LinkNode::default()),
+            NodeType::Output => Node::Output(OutputNode::default()),
+            NodeType::Storage => Node::Storage(StorageNode::default()),
+            NodeType::Catchment => Node::Catchment(CatchmentNode::default()),
+            NodeType::RiverGauge => Node::RiverGauge(RiverGaugeNode::default()),
+            NodeType::LossLink => Node::LossLink(LossLinkNode::default()),
+            NodeType::Delay => Node::Delay(DelayNode::default()),
+            NodeType::PiecewiseLink => Node::PiecewiseLink(PiecewiseLinkNode::default()),
+            NodeType::PiecewiseStorage => Node::PiecewiseStorage(PiecewiseStorageNode::default()),
+            NodeType::River => Node::River(RiverNode::default()),
+            NodeType::RiverSplitWithGauge => Node::RiverSplitWithGauge(RiverSplitWithGaugeNode::default()),
+            NodeType::WaterTreatmentWorks => Node::WaterTreatmentWorks(WaterTreatmentWorksNode::default()),
+            NodeType::Turbine => Node::Turbine(TurbineNode::default()),
+            NodeType::Reservoir => Node::Reservoir(ReservoirNode::default()),
+            NodeType::Placeholder => Node::Placeholder(PlaceholderNode::default()),
+            NodeType::Abstraction => Node::Abstraction(AbstractionNode::default()),
         }
     }
 }
@@ -318,6 +292,32 @@ impl Node {
         self.into()
     }
 
+    pub fn is_placeholder(&self) -> bool {
+        matches!(self, Self::Placeholder(_))
+    }
+
+    /// Returns true if this node is a storage, as the members of an [`AggregatedStorageNode`]
+    /// must be.
+    pub fn is_storage(&self) -> bool {
+        match self {
+            Node::Storage(_) | Node::PiecewiseStorage(_) | Node::Reservoir(_) => true,
+            Node::Input(_)
+            | Node::Link(_)
+            | Node::Output(_)
+            | Node::Catchment(_)
+            | Node::RiverGauge(_)
+            | Node::LossLink(_)
+            | Node::Delay(_)
+            | Node::PiecewiseLink(_)
+            | Node::River(_)
+            | Node::RiverSplitWithGauge(_)
+            | Node::WaterTreatmentWorks(_)
+            | Node::Turbine(_)
+            | Node::Placeholder(_)
+            | Node::Abstraction(_) => false,
+        }
+    }
+
     pub fn meta(&self) -> &NodeMeta {
         match self {
             Node::Input(n) => &n.meta,
@@ -340,35 +340,81 @@ impl Node {
         }
     }
 
-    /// Get the input connectors for this node.
-    ///
-    /// The `slot` argument is used for nodes that have multiple input connectors. If the node
-    /// does not have multiple input connectors, then a [`SchemaError`] is returned.
-    ///
-    /// The input connectors are returned as a vector of tuples, where the first element is the name of the
-    /// connector, and the second element is an optional sub-name. The sub-name is used for nodes
-    /// that have multiple internal nodes, such as a [`ReservoirNode`].
-    ///
-    pub fn input_connectors(&self, slot: Option<&NodeSlot>) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
+    /// Get a mutable reference to the node's metadata.
+    pub fn meta_mut(&mut self) -> &mut NodeMeta {
         match self {
-            Node::Input(n) => n.input_connectors(slot),
-            Node::Link(n) => n.input_connectors(slot),
-            Node::Output(n) => n.input_connectors(slot),
-            Node::Storage(n) => n.input_connectors(slot),
-            Node::Catchment(n) => n.input_connectors(slot),
-            Node::RiverGauge(n) => n.input_connectors(slot),
-            Node::LossLink(n) => n.input_connectors(slot),
-            Node::River(n) => n.input_connectors(slot),
-            Node::RiverSplitWithGauge(n) => n.input_connectors(slot),
-            Node::WaterTreatmentWorks(n) => n.input_connectors(slot),
-            Node::PiecewiseLink(n) => n.input_connectors(slot),
-            Node::PiecewiseStorage(n) => n.input_connectors(slot),
-            Node::Delay(n) => n.input_connectors(slot),
-            Node::Turbine(n) => n.input_connectors(slot),
-            Node::Reservoir(n) => n.input_connectors(slot),
-            // Deliberately do not take a slot for Placeholder nodes so they can be used with any slot
-            Node::Placeholder(n) => n.input_connectors(),
-            Node::Abstraction(n) => n.input_connectors(slot),
+            Node::Input(n) => &mut n.meta,
+            Node::Link(n) => &mut n.meta,
+            Node::Output(n) => &mut n.meta,
+            Node::Storage(n) => &mut n.meta,
+            Node::Catchment(n) => &mut n.meta,
+            Node::RiverGauge(n) => &mut n.meta,
+            Node::LossLink(n) => &mut n.meta,
+            Node::River(n) => &mut n.meta,
+            Node::RiverSplitWithGauge(n) => &mut n.meta,
+            Node::WaterTreatmentWorks(n) => &mut n.meta,
+            Node::PiecewiseLink(n) => &mut n.meta,
+            Node::PiecewiseStorage(n) => &mut n.meta,
+            Node::Delay(n) => &mut n.meta,
+            Node::Turbine(n) => &mut n.meta,
+            Node::Reservoir(n) => n.meta_mut(),
+            Node::Placeholder(n) => &mut n.meta,
+            Node::Abstraction(n) => &mut n.meta,
+        }
+    }
+
+    /// Returns true if this node can be the `to_node` of an edge.
+    ///
+    /// [`Node::Input`] and [`Node::Catchment`] are built as a `pywr-core` input node, which
+    /// rejects any incoming edge with `NodeBuilderError::UnexpectedIncomingEdges`. Every other
+    /// node type can receive flow — including [`Node::Delay`] and a routing [`Node::River`],
+    /// which are built from a core input *and* output node but wire their inflow to the output.
+    pub fn accepts_inflow(&self) -> bool {
+        match self {
+            Node::Input(_) | Node::Catchment(_) => false,
+            Node::Link(_)
+            | Node::Output(_)
+            | Node::Storage(_)
+            | Node::RiverGauge(_)
+            | Node::LossLink(_)
+            | Node::Delay(_)
+            | Node::PiecewiseLink(_)
+            | Node::PiecewiseStorage(_)
+            | Node::River(_)
+            | Node::RiverSplitWithGauge(_)
+            | Node::WaterTreatmentWorks(_)
+            | Node::Turbine(_)
+            | Node::Reservoir(_)
+            | Node::Placeholder(_)
+            | Node::Abstraction(_) => true,
+        }
+    }
+
+    /// Returns true if this node can be the `from_node` of an edge.
+    ///
+    /// [`Node::Output`] is built as a `pywr-core` output node, which rejects any outgoing edge
+    /// with `NodeBuilderError::UnexpectedOutgoingEdges`. Every other node type either is, or
+    /// expands to, a node that can provide flow — including [`Node::Delay`] and a routing
+    /// [`Node::River`], which take their outflow from a core input node.
+    pub fn provides_outflow(&self) -> bool {
+        match self {
+            Node::Output(_) => false,
+            Node::Input(_)
+            | Node::Link(_)
+            | Node::Storage(_)
+            | Node::Catchment(_)
+            | Node::RiverGauge(_)
+            | Node::LossLink(_)
+            | Node::Delay(_)
+            | Node::PiecewiseLink(_)
+            | Node::PiecewiseStorage(_)
+            | Node::River(_)
+            | Node::RiverSplitWithGauge(_)
+            | Node::WaterTreatmentWorks(_)
+            | Node::Turbine(_)
+            | Node::Reservoir(_)
+            | Node::Placeholder(_)
+            | Node::Abstraction(_) => true,
         }
     }
 
@@ -395,35 +441,35 @@ impl Node {
         }
     }
 
-    /// Get the output connectors for this node.
+    /// Validate the provided input slot converting it into a [`NodeSlot`] if a default is available.
     ///
-    /// The `slot` argument is used for nodes that have multiple output connectors. If the node
-    /// does not have multiple output connectors, then a [`SchemaError`] is returned.
+    /// [`None`] is returned if the node does not support slots and the provided slot is [`None`].
+    /// If the node does support slots, then the provided slot is validated and returned as a [`NodeSlot`].
+    /// If the provided slot is [`None`] and the node has a default slot, then the default slot is returned.
     ///
-    /// The output connectors are returned as a vector of tuples, where the first element is the name of the
-    /// connector, and the second element is an optional sub-name. The sub-name is used for nodes
-    /// that have multiple internal nodes, such as a [`ReservoirNode`].
-    ///
-    pub fn output_connectors(&self, slot: Option<&NodeSlot>) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
+    /// [`Node::Placeholder`] nodes will accept any slot and return it as a [`NodeSlot`].
+    pub fn validate_input_slot(&self, slot: Option<&NodeSlot>) -> Result<Option<NodeSlot>, SchemaError> {
         match self {
-            Node::Input(n) => n.output_connectors(slot),
-            Node::Link(n) => n.output_connectors(slot),
-            Node::Output(n) => n.output_connectors(slot),
-            Node::Storage(n) => n.output_connectors(slot),
-            Node::Catchment(n) => n.output_connectors(slot),
-            Node::RiverGauge(n) => n.output_connectors(slot),
-            Node::LossLink(n) => n.output_connectors(slot),
-            Node::River(n) => n.output_connectors(slot),
-            Node::RiverSplitWithGauge(n) => n.output_connectors(slot),
-            Node::WaterTreatmentWorks(n) => n.output_connectors(slot),
-            Node::PiecewiseLink(n) => n.output_connectors(slot),
-            Node::PiecewiseStorage(n) => n.output_connectors(slot),
-            Node::Delay(n) => n.output_connectors(slot),
-            Node::Turbine(n) => n.output_connectors(slot),
-            Node::Reservoir(n) => n.output_connectors(slot),
-            // Deliberately do not take a slot for Placeholder nodes so they can be used with any slot
-            Node::Placeholder(n) => n.output_connectors(),
-            Node::Abstraction(n) => n.output_connectors(slot),
+            Node::Input(_)
+            | Node::Link(_)
+            | Node::Output(_)
+            | Node::Storage(_)
+            | Node::Catchment(_)
+            | Node::RiverGauge(_)
+            | Node::LossLink(_)
+            | Node::Delay(_)
+            | Node::PiecewiseLink(_)
+            | Node::PiecewiseStorage(_)
+            | Node::River(_)
+            | Node::RiverSplitWithGauge(_)
+            | Node::WaterTreatmentWorks(_)
+            | Node::Turbine(_)
+            | Node::Reservoir(_)
+            | Node::Abstraction(_) => match slot {
+                Some(s) => Err(SchemaError::InputNodeSlotNotSupported { slot: s.clone() }),
+                None => Ok(None),
+            },
+            Node::Placeholder(_) => Ok(slot.cloned()),
         }
     }
 
@@ -441,13 +487,91 @@ impl Node {
             Node::PiecewiseLink(_) => None,
             Node::PiecewiseStorage(_) => None,
             Node::River(_) => None,
-            Node::RiverSplitWithGauge(n) => Some(Box::new(n.iter_output_slots())),
+            Node::RiverSplitWithGauge(n) => Some(Box::new(n.iter_output_slots().map(|s| s.into()))),
             Node::WaterTreatmentWorks(_) => None,
             Node::Turbine(_) => None,
-            Node::Reservoir(n) => Some(Box::new(n.iter_output_slots())),
+            Node::Reservoir(n) => Some(Box::new(n.iter_output_slots().map(|s| s.into()))),
             Node::Placeholder(_) => None,
-            Node::Abstraction(n) => Some(Box::new(n.iter_output_slots())),
+            Node::Abstraction(n) => Some(Box::new(n.iter_output_slots().map(|s| s.into()))),
         }
+    }
+
+    /// Validate the provided output slot converting it into a [`NodeSlot`] if a default is available.
+    ///
+    /// [`None`] is returned if the node does not support slots and the provided slot is [`None`].
+    /// If the node does support slots, then the provided slot is validated and returned as a [`NodeSlot`].
+    /// If the provided slot is [`None`] and the node has a default slot, then the default slot is returned.
+    ///
+    /// [`Node::Placeholder`] nodes will accept any slot and return it as a [`NodeSlot`].
+    pub fn validate_output_slot(&self, slot: Option<&NodeSlot>) -> Result<Option<NodeSlot>, SchemaError> {
+        match self {
+            Node::Input(_)
+            | Node::Link(_)
+            | Node::Output(_)
+            | Node::Storage(_)
+            | Node::Catchment(_)
+            | Node::RiverGauge(_)
+            | Node::LossLink(_)
+            | Node::Delay(_)
+            | Node::PiecewiseLink(_)
+            | Node::PiecewiseStorage(_)
+            | Node::River(_)
+            | Node::WaterTreatmentWorks(_)
+            | Node::Turbine(_) => match slot {
+                Some(s) => Err(SchemaError::OutputNodeSlotNotSupported { slot: s.clone() }),
+                None => Ok(None),
+            },
+            Node::Placeholder(_) => Ok(slot.cloned()),
+            Node::RiverSplitWithGauge(n) => n.output_slot(slot).map(|s| Some(s.into())),
+            Node::Reservoir(n) => n.output_slot(slot).map(|s| Some(s.into())),
+            Node::Abstraction(n) => n.output_slot(slot).map(|s| Some(s.into())),
+        }
+    }
+
+    /// Check that this node can be the `from_node` of an edge leaving through `slot`: that it
+    /// provides flow, then that it has the slot.
+    pub fn validate_edge_from(&self, slot: Option<&NodeSlot>) -> Result<(), EdgeProblem> {
+        if !self.provides_outflow() {
+            return Err(EdgeProblem::NoOutflow {
+                name: self.name().to_string(),
+                node_type: self.node_type(),
+            });
+        }
+
+        if let Some(slot) = slot {
+            self.validate_output_slot(Some(slot))
+                .map_err(|_| EdgeProblem::UnknownFromSlot {
+                    name: self.name().to_string(),
+                    node_type: self.node_type(),
+                    slot: slot.clone(),
+                    valid: self.iter_output_slots().map(|slots| slots.collect()),
+                })?;
+        }
+
+        Ok(())
+    }
+
+    /// Check that this node can be the `to_node` of an edge arriving through `slot`: that it
+    /// receives flow, then that it has the slot.
+    pub fn validate_edge_to(&self, slot: Option<&NodeSlot>) -> Result<(), EdgeProblem> {
+        if !self.accepts_inflow() {
+            return Err(EdgeProblem::NoInflow {
+                name: self.name().to_string(),
+                node_type: self.node_type(),
+            });
+        }
+
+        if let Some(slot) = slot {
+            self.validate_input_slot(Some(slot))
+                .map_err(|_| EdgeProblem::UnknownToSlot {
+                    name: self.name().to_string(),
+                    node_type: self.node_type(),
+                    slot: slot.clone(),
+                    valid: self.iter_input_slots().map(|slots| slots.collect()),
+                })?;
+        }
+
+        Ok(())
     }
 
     pub fn default_attribute(&self) -> NodeAttribute {
@@ -472,6 +596,56 @@ impl Node {
         }
     }
 
+    /// Returns the attributes that this node has.
+    pub fn attributes(&self) -> Vec<NodeAttribute> {
+        match self {
+            Node::Input(_) => InputNodeAttribute::iter().map(Into::into).collect(),
+            Node::Link(_) => LinkNodeAttribute::iter().map(Into::into).collect(),
+            Node::Output(_) => OutputNodeAttribute::iter().map(Into::into).collect(),
+            Node::Storage(_) => StorageNodeAttribute::iter().map(Into::into).collect(),
+            Node::Catchment(_) => CatchmentNodeAttribute::iter().map(Into::into).collect(),
+            Node::RiverGauge(_) => RiverGaugeNodeAttribute::iter().map(Into::into).collect(),
+            Node::LossLink(_) => LossLinkNodeAttribute::iter().map(Into::into).collect(),
+            Node::River(_) => RiverNodeAttribute::iter().map(Into::into).collect(),
+            Node::RiverSplitWithGauge(_) => RiverSplitWithGaugeNodeAttribute::iter().map(Into::into).collect(),
+            Node::WaterTreatmentWorks(_) => WaterTreatmentWorksNodeAttribute::iter().map(Into::into).collect(),
+            Node::PiecewiseLink(_) => PiecewiseLinkNodeAttribute::iter().map(Into::into).collect(),
+            Node::PiecewiseStorage(_) => PiecewiseStorageNodeAttribute::iter().map(Into::into).collect(),
+            Node::Delay(_) => DelayNodeAttribute::iter().map(Into::into).collect(),
+            Node::Turbine(_) => TurbineNodeAttribute::iter().map(Into::into).collect(),
+            Node::Reservoir(_) => ReservoirNodeAttribute::iter().map(Into::into).collect(),
+            Node::Placeholder(_) => Vec::new(),
+            Node::Abstraction(_) => AbstractionNodeAttribute::iter().map(Into::into).collect(),
+        }
+    }
+
+    /// Check that a `metric` can read this node's `attribute`, `None` being its default. A
+    /// placeholder takes any reference.
+    pub fn validate_reference(
+        &self,
+        attribute: Option<NodeAttribute>,
+        metric: MetricValueType,
+    ) -> Result<(), NodeReferenceProblem> {
+        if self.is_placeholder() {
+            return Ok(());
+        }
+
+        if metric == MetricValueType::Index {
+            return Err(NodeReferenceProblem::NotAnIndex);
+        }
+
+        let Some(attribute) = attribute else {
+            return Ok(());
+        };
+        let supported = self.attributes();
+
+        if supported.contains(&attribute) {
+            Ok(())
+        } else {
+            Err(NodeReferenceProblem::AttributeNotSupported { attribute, supported })
+        }
+    }
+
     /// Returns the default component for the node, if defined.
     pub fn default_component(&self) -> Option<NodeComponent> {
         match self {
@@ -492,6 +666,54 @@ impl Node {
             Node::Reservoir(n) => Some(n.default_component().into()),
             Node::Placeholder(_) => None,
             Node::Abstraction(n) => Some(n.default_component().into()),
+        }
+    }
+
+    /// Returns the components that nodes of this type have. See [`Node::built_components`] for
+    /// the ones this node builds.
+    pub fn components(&self) -> Vec<NodeComponent> {
+        match self {
+            Node::Input(_) => InputNodeComponent::iter().map(Into::into).collect(),
+            Node::Link(_) => LinkNodeComponent::iter().map(Into::into).collect(),
+            Node::Output(_) => OutputNodeComponent::iter().map(Into::into).collect(),
+            Node::Catchment(_) => CatchmentNodeComponent::iter().map(Into::into).collect(),
+            Node::Storage(_) => Vec::new(),
+            Node::RiverGauge(_) => RiverGaugeNodeComponent::iter().map(Into::into).collect(),
+            Node::LossLink(_) => LossLinkNodeComponent::iter().map(Into::into).collect(),
+            Node::Delay(_) => DelayNodeComponent::iter().map(Into::into).collect(),
+            Node::PiecewiseLink(_) => PiecewiseLinkNodeComponent::iter().map(Into::into).collect(),
+            Node::PiecewiseStorage(_) => Vec::new(),
+            Node::River(_) => RiverNodeComponent::iter().map(Into::into).collect(),
+            Node::RiverSplitWithGauge(_) => RiverSplitWithGaugeNodeComponent::iter().map(Into::into).collect(),
+            Node::WaterTreatmentWorks(_) => WaterTreatmentWorksNodeComponent::iter().map(Into::into).collect(),
+            Node::Turbine(_) => TurbineNodeComponent::iter().map(Into::into).collect(),
+            Node::Reservoir(_) => ReservoirNodeComponent::iter().map(Into::into).collect(),
+            Node::Placeholder(_) => Vec::new(),
+            Node::Abstraction(_) => AbstractionNodeComponent::iter().map(Into::into).collect(),
+        }
+    }
+
+    /// Returns the components this node builds, the only ones a virtual node's member can name.
+    /// A reservoir builds `Compensation` only when `compensation` is set, for example.
+    pub fn built_components(&self) -> Vec<NodeComponent> {
+        match self {
+            Node::LossLink(n) => n.built_components().map(Into::into).collect(),
+            Node::River(n) => n.built_components().map(Into::into).collect(),
+            Node::WaterTreatmentWorks(n) => n.built_components().map(Into::into).collect(),
+            Node::Reservoir(n) => n.built_components().map(Into::into).collect(),
+            Node::Input(_)
+            | Node::Link(_)
+            | Node::Output(_)
+            | Node::Catchment(_)
+            | Node::Storage(_)
+            | Node::RiverGauge(_)
+            | Node::Delay(_)
+            | Node::PiecewiseLink(_)
+            | Node::PiecewiseStorage(_)
+            | Node::RiverSplitWithGauge(_)
+            | Node::Turbine(_)
+            | Node::Placeholder(_)
+            | Node::Abstraction(_) => self.components(),
         }
     }
 
@@ -520,33 +742,170 @@ impl Node {
             Node::Abstraction(n) => n.parameters.as_deref(),
         }
     }
+
+    pub fn local_parameters_mut(&mut self) -> Option<&mut [Parameter]> {
+        match self {
+            Node::Input(n) => n.parameters.as_deref_mut(),
+            Node::Link(n) => n.parameters.as_deref_mut(),
+            Node::Output(n) => n.parameters.as_deref_mut(),
+            Node::Storage(n) => n.parameters.as_deref_mut(),
+            Node::Catchment(n) => n.parameters.as_deref_mut(),
+            Node::RiverGauge(n) => n.parameters.as_deref_mut(),
+            Node::LossLink(n) => n.parameters.as_deref_mut(),
+            Node::River(n) => n.parameters.as_deref_mut(),
+            Node::RiverSplitWithGauge(n) => n.parameters.as_deref_mut(),
+            Node::WaterTreatmentWorks(n) => n.parameters.as_deref_mut(),
+            Node::PiecewiseLink(n) => n.parameters.as_deref_mut(),
+            Node::PiecewiseStorage(n) => n.parameters.as_deref_mut(),
+            Node::Delay(n) => n.parameters.as_deref_mut(),
+            Node::Turbine(n) => n.parameters.as_deref_mut(),
+            Node::Reservoir(n) => n.storage.parameters.as_deref_mut(),
+            Node::Placeholder(_) => None,
+            Node::Abstraction(n) => n.parameters.as_deref_mut(),
+        }
+    }
+
+    /// Get local parameter by name.
+    pub fn get_local_parameter(&self, name: &str) -> Option<&Parameter> {
+        self.local_parameters()
+            .and_then(|params| params.iter().find(|p| p.name() == name))
+    }
+
+    /// Check the node's own fields, its local parameters' names, and their fields, and return
+    /// every problem found, in that order. A value in a table is not loaded, so it is not checked.
+    pub fn validate(&self) -> Result<(), Vec<NodeProblem>> {
+        let mut problems = match self {
+            Node::LossLink(LossLinkNode { loss_factor, .. })
+            | Node::River(RiverNode { loss_factor, .. })
+            | Node::WaterTreatmentWorks(WaterTreatmentWorksNode { loss_factor, .. }) => {
+                loss_factor.as_ref().map_or(Ok(()), LossFactor::validate)
+            }
+            Node::Storage(n) => n.validate(),
+            Node::PiecewiseStorage(n) => n.validate(),
+            Node::RiverSplitWithGauge(n) => n.validate(),
+            Node::Reservoir(n) => n.validate(),
+            Node::Input(_)
+            | Node::Link(_)
+            | Node::Output(_)
+            | Node::Catchment(_)
+            | Node::RiverGauge(_)
+            | Node::Delay(_)
+            | Node::PiecewiseLink(_)
+            | Node::Turbine(_)
+            | Node::Placeholder(_)
+            | Node::Abstraction(_) => Ok(()),
+        }
+        .err()
+        .unwrap_or_default();
+
+        let locals = self.local_parameters().unwrap_or_default();
+
+        problems.extend(duplicates(locals, Parameter::name).into_iter().map(|(name, count)| {
+            NodeProblem::DuplicateLocalParameterName {
+                name: name.to_string(),
+                count,
+            }
+        }));
+
+        problems.extend(validate_each_parameter(locals).map(|(parameter, problem)| {
+            NodeProblem::InvalidLocalParameter {
+                parameter: parameter.to_string(),
+                problem,
+            }
+        }));
+
+        if problems.is_empty() { Ok(()) } else { Err(problems) }
+    }
 }
 
 #[cfg(feature = "core")]
 impl Node {
-    pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
+    /// Get the input connectors for this node.
+    ///
+    /// The `slot` argument is used for nodes that have multiple input connectors. If the node
+    /// does not have multiple input connectors, then a [`SchemaError`] is returned.
+    ///
+    /// The input connectors are returned as a vector of unresolved node names.
+    ///
+    pub fn input_connectors(&self, slot: Option<&NodeSlot>) -> Result<Vec<UnresolvedNode>, SchemaError> {
         match self {
-            Node::Input(n) => n.add_to_model(network),
-            Node::Link(n) => n.add_to_model(network),
-            Node::Output(n) => n.add_to_model(network),
-            Node::Storage(n) => n.add_to_model(network),
-            Node::Catchment(n) => n.add_to_model(network),
-            Node::RiverGauge(n) => n.add_to_model(network),
-            Node::LossLink(n) => n.add_to_model(network),
-            Node::River(n) => n.add_to_model(network),
-            Node::RiverSplitWithGauge(n) => n.add_to_model(network),
-            Node::WaterTreatmentWorks(n) => n.add_to_model(network),
-            Node::PiecewiseLink(n) => n.add_to_model(network),
-            Node::PiecewiseStorage(n) => n.add_to_model(network),
-            Node::Delay(n) => n.add_to_model(network),
-            Node::Turbine(n) => n.add_to_model(network),
-            Node::Reservoir(n) => n.add_to_model(network),
-            Node::Placeholder(n) => n.add_to_model(),
-            Node::Abstraction(n) => n.add_to_model(network),
+            Node::Input(n) => n.input_connectors(slot),
+            Node::Link(n) => n.input_connectors(slot),
+            Node::Output(n) => n.input_connectors(slot),
+            Node::Storage(n) => n.input_connectors(slot),
+            Node::Catchment(n) => n.input_connectors(slot),
+            Node::RiverGauge(n) => n.input_connectors(slot),
+            Node::LossLink(n) => n.input_connectors(slot),
+            Node::River(n) => n.input_connectors(slot),
+            Node::RiverSplitWithGauge(n) => n.input_connectors(slot),
+            Node::WaterTreatmentWorks(n) => n.input_connectors(slot),
+            Node::PiecewiseLink(n) => n.input_connectors(slot),
+            Node::PiecewiseStorage(n) => n.input_connectors(slot),
+            Node::Delay(n) => n.input_connectors(slot),
+            Node::Turbine(n) => n.input_connectors(slot),
+            Node::Reservoir(n) => n.input_connectors(slot),
+            // Deliberately do not take a slot for Placeholder nodes so they can be used with any slot
+            Node::Placeholder(n) => n.input_connectors(),
+            Node::Abstraction(n) => n.input_connectors(slot),
         }
     }
 
-    /// Get the node indices for flow constraints that this node has added to the network.
+    /// Get the output connectors for this node.
+    ///
+    /// The `slot` argument is used for nodes that have multiple output connectors. If the node
+    /// does not have multiple output connectors, then a [`SchemaError`] is returned.
+    ///
+    /// The output connectors are returned as a vector of unresolved node names.
+    ///
+    pub fn output_connectors(&self, slot: Option<&NodeSlot>) -> Result<Vec<UnresolvedNode>, SchemaError> {
+        match self {
+            Node::Input(n) => n.output_connectors(slot),
+            Node::Link(n) => n.output_connectors(slot),
+            Node::Output(n) => n.output_connectors(slot),
+            Node::Storage(n) => n.output_connectors(slot),
+            Node::Catchment(n) => n.output_connectors(slot),
+            Node::RiverGauge(n) => n.output_connectors(slot),
+            Node::LossLink(n) => n.output_connectors(slot),
+            Node::River(n) => n.output_connectors(slot),
+            Node::RiverSplitWithGauge(n) => n.output_connectors(slot),
+            Node::WaterTreatmentWorks(n) => n.output_connectors(slot),
+            Node::PiecewiseLink(n) => n.output_connectors(slot),
+            Node::PiecewiseStorage(n) => n.output_connectors(slot),
+            Node::Delay(n) => n.output_connectors(slot),
+            Node::Turbine(n) => n.output_connectors(slot),
+            Node::Reservoir(n) => n.output_connectors(slot),
+            // Deliberately do not take a slot for Placeholder nodes so they can be used with any slot
+            Node::Placeholder(n) => n.output_connectors(),
+            Node::Abstraction(n) => n.output_connectors(slot),
+        }
+    }
+    pub fn add_to_network(
+        &self,
+        network: &mut pywr_core::network::NetworkBuilder,
+        args: &LoadArgs,
+    ) -> Result<(), SchemaError> {
+        match self {
+            Node::Input(n) => n.add_to_network(network, args),
+            Node::Link(n) => n.add_to_network(network, args),
+            Node::Output(n) => n.add_to_network(network, args),
+            Node::Storage(n) => n.add_to_network(network, args),
+            Node::Catchment(n) => n.add_to_model(network, args),
+            Node::RiverGauge(n) => n.add_to_network(network, args),
+            Node::LossLink(n) => n.add_to_network(network, args),
+            Node::River(n) => n.add_to_network(network, args),
+            Node::RiverSplitWithGauge(n) => n.add_to_network(network, args),
+            Node::WaterTreatmentWorks(n) => n.add_to_network(network, args),
+            Node::PiecewiseLink(n) => n.add_to_network(network, args),
+            Node::PiecewiseStorage(n) => n.add_to_network(network, args),
+            Node::Delay(n) => n.add_to_model(network, args),
+            Node::Turbine(n) => n.add_to_network(network, args),
+            Node::Reservoir(n) => n.add_to_network(network, args),
+            Node::Placeholder(n) => n.add_to_network(),
+            Node::Abstraction(n) => n.add_to_network(network, args),
+        }
+    }
+
+    /// Get the nodes for flow constraints that this node has added to the network.
     ///
     /// This is used to determine which core nodes should be used when this node is used
     /// in a flow constraint. Depending on the node type, this may return multiple
@@ -555,47 +914,43 @@ impl Node {
     /// to determine which component of the node is used in the flow constraint.
     ///
     /// If the node is not allowed in flow constraints it should return [`SchemaError::NodeNotAllowedInFlowConstraint`].
-    pub fn node_indices_for_flow_constraints(
+    pub fn nodes_for_flow_constraints(
         &self,
-        network: &pywr_core::network::Network,
         component: Option<NodeComponent>,
-    ) -> Result<Vec<pywr_core::node::NodeIndex>, SchemaError> {
+    ) -> Result<Vec<UnresolvedNode>, SchemaError> {
         match self {
-            Node::Input(n) => n.node_indices_for_flow_constraints(network, component),
-            Node::Link(n) => n.node_indices_for_flow_constraints(network, component),
-            Node::Output(n) => n.node_indices_for_flow_constraints(network, component),
+            Node::Input(n) => n.nodes_for_flow_constraints(component),
+            Node::Link(n) => n.nodes_for_flow_constraints(component),
+            Node::Output(n) => n.nodes_for_flow_constraints(component),
             Node::Storage(_) => Err(SchemaError::NodeNotAllowedInFlowConstraint),
-            Node::Catchment(n) => n.node_indices_for_flow_constraints(network, component),
-            Node::RiverGauge(n) => n.node_indices_for_flow_constraints(network, component),
-            Node::LossLink(n) => n.node_indices_for_flow_constraints(network, component),
-            Node::River(n) => n.node_indices_for_flow_constraints(network, component),
-            Node::RiverSplitWithGauge(n) => n.node_indices_for_flow_constraints(network, component),
-            Node::WaterTreatmentWorks(n) => n.node_indices_for_flow_constraints(network, component),
-            Node::PiecewiseLink(n) => n.node_indices_for_flow_constraints(network, component),
+            Node::Catchment(n) => n.nodes_for_flow_constraints(component),
+            Node::RiverGauge(n) => n.nodes_for_flow_constraints(component),
+            Node::LossLink(n) => n.nodes_for_flow_constraints(component),
+            Node::River(n) => n.nodes_for_flow_constraints(component),
+            Node::RiverSplitWithGauge(n) => n.nodes_for_flow_constraints(component),
+            Node::WaterTreatmentWorks(n) => n.nodes_for_flow_constraints(component),
+            Node::PiecewiseLink(n) => n.nodes_for_flow_constraints(component),
             Node::PiecewiseStorage(_) => Err(SchemaError::NodeNotAllowedInFlowConstraint),
-            Node::Delay(n) => n.node_indices_for_flow_constraints(network, component),
-            Node::Turbine(n) => n.node_indices_for_flow_constraints(network, component),
-            Node::Reservoir(n) => n.node_indices_for_flow_constraints(network, component),
-            Node::Placeholder(n) => n.node_indices_for_flow_constraints(),
-            Node::Abstraction(n) => n.node_indices_for_flow_constraints(network, component),
+            Node::Delay(n) => n.nodes_for_flow_constraints(component),
+            Node::Turbine(n) => n.nodes_for_flow_constraints(component),
+            Node::Reservoir(n) => n.nodes_for_flow_constraints(component),
+            Node::Placeholder(n) => n.nodes_for_flow_constraints(),
+            Node::Abstraction(n) => n.nodes_for_flow_constraints(component),
         }
     }
 
-    /// Get the node indices for storage nodes for this node.
+    /// Get the nodes for storage nodes for this node.
     ///
     /// This is used to determine which core nodes should be used when this node is used
     /// in an [`AggregatedStorageNode`].
     ///
     /// If the node is not allowed in storage constraints it should return [`SchemaError::NodeNotAllowedInStorageConstraint`].
-    pub fn node_indices_for_storage_constraints(
-        &self,
-        network: &pywr_core::network::Network,
-    ) -> Result<Vec<pywr_core::node::NodeIndex>, SchemaError> {
+    pub fn nodes_for_storage_constraints(&self) -> Result<Vec<UnresolvedNode>, SchemaError> {
         match self {
             Node::Input(_) => Err(SchemaError::NodeNotAllowedInStorageConstraint),
             Node::Link(_) => Err(SchemaError::NodeNotAllowedInStorageConstraint),
             Node::Output(_) => Err(SchemaError::NodeNotAllowedInStorageConstraint),
-            Node::Storage(n) => n.node_indices_for_storage_constraints(network),
+            Node::Storage(n) => n.nodes_for_storage_constraints(),
             Node::Catchment(_) => Err(SchemaError::NodeNotAllowedInStorageConstraint),
             Node::RiverGauge(_) => Err(SchemaError::NodeNotAllowedInStorageConstraint),
             Node::LossLink(_) => Err(SchemaError::NodeNotAllowedInStorageConstraint),
@@ -603,65 +958,39 @@ impl Node {
             Node::RiverSplitWithGauge(_) => Err(SchemaError::NodeNotAllowedInStorageConstraint),
             Node::WaterTreatmentWorks(_) => Err(SchemaError::NodeNotAllowedInStorageConstraint),
             Node::PiecewiseLink(_) => Err(SchemaError::NodeNotAllowedInStorageConstraint),
-            Node::PiecewiseStorage(n) => n.node_indices_for_storage_constraints(network),
+            Node::PiecewiseStorage(n) => n.nodes_for_storage_constraints(),
             Node::Delay(_) => Err(SchemaError::NodeNotAllowedInStorageConstraint),
             Node::Turbine(_) => Err(SchemaError::NodeNotAllowedInStorageConstraint),
-            Node::Reservoir(n) => n.node_indices_for_storage_constraints(network),
-            Node::Placeholder(n) => n.node_indices_for_storage_constraints(),
+            Node::Reservoir(n) => n.node_indices_for_storage_constraints(),
+            Node::Placeholder(n) => n.nodes_for_storage_constraints(),
             Node::Abstraction(_) => Err(SchemaError::NodeNotAllowedInStorageConstraint),
-        }
-    }
-
-    pub fn set_constraints(
-        &self,
-        network: &mut pywr_core::network::Network,
-        args: &LoadArgs,
-    ) -> Result<(), SchemaError> {
-        match self {
-            Node::Input(n) => n.set_constraints(network, args),
-            Node::Link(n) => n.set_constraints(network, args),
-            Node::Output(n) => n.set_constraints(network, args),
-            Node::Storage(n) => n.set_constraints(network, args),
-            Node::Catchment(n) => n.set_constraints(network, args),
-            Node::RiverGauge(n) => n.set_constraints(network, args),
-            Node::LossLink(n) => n.set_constraints(network, args),
-            Node::River(n) => n.set_constraints(network, args),
-            Node::RiverSplitWithGauge(n) => n.set_constraints(network, args),
-            Node::WaterTreatmentWorks(n) => n.set_constraints(network, args),
-            Node::PiecewiseLink(n) => n.set_constraints(network, args),
-            Node::PiecewiseStorage(n) => n.set_constraints(network, args),
-            Node::Delay(n) => n.set_constraints(network, args),
-            Node::Turbine(n) => n.set_constraints(network, args),
-            Node::Reservoir(n) => n.set_constraints(network, args),
-            Node::Placeholder(n) => n.set_constraints(),
-            Node::Abstraction(n) => n.set_constraints(network, args),
         }
     }
 
     /// Create a metric for the given attribute on this node.
     pub fn create_metric(
         &self,
-        network: &mut pywr_core::network::Network,
+        network: &mut pywr_core::network::NetworkBuilder,
         attribute: Option<NodeAttribute>,
-    ) -> Result<MetricF64, SchemaError> {
+    ) -> Result<UnresolvedMetricF64, SchemaError> {
         match self {
-            Node::Input(n) => n.create_metric(network, attribute),
-            Node::Link(n) => n.create_metric(network, attribute),
+            Node::Input(n) => n.create_metric(attribute),
+            Node::Link(n) => n.create_metric(attribute),
             Node::Output(n) => n.create_metric(network, attribute),
-            Node::Storage(n) => n.create_metric(network, attribute),
-            Node::Catchment(n) => n.create_metric(network, attribute),
-            Node::RiverGauge(n) => n.create_metric(network, attribute),
-            Node::LossLink(n) => n.create_metric(network, attribute),
-            Node::River(n) => n.create_metric(network, attribute),
-            Node::RiverSplitWithGauge(n) => n.create_metric(network, attribute),
-            Node::WaterTreatmentWorks(n) => n.create_metric(network, attribute),
-            Node::PiecewiseLink(n) => n.create_metric(network, attribute),
-            Node::PiecewiseStorage(n) => n.create_metric(network, attribute),
-            Node::Delay(n) => n.create_metric(network, attribute),
-            Node::Turbine(n) => n.create_metric(network, attribute),
-            Node::Reservoir(n) => n.create_metric(network, attribute),
+            Node::Storage(n) => n.create_metric(attribute),
+            Node::Catchment(n) => n.create_metric(attribute),
+            Node::RiverGauge(n) => n.create_metric(attribute),
+            Node::LossLink(n) => n.create_metric(attribute),
+            Node::River(n) => n.create_metric(attribute),
+            Node::RiverSplitWithGauge(n) => n.create_metric(attribute),
+            Node::WaterTreatmentWorks(n) => n.create_metric(attribute),
+            Node::PiecewiseLink(n) => n.create_metric(attribute),
+            Node::PiecewiseStorage(n) => n.create_metric(attribute),
+            Node::Delay(n) => n.create_metric(attribute),
+            Node::Turbine(n) => n.create_metric(attribute),
+            Node::Reservoir(n) => n.create_metric(attribute),
             Node::Placeholder(n) => n.create_metric(),
-            Node::Abstraction(n) => n.create_metric(network, attribute),
+            Node::Abstraction(n) => n.create_metric(attribute),
         }
     }
 }
@@ -695,10 +1024,14 @@ pub enum NodeOrVirtualNode {
 
 #[cfg(feature = "core")]
 impl NodeOrVirtualNode {
-    pub fn add_to_model(&self, network: &mut pywr_core::network::Network, args: &LoadArgs) -> Result<(), SchemaError> {
+    pub fn add_to_model(
+        &self,
+        network: &mut pywr_core::network::NetworkBuilder,
+        args: &LoadArgs,
+    ) -> Result<(), SchemaError> {
         match self {
-            NodeOrVirtualNode::Node(n) => n.add_to_model(network),
-            NodeOrVirtualNode::Virtual(n) => n.add_to_model(network, args),
+            NodeOrVirtualNode::Node(n) => n.add_to_network(network, args),
+            NodeOrVirtualNode::Virtual(n) => n.add_to_network(network, args),
         }
     }
 }
@@ -856,14 +1189,479 @@ impl VisitPaths for Node {
     }
 }
 
+impl VisitReferences for Node {
+    fn visit_references<F: FnMut(Reference<'_>)>(&self, visitor: &mut F) {
+        match self {
+            Node::Input(n) => n.visit_references(visitor),
+            Node::Link(n) => n.visit_references(visitor),
+            Node::Output(n) => n.visit_references(visitor),
+            Node::Storage(n) => n.visit_references(visitor),
+            Node::Catchment(n) => n.visit_references(visitor),
+            Node::RiverGauge(n) => n.visit_references(visitor),
+            Node::LossLink(n) => n.visit_references(visitor),
+            Node::River(n) => n.visit_references(visitor),
+            Node::RiverSplitWithGauge(n) => n.visit_references(visitor),
+            Node::WaterTreatmentWorks(n) => n.visit_references(visitor),
+            Node::PiecewiseLink(n) => n.visit_references(visitor),
+            Node::PiecewiseStorage(n) => n.visit_references(visitor),
+            Node::Delay(n) => n.visit_references(visitor),
+            Node::Turbine(n) => n.visit_references(visitor),
+            Node::Reservoir(n) => n.visit_references(visitor),
+            Node::Placeholder(n) => n.visit_references(visitor),
+            Node::Abstraction(n) => n.visit_references(visitor),
+        }
+    }
+
+    fn visit_references_mut<F: FnMut(ReferenceMut<'_>)>(&mut self, visitor: &mut F) {
+        match self {
+            Node::Input(n) => n.visit_references_mut(visitor),
+            Node::Link(n) => n.visit_references_mut(visitor),
+            Node::Output(n) => n.visit_references_mut(visitor),
+            Node::Storage(n) => n.visit_references_mut(visitor),
+            Node::Catchment(n) => n.visit_references_mut(visitor),
+            Node::RiverGauge(n) => n.visit_references_mut(visitor),
+            Node::LossLink(n) => n.visit_references_mut(visitor),
+            Node::River(n) => n.visit_references_mut(visitor),
+            Node::RiverSplitWithGauge(n) => n.visit_references_mut(visitor),
+            Node::WaterTreatmentWorks(n) => n.visit_references_mut(visitor),
+            Node::PiecewiseLink(n) => n.visit_references_mut(visitor),
+            Node::PiecewiseStorage(n) => n.visit_references_mut(visitor),
+            Node::Delay(n) => n.visit_references_mut(visitor),
+            Node::Turbine(n) => n.visit_references_mut(visitor),
+            Node::Reservoir(n) => n.visit_references_mut(visitor),
+            Node::Placeholder(n) => n.visit_references_mut(visitor),
+            Node::Abstraction(n) => n.visit_references_mut(visitor),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::metric::Metric;
-    use crate::nodes::{Node, NodeOrVirtualNode};
+    use crate::nodes::{Node, NodeOrVirtualNode, NodeType};
     use crate::v1::{ConversionData, TryIntoV2};
     use pywr_v1_schema::nodes::Node as NodeV1;
     use std::fs;
     use std::path::PathBuf;
+    use strum::IntoEnumIterator;
+
+    /// [`Node::validate`] should pass every default node, refuse a node breaking each rule, and
+    /// pass one where a rule could be too strict.
+    #[test]
+    fn test_validate_checks_each_rule() {
+        use crate::validation::NodeProblem::*;
+        use crate::validation::{InitialVolumeProblem, ParameterProblem};
+        use serde_json::json;
+
+        for node_type in NodeType::iter() {
+            let node: Node = node_type.into();
+            assert_eq!(node.validate(), Ok(()), "a default {node_type}");
+        }
+
+        let x = |value: f64| json!({ "type": "Literal", "value": value });
+        let not_literal = json!({ "type": "Parameter", "name": "p" });
+        let steps = |curves: Vec<serde_json::Value>| {
+            json!(
+                curves
+                    .into_iter()
+                    .map(|curve| json!({ "control_curve": curve }))
+                    .collect::<Vec<_>>()
+            )
+        };
+
+        let cases = [
+            (
+                NodeType::Reservoir,
+                json!({ "rainfall": { "data": x(1.0) }, "evaporation": { "data": x(1.0) } }),
+                vec![NoSurfaceArea("rainfall"), NoSurfaceArea("evaporation")],
+            ),
+            (
+                NodeType::PiecewiseStorage,
+                json!({ "steps": steps(vec![x(-0.1), x(1.5)]) }),
+                vec![ControlCurveOutOfRange { step: 0 }, ControlCurveOutOfRange { step: 1 }],
+            ),
+            (
+                NodeType::PiecewiseStorage,
+                json!({ "steps": steps(vec![x(0.5), x(0.25)]) }),
+                vec![ControlCurveDecreases { step: 1 }],
+            ),
+            // Equal curves make an empty store, and only neighbouring literals are compared.
+            (
+                NodeType::PiecewiseStorage,
+                json!({ "steps": steps(vec![x(0.5), x(0.5), not_literal.clone(), x(0.25)]) }),
+                vec![],
+            ),
+            (
+                NodeType::RiverSplitWithGauge,
+                json!({ "splits": [{ "factor": x(0.0) }, { "factor": x(1.0) }, { "factor": x(0.5) }] }),
+                vec![SplitFactorOutOfRange { split: 0 }, SplitFactorOutOfRange { split: 1 }],
+            ),
+            (
+                NodeType::RiverSplitWithGauge,
+                json!({ "splits": [{ "factor": x(0.5), "slot_name": "a" }, { "factor": x(0.25), "slot_name": "a" }] }),
+                vec![DuplicateSlotName {
+                    slot: "a".to_string(),
+                    count: 2,
+                }],
+            ),
+            (
+                NodeType::LossLink,
+                json!({ "loss_factor": { "type": "Gross", "factor": x(1.0) } }),
+                vec![GrossLossFactorOutOfRange],
+            ),
+            // A zero adds no loss, and a net loss can exceed the flow.
+            (
+                NodeType::LossLink,
+                json!({ "loss_factor": { "type": "Gross", "factor": x(0.0) } }),
+                vec![],
+            ),
+            (
+                NodeType::LossLink,
+                json!({ "loss_factor": { "type": "Net", "factor": x(2.0) } }),
+                vec![],
+            ),
+            (
+                NodeType::River,
+                json!({ "loss_factor": { "type": "Net", "factor": x(-0.1) } }),
+                vec![NegativeNetLossFactor],
+            ),
+            // An unset `max_volume` is `f64::MAX`, which a proportion above 1 exceeds.
+            (
+                NodeType::Storage,
+                json!({ "initial_volume": { "type": "Proportional", "proportion": 1.5 } }),
+                vec![InitialVolume(InitialVolumeProblem::AboveMax)],
+            ),
+            (
+                NodeType::Storage,
+                json!({ "min_volume": x(10.0), "initial_volume": { "type": "Absolute", "volume": 5.0 } }),
+                vec![InitialVolume(InitialVolumeProblem::BelowMin)],
+            ),
+            // A bound from a metric is not compared.
+            (
+                NodeType::Storage,
+                json!({ "max_volume": not_literal, "initial_volume": { "type": "Absolute", "volume": 150.0 } }),
+                vec![],
+            ),
+            (
+                NodeType::PiecewiseStorage,
+                json!({ "max_volume": x(100.0), "initial_volume": { "type": "Absolute", "volume": 150.0 } }),
+                vec![InitialVolume(InitialVolumeProblem::AboveMax)],
+            ),
+            (
+                NodeType::Reservoir,
+                json!({ "max_volume": x(100.0), "initial_volume": { "type": "Absolute", "volume": 150.0 } }),
+                vec![InitialVolume(InitialVolumeProblem::AboveMax)],
+            ),
+            // Its own problems come before its local parameters'.
+            (
+                NodeType::LossLink,
+                json!({
+                    "loss_factor": { "type": "Gross", "factor": x(1.0) },
+                    "parameters": [{
+                        "meta": { "name": "drawdown" },
+                        "type": "UniformDrawdownProfile",
+                        "reset_day": { "type": "Literal", "value": 30 },
+                        "reset_month": { "type": "Literal", "value": 2 }
+                    }]
+                }),
+                vec![
+                    GrossLossFactorOutOfRange,
+                    InvalidLocalParameter {
+                        parameter: "drawdown".to_string(),
+                        problem: ParameterProblem::NotADate { day: 30, month: 2 },
+                    },
+                ],
+            ),
+            (
+                NodeType::Link,
+                json!({
+                    "parameters": [
+                        { "meta": { "name": "x" }, "type": "Constant", "value": x(1.0) },
+                        { "meta": { "name": "x" }, "type": "Constant", "value": x(2.0) }
+                    ]
+                }),
+                vec![DuplicateLocalParameterName {
+                    name: "x".to_string(),
+                    count: 2,
+                }],
+            ),
+        ];
+
+        for (node_type, fields, problems) in cases {
+            let mut data = serde_json::to_value(Node::from(node_type)).unwrap();
+            for (field, value) in fields.as_object().unwrap() {
+                data[field] = value.clone();
+            }
+            let node: Node = serde_json::from_value(data.clone()).unwrap();
+
+            let expected = if problems.is_empty() { Ok(()) } else { Err(problems) };
+            assert_eq!(node.validate(), expected, "{data}");
+        }
+    }
+
+    /// [`Node::validate_reference`] should refuse a node read as an index before checking the
+    /// attribute, and pass the default attribute and a placeholder.
+    #[test]
+    fn test_validate_reference_checks_each_rule() {
+        use crate::metric::MetricValueType::{Float, Index};
+        use crate::nodes::NodeAttribute::{Outflow, Volume};
+        use crate::validation::NodeReferenceProblem::*;
+
+        let link = Node::from(NodeType::Link);
+        let placeholder = Node::from(NodeType::Placeholder);
+
+        let cases = [
+            (&link, None, Float, Ok(())),
+            (&link, Some(Outflow), Float, Ok(())),
+            (
+                &link,
+                Some(Volume),
+                Float,
+                Err(AttributeNotSupported {
+                    attribute: Volume,
+                    supported: link.attributes(),
+                }),
+            ),
+            (&link, Some(Volume), Index, Err(NotAnIndex)),
+            (&placeholder, Some(Volume), Index, Ok(())),
+        ];
+
+        for (node, attribute, metric, expected) in cases {
+            assert_eq!(
+                node.validate_reference(attribute, metric),
+                expected,
+                "{} reading {attribute:?} as {metric:?}",
+                node.node_type()
+            );
+        }
+    }
+
+    /// [`Node::validate_edge_from`] and [`Node::validate_edge_to`] should refuse a node that
+    /// cannot pass flow that way before checking its slot, and pass a slot the node has.
+    #[test]
+    fn test_validate_edge_ends_check_flow_then_slot() {
+        use crate::nodes::NodeSlot::{Spill, Storage};
+        use crate::validation::EdgeProblem::*;
+
+        let node = |node_type: NodeType| {
+            let mut node = Node::from(node_type);
+            node.meta_mut().name = node_type.to_string();
+            node
+        };
+
+        let from_cases = [
+            (NodeType::Link, None, Ok(())),
+            (NodeType::Reservoir, Some(Storage), Ok(())),
+            (
+                NodeType::Output,
+                Some(Spill),
+                Err(NoOutflow {
+                    name: "Output".to_string(),
+                    node_type: NodeType::Output,
+                }),
+            ),
+            (
+                NodeType::Link,
+                Some(Spill),
+                Err(UnknownFromSlot {
+                    name: "Link".to_string(),
+                    node_type: NodeType::Link,
+                    slot: Spill,
+                    valid: None,
+                }),
+            ),
+        ];
+
+        for (node_type, slot, expected) in from_cases {
+            assert_eq!(
+                node(node_type).validate_edge_from(slot.as_ref()),
+                expected,
+                "from {node_type} through {slot:?}"
+            );
+        }
+
+        let to_cases = [
+            (NodeType::Link, None, Ok(())),
+            (NodeType::Placeholder, Some(Storage), Ok(())),
+            (
+                NodeType::Input,
+                Some(Storage),
+                Err(NoInflow {
+                    name: "Input".to_string(),
+                    node_type: NodeType::Input,
+                }),
+            ),
+            (
+                NodeType::Output,
+                Some(Storage),
+                Err(UnknownToSlot {
+                    name: "Output".to_string(),
+                    node_type: NodeType::Output,
+                    slot: Storage,
+                    valid: None,
+                }),
+            ),
+        ];
+
+        for (node_type, slot, expected) in to_cases {
+            assert_eq!(
+                node(node_type).validate_edge_to(slot.as_ref()),
+                expected,
+                "to {node_type} through {slot:?}"
+            );
+        }
+    }
+
+    /// Every [`NodeType`] should convert to the [`Node`] variant it discriminates.
+    #[test]
+    fn test_node_from_node_type() {
+        for node_type in NodeType::iter() {
+            let node: Node = node_type.into();
+            assert_eq!(node.node_type(), node_type);
+        }
+    }
+
+    /// The mutable metadata accessor should reach the metadata of every node variant.
+    #[test]
+    fn test_node_meta_mut() {
+        for node_type in NodeType::iter() {
+            let mut node: Node = node_type.into();
+            node.meta_mut().name = "renamed".to_string();
+            assert_eq!(node.name(), "renamed");
+        }
+    }
+
+    /// A node should not list the same attribute twice.
+    #[test]
+    fn test_attributes_are_unique() {
+        for node_type in NodeType::iter() {
+            let node: Node = node_type.into();
+            let attributes = node.attributes();
+
+            for (i, attribute) in attributes.iter().enumerate() {
+                assert!(
+                    !attributes[i + 1..].contains(attribute),
+                    "{node_type} lists the attribute {attribute} more than once"
+                );
+            }
+        }
+    }
+
+    /// The attributes a node lists should be exactly those its build accepts.
+    ///
+    /// This pins the schema-only list to [`Node::create_metric`], which is where an unsupported
+    /// attribute is refused, so that the two cannot drift apart.
+    #[cfg(feature = "core")]
+    #[test]
+    fn test_attributes_match_create_metric() {
+        use crate::nodes::NodeAttribute;
+        use pywr_core::network::NetworkBuilder;
+
+        for node_type in NodeType::iter() {
+            let node: Node = node_type.into();
+            let attributes = node.attributes();
+
+            for attribute in NodeAttribute::iter() {
+                let mut builder = NetworkBuilder::default();
+                let result = node.create_metric(&mut builder, Some(attribute));
+
+                if attributes.contains(&attribute) {
+                    assert!(
+                        result.is_ok(),
+                        "{node_type} lists the attribute {attribute} but refuses it in a metric"
+                    );
+                } else {
+                    assert!(
+                        result.is_err(),
+                        "{node_type} does not list the attribute {attribute} but accepts it in a metric"
+                    );
+                }
+            }
+        }
+    }
+
+    /// A node's default component, where it has one, should be among its components.
+    #[test]
+    fn test_default_component_is_a_component() {
+        for node_type in NodeType::iter() {
+            let node: Node = node_type.into();
+            let components = node.components();
+
+            match node.default_component() {
+                Some(default) => assert!(
+                    components.contains(&default),
+                    "{node_type}'s default component {default} is not in its components"
+                ),
+                None => assert!(
+                    components.is_empty(),
+                    "{node_type} has components but no default component"
+                ),
+            }
+        }
+    }
+
+    /// A node should not list the same component twice.
+    #[test]
+    fn test_components_are_unique() {
+        for node_type in NodeType::iter() {
+            let node: Node = node_type.into();
+            let components = node.components();
+
+            for (i, component) in components.iter().enumerate() {
+                assert!(
+                    !components[i + 1..].contains(component),
+                    "{node_type} lists the component {component} more than once"
+                );
+            }
+        }
+    }
+
+    /// The components a node lists should be exactly those its build accepts.
+    ///
+    /// This pins the schema-only list to [`Node::nodes_for_flow_constraints`], which is
+    /// where an unsupported component is refused, so that the two cannot drift apart.
+    #[cfg(feature = "core")]
+    #[test]
+    fn test_components_match_flow_constraints() {
+        use crate::nodes::NodeComponent;
+
+        for node_type in NodeType::iter() {
+            let node: Node = node_type.into();
+            let components = node.components();
+
+            for component in NodeComponent::iter() {
+                let result = node.nodes_for_flow_constraints(Some(component));
+
+                if components.contains(&component) {
+                    assert!(
+                        result.is_ok(),
+                        "{node_type} lists the component {component} but refuses it in a flow constraint"
+                    );
+                } else {
+                    assert!(
+                        result.is_err(),
+                        "{node_type} does not list the component {component} but accepts it in a flow constraint"
+                    );
+                }
+            }
+        }
+    }
+
+    /// [`Node::is_storage`] should agree with [`Node::nodes_for_storage_constraints`], so that the
+    /// two cannot drift apart.
+    #[cfg(feature = "core")]
+    #[test]
+    fn test_is_storage_matches_storage_constraints() {
+        for node_type in NodeType::iter() {
+            let node: Node = node_type.into();
+
+            assert_eq!(
+                node.is_storage(),
+                node.nodes_for_storage_constraints().is_ok(),
+                "{node_type} is_storage disagrees with its build"
+            );
+        }
+    }
 
     #[test]
     fn test_ts_inline() {
@@ -873,7 +1671,7 @@ mod tests {
             "type": "Input",
             "max_flow": {
                 "type": "dataframe",
-                "url" : "timeseries1.csv",
+                "url" : "time-series1.csv",
                 "parse_dates": true,
                 "dayfirst": true,
                 "index_col": 0,
@@ -901,14 +1699,14 @@ mod tests {
         let expected_name = String::from("catchment1-p0");
 
         match input_node.max_flow {
-            Some(Metric::Timeseries(ts)) => {
+            Some(Metric::TimeSeries(ts)) => {
                 assert_eq!(ts.name(), &expected_name)
             }
-            _ => panic!("Expected Timeseries"),
+            _ => panic!("Expected TimeSeries"),
         };
 
-        assert_eq!(conversion_data.timeseries.len(), 1);
-        assert_eq!(conversion_data.timeseries[0].name(), &expected_name);
+        assert_eq!(conversion_data.time_series.len(), 1);
+        assert_eq!(conversion_data.time_series[0].name(), &expected_name);
     }
 
     #[test]
@@ -927,7 +1725,7 @@ mod tests {
                     },
                     {
                         "type": "dataframe",
-                        "url" : "timeseries1.csv",
+                        "url" : "time-series1.csv",
                         "parse_dates": true,
                         "dayfirst": true,
                         "index_col": 0,
@@ -939,7 +1737,7 @@ mod tests {
                     },
                     {
                         "type": "dataframe",
-                        "url" : "timeseries2.csv",
+                        "url" : "time-series2.csv",
                         "parse_dates": true,
                         "dayfirst": true,
                         "index_col": 0,
@@ -970,14 +1768,14 @@ mod tests {
 
         match input_node.max_flow {
             Some(Metric::Parameter(parameter_ref)) => assert_eq!(&parameter_ref.name, "catchment1-p0"),
-            _ => panic!("Expected Timeseries"),
+            _ => panic!("Expected TimeSeries"),
         };
 
         assert_eq!(conversion_data.parameters.len(), 3);
 
-        assert_eq!(conversion_data.timeseries.len(), 2);
-        assert_eq!(conversion_data.timeseries[0].name(), expected_name1);
-        assert_eq!(conversion_data.timeseries[1].name(), expected_name2);
+        assert_eq!(conversion_data.time_series.len(), 2);
+        assert_eq!(conversion_data.time_series[0].name(), expected_name1);
+        assert_eq!(conversion_data.time_series[1].name(), expected_name2);
     }
 
     #[test]

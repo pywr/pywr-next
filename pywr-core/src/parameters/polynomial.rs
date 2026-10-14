@@ -1,11 +1,14 @@
-use crate::metric::MetricF64;
-use crate::network::Network;
-use crate::parameters::errors::ParameterCalculationError;
-use crate::parameters::{GeneralParameter, Parameter, ParameterMeta, ParameterName, ParameterState};
-use crate::scenario::ScenarioIndex;
-use crate::state::State;
-use crate::timestep::Timestep;
+use crate::metric::{MetricConsumerPhase, MetricF64, UnresolvedMetricF64};
+use crate::network::ResolutionMaps;
+use crate::parameters::errors::GeneralCalculationError;
+use crate::parameters::{
+    BuiltParameter, GeneralAfterParameter, GeneralBeforeParameter, GeneralParameter, GeneralParameterContext,
+    GeneralParameterEntry, MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder, ParameterMeta,
+    ParameterName, ParameterState,
+};
+use crate::resolve_metric_f64;
 
+#[derive(Debug)]
 pub struct Polynomial1DParameter {
     meta: ParameterMeta,
     metric: MetricF64,
@@ -14,49 +17,148 @@ pub struct Polynomial1DParameter {
     offset: f64,
 }
 
-impl Polynomial1DParameter {
-    pub fn new(name: ParameterName, metric: MetricF64, coefficients: Vec<f64>, scale: f64, offset: f64) -> Self {
-        Self {
-            meta: ParameterMeta::new(name),
-            metric,
-            coefficients,
-            scale,
-            offset,
-        }
-    }
-}
-
 impl Parameter for Polynomial1DParameter {
     fn meta(&self) -> &ParameterMeta {
         &self.meta
     }
 }
 
-impl GeneralParameter<f64> for Polynomial1DParameter {
-    fn before(
-        &self,
-        _timestep: &Timestep,
-        _scenario_index: &ScenarioIndex,
-        model: &Network,
-        state: &State,
-        _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<Option<f64>, ParameterCalculationError> {
-        // Current value
-        let x = self.metric.get_value(model, state)?;
-        let x = x * self.scale + self.offset;
-        // Calculate the polynomial value
-        let y = self
-            .coefficients
-            .iter()
-            .enumerate()
-            .fold(0.0, |y, (i, c)| y + c * x.powi(i as i32));
-        Ok(Some(y))
-    }
-
+impl GeneralParameter for Polynomial1DParameter {
     fn as_parameter(&self) -> &dyn Parameter
     where
         Self: Sized,
     {
         self
+    }
+}
+
+impl GeneralBeforeParameter<f64> for Polynomial1DParameter {
+    fn before(
+        &self,
+        ctx: GeneralParameterContext<'_>,
+        _internal_state: &mut Option<Box<dyn ParameterState>>,
+    ) -> Result<f64, GeneralCalculationError> {
+        // Current value
+        let x = self.metric.get_value(ctx.network, ctx.state)?;
+        let x = x * self.scale + self.offset;
+        // Calculate the polynomial value
+        Ok(polynomial(x, self.coefficients.clone()))
+    }
+}
+
+impl GeneralAfterParameter<f64> for Polynomial1DParameter {
+    fn after(
+        &self,
+        ctx: GeneralParameterContext<'_>,
+        _internal_state: &mut Option<Box<dyn ParameterState>>,
+    ) -> Result<f64, GeneralCalculationError> {
+        // Current value
+        let x = self.metric.get_value(ctx.network, ctx.state)?;
+        let x = x * self.scale + self.offset;
+        // Calculate the polynomial value
+        Ok(polynomial(x, self.coefficients.clone()))
+    }
+}
+
+fn polynomial(x: f64, coefficients: Vec<f64>) -> f64 {
+    coefficients
+        .iter()
+        .enumerate()
+        .fold(0.0, |y, (i, c)| y + c * x.powi(i as i32))
+}
+
+/// Builder for creating a [`Polynomial1DParameter`].
+#[derive(Debug)]
+pub struct Polynomial1DParameterBuilder {
+    meta: ParameterMeta,
+    metric: UnresolvedMetricF64,
+    coefficients: Vec<f64>,
+    scale: f64,
+    offset: f64,
+    phase: MetricConsumerPhase,
+}
+
+impl Polynomial1DParameterBuilder {
+    /// Create a new builder for [`Polynomial1DParameter`] that is evaluated in the "before" phase.
+    pub fn before(
+        name: ParameterName,
+        metric: UnresolvedMetricF64,
+        coefficients: Vec<f64>,
+        scale: f64,
+        offset: f64,
+    ) -> Self {
+        Self {
+            meta: ParameterMeta::new(name),
+            metric,
+            coefficients,
+            scale,
+            offset,
+            phase: MetricConsumerPhase::Before,
+        }
+    }
+
+    /// Create a new builder for [`Polynomial1DParameter`] that is evaluated in the "after" phase.
+    pub fn after(
+        name: ParameterName,
+        metric: UnresolvedMetricF64,
+        coefficients: Vec<f64>,
+        scale: f64,
+        offset: f64,
+    ) -> Self {
+        Self {
+            meta: ParameterMeta::new(name),
+            metric,
+            coefficients,
+            scale,
+            offset,
+            phase: MetricConsumerPhase::After,
+        }
+    }
+
+    /// Create a new builder for [`Polynomial1DParameter`] that is evaluated in "before" and "after" phases.
+    pub fn both(
+        name: ParameterName,
+        metric: UnresolvedMetricF64,
+        coefficients: Vec<f64>,
+        scale: f64,
+        offset: f64,
+    ) -> Self {
+        Self {
+            meta: ParameterMeta::new(name),
+            metric,
+            coefficients,
+            scale,
+            offset,
+            phase: MetricConsumerPhase::Both,
+        }
+    }
+}
+
+impl ParameterBuilder<f64> for Polynomial1DParameterBuilder {
+    fn name(&self) -> &ParameterName {
+        &self.meta.name
+    }
+
+    fn build(
+        self: Box<Self>,
+        resolution_maps: &ResolutionMaps,
+    ) -> Result<MaybeBuiltParameter<f64>, ParameterBuildError> {
+        let metric = resolve_metric_f64!(self, self.metric, resolution_maps, self.phase, "metric");
+
+        let p = Polynomial1DParameter {
+            meta: self.meta,
+            metric,
+            coefficients: self.coefficients,
+            scale: self.scale,
+            offset: self.offset,
+        };
+
+        let built = match self.phase {
+            MetricConsumerPhase::Before => BuiltParameter::General(GeneralParameterEntry::before(p)),
+            MetricConsumerPhase::After => BuiltParameter::General(GeneralParameterEntry::after(p)),
+            MetricConsumerPhase::Both => BuiltParameter::General(GeneralParameterEntry::both(p)),
+        };
+
+        Ok(built.into())
     }
 }

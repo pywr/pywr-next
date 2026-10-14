@@ -59,7 +59,7 @@ def run(model_path: Path):
     schema = ModelSchema.from_path(model_path)
     model = schema.build(model_path.parent, None)
     model.run("clp")
-    print("Model run complete 🎉")
+    print("Model run complete!")
 
 
 if __name__ == "__main__":

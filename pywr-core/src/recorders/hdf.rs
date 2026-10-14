@@ -1,14 +1,12 @@
 use super::{
-    MetricSetState, OutputMetric, Recorder, RecorderFinalResult, RecorderFinaliseError, RecorderInternalState,
-    RecorderMeta, RecorderSaveError, RecorderSetupError, Timestep, downcast_internal_state,
-    downcast_internal_state_mut,
+    MetricSetState, OutputMetric, Recorder, RecorderBuilder, RecorderBuilderError, RecorderFinalResult,
+    RecorderFinaliseError, RecorderInternalState, RecorderMeta, RecorderSaveError, RecorderSetupError, Timestep,
+    downcast_internal_state, downcast_internal_state_mut,
 };
 use crate::models::ModelDomain;
-use crate::network::Network;
-use crate::recorders::MetricSetIndex;
+use crate::network::{MetricSetIndex, Network, ResolutionMaps};
 use crate::scenario::{ScenarioDomain, ScenarioIndex};
 use crate::state::State;
-use chrono::{Datelike, Timelike};
 use hdf5_metno::types::StringError;
 use hdf5_metno::{Extents, Group};
 use ndarray::{Array1, s};
@@ -22,20 +20,20 @@ use thiserror::Error;
 pub enum Hdf5Error {
     #[error("Metric set index `{index}` not found")]
     MetricSetIndexNotFound { index: MetricSetIndex },
-    #[error("HDF5 error with file at `{path}`: {source}")]
+    #[error("HDF5 error with file at `{path}`.")]
     HDF5Error {
         path: PathBuf,
         #[source]
         source: hdf5_metno::Error,
     },
-    #[error("HDF5 writing data for metric `{metric}` error in file at `{path}`: {source}")]
+    #[error("HDF5 writing data for metric `{metric}` error in file at `{path}`.")]
     HDF5MetricError {
         path: PathBuf,
         metric: String,
         #[source]
         source: hdf5_metno::Error,
     },
-    #[error("Could not create unicode variable name at `{path}`: {source}")]
+    #[error("Could not create unicode variable name at `{path}`.")]
     HDF5VarLenUnicode {
         path: PathBuf,
         #[source]
@@ -66,7 +64,7 @@ struct Internal {
 #[repr(C)]
 pub struct DateTime {
     index: usize,
-    year: i32,
+    year: i16,
     month: u8,
     day: u8,
     hour: u8,
@@ -84,16 +82,6 @@ impl DateTime {
             hour: ts.date.time().hour() as u8,
             minute: ts.date.time().minute() as u8,
             second: ts.date.time().second() as u8,
-        }
-    }
-}
-
-impl HDF5Recorder {
-    pub fn new<P: Into<PathBuf>>(name: &str, filename: P, metric_set_idx: MetricSetIndex) -> Self {
-        Self {
-            meta: RecorderMeta::new(name),
-            filename: filename.into(),
-            metric_set_idx,
         }
     }
 }
@@ -138,7 +126,7 @@ impl Recorder for HDF5Recorder {
 
         let mut datasets = Vec::new();
 
-        for metric in metric_set.iter_metrics() {
+        for metric in metric_set.metrics() {
             let ds = require_metric_dataset(root_grp, shape, metric)?;
             datasets.push(ds);
         }
@@ -164,7 +152,7 @@ impl Recorder for HDF5Recorder {
                 index: self.metric_set_idx,
             })?;
 
-        for (dataset, metric) in internal.datasets.iter_mut().zip(metric_set.iter_metrics()) {
+        for (dataset, metric) in internal.datasets.iter_mut().zip(metric_set.metrics()) {
             // Combine all the values for metric across all of the scenarios
             let values = scenario_indices
                 .iter()
@@ -295,7 +283,7 @@ fn write_pywr_metadata(file: &hdf5_metno::File) -> Result<(), Hdf5Error> {
     let attr = root
         .new_attr::<hdf5_metno::types::VarLenUnicode>()
         .shape(())
-        .create("pywr-version")
+        .create("PYWR_VERSION_STR")
         .map_err(|source| Hdf5Error::HDF5Error {
             path: file.filename().into(),
             source,
@@ -303,6 +291,27 @@ fn write_pywr_metadata(file: &hdf5_metno::File) -> Result<(), Hdf5Error> {
 
     attr.as_writer()
         .write_scalar(&version)
+        .map_err(|source| Hdf5Error::HDF5Error {
+            path: file.filename().into(),
+            source,
+        })?;
+
+    const VERSION_MAJOR: i64 = match i64::from_str_radix(env!("CARGO_PKG_VERSION_MAJOR"), 10) {
+        Ok(v) => v,
+        Err(_) => panic!("CARGO_PKG_VERSION_MAJOR cannot be parsed as an integer"),
+    };
+
+    let attr = root
+        .new_attr::<i64>()
+        .shape(())
+        .create("PYWR_VERSION")
+        .map_err(|source| Hdf5Error::HDF5Error {
+            path: file.filename().into(),
+            source,
+        })?;
+
+    attr.as_writer()
+        .write_scalar(&VERSION_MAJOR)
         .map_err(|source| Hdf5Error::HDF5Error {
             path: file.filename().into(),
             source,
@@ -386,4 +395,44 @@ fn write_scenarios_metadata(file: &hdf5_metno::File, domain: &ScenarioDomain) ->
         })?;
 
     Ok(())
+}
+
+#[derive(Clone, Debug)]
+pub struct HDF5RecorderBuilder {
+    meta: RecorderMeta,
+    filename: PathBuf,
+    // TODO this could support saving multiple metric sets in different groups
+    metric_set: String,
+}
+
+impl HDF5RecorderBuilder {
+    pub fn new<P: Into<PathBuf>>(name: &str, filename: P, metric_set: &str) -> Self {
+        Self {
+            meta: RecorderMeta::new(name),
+            filename: filename.into(),
+            metric_set: metric_set.into(),
+        }
+    }
+}
+
+impl RecorderBuilder for HDF5RecorderBuilder {
+    fn name(&self) -> &str {
+        &self.meta.name
+    }
+
+    fn build(self: Box<Self>, resolution_maps: &ResolutionMaps) -> Result<Box<dyn Recorder>, RecorderBuilderError> {
+        let metric_set_idx = resolution_maps.metric_sets.get(&self.metric_set).ok_or_else(|| {
+            RecorderBuilderError::MetricSetNotFound {
+                name: self.metric_set.clone(),
+            }
+        })?;
+
+        let r = HDF5Recorder {
+            meta: self.meta,
+            filename: self.filename,
+            metric_set_idx: *metric_set_idx,
+        };
+
+        Ok(Box::new(r))
+    }
 }

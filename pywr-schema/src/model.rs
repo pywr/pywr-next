@@ -1,4 +1,6 @@
 #[cfg(feature = "core")]
+use crate::FileProvider;
+#[cfg(feature = "core")]
 use crate::data_tables::LoadedTableCollection;
 use crate::error::ComponentConversionError;
 #[cfg(feature = "core")]
@@ -7,23 +9,28 @@ use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::network::{LoadArgs, NetworkSchemaBuildError, NetworkSchemaReadError};
 #[cfg(feature = "core")]
-use crate::timeseries::LoadedTimeseriesCollection;
-use crate::visit::{VisitMetrics, VisitPaths};
-use crate::{ConversionError, NetworkSchema, NetworkSchemaRef};
+use crate::time_series::LoadedTimeSeriesCollection;
+use crate::util::duplicates;
 #[cfg(feature = "core")]
-use chrono::NaiveTime;
-use chrono::{NaiveDate, NaiveDateTime};
-#[cfg(all(feature = "core", feature = "pyo3"))]
-use pyo3::Python;
-#[cfg(feature = "pyo3")]
-use pyo3::{Bound, PyErr, PyResult, exceptions::PyRuntimeError, pyclass, pymethods, types::PyType};
+use crate::validation::ScenarioValidationError;
+use crate::validation::{ModelProblem, ScenarioProblem, ValidationError};
+use crate::visit::{Owner, Reference, ReferenceMut, VisitMetrics, VisitPaths, VisitReferences};
+use crate::{ConversionError, NetworkSchema, NetworkSchemaRef};
+use jiff::Span;
+use jiff::civil::{DateTime, date};
 #[cfg(feature = "core")]
 use pywr_core::{
-    models::{Model, ModelDomain, MultiNetworkModel, MultiNetworkModelError},
+    models::{
+        ModelBuilder, ModelDomainBuilder, ModelDomainBuilderError, MultiNetworkEntryBuilder, MultiNetworkModelBuilder,
+        MultiNetworkTransferBuilder,
+    },
     timestep::TimestepDuration,
 };
 use pywr_schema_macros::skip_serializing_none;
 use schemars::JsonSchema;
+use std::collections::BTreeSet;
+#[cfg(feature = "core")]
+use std::collections::HashMap;
 use std::num::NonZeroU64;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
@@ -65,7 +72,7 @@ impl From<pywr_v1_schema::model::Metadata> for Metadata {
 /// The timestep can be defined in three ways:
 /// - A fixed number of non-zero hours.
 /// - A fixed number of non-zero days.
-/// - A frequency string that can be parsed by polars (e.g. '7d').
+/// - A frequency string that can be parsed as a [`jiff::Span`] (e.g. '7d' or 'P7D').
 #[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema, Display, EnumDiscriminants)]
 #[serde(tag = "type", deny_unknown_fields)]
 #[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
@@ -75,7 +82,7 @@ pub enum Timestep {
     Hours { hours: NonZeroU64 },
     /// A fixed number of days.
     Days { days: NonZeroU64 },
-    /// A frequency string that can be parsed by polars.
+    /// A frequency string that can be parsed as a [`jiff::Span`].
     Frequency { freq: String },
 }
 
@@ -98,71 +105,80 @@ impl Default for Timestep {
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Clone, Copy, Debug, JsonSchema, Display, EnumDiscriminants)]
-#[serde(untagged)]
-#[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
-#[strum_discriminants(name(DateType))]
-pub enum Date {
-    Date(NaiveDate),
-    DateTime(NaiveDateTime),
-}
-
-impl From<pywr_v1_schema::model::DateType> for Date {
-    fn from(v1: pywr_v1_schema::model::DateType) -> Self {
-        match v1 {
-            pywr_v1_schema::model::DateType::Date(date) => Self::Date(date),
-            pywr_v1_schema::model::DateType::DateTime(date_time) => Self::DateTime(date_time),
-        }
-    }
-}
-
 #[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema)]
-pub struct Timestepper {
-    pub start: Date,
-    pub end: Date,
+pub struct TimeDomain {
+    pub start: DateTime,
+    pub end: DateTime,
     pub timestep: Timestep,
 }
 
-impl Default for Timestepper {
+impl Default for TimeDomain {
     fn default() -> Self {
         Self {
-            start: Date::Date(NaiveDate::from_ymd_opt(2000, 1, 1).expect("Invalid date")),
-            end: Date::Date(NaiveDate::from_ymd_opt(2000, 12, 31).expect("Invalid date")),
+            start: date(2000, 1, 1).at(0, 0, 0, 0),
+            end: date(2000, 12, 31).at(0, 0, 0, 0),
             timestep: Timestep::default(),
         }
     }
 }
 
-impl From<pywr_v1_schema::model::Timestepper> for Timestepper {
+impl TimeDomain {
+    /// Validate the time domain.
+    ///
+    /// This checks that the simulation period does not end before it starts, and that a
+    /// [`Timestep::Frequency`] string is a duration that `pywr-core` can use. These are the
+    /// problems that would otherwise only appear when the model is built.
+    ///
+    /// Both are checked, and every problem found is returned.
+    pub fn validate(&self) -> Result<(), Vec<ModelProblem>> {
+        let mut problems = Vec::new();
+
+        // The same instant is a period, if a short one, so `>` rather than `>=`.
+        if self.start > self.end {
+            problems.push(ModelProblem::EndBeforeStart {
+                start: self.start,
+                end: self.end,
+            });
+        }
+
+        if let Timestep::Frequency { freq } = &self.timestep {
+            // The same parse that `pywr_core::timestep::TimeDomainBuilder` makes.
+            match freq.parse::<Span>() {
+                Err(error) => problems.push(ModelProblem::UnparsableFrequency {
+                    freq: freq.clone(),
+                    error: error.to_string(),
+                }),
+                Ok(span) if span.is_zero() || span.is_negative() => {
+                    problems.push(ModelProblem::NonPositiveFrequency { freq: freq.clone() })
+                }
+                Ok(_) => {}
+            }
+        }
+
+        if problems.is_empty() { Ok(()) } else { Err(problems) }
+    }
+}
+
+impl From<pywr_v1_schema::model::Timestepper> for TimeDomain {
     fn from(v1: pywr_v1_schema::model::Timestepper) -> Self {
         Self {
-            start: v1.start.into(),
-            end: v1.end.into(),
+            start: v1.start,
+            end: v1.end,
             timestep: v1.timestep.into(),
         }
     }
 }
 
 #[cfg(feature = "core")]
-impl From<Timestepper> for pywr_core::timestep::Timestepper {
-    fn from(ts: Timestepper) -> Self {
+impl From<TimeDomain> for pywr_core::timestep::TimeDomainBuilder {
+    fn from(ts: TimeDomain) -> Self {
         let timestep = match ts.timestep {
             Timestep::Hours { hours } => TimestepDuration::Hours(hours),
             Timestep::Days { days } => TimestepDuration::Days(days),
             Timestep::Frequency { freq } => TimestepDuration::Frequency(freq),
         };
 
-        let start = match ts.start {
-            Date::Date(date) => NaiveDateTime::new(date, NaiveTime::default()),
-            Date::DateTime(date_time) => date_time,
-        };
-
-        let end = match ts.end {
-            Date::Date(date) => NaiveDateTime::new(date, NaiveTime::default()),
-            Date::DateTime(date_time) => date_time,
-        };
-
-        Self::new(start, end, timestep)
+        Self::new(ts.start, ts.end, timestep)
     }
 }
 
@@ -211,32 +227,176 @@ pub struct ScenarioGroup {
     pub subset: Option<ScenarioGroupSubset>,
 }
 
-#[cfg(feature = "core")]
-impl TryInto<pywr_core::scenario::ScenarioGroup> for ScenarioGroup {
-    type Error = pywr_core::scenario::ScenarioError;
+impl ScenarioGroup {
+    /// Every problem with this group: its size, then its labels, then its subset.
+    ///
+    /// Its name is not checked here; a name is only a problem beside the other groups'.
+    fn problems(&self) -> Vec<ScenarioProblem> {
+        let mut problems = Vec::new();
 
-    fn try_into(self) -> Result<pywr_core::scenario::ScenarioGroup, Self::Error> {
-        let mut builder = pywr_core::scenario::ScenarioGroupBuilder::new(&self.name, self.size);
-
-        if let Some(labels) = self.labels {
-            builder = builder.with_labels(&labels);
+        if self.size == 0 {
+            problems.push(ScenarioProblem::EmptyGroup {
+                group: self.name.clone(),
+            });
         }
 
-        if let Some(subset) = self.subset {
+        if let Some(labels) = &self.labels {
+            if labels.len() != self.size {
+                problems.push(ScenarioProblem::IncorrectNumberOfLabels {
+                    group: self.name.clone(),
+                    found: labels.len(),
+                    expected: self.size,
+                });
+            }
+
+            problems.extend(duplicates(labels, String::as_str).into_iter().map(|(label, count)| {
+                ScenarioProblem::DuplicateLabel {
+                    group: self.name.clone(),
+                    label: label.to_string(),
+                    count,
+                }
+            }));
+        }
+
+        match &self.subset {
+            Some(ScenarioGroupSubset::Slice(slice)) => {
+                // A `start` past the group is always caught by one of these two checks.
+                if slice.start >= slice.end {
+                    problems.push(ScenarioProblem::EmptySlice {
+                        group: self.name.clone(),
+                        start: slice.start,
+                        end: slice.end,
+                    });
+                }
+
+                if slice.end > self.size {
+                    problems.push(ScenarioProblem::SliceOutOfRange {
+                        group: self.name.clone(),
+                        size: self.size,
+                        end: slice.end,
+                    });
+                }
+            }
+            Some(ScenarioGroupSubset::Indices(subset)) => {
+                if subset.indices.is_empty() {
+                    problems.push(ScenarioProblem::EmptySubset {
+                        group: self.name.clone(),
+                    });
+                }
+
+                // A set, so that an entry repeated out of range is reported once.
+                let out_of_range: BTreeSet<usize> =
+                    subset.indices.iter().copied().filter(|i| *i >= self.size).collect();
+
+                problems.extend(
+                    out_of_range
+                        .into_iter()
+                        .map(|index| ScenarioProblem::SubsetIndexOutOfRange {
+                            group: self.name.clone(),
+                            size: self.size,
+                            index,
+                        }),
+                );
+
+                problems.extend(
+                    duplicates(&subset.indices, |index| *index)
+                        .into_iter()
+                        .map(|(index, count)| ScenarioProblem::DuplicateSubsetIndex {
+                            group: self.name.clone(),
+                            index,
+                            count,
+                        }),
+                );
+            }
+            Some(ScenarioGroupSubset::Labels(subset)) => {
+                if subset.labels.is_empty() {
+                    problems.push(ScenarioProblem::EmptySubset {
+                        group: self.name.clone(),
+                    });
+                }
+
+                match &self.labels {
+                    None => problems.push(ScenarioProblem::SubsetNeedsGroupLabels {
+                        group: self.name.clone(),
+                    }),
+                    Some(labels) => {
+                        let missing: BTreeSet<&String> = subset.labels.iter().filter(|l| !labels.contains(l)).collect();
+
+                        problems.extend(missing.into_iter().map(|label| ScenarioProblem::SubsetLabelNotFound {
+                            group: self.name.clone(),
+                            label: label.clone(),
+                        }));
+                    }
+                }
+
+                problems.extend(
+                    duplicates(&subset.labels, String::as_str)
+                        .into_iter()
+                        .map(|(label, count)| ScenarioProblem::DuplicateSubsetLabel {
+                            group: self.name.clone(),
+                            label: label.to_string(),
+                            count,
+                        }),
+                );
+            }
+            None => {}
+        }
+
+        problems
+    }
+
+    /// The problem with `entry`, if it does not name a scenario of this group. `combination` is
+    /// the entry's combination's position in `combinations`.
+    fn combination_entry_problem(&self, combination: usize, entry: &ScenarioLabelOrIndex) -> Option<ScenarioProblem> {
+        match entry {
+            ScenarioLabelOrIndex::Index(index) => {
+                (*index >= self.size).then(|| ScenarioProblem::CombinationIndexOutOfRange {
+                    combination,
+                    group: self.name.clone(),
+                    size: self.size,
+                    index: *index,
+                })
+            }
+            ScenarioLabelOrIndex::Label(label) => match &self.labels {
+                None => Some(ScenarioProblem::CombinationNeedsGroupLabels {
+                    combination,
+                    group: self.name.clone(),
+                    label: label.clone(),
+                }),
+                Some(labels) => (!labels.contains(label)).then(|| ScenarioProblem::CombinationLabelNotFound {
+                    combination,
+                    group: self.name.clone(),
+                    label: label.clone(),
+                }),
+            },
+        }
+    }
+}
+
+#[cfg(feature = "core")]
+impl From<ScenarioGroup> for pywr_core::scenario::ScenarioGroupBuilder {
+    fn from(value: ScenarioGroup) -> Self {
+        let mut builder = pywr_core::scenario::ScenarioGroupBuilder::new(&value.name, value.size);
+
+        if let Some(labels) = value.labels {
+            builder.with_labels(&labels);
+        }
+
+        if let Some(subset) = value.subset {
             match subset {
                 ScenarioGroupSubset::Slice(slice) => {
-                    builder = builder.with_subset_slice(slice.start, slice.end);
+                    builder.with_subset_slice(slice.start, slice.end);
                 }
                 ScenarioGroupSubset::Indices(indices) => {
-                    builder = builder.with_subset_indices(indices.indices);
+                    builder.with_subset_indices(indices.indices);
                 }
                 ScenarioGroupSubset::Labels(labels) => {
-                    builder = builder.with_subset_labels(&labels.labels);
+                    builder.with_subset_labels(&labels.labels);
                 }
             }
         }
 
-        builder.build()
+        builder
     }
 }
 
@@ -351,6 +511,84 @@ pub struct ScenarioDomain {
     pub combinations: Option<Vec<Vec<ScenarioLabelOrIndex>>>,
 }
 
+impl ScenarioDomain {
+    /// Validate the scenario domain, returning every problem found. See [`ScenarioProblem`] for
+    /// the problems detected.
+    ///
+    /// The references a network makes to these groups are checked by [`ModelSchema::validate`].
+    pub fn validate(&self) -> Result<(), Vec<ScenarioProblem>> {
+        let mut problems: Vec<ScenarioProblem> = duplicates(&self.groups, |group| group.name.as_str())
+            .into_iter()
+            .map(|(name, count)| ScenarioProblem::DuplicateGroupName {
+                name: name.to_string(),
+                count,
+            })
+            .collect();
+
+        problems.extend(self.groups.iter().flat_map(ScenarioGroup::problems));
+
+        problems.extend(self.combination_problems());
+
+        if problems.is_empty() { Ok(()) } else { Err(problems) }
+    }
+
+    /// Every problem with `combinations`, in the order they are listed.
+    fn combination_problems(&self) -> Vec<ScenarioProblem> {
+        let Some(combinations) = &self.combinations else {
+            return Vec::new();
+        };
+
+        if self.groups.is_empty() {
+            return vec![ScenarioProblem::CombinationsWithoutGroups];
+        }
+
+        // A subset and a combination are two ways to constrain the same domain, and `pywr-core`
+        // refuses to apply both.
+        let mut problems: Vec<ScenarioProblem> = self
+            .groups
+            .iter()
+            .filter(|group| group.subset.is_some())
+            .map(|group| ScenarioProblem::CombinationsAndSubset {
+                group: group.name.clone(),
+            })
+            .collect();
+
+        if combinations.is_empty() {
+            problems.push(ScenarioProblem::EmptyCombinations);
+        }
+
+        for (combination, entries) in combinations.iter().enumerate() {
+            if entries.len() != self.groups.len() {
+                problems.push(ScenarioProblem::IncorrectCombinationLength {
+                    combination,
+                    found: entries.len(),
+                    expected: self.groups.len(),
+                });
+            }
+
+            // Entries past the last group have no group to be checked against; the length
+            // problem above covers them.
+            for (entry, group) in entries.iter().zip(&self.groups) {
+                problems.extend(group.combination_entry_problem(combination, entry));
+            }
+        }
+
+        problems
+    }
+}
+
+#[cfg(feature = "core")]
+impl ScenarioDomain {
+    /// The builder for this domain, once [`validate`](Self::validate) accepts it, as
+    /// `NetworkSchema::add_to_network` validates the network before building it.
+    fn validated_builder(&self) -> Result<pywr_core::scenario::ScenarioDomainBuilder, ScenarioValidationError> {
+        self.validate()
+            .map_err(|problems| ScenarioValidationError { problems })?;
+
+        Ok(self.clone().into())
+    }
+}
+
 impl TryFrom<Vec<pywr_v1_schema::model::Scenario>> for ScenarioDomain {
     type Error = ConversionError;
 
@@ -364,75 +602,50 @@ impl TryFrom<Vec<pywr_v1_schema::model::Scenario>> for ScenarioDomain {
 }
 
 #[cfg(feature = "core")]
-impl TryInto<pywr_core::scenario::ScenarioDomainBuilder> for ScenarioDomain {
-    type Error = pywr_core::scenario::ScenarioError;
-
-    fn try_into(self) -> Result<pywr_core::scenario::ScenarioDomainBuilder, Self::Error> {
+impl From<ScenarioDomain> for pywr_core::scenario::ScenarioDomainBuilder {
+    fn from(val: ScenarioDomain) -> Self {
         let mut builder = pywr_core::scenario::ScenarioDomainBuilder::default();
 
-        for group in self.groups {
-            builder = builder.with_group(group.try_into()?)?;
+        for group in val.groups {
+            builder.with_group(group.into());
         }
 
-        if let Some(combinations) = self.combinations {
-            builder = builder.with_combinations(combinations.into_iter().collect());
+        if let Some(combinations) = val.combinations {
+            builder.with_combinations(combinations.into_iter().collect());
         }
 
-        Ok(builder)
+        builder
     }
 }
 
 /// Error type for reading a [`ModelSchema`] or [`MultiNetworkModelSchema`] network from a file or string.
 #[derive(Error, Debug)]
 pub enum ModelSchemaReadError {
-    #[error("IO error on path `{path}`: {error}")]
-    IO { path: PathBuf, error: std::io::Error },
-    #[error("JSON error: {0}")]
+    #[error("IO error on path `{path}`.")]
+    IO {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+    #[error("JSON error deserialising model.")]
     Json(#[from] serde_json::Error),
-}
-
-#[cfg(feature = "pyo3")]
-impl From<ModelSchemaReadError> for PyErr {
-    fn from(err: ModelSchemaReadError) -> PyErr {
-        pyo3::exceptions::PyRuntimeError::new_err(err.to_string())
-    }
 }
 
 #[derive(Error, Debug)]
 #[cfg(feature = "core")]
 pub enum ModelSchemaBuildError {
-    #[error("Failed to construct scenario builder: {0}")]
-    ScenarioBuilderError(#[from] pywr_core::scenario::ScenarioError),
-    #[error("Failed to construct model domain: {0}")]
-    CoreModelDomainError(#[from] pywr_core::models::ModelDomainError),
-    #[error("Failed to construct the network: {source}")]
+    #[error("Failed to construct the network.")]
     NetworkBuildError {
         #[source]
         source: Box<NetworkSchemaBuildError>,
     },
-}
-
-#[cfg(all(feature = "core", feature = "pyo3"))]
-impl From<ModelSchemaBuildError> for PyErr {
-    fn from(err: ModelSchemaBuildError) -> PyErr {
-        let py_err = pyo3::exceptions::PyRuntimeError::new_err(err.to_string());
-
-        // Check if the error has a cause that can be converted to a PyErr
-        let py_cause: Result<PyErr, ()> = match err {
-            ModelSchemaBuildError::NetworkBuildError { source } => (*source).try_into(),
-            _ => Err(()),
-        };
-
-        if let Ok(py_cause) = py_cause {
-            // If the cause is a PyErr, set it as the cause of the PyErr
-            return Python::attach(|py| {
-                py_err.set_cause(py, Some(py_cause));
-                py_err
-            });
-        }
-
-        py_err
-    }
+    #[error(transparent)]
+    ScenarioValidation {
+        #[from]
+        source: ScenarioValidationError,
+    },
+    #[error("Error building model domain.")]
+    CoreModelDomainBuilderError(#[from] ModelDomainBuilderError),
 }
 
 /// The top-level schema for a Pywr model.
@@ -457,11 +670,10 @@ impl From<ModelSchemaBuildError> for PyErr {
 ///
 ///
 #[skip_serializing_none]
-#[derive(serde::Deserialize, serde::Serialize, Clone, JsonSchema)]
-#[cfg_attr(feature = "pyo3", pyclass)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, JsonSchema, Default)]
 pub struct ModelSchema {
     pub metadata: Metadata,
-    pub timestepper: Timestepper,
+    pub time: TimeDomain,
     pub scenarios: Option<ScenarioDomain>,
     pub network: NetworkSchema,
 }
@@ -493,15 +705,63 @@ impl VisitMetrics for ModelSchema {
     }
 }
 
+impl VisitReferences for ModelSchema {
+    fn visit_references<F: FnMut(Reference<'_>)>(&self, visitor: &mut F) {
+        self.network.visit_references(visitor);
+    }
+
+    fn visit_references_mut<F: FnMut(ReferenceMut<'_>)>(&mut self, visitor: &mut F) {
+        self.network.visit_references_mut(visitor);
+    }
+}
+
+/// Every problem with a model's `scenarios` and with the references its `networks` make to them,
+/// as [`ValidationError::scenarios`] holds them. Each network is paired with its name in a
+/// [`MultiNetworkModelSchema`], or `None` for a model with a single network.
+fn scenario_problems<'a>(
+    scenarios: Option<&ScenarioDomain>,
+    networks: impl IntoIterator<Item = (Option<&'a str>, &'a NetworkSchema)>,
+) -> Vec<ScenarioProblem> {
+    let mut problems = scenarios.and_then(|domain| domain.validate().err()).unwrap_or_default();
+
+    let groups: BTreeSet<&str> = scenarios
+        .map(|domain| domain.groups.iter().map(|group| group.name.as_str()).collect())
+        .unwrap_or_default();
+
+    for (network_name, network) in networks {
+        network.visit_owned_references(&mut |owner, reference| {
+            if let Reference::ScenarioGroup(group) = reference
+                && !groups.contains(group)
+            {
+                problems.push(ScenarioProblem::UnknownGroupReference {
+                    network: network_name.map(ToString::to_string),
+                    owner: owner.into(),
+                    group: group.to_string(),
+                });
+            }
+        });
+    }
+
+    problems
+}
+
 impl ModelSchema {
-    pub fn new(title: &str, start: &Date, end: &Date) -> Self {
+    pub fn visit_owned_references<F: FnMut(Owner<'_>, Reference<'_>)>(&self, visitor: &mut F) {
+        self.network.visit_owned_references(visitor);
+    }
+
+    pub fn visit_owned_references_mut<F: FnMut(Owner<'_>, ReferenceMut<'_>)>(&mut self, visitor: &mut F) {
+        self.network.visit_owned_references_mut(visitor);
+    }
+
+    pub fn new(title: &str, start: &DateTime, end: &DateTime) -> Self {
         Self {
             metadata: Metadata {
                 title: title.to_string(),
                 description: None,
                 minimum_version: None,
             },
-            timestepper: Timestepper {
+            time: TimeDomain {
                 start: *start,
                 end: *end,
                 timestep: Timestep::default(),
@@ -512,38 +772,57 @@ impl ModelSchema {
     }
 
     pub fn from_path<P: AsRef<Path>>(path: P) -> Result<Self, ModelSchemaReadError> {
-        let data = std::fs::read_to_string(&path).map_err(|error| ModelSchemaReadError::IO {
+        let data = std::fs::read_to_string(&path).map_err(|source| ModelSchemaReadError::IO {
             path: path.as_ref().to_path_buf(),
-            error,
+            source,
         })?;
         Ok(serde_json::from_str(data.as_str())?)
     }
 
+    /// Validate the model's schema. See [`TimeDomain::validate`], [`ScenarioDomain::validate`]
+    /// and [`NetworkSchema::validate`]. The network's references to scenario groups are checked
+    /// here too; see [`ValidationError::scenarios`].
+    pub fn validate(&self) -> Result<(), ValidationError> {
+        ValidationError {
+            model: self.time.validate().err().unwrap_or_default(),
+            scenarios: scenario_problems(self.scenarios.as_ref(), [(None, &self.network)]),
+            networks: self.network.validate().err().into_iter().collect(),
+        }
+        .into_result()
+    }
+
+    /// Create a [`pywr_core::models::ModelBuilder`] from the schema, opening its input files
+    /// through `files`.
     #[cfg(feature = "core")]
-    pub fn build_model(
+    pub fn create_model_builder(
         &self,
+        files: &dyn FileProvider,
         data_path: Option<&Path>,
         output_path: Option<&Path>,
-    ) -> Result<Model, ModelSchemaBuildError> {
-        let timestepper = self.timestepper.clone().into();
+    ) -> Result<ModelBuilder, ModelSchemaBuildError> {
+        let time_domain_builder = self.time.clone().into();
 
         let scenario_builder = match &self.scenarios {
-            Some(scenarios) => scenarios.clone().try_into()?,
+            Some(scenarios) => scenarios.validated_builder()?,
             None => pywr_core::scenario::ScenarioDomainBuilder::default(),
         };
 
-        let domain = ModelDomain::try_from(timestepper, scenario_builder)?;
+        let mut domain_builder = ModelDomainBuilder::new(time_domain_builder);
+        domain_builder.scenario(scenario_builder);
 
-        let (network, _tables, _ts) = self
-            .network
-            .build_network(&domain, data_path, output_path, &[])
+        let domain = domain_builder.build()?;
+
+        let mut network_builder = pywr_core::network::NetworkBuilder::default();
+
+        self.network
+            .add_to_network(&mut network_builder, &domain, files, data_path, output_path, &[])
             .map_err(|source| ModelSchemaBuildError::NetworkBuildError {
                 source: Box::new(source),
             })?;
 
-        let model = Model::new(domain, network);
+        let model_builder = ModelBuilder::new(domain, network_builder);
 
-        Ok(model)
+        Ok(model_builder)
     }
 
     /// Convert a v1 model to a v2 model.
@@ -557,8 +836,8 @@ impl ModelSchema {
         let mut errors = Vec::new();
 
         let metadata = v1.metadata.into();
-        let timestepper = v1.timestepper.into();
-        let scenarios = match v1.scenarios.map(|s| s.try_into()) {
+        let time = v1.timestepper.into();
+        let mut scenarios: Option<ScenarioDomain> = match v1.scenarios.map(|s| s.try_into()) {
             Some(Ok(scenarios)) => Some(scenarios),
             Some(Err(err)) => {
                 errors.push(ComponentConversionError::Scenarios { error: err });
@@ -567,13 +846,28 @@ impl ModelSchema {
             None => None,
         };
 
+        if let Some(combinations) = v1.scenario_combinations {
+            let combinations = combinations
+                .into_iter()
+                .map(|c| c.into_iter().map(ScenarioLabelOrIndex::Index).collect::<Vec<_>>())
+                .collect::<Vec<_>>();
+
+            if let Some(scenarios) = &mut scenarios {
+                scenarios.combinations = Some(combinations);
+            } else {
+                errors.push(ComponentConversionError::Scenarios {
+                    error: ConversionError::ScenarioCombinationsWithoutGroups {},
+                });
+            }
+        }
+
         let (network, network_errors) = NetworkSchema::from_v1(v1.network);
         errors.extend(network_errors);
 
         (
             Self {
                 metadata,
-                timestepper,
+                time,
                 scenarios,
                 network,
             },
@@ -585,55 +879,14 @@ impl ModelSchema {
     ///
     /// See [`ModelSchema::from_v1`] for more information.
     pub fn from_v1_str(v1: &str) -> Result<(Self, Vec<ComponentConversionError>), pywr_v1_schema::PywrSchemaError> {
-        let v1_model: pywr_v1_schema::PywrModel = serde_json::from_str(v1)?;
+        let v1_model = pywr_v1_schema::PywrModel::from_str(v1)?;
 
         Ok(Self::from_v1(v1_model))
     }
 }
 
-#[cfg(feature = "pyo3")]
-#[pymethods]
-impl ModelSchema {
-    #[new]
-    fn new_py(title: &str, start: NaiveDateTime, end: NaiveDateTime) -> Self {
-        let start = Date::DateTime(start);
-        let end = Date::DateTime(end);
-
-        Self::new(title, &start, &end)
-    }
-
-    /// Create a new schema object from a file path.
-    #[classmethod]
-    #[pyo3(name = "from_path")]
-    fn from_path_py(_cls: &Bound<'_, PyType>, path: PathBuf) -> PyResult<Self> {
-        Ok(Self::from_path(path)?)
-    }
-
-    ///  Create a new schema object from a JSON string.
-    #[classmethod]
-    #[pyo3(name = "from_json_string")]
-    fn from_json_string_py(_cls: &Bound<'_, PyType>, data: &str) -> PyResult<Self> {
-        Ok(Self::from_str(data)?)
-    }
-
-    /// Serialize the schema to a JSON string.
-    #[pyo3(name = "to_json_string")]
-    fn to_json_string_py(&self) -> PyResult<String> {
-        let data = serde_json::to_string_pretty(&self).map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
-        Ok(data)
-    }
-
-    /// Build the schema in to a Pywr model.
-    #[cfg(feature = "core")]
-    #[pyo3(name="build", signature = (data_path=None, output_path=None))]
-    fn build_py(&mut self, data_path: Option<PathBuf>, output_path: Option<PathBuf>) -> PyResult<Model> {
-        let model = self.build_model(data_path.as_deref(), output_path.as_deref())?;
-        Ok(model)
-    }
-}
-
 #[skip_serializing_none]
-#[derive(serde::Deserialize, serde::Serialize, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, JsonSchema)]
 pub struct MultiNetworkTransfer {
     pub from_network: String,
     pub metric: Metric,
@@ -641,7 +894,7 @@ pub struct MultiNetworkTransfer {
     pub initial_value: Option<f64>,
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, JsonSchema)]
 pub struct MultiNetworkEntry {
     pub name: String,
     pub network: NetworkSchemaRef,
@@ -651,57 +904,31 @@ pub struct MultiNetworkEntry {
 #[derive(Error, Debug)]
 #[cfg(feature = "core")]
 pub enum MultiNetworkModelSchemaBuildError {
-    #[error("Failed to construct scenario builder: {0}")]
-    ScenarioBuilderError(#[from] pywr_core::scenario::ScenarioError),
-    #[error("Failed to construct model domain: {0}")]
-    CoreModelDomainError(#[from] pywr_core::models::ModelDomainError),
-    #[error("Failed to construct the network `{name}`: {source}")]
+    #[error("Error building model domain.")]
+    CoreModelDomainBuilderError(#[from] ModelDomainBuilderError),
+    #[error("Scenario validation failed.")]
+    ScenarioValidation {
+        #[from]
+        source: ScenarioValidationError,
+    },
+    #[error("Failed to construct the network `{name}`.")]
     NetworkBuildError {
         name: String,
         #[source]
         source: Box<NetworkSchemaBuildError>,
     },
-    #[error("Failed to read Pywr network from path `{path}`: {source}")]
+    #[error("Failed to read Pywr network from path `{path}`.")]
     NetworkReadError {
         path: PathBuf,
         #[source]
         source: NetworkSchemaReadError,
     },
-    #[error("Failed to add node `{name}` to the model: {source}")]
+    #[error("Failed to add node `{name}` to the model.")]
     AddTransferError {
         name: String,
         #[source]
         source: Box<SchemaError>,
     },
-    #[error("Failed to add network `{name}` to the model: {source}")]
-    AddNetworkError {
-        name: String,
-        #[source]
-        source: MultiNetworkModelError,
-    },
-}
-
-#[cfg(all(feature = "core", feature = "pyo3"))]
-impl From<MultiNetworkModelSchemaBuildError> for PyErr {
-    fn from(err: MultiNetworkModelSchemaBuildError) -> PyErr {
-        let py_err = PyRuntimeError::new_err(err.to_string());
-
-        // Check if the error has a cause that can be converted to a PyErr
-        let py_cause: Result<PyErr, ()> = match err {
-            MultiNetworkModelSchemaBuildError::NetworkBuildError { source, .. } => (*source).try_into(),
-            _ => Err(()),
-        };
-
-        if let Ok(py_cause) = py_cause {
-            // If the cause is a PyErr, set it as the cause of the PyErr
-            return Python::attach(|py| {
-                py_err.set_cause(py, Some(py_cause));
-                py_err
-            });
-        }
-
-        py_err
-    }
 }
 
 /// A Pywr model containing multiple link networks.
@@ -766,11 +993,10 @@ impl From<MultiNetworkModelSchemaBuildError> for PyErr {
 ///
 ///
 #[skip_serializing_none]
-#[derive(serde::Deserialize, serde::Serialize, Clone)]
-#[cfg_attr(feature = "pyo3", pyclass)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, JsonSchema)]
 pub struct MultiNetworkModelSchema {
     pub metadata: Metadata,
-    pub timestepper: Timestepper,
+    pub time: TimeDomain,
     pub scenarios: Option<ScenarioDomain>,
     pub networks: Vec<MultiNetworkEntry>,
 }
@@ -784,14 +1010,14 @@ impl FromStr for MultiNetworkModelSchema {
 }
 
 impl MultiNetworkModelSchema {
-    pub fn new(title: &str, start: &Date, end: &Date) -> Self {
+    pub fn new(title: &str, start: &DateTime, end: &DateTime) -> Self {
         Self {
             metadata: Metadata {
                 title: title.to_string(),
                 description: None,
                 minimum_version: None,
             },
-            timestepper: Timestepper {
+            time: TimeDomain {
                 start: *start,
                 end: *end,
                 timestep: Timestep::default(),
@@ -801,38 +1027,81 @@ impl MultiNetworkModelSchema {
         }
     }
     pub fn from_path<P: AsRef<Path>>(path: P) -> Result<Self, ModelSchemaReadError> {
-        let data = std::fs::read_to_string(&path).map_err(|error| ModelSchemaReadError::IO {
+        let data = std::fs::read_to_string(&path).map_err(|source| ModelSchemaReadError::IO {
             path: path.as_ref().to_path_buf(),
-            error,
+            source,
         })?;
         Ok(serde_json::from_str(data.as_str())?)
     }
 
+    /// Validate the model's time domain, its scenarios, and the schema of each network in the
+    /// model. See [`TimeDomain::validate`], [`ScenarioDomain::validate`] and
+    /// [`NetworkSchema::validate`].
+    ///
+    /// Every problem found is returned. Each network's problems carry the network's name, as does
+    /// each reference it makes to a scenario group the model does not have. Only inline networks
+    /// are checked; a network given by path is not read.
+    pub fn validate(&self) -> Result<(), ValidationError> {
+        let inline = || {
+            self.networks.iter().filter_map(|entry| match &entry.network {
+                NetworkSchemaRef::Inline(network) => Some((entry.name.as_str(), network)),
+                NetworkSchemaRef::Path(_) => None,
+            })
+        };
+
+        let networks = inline()
+            .filter_map(|(name, network)| {
+                network.validate().err().map(|mut error| {
+                    error.name = Some(name.to_string());
+                    error
+                })
+            })
+            .collect();
+
+        ValidationError {
+            model: self.time.validate().err().unwrap_or_default(),
+            scenarios: scenario_problems(
+                self.scenarios.as_ref(),
+                inline().map(|(name, network)| (Some(name), network)),
+            ),
+            networks,
+        }
+        .into_result()
+    }
+
+    /// Create a [`MultiNetworkModelBuilder`] from the schema, opening its input files and
+    /// network files through `files`.
     #[cfg(feature = "core")]
-    pub fn build_model(
+    pub fn create_model_builder(
         &self,
+        files: &dyn FileProvider,
         data_path: Option<&Path>,
         output_path: Option<&Path>,
-    ) -> Result<MultiNetworkModel, MultiNetworkModelSchemaBuildError> {
-        let timestepper = self.timestepper.clone().into();
+    ) -> Result<MultiNetworkModelBuilder, MultiNetworkModelSchemaBuildError> {
+        let time_builder = self.time.clone().into();
 
         let scenario_builder = match &self.scenarios {
-            Some(scenarios) => scenarios.clone().try_into()?,
+            Some(scenarios) => scenarios.validated_builder()?,
             None => pywr_core::scenario::ScenarioDomainBuilder::default(),
         };
 
-        let domain = ModelDomain::try_from(timestepper, scenario_builder)?;
-        let mut networks = Vec::with_capacity(self.networks.len());
-        let mut inter_network_transfers = Vec::new();
-        let mut schemas: Vec<(NetworkSchema, LoadedTableCollection, LoadedTimeseriesCollection)> =
+        let mut domain_builder = ModelDomainBuilder::new(time_builder);
+        domain_builder.scenario(scenario_builder);
+        let domain = domain_builder.build()?;
+
+        let mut network_entry_builders = Vec::with_capacity(self.networks.len());
+        let mut network_builder_map = HashMap::with_capacity(self.networks.len());
+        let mut schemas: Vec<(NetworkSchema, LoadedTableCollection, LoadedTimeSeriesCollection)> =
             Vec::with_capacity(self.networks.len());
 
         // First load all the networks
         // These will contain any parameters that are referenced by the inter-model transfers
         // Because of potential circular references, we need to load all the networks first.
-        for network_entry in &self.networks {
+        for (i, network_entry) in self.networks.iter().enumerate() {
             // Load the network itself
-            let (network, schema, tables, timeseries) = match &network_entry.network {
+            let mut network_builder = pywr_core::network::NetworkBuilder::default();
+
+            let (schema, tables, time_series) = match &network_entry.network {
                 NetworkSchemaRef::Path(path) => {
                     let pth = if let Some(dp) = data_path {
                         if path.is_relative() {
@@ -844,62 +1113,72 @@ impl MultiNetworkModelSchema {
                         path.clone()
                     };
 
-                    let network_schema = NetworkSchema::from_path(&pth)
+                    let network_schema = NetworkSchema::from_files(files, &pth)
                         .map_err(|source| MultiNetworkModelSchemaBuildError::NetworkReadError { path: pth, source })?;
 
-                    let (net, tables, timeseries) = network_schema
-                        .build_network(&domain, data_path, output_path, &network_entry.transfers)
+                    let (tables, time_series) = network_schema
+                        .add_to_network(
+                            &mut network_builder,
+                            &domain,
+                            files,
+                            data_path,
+                            output_path,
+                            &network_entry.transfers,
+                        )
                         .map_err(|source| MultiNetworkModelSchemaBuildError::NetworkBuildError {
                             name: network_entry.name.clone(),
                             source: Box::new(source),
                         })?;
 
-                    (net, network_schema, tables, timeseries)
+                    (network_schema, tables, time_series)
                 }
                 NetworkSchemaRef::Inline(network_schema) => {
-                    let (net, tables, timeseries) = network_schema
-                        .build_network(&domain, data_path, output_path, &network_entry.transfers)
+                    let (tables, time_series) = network_schema
+                        .add_to_network(
+                            &mut network_builder,
+                            &domain,
+                            files,
+                            data_path,
+                            output_path,
+                            &network_entry.transfers,
+                        )
                         .map_err(|source| MultiNetworkModelSchemaBuildError::NetworkBuildError {
                             name: network_entry.name.clone(),
                             source: Box::new(source),
                         })?;
 
-                    (net, network_schema.clone(), tables, timeseries)
+                    (network_schema.clone(), tables, time_series)
                 }
             };
 
-            schemas.push((schema, tables, timeseries));
-            networks.push((network_entry.name.clone(), network));
+            schemas.push((schema, tables, time_series));
+
+            network_entry_builders.push(network_builder);
+            network_builder_map.insert(network_entry.name.clone(), i);
         }
 
-        // Now load the inter-model transfers
-        for (to_network_idx, network_entry) in self.networks.iter().enumerate() {
+        // Now load the inter-model transfer builders.
+        let mut transfer_builders = Vec::with_capacity(self.networks.len());
+        for network_entry in &self.networks {
+            let mut t_builders = Vec::with_capacity(network_entry.transfers.len());
             for transfer in &network_entry.transfers {
                 // Load the metric from the "from" network
-
-                let (from_network_idx, from_network) = networks
-                    .iter_mut()
-                    .enumerate()
-                    .find_map(|(idx, (name, net))| {
-                        if name.as_str() == transfer.from_network.as_str() {
-                            Some((idx, net))
-                        } else {
-                            None
-                        }
-                    })
-                    .ok_or_else(|| MultiNetworkModelSchemaBuildError::AddTransferError {
+                let from_network_idx = *network_builder_map.get(&transfer.from_network).ok_or_else(|| {
+                    MultiNetworkModelSchemaBuildError::AddTransferError {
                         name: transfer.name.clone(),
                         source: Box::new(SchemaError::NetworkNotFound(transfer.from_network.clone())),
-                    })?;
+                    }
+                })?;
+                let from_network = &mut network_entry_builders[from_network_idx];
 
                 // The transfer metric will fail to load if it is defined as an inter-model transfer itself.
-                let (from_schema, from_tables, from_timeseries) = &schemas[from_network_idx];
+                let (from_schema, from_tables, from_time_series) = &schemas[from_network_idx];
 
                 let args = LoadArgs {
                     schema: from_schema,
                     domain: &domain,
                     tables: from_tables,
-                    timeseries: from_timeseries,
+                    time_series: from_time_series,
                     data_path,
                     inter_network_transfers: &[],
                 };
@@ -911,77 +1190,50 @@ impl MultiNetworkModelSchema {
                     }
                 })?;
 
-                inter_network_transfers.push((from_network_idx, from_metric, to_network_idx, transfer.initial_value));
+                let mut transfer_builder =
+                    MultiNetworkTransferBuilder::new(&transfer.name, &transfer.from_network, from_metric);
+                if let Some(iv) = transfer.initial_value {
+                    transfer_builder.initial_value(iv);
+                }
+
+                t_builders.push(transfer_builder);
             }
+
+            transfer_builders.push(t_builders);
         }
 
         // Now construct the model from the loaded components
-        let mut model = MultiNetworkModel::new(domain);
+        let mut model_builder = MultiNetworkModelBuilder::new(domain);
 
-        for (name, network) in networks {
-            model
-                .add_network(&name, network)
-                .map_err(|source| MultiNetworkModelSchemaBuildError::AddNetworkError { name, source })?;
+        for (network_entry, (network_builder, t_builders)) in self
+            .networks
+            .iter()
+            .zip(network_entry_builders.into_iter().zip(transfer_builders))
+        {
+            let mut entry_builder = MultiNetworkEntryBuilder::new(&network_entry.name, network_builder);
+            for t in t_builders {
+                entry_builder.transfer(t);
+            }
+
+            model_builder.network(entry_builder);
         }
 
-        for (from_network_idx, from_metric, to_network_idx, initial_value) in inter_network_transfers {
-            model.add_inter_network_transfer(from_network_idx, from_metric, to_network_idx, initial_value);
-        }
-
-        Ok(model)
-    }
-}
-
-#[cfg(feature = "pyo3")]
-#[pymethods]
-impl MultiNetworkModelSchema {
-    #[new]
-    fn new_py(title: &str, start: NaiveDateTime, end: NaiveDateTime) -> Self {
-        let start = Date::DateTime(start);
-        let end = Date::DateTime(end);
-
-        Self::new(title, &start, &end)
-    }
-
-    /// Create a new schema object from a file path.
-    #[classmethod]
-    #[pyo3(name = "from_path")]
-    fn from_path_py(_cls: &Bound<'_, PyType>, path: PathBuf) -> PyResult<Self> {
-        Ok(Self::from_path(path)?)
-    }
-
-    ///  Create a new schema object from a JSON string.
-    #[classmethod]
-    #[pyo3(name = "from_json_string")]
-    fn from_json_string_py(_cls: &Bound<'_, PyType>, data: &str) -> PyResult<Self> {
-        Ok(Self::from_str(data)?)
-    }
-
-    /// Serialize the schema to a JSON string.
-    #[pyo3(name = "to_json_string")]
-    fn to_json_string_py(&self) -> PyResult<String> {
-        let data = serde_json::to_string_pretty(&self).map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
-        Ok(data)
-    }
-
-    /// Build the schema in to a Pywr model.
-    #[cfg(feature = "core")]
-    #[pyo3(name="build", signature = (data_path=None, output_path=None))]
-    fn build_py(
-        &mut self,
-        data_path: Option<PathBuf>,
-        output_path: Option<PathBuf>,
-    ) -> PyResult<pywr_core::models::MultiNetworkModel> {
-        let model = self.build_model(data_path.as_deref(), output_path.as_deref())?;
-        Ok(model)
+        Ok(model_builder)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{ModelSchema, ScenarioDomain};
-    use crate::model::Timestepper;
+    use super::{ModelSchema, MultiNetworkModelSchema, ScenarioDomain};
+    #[cfg(feature = "core")]
+    use crate::FileSystem;
+    use crate::edge::Edge;
+    use crate::model::{TimeDomain, Timestep};
+    use crate::validation::{
+        EdgeProblem, ModelProblem, NetworkProblem, ProblemOwner, ScenarioProblem, ValidationError,
+    };
     use crate::visit::VisitPaths;
+    use jiff::civil::date;
     use std::fs;
     use std::fs::read_to_string;
     use std::path::PathBuf;
@@ -1012,21 +1264,10 @@ mod tests {
         }
         "#;
 
-        let timestep: Timestepper = serde_json::from_str(timestepper_str).unwrap();
+        let timestep: TimeDomain = serde_json::from_str(timestepper_str).unwrap();
 
-        match timestep.start {
-            super::Date::Date(date) => {
-                assert_eq!(date, chrono::NaiveDate::from_ymd_opt(2015, 1, 1).unwrap());
-            }
-            _ => panic!("Expected a date"),
-        }
-
-        match timestep.end {
-            super::Date::Date(date) => {
-                assert_eq!(date, chrono::NaiveDate::from_ymd_opt(2015, 12, 31).unwrap());
-            }
-            _ => panic!("Expected a date"),
-        }
+        assert_eq!(timestep.start, date(2015, 1, 1).at(0, 0, 0, 0));
+        assert_eq!(timestep.end, date(2015, 12, 31).at(0, 0, 0, 0));
     }
 
     #[test]
@@ -1042,44 +1283,20 @@ mod tests {
         }
         "#;
 
-        let timestep: Timestepper = serde_json::from_str(timestepper_str).unwrap();
-
-        match timestep.start {
-            super::Date::DateTime(date_time) => {
-                assert_eq!(
-                    date_time,
-                    chrono::NaiveDate::from_ymd_opt(2015, 1, 1)
-                        .unwrap()
-                        .and_hms_opt(12, 30, 0)
-                        .unwrap()
-                );
-            }
-            _ => panic!("Expected a date"),
-        }
-
-        match timestep.end {
-            super::Date::DateTime(date_time) => {
-                assert_eq!(
-                    date_time,
-                    chrono::NaiveDate::from_ymd_opt(2015, 1, 1)
-                        .unwrap()
-                        .and_hms_opt(14, 30, 0)
-                        .unwrap()
-                );
-            }
-            _ => panic!("Expected a date"),
-        }
+        let timestep: TimeDomain = serde_json::from_str(timestepper_str).unwrap();
+        assert_eq!(timestep.start, date(2015, 1, 1).at(12, 30, 0, 0));
+        assert_eq!(timestep.end, date(2015, 1, 1).at(14, 30, 0, 0));
     }
 
     /// Test that the visit_paths functions works as expected.
     #[test]
     fn test_visit_paths() {
         let mut model_fn = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        model_fn.push("tests/timeseries.json");
+        model_fn.push("tests/time-series.json");
 
         let mut schema = ModelSchema::from_path(model_fn.as_path()).unwrap();
 
-        let expected_paths = vec![PathBuf::from("inflow.csv"), PathBuf::from("timeseries-expected.csv")];
+        let expected_paths = vec![PathBuf::from("inflow.csv"), PathBuf::from("time-series-expected.csv")];
 
         let mut paths: Vec<PathBuf> = Vec::new();
 
@@ -1095,10 +1312,204 @@ mod tests {
 
         // Expect this to file as the path has been updated to a missing file.
         #[cfg(feature = "core")]
-        if schema.build_model(model_fn.parent(), None).is_ok() {
+        if schema
+            .create_model_builder(&FileSystem, model_fn.parent(), None)
+            .is_ok()
+        {
             let str = serde_json::to_string_pretty(&schema).unwrap();
             panic!("Expected an error due to missing file: {str}");
         }
+    }
+
+    /// Return the default time domain with the timestep replaced.
+    fn time_domain_with(timestep: Timestep) -> TimeDomain {
+        TimeDomain {
+            timestep,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn test_validate_period() {
+        let valid: ModelSchema = serde_json::from_str(&model_str()).unwrap();
+        valid.validate().expect("The unmodified model should be valid");
+
+        // A period that ends before it starts is rejected, naming both ends.
+        let mut schema = valid.clone();
+        std::mem::swap(&mut schema.time.start, &mut schema.time.end);
+        assert_eq!(
+            schema.validate(),
+            Err(ValidationError {
+                model: vec![ModelProblem::EndBeforeStart {
+                    start: schema.time.start,
+                    end: schema.time.end,
+                }],
+                scenarios: vec![],
+                networks: vec![],
+            })
+        );
+
+        // A single instant is a period, if a short one.
+        let mut schema = valid.clone();
+        schema.time.end = schema.time.start;
+        assert_eq!(schema.validate(), Ok(()));
+    }
+
+    #[test]
+    fn test_validate_frequency() {
+        // The forms `jiff` reads: "friendly" and ISO 8601.
+        for freq in ["7d", "1mo", "3h", "P7D"] {
+            let time = time_domain_with(Timestep::Frequency { freq: freq.to_string() });
+            assert_eq!(time.validate(), Ok(()), "`{freq}` should be a valid frequency");
+        }
+
+        // A string that is not a duration at all.
+        for freq in ["every other tuesday", "7", "", "1q"] {
+            let time = time_domain_with(Timestep::Frequency { freq: freq.to_string() });
+            let problems = time
+                .validate()
+                .expect_err(&format!("`{freq}` should not parse as a frequency"));
+            assert!(matches!(problems[..], [ModelProblem::UnparsableFrequency { .. }]));
+        }
+
+        // A duration that parses, but would never advance the clock.
+        for freq in ["0d", "-7d"] {
+            let time = time_domain_with(Timestep::Frequency { freq: freq.to_string() });
+            assert_eq!(
+                time.validate(),
+                Err(vec![ModelProblem::NonPositiveFrequency { freq: freq.to_string() }])
+            );
+        }
+    }
+
+    /// The period and the frequency are both checked, so a time domain can report both.
+    #[test]
+    fn test_validate_time_domain_reports_every_problem() {
+        let mut time = time_domain_with(Timestep::Frequency {
+            freq: "-7d".to_string(),
+        });
+        std::mem::swap(&mut time.start, &mut time.end);
+
+        assert_eq!(
+            time.validate(),
+            Err(vec![
+                ModelProblem::EndBeforeStart {
+                    start: time.start,
+                    end: time.end,
+                },
+                ModelProblem::NonPositiveFrequency {
+                    freq: "-7d".to_string()
+                },
+            ])
+        );
+    }
+
+    /// A model's own problems, its scenarios' and its network's are reported together, but apart.
+    #[test]
+    fn test_validate_model_reports_model_and_network_problems_apart() {
+        let mut schema: ModelSchema = serde_json::from_str(&model_str()).unwrap();
+        std::mem::swap(&mut schema.time.start, &mut schema.time.end);
+        schema.scenarios = Some(scenarios(r#"{ "groups": [{ "name": "A", "size": 0 }] }"#));
+        schema.network.edges.push(Edge {
+            from_node: "link1".to_string(),
+            to_node: "missing".to_string(),
+            from_slot: None,
+            to_slot: None,
+            meta: None,
+        });
+
+        let error = schema.validate().unwrap_err();
+
+        assert_eq!(
+            error.model,
+            vec![ModelProblem::EndBeforeStart {
+                start: schema.time.start,
+                end: schema.time.end,
+            }]
+        );
+        assert_eq!(
+            error.scenarios,
+            vec![ScenarioProblem::EmptyGroup { group: "A".to_string() }]
+        );
+        assert_eq!(error.networks.len(), 1);
+        assert_eq!(error.networks[0].name, None);
+        assert!(matches!(
+            error.networks[0].problems.as_slice(),
+            [NetworkProblem::InvalidEdge(e)] if e.problem == EdgeProblem::UnknownToNode("missing".to_string())
+        ));
+
+        // The summary counts all three together.
+        assert_eq!(error.to_string(), "The model has 3 problem(s).");
+
+        // The scenarios' problems are listed between the model's and its network's, which need no
+        // name for a single network.
+        let report = error.report().to_string();
+        assert!(report.starts_with("The model has 3 problem(s):\n- The simulation period ends before it starts"));
+        assert!(
+            report.contains(
+                "\n- The scenario group `A` has a size of zero, but a group must have at least one scenario.\n"
+            )
+        );
+        assert!(
+            report
+                .ends_with("\n- The edge `link1->missing` is invalid. There is no node named `missing` to connect to.")
+        );
+    }
+
+    /// Each inline network of a multi-network model is checked, and a network's problems are
+    /// reported under its name. A valid network is left out.
+    #[test]
+    fn test_validate_multi_network_model_names_each_network() {
+        let schema: MultiNetworkModelSchema = r#"
+        {
+            "metadata": { "title": "Two networks" },
+            "time": { "start": "2015-01-01", "end": "2015-12-31", "timestep": { "type": "Days", "days": 1 } },
+            "networks": [
+                {
+                    "name": "valid",
+                    "network": {
+                        "nodes": [
+                            { "meta": { "name": "supply" }, "type": "Input" },
+                            { "meta": { "name": "demand" }, "type": "Output" }
+                        ],
+                        "edges": [{ "from_node": "supply", "to_node": "demand" }]
+                    },
+                    "transfers": []
+                },
+                {
+                    "name": "north",
+                    "network": {
+                        "nodes": [
+                            { "meta": { "name": "supply" }, "type": "Input" },
+                            { "meta": { "name": "supply" }, "type": "Input" },
+                            { "meta": { "name": "demand" }, "type": "Output" }
+                        ],
+                        "edges": [{ "from_node": "demand", "to_node": "supply" }]
+                    },
+                    "transfers": []
+                }
+            ]
+        }
+        "#
+        .parse()
+        .expect("Failed to parse test model JSON");
+
+        let error = schema.validate().unwrap_err();
+
+        assert!(error.model.is_empty());
+        assert_eq!(error.networks.len(), 1);
+        assert_eq!(error.networks[0].name.as_deref(), Some("north"));
+        assert!(matches!(
+            error.networks[0].problems.as_slice(),
+            [NetworkProblem::DuplicateNodeName(_), NetworkProblem::InvalidEdge(_)]
+        ));
+
+        assert_eq!(
+            error.report().to_string(),
+            "The model has 2 problem(s):\n\
+             - Network `north`: The name `supply` is used by 2 node(s) and 0 virtual node(s), but each name must be unique.\n\
+             - Network `north`: The edge `demand->supply` is invalid. The `Output` node `demand` cannot provide flow."
+        );
     }
 
     #[test]
@@ -1111,10 +1522,377 @@ mod tests {
             if p.is_file() && p.file_name().unwrap().to_str().unwrap().starts_with("scenario_domain") {
                 let data = read_to_string(&p).unwrap_or_else(|e| panic!("Failed to read file: {p:?}: {e}",));
 
-                let _value: ScenarioDomain =
+                let value: ScenarioDomain =
                     serde_json::from_str(&data).unwrap_or_else(|e| panic!("Failed to deserialize {p:?}: {e}",));
+
+                // Every example the documentation shows must be one validation accepts.
+                value
+                    .validate()
+                    .unwrap_or_else(|problems| panic!("Doc example {p:?} is not valid: {problems:?}"));
             }
         }
+    }
+
+    /// Deserialise a scenario domain, which every test below starts from.
+    fn scenarios(json: &str) -> ScenarioDomain {
+        serde_json::from_str(json).expect("Failed to deserialize the scenario domain")
+    }
+
+    /// The problems with a scenario domain, which must not be valid.
+    fn problems_of(json: &str) -> Vec<ScenarioProblem> {
+        scenarios(json)
+            .validate()
+            .expect_err("Expected the scenario domain to be invalid")
+    }
+
+    /// A group's labels must number its scenarios, and must be distinct.
+    #[test]
+    fn test_validate_scenarios_labels() {
+        assert_eq!(
+            problems_of(r#"{ "groups": [{ "name": "A", "size": 3, "labels": ["wet", "dry"] }] }"#),
+            vec![ScenarioProblem::IncorrectNumberOfLabels {
+                group: "A".to_string(),
+                found: 2,
+                expected: 3,
+            }]
+        );
+
+        assert_eq!(
+            problems_of(r#"{ "groups": [{ "name": "A", "size": 3, "labels": ["wet", "dry", "wet"] }] }"#),
+            vec![ScenarioProblem::DuplicateLabel {
+                group: "A".to_string(),
+                label: "wet".to_string(),
+                count: 2,
+            }]
+        );
+    }
+
+    /// A `Slice` subset must start before it ends, and must not reach past its group.
+    #[test]
+    fn test_validate_scenarios_slice_subset() {
+        let problems_of_slice = |start: usize, end: usize| {
+            problems_of(&format!(
+                r#"{{ "groups": [{{ "name": "A", "size": 5, "subset": {{ "type": "Slice", "start": {start}, "end": {end} }} }}] }}"#
+            ))
+        };
+
+        assert_eq!(
+            problems_of_slice(2, 2),
+            vec![ScenarioProblem::EmptySlice {
+                group: "A".to_string(),
+                start: 2,
+                end: 2,
+            }]
+        );
+
+        assert_eq!(
+            problems_of_slice(0, 6),
+            vec![ScenarioProblem::SliceOutOfRange {
+                group: "A".to_string(),
+                size: 5,
+                end: 6,
+            }]
+        );
+
+        // The two are checked apart, so one slice can break both.
+        assert_eq!(
+            problems_of_slice(7, 6),
+            vec![
+                ScenarioProblem::EmptySlice {
+                    group: "A".to_string(),
+                    start: 7,
+                    end: 6,
+                },
+                ScenarioProblem::SliceOutOfRange {
+                    group: "A".to_string(),
+                    size: 5,
+                    end: 6,
+                },
+            ]
+        );
+    }
+
+    /// An `Indices` subset must not be empty, and must name scenarios its group has, each once.
+    #[test]
+    fn test_validate_scenarios_indices_subset() {
+        assert_eq!(
+            problems_of(
+                r#"{ "groups": [{ "name": "A", "size": 3, "subset": { "type": "Indices", "indices": [] } }] }"#
+            ),
+            vec![ScenarioProblem::EmptySubset { group: "A".to_string() }]
+        );
+
+        // Each offending scenario is named once, however often the subset repeats it, and the
+        // repetition is reported separately.
+        assert_eq!(
+            problems_of(
+                r#"{ "groups": [{ "name": "A", "size": 3, "subset": { "type": "Indices", "indices": [1, 5, 5, 9] } }] }"#
+            ),
+            vec![
+                ScenarioProblem::SubsetIndexOutOfRange {
+                    group: "A".to_string(),
+                    size: 3,
+                    index: 5,
+                },
+                ScenarioProblem::SubsetIndexOutOfRange {
+                    group: "A".to_string(),
+                    size: 3,
+                    index: 9,
+                },
+                ScenarioProblem::DuplicateSubsetIndex {
+                    group: "A".to_string(),
+                    index: 5,
+                    count: 2,
+                },
+            ]
+        );
+    }
+
+    /// A `Labels` subset must name labels the group has, and needs the group to have labels at
+    /// all.
+    #[test]
+    fn test_validate_scenarios_labels_subset() {
+        assert_eq!(
+            problems_of(
+                r#"{ "groups": [{ "name": "A", "size": 2, "subset": { "type": "Labels", "labels": ["wet"] } }] }"#
+            ),
+            vec![ScenarioProblem::SubsetNeedsGroupLabels { group: "A".to_string() }]
+        );
+
+        assert_eq!(
+            problems_of(
+                r#"{ "groups": [{ "name": "A", "size": 2, "labels": ["wet", "dry"], "subset": { "type": "Labels", "labels": ["damp", "dry", "dry"] } }] }"#
+            ),
+            vec![
+                ScenarioProblem::SubsetLabelNotFound {
+                    group: "A".to_string(),
+                    label: "damp".to_string(),
+                },
+                ScenarioProblem::DuplicateSubsetLabel {
+                    group: "A".to_string(),
+                    label: "dry".to_string(),
+                    count: 2,
+                },
+            ]
+        );
+    }
+
+    /// Combinations cannot be given alongside a subset, and every group carrying one is named.
+    /// They also need groups to combine, and must not be an empty list.
+    #[test]
+    fn test_validate_scenarios_combinations_against_the_domain() {
+        assert_eq!(
+            problems_of(
+                r#"{
+                    "groups": [
+                        { "name": "A", "size": 3, "subset": { "type": "Slice", "start": 0, "end": 2 } },
+                        { "name": "B", "size": 2, "subset": { "type": "Indices", "indices": [1] } }
+                    ],
+                    "combinations": [[0, 0]]
+                }"#
+            ),
+            vec![
+                ScenarioProblem::CombinationsAndSubset { group: "A".to_string() },
+                ScenarioProblem::CombinationsAndSubset { group: "B".to_string() },
+            ]
+        );
+
+        assert_eq!(
+            problems_of(r#"{ "groups": [], "combinations": [[0]] }"#),
+            vec![ScenarioProblem::CombinationsWithoutGroups]
+        );
+
+        assert_eq!(
+            problems_of(r#"{ "groups": [{ "name": "A", "size": 2 }], "combinations": [] }"#),
+            vec![ScenarioProblem::EmptyCombinations]
+        );
+    }
+
+    /// Each combination must have one entry per group.
+    #[test]
+    fn test_validate_scenarios_combination_length() {
+        assert_eq!(
+            problems_of(
+                r#"{
+                    "groups": [{ "name": "A", "size": 2 }, { "name": "B", "size": 2 }],
+                    "combinations": [[0], [0, 1, 1]]
+                }"#
+            ),
+            vec![
+                ScenarioProblem::IncorrectCombinationLength {
+                    combination: 0,
+                    found: 1,
+                    expected: 2,
+                },
+                ScenarioProblem::IncorrectCombinationLength {
+                    combination: 1,
+                    found: 3,
+                    expected: 2,
+                },
+            ]
+        );
+    }
+
+    /// A combination's entries must name scenarios their group has, whether by index or by label.
+    #[test]
+    fn test_validate_scenarios_combination_entries() {
+        assert_eq!(
+            problems_of(
+                r#"{
+                    "groups": [{ "name": "A", "size": 2, "labels": ["wet", "dry"] }, { "name": "B", "size": 2 }],
+                    "combinations": [[5, 0], ["damp", 1], ["wet", "second"]]
+                }"#
+            ),
+            vec![
+                ScenarioProblem::CombinationIndexOutOfRange {
+                    combination: 0,
+                    group: "A".to_string(),
+                    size: 2,
+                    index: 5,
+                },
+                ScenarioProblem::CombinationLabelNotFound {
+                    combination: 1,
+                    group: "A".to_string(),
+                    label: "damp".to_string(),
+                },
+                ScenarioProblem::CombinationNeedsGroupLabels {
+                    combination: 2,
+                    group: "B".to_string(),
+                    label: "second".to_string(),
+                },
+            ]
+        );
+    }
+
+    /// Every problem is returned at once, in the documented order: duplicate group names, then
+    /// each group's own as the groups are defined, then the combinations'.
+    #[test]
+    fn test_validate_scenarios_reports_every_problem_in_order() {
+        assert_eq!(
+            problems_of(
+                r#"{
+                    "groups": [{ "name": "B", "size": 0 }, { "name": "A", "size": 2 }, { "name": "A", "size": 1 }],
+                    "combinations": [[0, 9, 0]]
+                }"#
+            ),
+            vec![
+                ScenarioProblem::DuplicateGroupName {
+                    name: "A".to_string(),
+                    count: 2,
+                },
+                ScenarioProblem::EmptyGroup { group: "B".to_string() },
+                ScenarioProblem::CombinationIndexOutOfRange {
+                    combination: 0,
+                    group: "B".to_string(),
+                    size: 0,
+                    index: 0,
+                },
+                ScenarioProblem::CombinationIndexOutOfRange {
+                    combination: 0,
+                    group: "A".to_string(),
+                    size: 2,
+                    index: 9,
+                },
+            ]
+        );
+    }
+
+    /// A model whose network names a scenario group is valid when the group is defined, and has a
+    /// dangling reference when it is not, or when the model has no `scenarios` at all.
+    #[test]
+    fn test_validate_model_checks_scenario_group_references() {
+        let model_referring_to_climate = |groups: Option<&str>| {
+            let mut schema: ModelSchema = serde_json::from_str(&model_str()).unwrap();
+            schema.scenarios = groups.map(scenarios);
+            schema.network.parameters.as_mut().unwrap().push(
+                serde_json::from_str(
+                    r#"{
+                        "meta": { "name": "inflow" },
+                        "type": "ConstantScenario",
+                        "scenario_group": "climate",
+                        "values": { "type": "Literal", "values": [1.0, 2.0] }
+                    }"#,
+                )
+                .unwrap(),
+            );
+            schema
+        };
+
+        model_referring_to_climate(Some(r#"{ "groups": [{ "name": "climate", "size": 2 }] }"#))
+            .validate()
+            .expect("A reference to a defined group is valid");
+
+        for groups in [Some(r#"{ "groups": [{ "name": "weather", "size": 2 }] }"#), None] {
+            let error = model_referring_to_climate(groups).validate().unwrap_err();
+
+            assert_eq!(
+                error.scenarios,
+                vec![ScenarioProblem::UnknownGroupReference {
+                    network: None,
+                    owner: ProblemOwner::Parameter("inflow".to_string()),
+                    group: "climate".to_string(),
+                }]
+            );
+            assert_eq!(
+                error.report().to_string(),
+                "The model has 1 problem(s):\n\
+                 - The parameter `inflow` refers to the scenario group `climate`, which the model's scenarios do not define."
+            );
+        }
+    }
+
+    /// A multi-network model checks the one scenario domain its networks share, and names the
+    /// network holding a dangling reference. A network given by path is not read.
+    #[test]
+    fn test_validate_multi_network_model_scenario_problems() {
+        let schema: MultiNetworkModelSchema = serde_json::from_str(
+            r#"{
+                "metadata": { "title": "Two networks" },
+                "time": { "start": "2015-01-01", "end": "2015-12-31", "timestep": { "type": "Days", "days": 1 } },
+                "scenarios": { "groups": [{ "name": "climate", "size": 0 }] },
+                "networks": [
+                    {
+                        "name": "north",
+                        "network": {
+                            "nodes": [{ "meta": { "name": "supply" }, "type": "Input" }],
+                            "edges": [],
+                            "parameters": [{
+                                "meta": { "name": "inflow" },
+                                "type": "ConstantScenario",
+                                "scenario_group": "weather",
+                                "values": { "type": "Literal", "values": [1.0] }
+                            }]
+                        },
+                        "transfers": []
+                    },
+                    { "name": "south", "network": "south.json", "transfers": [] }
+                ]
+            }"#,
+        )
+        .unwrap();
+
+        let error = schema.validate().unwrap_err();
+
+        assert_eq!(
+            error.scenarios,
+            vec![
+                ScenarioProblem::EmptyGroup {
+                    group: "climate".to_string()
+                },
+                ScenarioProblem::UnknownGroupReference {
+                    network: Some("north".to_string()),
+                    owner: ProblemOwner::Parameter("inflow".to_string()),
+                    group: "weather".to_string(),
+                },
+            ]
+        );
+
+        assert_eq!(
+            error.report().to_string(),
+            "The model has 2 problem(s):\n\
+             - The scenario group `climate` has a size of zero, but a group must have at least one scenario.\n\
+             - The parameter `inflow` in the network `north` refers to the scenario group `weather`, which the model's scenarios do not define."
+        );
     }
 }
 
@@ -1122,15 +1900,18 @@ mod tests {
 #[cfg(feature = "core")]
 mod core_tests {
     use super::{ModelSchema, MultiNetworkModelSchema};
+    use crate::FileSystem;
     use crate::agg_funcs::AggFunc;
+    use crate::meta::NamedMeta;
     use crate::metric::{Metric, ParameterReference};
-    use crate::parameters::{AggregatedParameter, ConstantParameter, Parameter, ParameterMeta};
+    use crate::parameters::{AggregatedParameter, ConstantParameter, Parameter, ParameterPhase};
     use ndarray::{Array1, Array2, Axis};
-    use pywr_core::{
-        metric::MetricF64, recorders::AssertionF64Recorder, solvers::ClpSolver, test_utils::run_all_solvers,
-    };
+    use pywr_core::metric::UnresolvedMetricF64;
+    use pywr_core::recorders::AssertionF64RecorderBuilder;
+    use pywr_core::{solvers::ClpSolverSettings, test_utils::run_all_solvers};
     use std::fs::read_to_string;
     use std::path::PathBuf;
+    use tempfile::TempDir;
 
     fn model_str() -> String {
         read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/simple1.json")).unwrap()
@@ -1140,25 +1921,27 @@ mod core_tests {
     fn test_simple1_run() {
         let data = model_str();
         let schema: ModelSchema = serde_json::from_str(&data).unwrap();
-        let mut model = schema.build_model(None, None).unwrap();
+        let temp_dir = TempDir::new().unwrap();
+        let mut model_builder = schema
+            .create_model_builder(&FileSystem, None, Some(temp_dir.path()))
+            .unwrap();
 
-        let network = model.network_mut();
-        assert_eq!(network.nodes().len(), 3);
-        assert_eq!(network.edges().len(), 2);
-
-        let demand1_idx = network.get_node_index_by_name("demand1", None).unwrap();
+        let network_builder = model_builder.network_builder();
 
         let expected_values: Array1<f64> = [10.0; 365].to_vec().into();
         let expected_values: Array2<f64> = expected_values.insert_axis(Axis(1));
 
-        let rec = AssertionF64Recorder::new(
+        let rec = AssertionF64RecorderBuilder::new(
             "assert-demand1",
-            MetricF64::NodeInFlow(demand1_idx),
+            UnresolvedMetricF64::NodeInFlow("demand1".into()),
             expected_values,
-            None,
-            None,
         );
-        network.add_recorder(Box::new(rec)).unwrap();
+        network_builder.recorder(Box::new(rec));
+
+        let model = model_builder.build().unwrap();
+        let network = model.network();
+        assert_eq!(network.nodes().len(), 3);
+        assert_eq!(network.edges().len(), 2);
 
         // Test all solvers
         run_all_solvers(&model, &[], &[], &[]);
@@ -1174,12 +1957,14 @@ mod core_tests {
         if let Some(parameters) = &mut schema.network.parameters {
             parameters.extend(vec![
                 Parameter::Aggregated(AggregatedParameter {
-                    meta: ParameterMeta {
+                    meta: NamedMeta {
                         name: "agg1".to_string(),
                         comment: None,
                         tags: Default::default(),
+                        provenance: None,
                     },
                     agg_func: AggFunc::Sum,
+                    phase: ParameterPhase::Before,
                     metrics: vec![
                         Metric::Parameter(ParameterReference {
                             name: "p1".to_string(),
@@ -1194,21 +1979,24 @@ mod core_tests {
                     ],
                 }),
                 Parameter::Constant(ConstantParameter {
-                    meta: ParameterMeta {
+                    meta: NamedMeta {
                         name: "p1".to_string(),
                         comment: None,
                         tags: Default::default(),
+                        provenance: None,
                     },
                     value: 10.0.into(),
                     variable: None,
                 }),
                 Parameter::Aggregated(AggregatedParameter {
-                    meta: ParameterMeta {
+                    meta: NamedMeta {
                         name: "agg2".to_string(),
                         comment: None,
                         tags: Default::default(),
+                        provenance: None,
                     },
                     agg_func: AggFunc::Sum,
+                    phase: ParameterPhase::Before,
                     metrics: vec![
                         Metric::Parameter(ParameterReference {
                             name: "p1".to_string(),
@@ -1226,7 +2014,8 @@ mod core_tests {
         }
 
         // TODO this could assert a specific type of error
-        assert!(schema.build_model(None, None).is_err());
+        let builder = schema.create_model_builder(&FileSystem, None, None).unwrap();
+        assert!(builder.build().is_err());
     }
 
     /// Test that a model loads if the aggregated parameter is defined before its dependencies.
@@ -1238,12 +2027,14 @@ mod core_tests {
         if let Some(parameters) = &mut schema.network.parameters {
             parameters.extend(vec![
                 Parameter::Aggregated(AggregatedParameter {
-                    meta: ParameterMeta {
+                    meta: NamedMeta {
                         name: "agg1".to_string(),
                         comment: None,
                         tags: Default::default(),
+                        provenance: None,
                     },
                     agg_func: AggFunc::Sum,
+                    phase: ParameterPhase::Before,
                     metrics: vec![
                         Metric::Parameter(ParameterReference {
                             name: "p1".to_string(),
@@ -1258,19 +2049,21 @@ mod core_tests {
                     ],
                 }),
                 Parameter::Constant(ConstantParameter {
-                    meta: ParameterMeta {
+                    meta: NamedMeta {
                         name: "p1".to_string(),
                         comment: None,
                         tags: Default::default(),
+                        provenance: None,
                     },
                     value: 10.0.into(),
                     variable: None,
                 }),
                 Parameter::Constant(ConstantParameter {
-                    meta: ParameterMeta {
+                    meta: NamedMeta {
                         name: "p2".to_string(),
                         comment: None,
                         tags: Default::default(),
+                        provenance: None,
                     },
                     value: 10.0.into(),
                     variable: None,
@@ -1278,7 +2071,7 @@ mod core_tests {
             ]);
         }
         // TODO this could assert a specific type of error
-        let _ = schema.build_model(None, None).unwrap();
+        let _ = schema.create_model_builder(&FileSystem, None, None).unwrap();
     }
 
     /// Test the multi1 model
@@ -1288,47 +2081,45 @@ mod core_tests {
         model_fn.push("tests/multi1/model.json");
 
         let schema = MultiNetworkModelSchema::from_path(model_fn.as_path()).unwrap();
-        let mut model = schema.build_model(model_fn.parent(), None).unwrap();
+        let mut builder = schema
+            .create_model_builder(&FileSystem, model_fn.parent(), None)
+            .unwrap();
 
         // Add some recorders for the expected outputs
-        let network_1_idx = model
-            .get_network_index_by_name("network1")
-            .expect("network 1 not found");
-        let network_1 = model.network_mut(network_1_idx).expect("network 1 not found");
-        let demand1_idx = network_1.get_node_index_by_name("demand1", None).unwrap();
+        let network_1 = builder
+            .entry_builder("network1")
+            .expect("network 1 not found")
+            .network_builder();
 
         let expected_values: Array1<f64> = [10.0; 365].to_vec().into();
         let expected_values: Array2<f64> = expected_values.insert_axis(Axis(1));
 
-        let rec = AssertionF64Recorder::new(
+        let rec = AssertionF64RecorderBuilder::new(
             "assert-demand1",
-            MetricF64::NodeInFlow(demand1_idx),
+            UnresolvedMetricF64::NodeInFlow("demand1".into()),
             expected_values,
-            None,
-            None,
         );
-        network_1.add_recorder(Box::new(rec)).unwrap();
+        network_1.recorder(Box::new(rec));
 
         // Inflow to demand2 should be 10.0 via the transfer from network1 (demand1)
-        let network_2_idx = model
-            .get_network_index_by_name("network2")
-            .expect("network 1 not found");
-        let network_2 = model.network_mut(network_2_idx).expect("network 2 not found");
-        let demand1_idx = network_2.get_node_index_by_name("demand2", None).unwrap();
+        let network_2 = builder
+            .entry_builder("network2")
+            .expect("network 2 not found")
+            .network_builder();
 
         let expected_values: Array1<f64> = [10.0; 365].to_vec().into();
         let expected_values: Array2<f64> = expected_values.insert_axis(Axis(1));
 
-        let rec = AssertionF64Recorder::new(
+        let rec = AssertionF64RecorderBuilder::new(
             "assert-demand2",
-            MetricF64::NodeInFlow(demand1_idx),
+            UnresolvedMetricF64::NodeInFlow("demand2".into()),
             expected_values,
-            None,
-            None,
         );
-        network_2.add_recorder(Box::new(rec)).unwrap();
+        network_2.recorder(Box::new(rec));
 
-        model.run::<ClpSolver>(&Default::default()).unwrap();
+        let model = builder.build().unwrap();
+
+        model.run(&ClpSolverSettings::default()).unwrap();
     }
 
     /// Test the multi2 model
@@ -1338,47 +2129,45 @@ mod core_tests {
         model_fn.push("tests/multi2/model.json");
 
         let schema = MultiNetworkModelSchema::from_path(model_fn.as_path()).unwrap();
-        let mut model = schema.build_model(model_fn.parent(), None).unwrap();
+        let mut builder = schema
+            .create_model_builder(&FileSystem, model_fn.parent(), None)
+            .unwrap();
 
         // Add some recorders for the expected outputs
         // inflow1 should be set to a max of 20.0 from the "demand" parameter in network2
-        let network_1_idx = model
-            .get_network_index_by_name("network1")
-            .expect("network 1 not found");
-        let network_1 = model.network_mut(network_1_idx).expect("network 1 not found");
-        let demand1_idx = network_1.get_node_index_by_name("demand1", None).unwrap();
+        let network_1 = builder
+            .entry_builder("network1")
+            .expect("network 1 not found")
+            .network_builder();
 
         let expected_values: Array1<f64> = [10.0; 365].to_vec().into();
         let expected_values: Array2<f64> = expected_values.insert_axis(Axis(1));
 
-        let rec = AssertionF64Recorder::new(
+        let rec = AssertionF64RecorderBuilder::new(
             "assert-demand1",
-            MetricF64::NodeInFlow(demand1_idx),
+            UnresolvedMetricF64::NodeInFlow("demand1".into()),
             expected_values,
-            None,
-            None,
         );
-        network_1.add_recorder(Box::new(rec)).unwrap();
+        network_1.recorder(Box::new(rec));
 
         // Inflow to demand2 should be 10.0 via the transfer from network1 (demand1)
-        let network_2_idx = model
-            .get_network_index_by_name("network2")
-            .expect("network 1 not found");
-        let network_2 = model.network_mut(network_2_idx).expect("network 2 not found");
-        let demand1_idx = network_2.get_node_index_by_name("demand2", None).unwrap();
+        let network_2 = builder
+            .entry_builder("network2")
+            .expect("network 2 not found")
+            .network_builder();
 
         let expected_values: Array1<f64> = [10.0; 365].to_vec().into();
         let expected_values: Array2<f64> = expected_values.insert_axis(Axis(1));
 
-        let rec = AssertionF64Recorder::new(
+        let rec = AssertionF64RecorderBuilder::new(
             "assert-demand2",
-            MetricF64::NodeInFlow(demand1_idx),
+            UnresolvedMetricF64::NodeInFlow("demand2".into()),
             expected_values,
-            None,
-            None,
         );
-        network_2.add_recorder(Box::new(rec)).unwrap();
+        network_2.recorder(Box::new(rec));
 
-        model.run::<ClpSolver>(&Default::default()).unwrap();
+        let model = builder.build().unwrap();
+
+        model.run(&ClpSolverSettings::default()).unwrap();
     }
 }

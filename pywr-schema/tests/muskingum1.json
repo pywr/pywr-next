@@ -4,7 +4,7 @@
     "description": "An example of using Muskingum routing in a River node.",
     "minimum_version": "0.1"
   },
-  "timestepper": {
+  "time": {
     "start": "2021-01-01",
     "end": "2021-02-28",
     "timestep": {
@@ -20,7 +20,7 @@
         },
         "type": "Catchment",
         "flow": {
-          "type": "Timeseries",
+          "type": "TimeSeries",
           "name": "inflow"
         }
       },
@@ -61,19 +61,20 @@
         "to_node": "term1"
       }
     ],
-    "timeseries": [
+    "time_series": [
       {
         "meta": {
           "name": "inflow"
         },
-        "type": "Polars",
+        "type": "Arrow",
+        "format": "CSV",
         "time_col": "date",
-        "url": "inflow.csv"
+        "path": "inflow.csv"
       }
     ],
     "metric_sets": [
       {
-        "name": "nodes",
+        "meta": {"name": "nodes"},
         "metrics": [
           {
             "type": "Node",
@@ -94,7 +95,7 @@
     ],
     "outputs": [
       {
-        "name": "node-outputs",
+        "meta": {"name": "node-outputs"},
         "type": "CSV",
         "format": "Long",
         "filename": "muskingum1-expected.csv",

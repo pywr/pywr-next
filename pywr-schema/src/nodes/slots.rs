@@ -3,9 +3,7 @@ use schemars::JsonSchema;
 use strum_macros::{Display, EnumIter};
 
 /// All possible slots that could be attached to a node.
-///
-///
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Display, JsonSchema, PartialEq, EnumIter)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Display, JsonSchema, PartialEq, Eq, Hash, EnumIter)]
 #[serde(tag = "type")]
 pub enum NodeSlot {
     Storage,
@@ -13,8 +11,14 @@ pub enum NodeSlot {
     Spill,
     Compensation,
     Abstraction,
-    Split { position: usize },
-    User { name: String },
+    #[strum(to_string = "Split[{position}]")]
+    Split {
+        position: usize,
+    },
+    #[strum(to_string = "User[{name}]")]
+    User {
+        name: String,
+    },
 }
 
 impl NodeSlot {

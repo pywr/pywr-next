@@ -1,33 +1,20 @@
+use crate::network::ResolutionMaps;
 use crate::parameters::errors::SimpleCalculationError;
-use crate::parameters::{Parameter, ParameterMeta, ParameterName, ParameterState, SimpleParameter};
-use crate::scenario::ScenarioIndex;
-use crate::state::SimpleParameterValues;
-use crate::timestep::Timestep;
-use chrono::{Datelike, NaiveDate};
+use crate::parameters::{
+    BuiltParameter, MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder, ParameterMeta,
+    ParameterName, ParameterState, SimpleParameter, SimpleParameterContext,
+};
+use jiff::civil::Date;
 
-fn is_leap_year(year: i32) -> bool {
+fn is_leap_year(year: i16) -> bool {
     (year % 4 == 0) & ((year % 100 != 0) | (year % 400 == 0))
 }
 
+#[derive(Debug)]
 pub struct UniformDrawdownProfileParameter {
     meta: ParameterMeta,
     residual_days: u8,
-    reset_doy: u16,
-}
-
-impl UniformDrawdownProfileParameter {
-    pub fn new(name: ParameterName, reset_day: u32, reset_month: u32, residual_days: u8) -> Self {
-        // Calculate the reset day of year in a known leap year.
-        let reset_doy = NaiveDate::from_ymd_opt(2016, reset_month, reset_day)
-            .expect("Invalid reset day")
-            .ordinal() as u16;
-
-        Self {
-            meta: ParameterMeta::new(name),
-            residual_days,
-            reset_doy,
-        }
-    }
+    reset_doy: i16,
 }
 
 impl Parameter for UniformDrawdownProfileParameter {
@@ -36,18 +23,16 @@ impl Parameter for UniformDrawdownProfileParameter {
     }
 }
 impl SimpleParameter<f64> for UniformDrawdownProfileParameter {
-    fn before(
+    fn compute(
         &self,
-        timestep: &Timestep,
-        _scenario_index: &ScenarioIndex,
-        _values: &SimpleParameterValues,
+        ctx: SimpleParameterContext<'_>,
         _internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<Option<f64>, SimpleCalculationError> {
+    ) -> Result<f64, SimpleCalculationError> {
         // Current calendar year (might be adjusted depending on position of reset day)
-        let mut year = timestep.date.year();
+        let mut year = ctx.timestep.date.year();
 
         // Current day of the year.
-        let current_doy = timestep.day_of_year_index() + 1;
+        let current_doy = ctx.timestep.day_of_year_index() + 1;
         let mut days_into_period: i32 = current_doy as i32 - self.reset_doy as i32;
         if days_into_period < 0 {
             // We're not past the reset day yet; use the previous year
@@ -67,7 +52,7 @@ impl SimpleParameter<f64> for UniformDrawdownProfileParameter {
             days_into_period += 366;
             // Need to adjust for post 29th Feb in non-leap years.
             // Recall `current_doy` was incremented by 1 if it is a non-leap already (hence comparison to 60)
-            if !is_leap_year(timestep.date.year()) && current_doy > 60 {
+            if !is_leap_year(ctx.timestep.date.year()) && current_doy > 60 {
                 days_into_period -= 1;
             }
         }
@@ -75,13 +60,58 @@ impl SimpleParameter<f64> for UniformDrawdownProfileParameter {
         let residual_proportion = self.residual_days as f64 / total_days_in_period as f64;
         let slope = (residual_proportion - 1.0) / total_days_in_period as f64;
 
-        Ok(Some(1.0 + (slope * days_into_period as f64)))
+        Ok(1.0 + (slope * days_into_period as f64))
     }
-
     fn as_parameter(&self) -> &dyn Parameter
     where
         Self: Sized,
     {
         self
+    }
+}
+
+#[derive(Debug)]
+pub struct UniformDrawdownProfileParameterBuilder {
+    meta: ParameterMeta,
+    residual_days: u8,
+    reset_day: i8,
+    reset_month: i8,
+}
+
+impl UniformDrawdownProfileParameterBuilder {
+    pub fn new(name: ParameterName, reset_day: i8, reset_month: i8, residual_days: u8) -> Self {
+        Self {
+            meta: ParameterMeta::new(name),
+            residual_days,
+            reset_month,
+            reset_day,
+        }
+    }
+}
+
+impl ParameterBuilder<f64> for UniformDrawdownProfileParameterBuilder {
+    fn name(&self) -> &ParameterName {
+        &self.meta.name
+    }
+
+    fn build(
+        self: Box<Self>,
+        _resolution_maps: &ResolutionMaps,
+    ) -> Result<MaybeBuiltParameter<f64>, ParameterBuildError> {
+        // Calculate the reset day of year in a known leap year.
+        let reset_doy = Date::new(2016, self.reset_month, self.reset_day)
+            .map_err(|_| ParameterBuildError::InvalidDayOfYear {
+                day: self.reset_day,
+                month: self.reset_month,
+            })?
+            .day_of_year();
+
+        let p = UniformDrawdownProfileParameter {
+            meta: self.meta,
+            residual_days: self.residual_days,
+            reset_doy,
+        };
+
+        Ok(BuiltParameter::Simple(Box::new(p)).into())
     }
 }

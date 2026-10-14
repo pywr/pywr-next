@@ -1,7 +1,9 @@
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
+use crate::meta::NamedMeta;
+use crate::visit::{Reference, ReferenceMut, VisitReferences};
 #[cfg(all(feature = "core", feature = "hdf5"))]
-use pywr_core::recorders::HDF5Recorder;
+use pywr_core::recorders::HDF5RecorderBuilder;
 use pywr_schema_macros::PywrVisitPaths;
 use schemars::JsonSchema;
 #[cfg(feature = "core")]
@@ -10,17 +12,28 @@ use std::path::PathBuf;
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitPaths)]
 pub struct Hdf5Output {
-    pub name: String,
+    pub meta: NamedMeta,
     pub filename: PathBuf,
     /// The metric set to save
     pub metric_set: String,
 }
 
+/// Written out rather than derived: a derive would walk `metric_set` as a plain `String`.
+impl VisitReferences for Hdf5Output {
+    fn visit_references<F: FnMut(Reference<'_>)>(&self, visitor: &mut F) {
+        visitor(Reference::MetricSet(&self.metric_set));
+    }
+
+    fn visit_references_mut<F: FnMut(ReferenceMut<'_>)>(&mut self, visitor: &mut F) {
+        visitor(ReferenceMut::MetricSet(&mut self.metric_set));
+    }
+}
+
 #[cfg(all(feature = "core", feature = "hdf5"))]
 impl Hdf5Output {
-    pub fn add_to_model(
+    pub fn add_to_network(
         &self,
-        network: &mut pywr_core::network::Network,
+        network: &mut pywr_core::network::NetworkBuilder,
         output_path: Option<&Path>,
     ) -> Result<(), SchemaError> {
         let filename = match (output_path, self.filename.is_relative()) {
@@ -28,11 +41,9 @@ impl Hdf5Output {
             _ => self.filename.to_path_buf(),
         };
 
-        let metric_set_idx = network.get_metric_set_index_by_name(&self.metric_set)?;
+        let recorder = HDF5RecorderBuilder::new(&self.meta.name, filename, &self.metric_set);
 
-        let recorder = HDF5Recorder::new(&self.name, filename, metric_set_idx);
-
-        network.add_recorder(Box::new(recorder))?;
+        network.recorder(Box::new(recorder));
 
         Ok(())
     }
@@ -40,9 +51,9 @@ impl Hdf5Output {
 
 #[cfg(all(feature = "core", not(feature = "hdf5")))]
 impl Hdf5Output {
-    pub fn add_to_model(
+    pub fn add_to_network(
         &self,
-        _network: &mut pywr_core::network::Network,
+        _network: &mut pywr_core::network::NetworkBuilder,
         _output_path: Option<&Path>,
     ) -> Result<(), SchemaError> {
         Err(SchemaError::FeatureNotEnabled("hdf5".to_string()))
@@ -51,14 +62,16 @@ impl Hdf5Output {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(all(feature = "core", feature = "hdf5"))]
+    use crate::FileSystem;
     use crate::ModelSchema;
     use crate::visit::VisitPaths;
-    #[cfg(feature = "core")]
-    use pywr_core::solvers::{ClpSolver, ClpSolverSettings};
+    #[cfg(all(feature = "core", feature = "hdf5"))]
+    use pywr_core::solvers::ClpSolverSettings;
     use std::fs::read_to_string;
     use std::path::PathBuf;
     use std::str::FromStr;
-    #[cfg(feature = "core")]
+    #[cfg(all(feature = "core", feature = "hdf5"))]
     use tempfile::TempDir;
 
     fn model_str() -> String {
@@ -85,19 +98,34 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "core")]
+    #[cfg(all(feature = "core", feature = "hdf5"))]
     fn test_run() {
         let data = model_str();
         let schema = ModelSchema::from_str(&data).unwrap();
 
         let temp_dir = TempDir::new().unwrap();
 
-        let model = schema.build_model(None, Some(temp_dir.path())).unwrap();
+        let builder = schema
+            .create_model_builder(&FileSystem, None, Some(temp_dir.path()))
+            .unwrap();
+        let model = builder.build().unwrap();
 
-        model.run::<ClpSolver>(&ClpSolverSettings::default()).unwrap();
+        model.run(&ClpSolverSettings::default()).unwrap();
 
         // After model run there should be an output file.
         let expected_path = temp_dir.path().join("outputs.h5");
         assert!(expected_path.exists());
+
+        // The file is tagged with the version of Pywr that wrote it. `PYWR_VERSION` is the
+        // integer major version (readers use it to distinguish v2 output from v1) and
+        // `PYWR_VERSION_STR` is the full version string.
+        let file = hdf5_metno::File::open(&expected_path).unwrap();
+
+        let expected_major: i64 = env!("CARGO_PKG_VERSION_MAJOR").parse().unwrap();
+        let major: i64 = file.attr("PYWR_VERSION").unwrap().read_scalar().unwrap();
+        assert_eq!(major, expected_major);
+
+        let version: hdf5_metno::types::VarLenUnicode = file.attr("PYWR_VERSION_STR").unwrap().read_scalar().unwrap();
+        assert_eq!(version.as_str(), env!("CARGO_PKG_VERSION"));
     }
 }

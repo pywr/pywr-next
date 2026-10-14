@@ -1,8 +1,8 @@
 import logging
 from pathlib import Path
-from typing import Optional
 
 import click
+
 from . import run_from_path
 
 
@@ -34,7 +34,7 @@ def cli():
 @click.option(
     "-o", "--output-path", type=click.Path(exists=True, dir_okay=True), default=None
 )
-def run(path: str, solver: str, data_path: Optional[str], output_path: Optional[str]):
+def run(path: str, solver: str, data_path: str | None, output_path: str | None):
     data_path = Path(data_path) if data_path is not None else None
     output_path = Path(output_path) if output_path is not None else None
 
@@ -44,6 +44,22 @@ def run(path: str, solver: str, data_path: Optional[str], output_path: Optional[
         data_path=data_path,
         output_path=output_path,
     )
+
+
+@cli.command()
+@click.option(
+    "--socket-name",
+    type=str,
+    default="pywr-runner",
+    help="Socket name for the runner service",
+)
+def runner_service(socket_name: str):
+    from ._pywr import run_server
+
+    logger = logging.getLogger("pywr")
+    logger.info(f"Starting runner service on socket: {socket_name}")
+
+    run_server(socket_name)
 
 
 def start_cli():

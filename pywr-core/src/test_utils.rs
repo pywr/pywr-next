@@ -1,165 +1,147 @@
-use crate::agg_funcs::AggFuncF64;
-use crate::metric::MetricF64;
-use crate::models::{Model, ModelDomain};
 /// Utilities for unit tests.
 /// TODO move this to its own local crate ("test-utilities") as part of a workspace.
-use crate::network::{Network, NetworkError};
-use crate::node::StorageInitialVolume;
-use crate::parameters::{AggregatedParameter, Array2Parameter, ConstantParameter, GeneralParameter};
-use crate::recorders::{AssertionF64Recorder, AssertionU64Recorder};
+///
+use crate::agg_funcs::AggFuncF64;
+use crate::metric::{UnresolvedMetricF64, UnresolvedMetricU64};
+use crate::models::{Model, ModelBuilder, ModelDomain, ModelDomainBuilder};
+use crate::network::NetworkBuilder;
+use crate::node::{NodeBuilder, NodeType, UnresolvedNode, UnresolvedStorageInitialVolume};
+use crate::parameters::{
+    AggregatedParameterBuilder, Array2ParameterBuilder, ConstantParameterBuilder, ParameterBuilder, ParameterName,
+};
+use crate::recorders::{AssertionF64RecorderBuilder, AssertionU64RecorderBuilder};
 use crate::scenario::{ScenarioDomainBuilder, ScenarioGroupBuilder};
 #[cfg(feature = "cbc")]
-use crate::solvers::CbcSolver;
+use crate::solvers::CbcSolverSettings;
 #[cfg(feature = "ipm-ocl")]
-use crate::solvers::ClIpmF64Solver;
+use crate::solvers::ClIpmF64Settings;
 #[cfg(feature = "clp")]
-use crate::solvers::ClpSolver;
+use crate::solvers::ClpSolverSettings;
 #[cfg(feature = "highs")]
-use crate::solvers::HighsSolver;
+use crate::solvers::HighsSolverSettings;
 #[cfg(any(feature = "ipm-simd", feature = "ipm-ocl"))]
-use crate::solvers::MultiStateSolver;
+use crate::solvers::MultiStateSolverConfig;
 #[cfg(feature = "ipm-simd")]
-use crate::solvers::SimdIpmF64Solver;
+use crate::solvers::SimdIpmSolverSettings;
 #[cfg(any(feature = "cbc", feature = "clp", feature = "highs", feature = "microlp"))]
-use crate::solvers::Solver;
-#[cfg(any(
-    feature = "cbc",
-    feature = "clp",
-    feature = "highs",
-    feature = "ipm-ocl",
-    feature = "ipm-simd",
-    feature = "microlp"
-))]
-use crate::solvers::SolverSettings;
-use crate::timestep::{TimeDomain, TimestepDuration, Timestepper};
-use chrono::{Days, NaiveDate};
+use crate::solvers::SolverConfig;
+use crate::timestep::{TimeDomainBuilder, TimestepDuration};
+use arrow::array::{Float64Array, UInt64Array};
 use csv::{Reader, ReaderBuilder};
 use float_cmp::{F64Margin, approx_eq};
-use ndarray::{Array, Array2};
+use jiff::ToSpan;
+use jiff::civil::date;
+use ndarray::Array2;
 use rand::{Rng, RngExt};
 use rand_distr::{Distribution, Normal};
 use std::num::NonZeroU64;
 use std::path::PathBuf;
 
-pub fn default_timestepper() -> Timestepper {
-    let start = NaiveDate::from_ymd_opt(2020, 1, 1)
-        .unwrap()
-        .and_hms_opt(0, 0, 0)
-        .unwrap();
-    let end = NaiveDate::from_ymd_opt(2020, 1, 15)
-        .unwrap()
-        .and_hms_opt(0, 0, 0)
-        .unwrap();
+pub fn default_time_domain_builder() -> TimeDomainBuilder {
+    let start = date(2020, 1, 1).at(0, 0, 0, 0);
+    let end = date(2020, 1, 15).at(0, 0, 0, 0);
     let duration = TimestepDuration::Days(NonZeroU64::new(1).unwrap());
-    Timestepper::new(start, end, duration)
+    TimeDomainBuilder::new(start, end, duration)
 }
 
-pub fn default_time_domain() -> TimeDomain {
-    default_timestepper().try_into().unwrap()
+pub fn default_domain_builder() -> ModelDomainBuilder {
+    ModelDomainBuilder::new(default_time_domain_builder())
 }
 
 pub fn default_domain() -> ModelDomain {
-    default_time_domain().into()
+    default_domain_builder().build().unwrap()
 }
 
-pub fn default_model() -> Model {
-    let domain = default_domain();
-    let network = Network::default();
-    Model::new(domain, network)
-}
+/// Add a simple test network with three nodes.
+pub fn simple_network(builder: &mut NetworkBuilder, inflow_scenario: &str, num_inflow_scenarios: usize) {
+    let mut input_node = NodeBuilder::input("input");
+    input_node.max_flow(UnresolvedMetricF64::new_parameter_before("inflow"));
 
-/// Create a simple test network with three nodes.
-pub fn simple_network(network: &mut Network, inflow_scenario_index: usize, num_inflow_scenarios: usize) {
-    let input_node = network.add_input_node("input", None).unwrap();
-    let link_node = network.add_link_node("link", None).unwrap();
-    let output_node = network.add_output_node("output", None).unwrap();
+    builder.node(input_node);
+    builder.node(NodeBuilder::link("link"));
 
-    network.connect_nodes(input_node, link_node).unwrap();
-    network.connect_nodes(link_node, output_node).unwrap();
+    let mut output_node = NodeBuilder::output("output");
+    output_node
+        .max_flow(UnresolvedMetricF64::new_parameter_before("total-demand"))
+        .cost(UnresolvedMetricF64::new_parameter_before("demand-cost"));
+    builder.node(output_node);
 
-    let inflow = Array::from_shape_fn((366, num_inflow_scenarios), |(i, j)| 1.0 + i as f64 + j as f64);
-    let inflow = Array2Parameter::new("inflow".into(), inflow, inflow_scenario_index, None);
+    builder.connect("input", "link");
+    builder.connect("link", "output");
 
-    let inflow = network.add_simple_parameter(Box::new(inflow)).unwrap();
+    let mut inflow = Vec::with_capacity(num_inflow_scenarios);
+    for j in 0..num_inflow_scenarios {
+        let column = (0..366).map(|i| 1.0 + i as f64 + j as f64).collect::<Vec<_>>();
+        inflow.push(Float64Array::from(column));
+    }
 
-    let input_node = network.get_mut_node_by_name("input", None).unwrap();
-    input_node
-        .set_max_flow_constraint(Some(inflow.into_metric_f64_before()))
-        .unwrap();
+    let inflow = Array2ParameterBuilder::from_primitive_arrays("inflow".into(), &inflow, inflow_scenario);
+
+    builder.parameters().f64(Box::new(inflow));
 
     let base_demand = 10.0;
+    let demand_factor = ConstantParameterBuilder::new("demand-factor".into(), 1.2);
+    builder.parameters().f64(Box::new(demand_factor));
 
-    let demand_factor = ConstantParameter::new("demand-factor".into(), 1.2);
-    let demand_factor = network.add_const_parameter(Box::new(demand_factor)).unwrap();
+    let mut total_demand = AggregatedParameterBuilder::before("total-demand".into(), AggFuncF64::Product);
+    total_demand.metric(base_demand.into());
+    total_demand.metric(UnresolvedMetricF64::new_parameter_before("demand-factor"));
 
-    let total_demand: AggregatedParameter<MetricF64> = AggregatedParameter::new(
-        "total-demand".into(),
-        &[base_demand.into(), demand_factor.into_metric_f64_before()],
-        AggFuncF64::Product,
-    );
-    let total_demand = network.add_parameter(Box::new(total_demand)).unwrap();
+    builder.parameters().f64(Box::new(total_demand));
 
-    let demand_cost = ConstantParameter::new("demand-cost".into(), -10.0);
-    let demand_cost = network.add_const_parameter(Box::new(demand_cost)).unwrap();
-
-    let output_node = network.get_mut_node_by_name("output", None).unwrap();
-    output_node
-        .set_max_flow_constraint(Some(total_demand.into_metric_f64_before()))
-        .unwrap();
-    output_node.set_cost(Some(demand_cost.into_metric_f64_before()));
+    let demand_cost = ConstantParameterBuilder::new("demand-cost".into(), -10.0);
+    builder.parameters().f64(Box::new(demand_cost));
 }
-/// Create a simple test model with three nodes.
-pub fn simple_model(num_scenarios: usize, timestepper: Option<Timestepper>) -> Model {
+
+/// Create a simple test model builder
+pub fn simple_model(num_scenarios: usize, time_builder: Option<TimeDomainBuilder>) -> ModelBuilder {
+    let scenario = "test-scenario";
+
+    let mut network_builder = NetworkBuilder::default();
+    simple_network(&mut network_builder, scenario, num_scenarios);
+
     let mut scenario_builder = ScenarioDomainBuilder::default();
-    let scenario_group = ScenarioGroupBuilder::new("test-scenario", num_scenarios)
-        .build()
-        .unwrap();
-    scenario_builder = scenario_builder.with_group(scenario_group).unwrap();
+    let scenario_group = ScenarioGroupBuilder::new(scenario, num_scenarios);
+    scenario_builder.with_group(scenario_group);
 
-    let domain = ModelDomain::try_from(timestepper.unwrap_or_else(default_timestepper), scenario_builder).unwrap();
-    let mut network = Network::default();
+    let mut domain_builder = ModelDomainBuilder::new(time_builder.unwrap_or_else(default_time_domain_builder));
+    domain_builder.scenario(scenario_builder);
+    let domain = domain_builder.build().unwrap();
 
-    let idx = domain
-        .scenarios()
-        .group_index("test-scenario")
-        .expect("Could not find scenario group");
-
-    simple_network(&mut network, idx, num_scenarios);
-
-    Model::new(domain, network)
+    ModelBuilder::new(domain, network_builder)
 }
 
 /// A test model with a single storage node.
-pub fn simple_storage_model() -> Model {
-    let mut network = Network::default();
-    let storage_node = network
-        .add_storage_node(
-            "reservoir",
-            None,
-            StorageInitialVolume::Absolute(100.0),
-            None,
-            Some(100.0.into()),
-        )
-        .unwrap();
-    let output_node = network.add_output_node("output", None).unwrap();
+pub fn simple_storage_network() -> NetworkBuilder {
+    let mut builder = NetworkBuilder::default();
 
-    network.connect_nodes(storage_node, output_node).unwrap();
+    let mut storage_node = NodeBuilder::storage("reservoir");
+    storage_node.initial_volume(UnresolvedStorageInitialVolume::Absolute(100.0));
+    storage_node.max_volume(100.0.into());
+    builder.node(storage_node);
+
+    let mut output_node = NodeBuilder::output("output");
+    output_node
+        .max_flow(UnresolvedMetricF64::new_parameter_before("demand"))
+        .cost(UnresolvedMetricF64::new_parameter_before("demand-cost"));
+    builder.node(output_node);
+
+    builder.connect("reservoir", "output");
 
     // Apply demand to the model
     // TODO convenience function for adding a constant constraint.
-    let demand = ConstantParameter::new("demand".into(), 10.0);
-    let demand = network.add_const_parameter(Box::new(demand)).unwrap();
+    let demand = ConstantParameterBuilder::new("demand".into(), 10.0);
+    builder.parameters().f64(Box::new(demand));
 
-    let demand_cost = ConstantParameter::new("demand-cost".into(), -10.0);
-    let demand_cost = network.add_const_parameter(Box::new(demand_cost)).unwrap();
+    let demand_cost = ConstantParameterBuilder::new("demand-cost".into(), -10.0);
+    builder.parameters().f64(Box::new(demand_cost));
 
-    let output_node = network.get_mut_node_by_name("output", None).unwrap();
-    output_node
-        .set_max_flow_constraint(Some(demand.into_metric_f64_before()))
-        .unwrap();
-    output_node.set_cost(Some(demand_cost.into_metric_f64_before()));
+    builder
+}
 
-    Model::new(default_time_domain().into(), network)
+pub fn simple_storage_model() -> ModelBuilder {
+    let network = simple_storage_network();
+    ModelBuilder::new(default_domain(), network)
 }
 
 /// Add the given parameter to the given model along with an assertion recorder that asserts
@@ -170,26 +152,36 @@ pub fn simple_storage_model() -> Model {
 ///
 /// See [`AssertionF64Recorder`] for more information.
 pub fn run_and_assert_parameter(
-    model: &mut Model,
-    parameter: Box<dyn GeneralParameter<f64>>,
+    mut model_builder: ModelBuilder,
+    parameter: Box<dyn ParameterBuilder<f64>>,
     expected_values: Array2<f64>,
     ulps: Option<i64>,
     epsilon: Option<f64>,
 ) {
-    let p_idx = model.network_mut().add_parameter(parameter).unwrap();
+    let p_name = parameter.name().clone();
+    model_builder.network_builder().parameters().f64(parameter);
 
-    let start = NaiveDate::from_ymd_opt(2020, 1, 1)
-        .unwrap()
-        .and_hms_opt(0, 0, 0)
-        .unwrap();
-    let _end = start
-        .checked_add_days(Days::new(expected_values.nrows() as u64 - 1))
-        .unwrap();
+    let start = date(2020, 1, 1).at(0, 0, 0, 0);
 
-    let rec = AssertionF64Recorder::new("assert", p_idx.into_metric_f64_before(), expected_values, ulps, epsilon);
+    let _end = start.checked_add((expected_values.nrows() as i64 - 1).days()).unwrap();
 
-    model.network_mut().add_recorder(Box::new(rec)).unwrap();
-    run_all_solvers(model, &[], &[], &[])
+    let mut rec = AssertionF64RecorderBuilder::new(
+        "assert",
+        UnresolvedMetricF64::new_parameter_before(p_name),
+        expected_values,
+    );
+
+    if let Some(ulps) = ulps {
+        rec.ulps(ulps);
+    }
+    if let Some(eps) = epsilon {
+        rec.epsilon(eps);
+    }
+
+    model_builder.network_builder().recorder(Box::new(rec));
+
+    let model = model_builder.build().unwrap();
+    run_all_solvers(&model, &[], &[], &[])
 }
 
 /// Add the given parameter to the given model along with an assertion recorder that asserts
@@ -200,24 +192,25 @@ pub fn run_and_assert_parameter(
 ///
 /// See [`AssertionU64Recorder`] for more information.
 pub fn run_and_assert_parameter_u64(
-    model: &mut Model,
-    parameter: Box<dyn GeneralParameter<u64>>,
+    mut model_builder: ModelBuilder,
+    parameter: Box<dyn ParameterBuilder<u64>>,
     expected_values: Array2<u64>,
 ) {
-    let p_idx = model.network_mut().add_index_parameter(parameter).unwrap();
+    let p_name = parameter.name().clone();
+    model_builder.network_builder().parameters().u64(parameter);
 
-    let start = NaiveDate::from_ymd_opt(2020, 1, 1)
-        .unwrap()
-        .and_hms_opt(0, 0, 0)
-        .unwrap();
-    let _end = start
-        .checked_add_days(Days::new(expected_values.nrows() as u64 - 1))
-        .unwrap();
+    let start = date(2020, 1, 1).at(0, 0, 0, 0);
+    let _end = start.checked_add((expected_values.nrows() as i64 - 1).days());
 
-    let rec = AssertionU64Recorder::new("assert", p_idx.into_metric_u64_before(), expected_values);
+    let rec = AssertionU64RecorderBuilder::new(
+        "assert",
+        UnresolvedMetricU64::new_parameter_before(p_name),
+        expected_values,
+    );
+    model_builder.network_builder().recorder(Box::new(rec));
 
-    model.network_mut().add_recorder(Box::new(rec)).unwrap();
-    run_all_solvers(model, &[], &[], &[])
+    let model = model_builder.build().unwrap();
+    run_all_solvers(&model, &[], &[], &[])
 }
 
 /// A trait with a verify method for checking model outputs.
@@ -403,24 +396,38 @@ pub fn run_all_solvers(
 ) {
     #[cfg(feature = "clp")]
     {
-        if !solvers_to_skip.contains(&"clp") {
-            check_features_and_run::<ClpSolver>(model, !solvers_without_features.contains(&"clp"), expected_outputs);
+        let solver_config = ClpSolverSettings::default();
+        if !solvers_to_skip.contains(&solver_config.name()) {
+            check_features_and_run(
+                model,
+                &solver_config,
+                !solvers_without_features.contains(&solver_config.name()),
+                expected_outputs,
+            );
         }
     }
 
     #[cfg(feature = "cbc")]
     {
-        if !solvers_to_skip.contains(&"cbc") {
-            check_features_and_run::<CbcSolver>(model, !solvers_without_features.contains(&"cbc"), expected_outputs);
+        let solver_config = CbcSolverSettings::default();
+        if !solvers_to_skip.contains(&solver_config.name()) {
+            check_features_and_run(
+                model,
+                &solver_config,
+                !solvers_without_features.contains(&solver_config.name()),
+                expected_outputs,
+            );
         }
     }
 
     #[cfg(feature = "highs")]
     {
-        if !solvers_to_skip.contains(&"highs") {
-            check_features_and_run::<HighsSolver>(
+        let solver_config = HighsSolverSettings::default();
+        if !solvers_to_skip.contains(&solver_config.name()) {
+            check_features_and_run(
                 model,
-                !solvers_without_features.contains(&"highs"),
+                &solver_config,
+                !solvers_without_features.contains(&solver_config.name()),
                 expected_outputs,
             );
         }
@@ -428,10 +435,12 @@ pub fn run_all_solvers(
 
     #[cfg(feature = "microlp")]
     {
-        if !solvers_to_skip.contains(&"microlp") {
-            check_features_and_run::<crate::solvers::MicroLpSolver>(
+        let solver_config = crate::solvers::MicroLpSolverSettings::default();
+        if !solvers_to_skip.contains(&solver_config.name()) {
+            check_features_and_run(
                 model,
-                !solvers_without_features.contains(&"microlp"),
+                &solver_config,
+                !solvers_without_features.contains(&solver_config.name()),
                 expected_outputs,
             );
         }
@@ -439,10 +448,12 @@ pub fn run_all_solvers(
 
     #[cfg(feature = "ipm-simd")]
     {
-        if !solvers_to_skip.contains(&"ipm-simd") {
-            check_features_and_run_multi::<SimdIpmF64Solver>(
+        let solver_config = SimdIpmSolverSettings::default();
+        if !solvers_to_skip.contains(&solver_config.name()) {
+            check_features_and_run_multi(
                 model,
-                !solvers_without_features.contains(&"ipm-simd"),
+                &solver_config,
+                !solvers_without_features.contains(&solver_config.name()),
                 expected_outputs,
             );
         }
@@ -450,10 +461,12 @@ pub fn run_all_solvers(
 
     #[cfg(feature = "ipm-ocl")]
     {
-        if !solvers_to_skip.contains(&"ipm-ocl") {
-            check_features_and_run_multi::<ClIpmF64Solver>(
+        let solver_config = ClIpmF64Settings::default();
+        if !solvers_to_skip.contains(&solver_config.name()) {
+            check_features_and_run_multi(
                 model,
-                !solvers_without_features.contains(&"ipm-ocl"),
+                &solver_config,
+                !solvers_without_features.contains(&solver_config.name()),
                 expected_outputs,
             );
         }
@@ -479,21 +492,24 @@ pub fn run_all_solvers(
 
 /// Check features and
 #[cfg(any(feature = "cbc", feature = "clp", feature = "highs", feature = "microlp"))]
-fn check_features_and_run<S>(model: &Model, expect_features: bool, expected_outputs: &[Box<dyn VerifyExpected>])
-where
-    S: Solver,
-    <S as Solver>::Settings: SolverSettings + Default,
+fn check_features_and_run<C>(
+    model: &Model,
+    solver_config: &C,
+    expect_features: bool,
+    expected_outputs: &[Box<dyn VerifyExpected>],
+) where
+    C: SolverConfig + Default,
 {
-    let has_features = model.check_solver_features::<S>();
+    let has_features = model.check_solver_features(solver_config);
     if expect_features {
         assert!(
             has_features,
             "Solver `{}` was expected to have the required features",
-            S::name()
+            solver_config.name()
         );
         model
-            .run::<S>(&Default::default())
-            .unwrap_or_else(|e| panic!("Failed to solve with {}: {}", S::name(), e));
+            .run(solver_config)
+            .unwrap_or_else(|e| panic!("Failed to solve with {}: {}", solver_config.name(), e));
 
         // Verify any expected outputs
         for expected_output in expected_outputs {
@@ -503,95 +519,111 @@ where
         assert!(
             !has_features,
             "Solver `{}` was not expected to have the required features",
-            S::name()
+            solver_config.name()
         );
     }
 }
 
 /// Check features and run with a multi-scenario solver
 #[cfg(any(feature = "ipm-simd", feature = "ipm-ocl"))]
-fn check_features_and_run_multi<S>(model: &Model, expect_features: bool, _expected_outputs: &[Box<dyn VerifyExpected>])
-where
-    S: MultiStateSolver,
-    <S as MultiStateSolver>::Settings: SolverSettings + Default,
+fn check_features_and_run_multi<C>(
+    model: &Model,
+    solver_config: &C,
+    expect_features: bool,
+    _expected_outputs: &[Box<dyn VerifyExpected>],
+) where
+    C: MultiStateSolverConfig + Default,
 {
-    let has_features = model.check_multi_scenario_solver_features::<S>();
+    let has_features = model.check_multi_scenario_solver_features(solver_config);
     if expect_features {
         assert!(
             has_features,
             "Solver `{}` (with features: {:#?}) was expected to have the required features: {:?}",
-            S::name(),
-            S::features(),
+            solver_config.name(),
+            solver_config.features(),
             model.required_features()
         );
         model
-            .run_multi_scenario::<S>(&Default::default())
-            .unwrap_or_else(|_| panic!("Failed to solve with: {}", S::name()));
+            .run_multi_scenario(solver_config)
+            .unwrap_or_else(|_| panic!("Failed to solve with: {}", solver_config.name()));
     } else {
         assert!(
             !has_features,
             "Solver `{}` was not expected to have the required features",
-            S::name()
+            solver_config.name()
         );
     }
 }
 
 /// Make a simple system with random inputs.
 fn make_simple_system<R: Rng + ?Sized>(
-    network: &mut Network,
+    builder: &mut NetworkBuilder,
     suffix: &str,
     num_timesteps: usize,
     num_inflow_scenarios: usize,
-    inflow_scenario_group_index: usize,
+    inflow_scenario: &str,
     rng: &mut R,
-) -> Result<(), NetworkError> {
-    let input_idx = network.add_input_node("input", Some(suffix))?;
-    let link_idx = network.add_link_node("link", Some(suffix))?;
-    let output_idx = network.add_output_node("output", Some(suffix))?;
-
-    network.connect_nodes(input_idx, link_idx)?;
-    network.connect_nodes(link_idx, output_idx)?;
-
-    let inflow_distr: Normal<f64> = Normal::new(9.0, 1.0).unwrap();
-
-    let mut inflow = ndarray::Array2::zeros((num_timesteps, num_inflow_scenarios));
-
-    for x in inflow.iter_mut() {
-        *x = inflow_distr.sample(rng).max(0.0);
-    }
-    let inflow = Array2Parameter::new(
-        format!("inflow-{suffix}").as_str().into(),
-        inflow,
-        inflow_scenario_group_index,
-        None,
-    );
-    let idx = network.add_simple_parameter(Box::new(inflow))?;
-
-    network.set_node_max_flow("input", Some(suffix), Some(idx.into_metric_f64_before()))?;
-
+) {
+    let inflow_parameter_name = ParameterName::new("inflow", Some(suffix));
     let input_cost = rng.random_range(-20.0..-5.00);
-    network.set_node_cost("input", Some(suffix), Some(input_cost.into()))?;
+    let mut input_node = NodeBuilder::input("input");
+    input_node
+        .sub_name(suffix)
+        .max_flow(UnresolvedMetricF64::new_parameter_before(inflow_parameter_name.clone()))
+        .cost(input_cost.into());
+
+    builder.node(input_node);
+
+    let mut link_node = NodeBuilder::link("link");
+    link_node.sub_name(suffix);
+    builder.node(link_node);
 
     let outflow_distr = Normal::new(8.0, 3.0).unwrap();
     let mut outflow: f64 = outflow_distr.sample(rng);
     outflow = outflow.max(0.0);
 
-    network.set_node_max_flow("output", Some(suffix), Some(outflow.into()))?;
+    let mut output_node = NodeBuilder::output("output");
+    output_node
+        .sub_name(suffix)
+        .max_flow(outflow.into())
+        .cost((-500.0).into());
+    builder.node(output_node);
 
-    network.set_node_cost("output", Some(suffix), Some((-500.0).into()))?;
+    builder.connect(
+        UnresolvedNode::new("input", Some(suffix)),
+        UnresolvedNode::new("link", Some(suffix)),
+    );
+    builder.connect(
+        UnresolvedNode::new("link", Some(suffix)),
+        UnresolvedNode::new("output", Some(suffix)),
+    );
 
-    Ok(())
+    let inflow_distr: Normal<f64> = Normal::new(9.0, 1.0).unwrap();
+
+    let mut inflow: Vec<Float64Array> = Vec::with_capacity(num_inflow_scenarios);
+    for _ in 0..num_inflow_scenarios {
+        inflow.push(
+            (0..num_timesteps)
+                .map(|_| inflow_distr.sample(rng).max(0.0))
+                .collect::<Float64Array>(),
+        );
+    }
+
+    let inflow =
+        Array2ParameterBuilder::from_primitive_arrays(inflow_parameter_name, inflow.as_slice(), inflow_scenario);
+
+    builder.parameters().f64(Box::new(inflow));
 }
 
 /// Make a simple connections between random systems
 ///
 ///
 fn make_simple_connections<R: Rng>(
-    model: &mut Network,
+    network_builder: &mut NetworkBuilder,
     num_systems: usize,
     density: usize,
     rng: &mut R,
-) -> Result<(), NetworkError> {
+) {
     let num_connections = (num_systems.pow(2) * density / 100 / 2).max(1);
 
     let mut connections_added: usize = 0;
@@ -604,108 +636,82 @@ fn make_simple_connections<R: Rng>(
             continue;
         }
 
-        let name = format!("{i:04}->{j:04}");
+        let sub_name = format!("{i:04}->{j:04}");
+        let name = UnresolvedNode::new("transfer", Some(&sub_name));
 
-        if let Ok(idx) = model.add_link_node("transfer", Some(&name)) {
+        let transfer_already_exists = network_builder.node_builder(&name).is_some();
+
+        if !transfer_already_exists {
+            // Add a new transfers if it doesn't already exist
             let transfer_cost = rng.random_range(0.0..1.0);
-            model.set_node_cost("transfer", Some(&name), Some(transfer_cost.into()))?;
 
-            let from_suffix = format!("sys-{i:04}");
-            let from_idx = model
-                .get_node_index_by_name("link", Some(&from_suffix))
-                .expect("missing link node");
-            let to_suffix = format!("sys-{j:04}");
-            let to_idx = model
-                .get_node_index_by_name("link", Some(&to_suffix))
-                .expect("missing link node");
+            let mut node_builder = NodeBuilder::new("transfer", NodeType::Link);
+            node_builder.sub_name(&sub_name).cost(transfer_cost.into());
 
-            model.connect_nodes(from_idx, idx)?;
-            model.connect_nodes(idx, to_idx)?;
+            network_builder.node(node_builder);
+
+            network_builder.connect(
+                UnresolvedNode::new("link", Some(&format!("sys-{i:04}"))),
+                UnresolvedNode::new("transfer", Some(&sub_name)),
+            );
+            network_builder.connect(
+                UnresolvedNode::new("transfer", Some(&sub_name)),
+                UnresolvedNode::new("link", Some(&format!("sys-{j:04}"))),
+            );
 
             connections_added += 1;
         }
     }
-
-    Ok(())
 }
 
-pub fn make_random_model<R: Rng>(
+pub fn make_random_model_builder<R: Rng>(
     num_systems: usize,
     density: usize,
     num_scenarios: usize,
     rng: &mut R,
-) -> Result<Model, NetworkError> {
-    let start = NaiveDate::from_ymd_opt(2020, 1, 1)
-        .unwrap()
-        .and_hms_opt(0, 0, 0)
-        .unwrap();
-    let end = NaiveDate::from_ymd_opt(2020, 4, 9)
-        .unwrap()
-        .and_hms_opt(0, 0, 0)
-        .unwrap();
+) -> ModelBuilder {
+    let start = date(2020, 1, 1).at(0, 0, 0, 0);
+    let end = date(2020, 4, 9).at(0, 0, 0, 0);
     let duration = TimestepDuration::Days(NonZeroU64::new(1).unwrap());
-    let timestepper = Timestepper::new(start, end, duration);
+    let time_builder = TimeDomainBuilder::new(start, end, duration);
 
     let mut scenario_builder = ScenarioDomainBuilder::default();
-    let scenario_group = ScenarioGroupBuilder::new("test-scenario", num_scenarios)
-        .build()
-        .expect("Could not create scenario group");
-    scenario_builder = scenario_builder
-        .with_group(scenario_group)
-        .expect("Could not add scenario group");
+    let scenario_group = ScenarioGroupBuilder::new("test-scenario", num_scenarios);
+    scenario_builder.with_group(scenario_group);
 
-    let domain = ModelDomain::try_from(timestepper, scenario_builder).expect("Could not create model domain");
+    let mut domain_builder = ModelDomainBuilder::new(time_builder);
+    domain_builder.scenario(scenario_builder);
+    let domain = domain_builder.build().unwrap();
 
-    let inflow_scenario_group_index = domain
-        .scenarios()
-        .group_index("test-scenario")
-        .expect("Could not find scenario group.");
-
+    // Quickly build the domain to determine its shape so we can setup the correct input data.
     let (num_timesteps, num_inflow_scenarios) = domain.shape();
 
-    let mut network = Network::default();
+    let mut network_builder = NetworkBuilder::default();
     for i in 0..num_systems {
         let suffix = format!("sys-{i:04}");
         make_simple_system(
-            &mut network,
+            &mut network_builder,
             &suffix,
             num_timesteps,
             num_inflow_scenarios,
-            inflow_scenario_group_index,
+            "test-scenario",
             rng,
-        )?;
+        );
     }
 
-    make_simple_connections(&mut network, num_systems, density, rng)?;
+    make_simple_connections(&mut network_builder, num_systems, density, rng);
 
-    let model = Model::new(domain, network);
-
-    Ok(model)
+    ModelBuilder::new(domain, network_builder)
 }
 
-#[cfg(all(test, feature = "ipm-simd"))]
-mod tests {
-    use super::make_random_model;
-    use crate::solvers::{SimdIpmF64Solver, SimdIpmSolverSettings};
-    use rand::SeedableRng;
-    use rand_chacha::ChaCha8Rng;
+pub fn arrow_linspace_f64(start: f64, end: f64, num: usize) -> Float64Array {
+    let step = (end - start) / (num - 1) as f64;
+    Float64Array::from_iter((0..num).map(|i| start + i as f64 * step))
+}
 
-    #[test]
-    fn test_random_model() {
-        let n_sys = 50;
-        let density = 5;
-        let n_sc = 12;
-
-        // Make a consistent random number generator
-        // ChaCha8 should be consistent across builds and platforms
-        let mut rng = ChaCha8Rng::seed_from_u64(0);
-        let model = make_random_model(n_sys, density, n_sc, &mut rng).unwrap();
-
-        let settings = SimdIpmSolverSettings::default();
-        model
-            .run_multi_scenario::<SimdIpmF64Solver>(&settings)
-            .expect("Failed to run model!");
-    }
+pub fn arrow_linspace_u64(start: u64, end: u64, num: usize) -> UInt64Array {
+    let step = (end - start) / (num - 1) as u64;
+    UInt64Array::from_iter((0..num).map(|i| start + i as u64 * step))
 }
 
 /// Compare two arrays of f64
@@ -721,6 +727,55 @@ pub fn assert_approx_array_eq(calculated_values: &[f64], expected_values: &[f64]
                     actual: `{calculated:?}`,
                     expected: `{expected:?}`"#,
             )
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::arrow_linspace_f64;
+
+    #[cfg(feature = "ipm-simd")]
+    #[test]
+    fn test_random_model() {
+        use super::make_random_model_builder;
+        use crate::solvers::SimdIpmSolverSettings;
+        use rand::SeedableRng;
+        use rand_chacha::ChaCha8Rng;
+
+        let n_sys = 50;
+        let density = 5;
+        let n_sc = 12;
+
+        // Make a consistent random number generator
+        // ChaCha8 should be consistent across builds and platforms
+        let mut rng = ChaCha8Rng::seed_from_u64(0);
+        let model = make_random_model_builder(n_sys, density, n_sc, &mut rng)
+            .build()
+            .expect("Failed to builder random model.");
+
+        let settings = SimdIpmSolverSettings::default();
+        model.run_multi_scenario(&settings).expect("Failed to run model!");
+    }
+
+    #[test]
+    fn test_linspace_f64() {
+        let start = 0.0;
+        let end = 10.0;
+        let num = 5;
+        let array = arrow_linspace_f64(start, end, num);
+        let expected = [0.0, 2.5, 5.0, 7.5, 10.0];
+        assert_eq!(array.len(), expected.len());
+        for (i, (value, expected)) in array.iter().zip(expected.iter()).enumerate() {
+            let value = value.unwrap();
+            let expected = *expected;
+            assert!(
+                (value - expected).abs() < f64::EPSILON,
+                "Value at index {} is {}, expected {}",
+                i,
+                value,
+                expected
+            );
         }
     }
 }

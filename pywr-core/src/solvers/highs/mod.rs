@@ -1,8 +1,9 @@
 mod settings;
 
+use crate::clock::Instant;
 use crate::network::Network;
 use crate::solvers::builder::{BuiltSolver, ColType, SolverBuilder};
-use crate::solvers::{Solver, SolverFeatures, SolverSetupError, SolverSolveError, SolverTimings};
+use crate::solvers::{Solver, SolverConfig, SolverFeatures, SolverSetupError, SolverSolveError, SolverTimings};
 use crate::state::{ConstParameterValues, State};
 use crate::timestep::Timestep;
 use highs_sys::{
@@ -19,13 +20,9 @@ use highs_sys::{
     kHighsStatusWarning, kHighsVarTypeContinuous, kHighsVarTypeInteger,
 };
 use libc::c_void;
-#[cfg(feature = "pyo3")]
-pub use settings::build_highs_settings_py;
 pub use settings::{HighsSolverSettings, HighsSolverSettingsBuilder};
 use std::ffi::CString;
-use std::ops::Deref;
 use std::ptr::null;
-use std::time::Instant;
 use thiserror::Error;
 
 struct Highs {
@@ -69,19 +66,19 @@ fn to_highs_result(ret: i32, function: &str) -> Result<(), HighsStatusError> {
         r if r == kHighsStatusOk => Ok(()),
         r if r == kHighsStatusWarning => {
             // Log a warning, but continue
-            tracing::warn!("Highs warning in {function}: {ret}");
+            log::warn!("Highs warning in {function}: {ret}");
             Ok(())
         }
         r if r == kHighsStatusError => {
             // Log an error and return an error
-            tracing::error!("Highs error in {function}: {ret}");
+            log::error!("Highs error in {function}: {ret}");
             Err(HighsStatusError {
                 function: function.to_string(),
             })
         }
         _ => {
             // Log an unknown status and return an error
-            tracing::error!("Highs unknown status in {function}: {ret}");
+            log::error!("Highs unknown status in {function}: {ret}");
             panic!("Highs unknown status in {function}: {ret}");
         }
     }
@@ -148,7 +145,7 @@ fn to_highs_model_result(status: i32) -> Result<(), HighsModelError> {
         s if s == kHighsModelStatusInterrupt => Err(HighsModelError::Interrupt),
         _ => {
             // Log an unknown status and return an error
-            tracing::error!("Highs unknown model status: {status}");
+            log::error!("Highs unknown model status: {status}");
             panic!("Highs unknown model status in: {status}");
         }
     }
@@ -311,29 +308,24 @@ pub struct HighsSolver {
     highs: Highs,
 }
 
-impl Solver for HighsSolver {
-    type Settings = HighsSolverSettings;
+impl SolverConfig for HighsSolverSettings {
+    type Solver = HighsSolver;
 
-    fn name() -> &'static str {
+    fn name(&self) -> &'static str {
         "highs"
     }
 
-    fn features() -> &'static [SolverFeatures] {
+    fn features(&self) -> &'static [SolverFeatures] {
         &[
             SolverFeatures::VirtualStorage,
             SolverFeatures::MutualExclusivity,
             SolverFeatures::AggregatedNode,
             SolverFeatures::AggregatedNodeFactors,
             SolverFeatures::AggregatedNodeDynamicFactors,
-            SolverFeatures::VirtualStorage,
         ]
     }
 
-    fn setup(
-        network: &Network,
-        values: &ConstParameterValues,
-        _settings: &Self::Settings,
-    ) -> Result<Box<Self>, SolverSetupError> {
+    fn setup(&self, network: &Network, values: &ConstParameterValues) -> Result<Box<Self::Solver>, SolverSetupError> {
         let builder: SolverBuilder<HighsInt> = SolverBuilder::new(f64::MAX, -f64::MAX);
         let built = builder.create(network, values)?;
 
@@ -360,11 +352,14 @@ impl Solver for HighsSolver {
             built.elements(),
         )?;
 
-        Ok(Box::new(Self {
+        Ok(Box::new(HighsSolver {
             builder: built,
             highs: highs_lp,
         }))
     }
+}
+
+impl Solver for HighsSolver {
     fn solve(
         &mut self,
         network: &Network,
@@ -426,7 +421,7 @@ impl Solver for HighsSolver {
         network_state.reset();
         let start_save_solution = Instant::now();
 
-        for edge in network.edges().deref() {
+        for edge in network.edges() {
             let col = self.builder.col_for_edge(&edge.index()) as usize;
             let flow = solution[col];
             network_state.add_flow(edge, timestep, flow)?;

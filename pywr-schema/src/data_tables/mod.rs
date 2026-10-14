@@ -19,11 +19,17 @@ mod scalar;
 mod vec;
 
 use crate::ConversionError;
+#[cfg(feature = "core")]
+use crate::FileProvider;
 use crate::digest::{Checksum, ChecksumError};
+use crate::meta::NamedMeta;
 use crate::parameters::TableIndex;
+use crate::validation::TableReferenceProblem;
+#[cfg(feature = "core")]
+use log::{debug, info};
 #[cfg(feature = "pyo3")]
 use pyo3::pyclass;
-use pywr_schema_macros::{PywrVisitAll, skip_serializing_none};
+use pywr_schema_macros::{PywrVisitMetrics, PywrVisitPaths, skip_serializing_none};
 use pywr_v1_schema::parameters::TableDataRef as TableDataRefV1;
 #[cfg(feature = "core")]
 use scalar::LoadedScalarTable;
@@ -34,29 +40,35 @@ use std::path::{Path, PathBuf};
 use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumString, IntoStaticStr};
 use thiserror::Error;
 #[cfg(feature = "core")]
-use tracing::{debug, info};
-#[cfg(feature = "core")]
 use vec::LoadedVecTable;
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, Display, EnumIter)]
+#[derive(
+    serde::Deserialize,
+    serde::Serialize,
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    JsonSchema,
+    PywrVisitPaths,
+    Display,
+    EnumIter,
+)]
 pub enum DataTableValueType {
     Scalar,
     Array,
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Default, JsonSchema, PywrVisitAll)]
-pub struct TableMeta {
-    pub name: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub comment: Option<String>,
-}
-
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, Display, EnumDiscriminants)]
+#[derive(
+    serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitPaths, Display, EnumDiscriminants,
+)]
 #[serde(tag = "format")]
 #[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
 #[strum_discriminants(name(DataTableType))]
 pub enum DataTable {
     CSV(CsvDataTable),
+    Placeholder(PlaceholderTable),
 }
 
 impl DataTable {
@@ -64,21 +76,91 @@ impl DataTable {
         self.meta().name.as_str()
     }
 
-    pub fn meta(&self) -> &TableMeta {
+    pub fn meta(&self) -> &NamedMeta {
         match self {
             DataTable::CSV(tbl) => &tbl.meta,
+            DataTable::Placeholder(tbl) => &tbl.meta,
+        }
+    }
+
+    pub fn meta_mut(&mut self) -> &mut NamedMeta {
+        match self {
+            DataTable::CSV(tbl) => &mut tbl.meta,
+            DataTable::Placeholder(tbl) => &mut tbl.meta,
+        }
+    }
+
+    pub fn is_placeholder(&self) -> bool {
+        matches!(self, DataTable::Placeholder(_))
+    }
+
+    /// Check that `table_ref` fits this table.
+    ///
+    /// `expected` is the type of value the reference will read. Its labels are counted across `row`
+    /// and `column`, which pywr joins into one key.
+    ///
+    /// Any reference fits a placeholder, and one to a table whose lookup pywr cannot load is
+    /// checked for its value type only.
+    pub fn validate_reference(
+        &self,
+        table_ref: &TableDataRef,
+        expected: DataTableValueType,
+    ) -> Result<(), TableReferenceProblem> {
+        let DataTable::CSV(csv) = self else {
+            return Ok(());
+        };
+
+        if csv.ty != expected {
+            return Err(TableReferenceProblem::WrongValueType {
+                expected,
+                found: csv.ty,
+            });
+        }
+
+        if !csv.is_lookup_supported() {
+            // The issue here is an incorrect table definition, not necessarily
+            // a problem with this reference.
+            return Ok(());
+        }
+
+        let labels = table_ref.key();
+        let key_size = csv.key_size();
+
+        if labels.len() != key_size {
+            Err(TableReferenceProblem::WrongKeySize {
+                expected: key_size,
+                found: labels.len(),
+            })
+        } else if let Some(index) = labels.iter().position(|label| label.is_empty()) {
+            Err(TableReferenceProblem::EmptyLabel { index })
+        } else {
+            Ok(())
         }
     }
 
     #[cfg(feature = "core")]
-    pub fn load(&self, data_path: Option<&Path>) -> Result<LoadedTable, TableError> {
+    pub fn load(&self, files: &dyn FileProvider, data_path: Option<&Path>) -> Result<LoadedTable, TableError> {
         match self {
-            DataTable::CSV(tbl) => tbl.load_f64(data_path),
+            DataTable::CSV(tbl) => tbl.load_f64(files, data_path),
+            DataTable::Placeholder(tbl) => Err(TableError::PlaceholderTableNotAllowed {
+                name: tbl.meta.name.clone(),
+            }),
         }
     }
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, Display, EnumDiscriminants)]
+#[derive(
+    serde::Deserialize,
+    serde::Serialize,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    JsonSchema,
+    PywrVisitPaths,
+    Display,
+    EnumDiscriminants,
+)]
 #[serde(tag = "type", deny_unknown_fields)]
 #[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
 #[strum_discriminants(name(CsvDataTableLookupType))]
@@ -89,9 +171,9 @@ pub enum CsvDataTableLookup {
 }
 
 /// An external table of data that can be referenced
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitPaths)]
 pub struct CsvDataTable {
-    pub meta: TableMeta,
+    pub meta: NamedMeta,
     #[serde(rename = "type")]
     pub ty: DataTableValueType,
     pub lookup: CsvDataTableLookup,
@@ -99,33 +181,58 @@ pub struct CsvDataTable {
     pub checksum: Option<Checksum>,
 }
 
+impl CsvDataTable {
+    /// The number of labels in a key to the table, counting a `Both` lookup's `rows` and `cols`
+    /// together.
+    pub fn key_size(&self) -> usize {
+        match self.lookup {
+            CsvDataTableLookup::Row { cols } => cols,
+            CsvDataTableLookup::Col { rows } => rows,
+            CsvDataTableLookup::Both { rows, cols } => rows + cols,
+        }
+    }
+
+    /// Whether pywr can load a table with this lookup and type of values.
+    pub fn is_lookup_supported(&self) -> bool {
+        match (self.ty, &self.lookup) {
+            (_, CsvDataTableLookup::Row { cols: size } | CsvDataTableLookup::Col { rows: size }) => {
+                (1..=4).contains(size)
+            }
+            (DataTableValueType::Scalar, CsvDataTableLookup::Both { rows, cols }) => {
+                (1..=2).contains(rows) && (1..=2).contains(cols)
+            }
+            (DataTableValueType::Array, CsvDataTableLookup::Both { .. }) => false,
+        }
+    }
+}
+
 #[cfg(feature = "core")]
 impl CsvDataTable {
-    fn load_f64(&self, data_path: Option<&Path>) -> Result<LoadedTable, TableError> {
+    fn load_f64(&self, files: &dyn FileProvider, data_path: Option<&Path>) -> Result<LoadedTable, TableError> {
         let fp = make_path(&self.url, data_path);
 
         if let Some(checksum) = &self.checksum {
-            checksum.check(&fp)?;
+            checksum.check(files, &fp)?;
         }
 
         match &self.ty {
             DataTableValueType::Scalar => match self.lookup {
-                CsvDataTableLookup::Row { cols: rows } => {
-                    Ok(LoadedTable::FloatScalar(LoadedScalarTable::from_csv_row(&fp, rows)?))
-                }
-                CsvDataTableLookup::Col { rows: cols } => {
-                    Ok(LoadedTable::FloatScalar(LoadedScalarTable::from_csv_col(&fp, cols)?))
-                }
+                CsvDataTableLookup::Row { cols: rows } => Ok(LoadedTable::FloatScalar(
+                    LoadedScalarTable::from_csv_row(files, &fp, rows)?,
+                )),
+                CsvDataTableLookup::Col { rows: cols } => Ok(LoadedTable::FloatScalar(
+                    LoadedScalarTable::from_csv_col(files, &fp, cols)?,
+                )),
                 CsvDataTableLookup::Both { rows, cols } => Ok(LoadedTable::FloatScalar(
-                    LoadedScalarTable::from_csv_row_col(&fp, rows, cols)?,
+                    LoadedScalarTable::from_csv_row_col(files, &fp, rows, cols)?,
                 )),
             },
             DataTableValueType::Array => match self.lookup {
                 CsvDataTableLookup::Row { cols: rows } => {
-                    Ok(LoadedTable::FloatVec(LoadedVecTable::from_csv_row(&fp, rows)?))
+                    Ok(LoadedTable::FloatVec(LoadedVecTable::from_csv_row(files, &fp, rows)?))
                 }
                 CsvDataTableLookup::Col { rows: cols } => {
-                    Ok(LoadedTable::FloatVec(LoadedVecTable::from_csv_col(&fp, cols)?))
+                    Ok(LoadedTable::FloatVec(LoadedVecTable::from_csv_col(files, &fp, cols)?))
                 }
                 CsvDataTableLookup::Both { .. } => Err(TableError::FormatNotSupported(
                     "CSV row & column array table is not supported. Use either row or column based format.".to_string(),
@@ -133,6 +240,12 @@ impl CsvDataTable {
             },
         }
     }
+}
+
+/// A placeholder for an external table of data that can be referenced
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitPaths)]
+pub struct PlaceholderTable {
+    pub meta: NamedMeta,
 }
 
 /// Make a finalised path for reading data from.
@@ -157,21 +270,41 @@ pub enum TableLoadError {}
 
 #[derive(Error, Debug)]
 pub enum TableError {
-    #[error("table not found: {0}")]
+    #[error("Table not found: {0}")]
     TableNotFound(String),
-    #[error("entry not found")]
+    #[error("Entry not found")]
     EntryNotFound,
-    #[error("wrong key size; expected: {0}; given: {1}")]
+    #[error("Wrong key size; expected: {0}; given: {1}")]
     WrongKeySize(usize, usize),
-    #[error("failed to get or parse key")]
+    #[error("Failed to get or parse key")]
     KeyParse,
-    #[error("I/O error: {0}")]
-    IO(String),
-    #[error("CSV error: {0}")]
-    Csv(String),
+    #[error("IO error on path `{path}`.")]
+    IO {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+    #[error("CSV error on path `{path}`.")]
+    Csv {
+        path: PathBuf,
+        #[source]
+        source: csv::Error,
+    },
+    #[error("Not enough header rows in table at path `{path}`. Expected {expected} rows, found {found} rows.")]
+    NotEnoughHeaderRows {
+        expected: usize,
+        found: usize,
+        path: PathBuf,
+    },
+    #[error("Row length mismatch in table at path `{path}`. Expected {expected} columns, found {found} columns.")]
+    RowLengthMismatch {
+        path: PathBuf,
+        expected: usize,
+        found: usize,
+    },
     #[error("Format not supported: {0}")]
     FormatNotSupported(String),
-    #[error("Failed to parse: {0}")]
+    #[error("Failed to parse floating point number.")]
     ParseFloatError(#[from] std::num::ParseFloatError),
     #[error("Wrong table format: {0}")]
     WrongTableFormat(String),
@@ -189,8 +322,10 @@ pub enum TableError {
     InvalidFormat(String),
     #[error("Could not convert to u64 without loss of precision. Index values must be positive whole numbers.")]
     U64ConversionError,
-    #[error("Checksum error: {0}")]
+    #[error("Checksum error.")]
     ChecksumError(#[from] ChecksumError),
+    #[error("Placeholder table `{name}` cannot be loaded.")]
+    PlaceholderTableNotAllowed { name: String },
 }
 
 #[cfg(feature = "core")]
@@ -235,7 +370,7 @@ impl LoadedTable {
 #[cfg(feature = "core")]
 #[derive(Error, Debug)]
 pub enum TableCollectionLoadError {
-    #[error("Failed to load table `{name}`: {source}")]
+    #[error("Failed to load table `{name}`.")]
     TableError {
         name: String,
         #[source]
@@ -248,7 +383,7 @@ pub enum TableCollectionLoadError {
 #[cfg(feature = "core")]
 #[derive(Error, Debug)]
 pub enum TableCollectionError {
-    #[error("Failed to get value from table `{name}`: {source}")]
+    #[error("Failed to get value from table `{name}`.")]
     TableError {
         name: String,
         #[source]
@@ -267,19 +402,21 @@ pub struct LoadedTableCollection {
 impl LoadedTableCollection {
     pub fn from_schema(
         table_defs: Option<&[DataTable]>,
+        files: &dyn FileProvider,
         data_path: Option<&Path>,
     ) -> Result<Self, TableCollectionLoadError> {
         let mut tables = HashMap::new();
         if let Some(table_defs) = table_defs {
             for table_def in table_defs {
                 let name = table_def.name().to_string();
-                info!("Loading table: {}", &name);
-                let table = table_def
-                    .load(data_path)
-                    .map_err(|source| TableCollectionLoadError::TableError {
-                        name: name.clone(),
-                        source,
-                    })?;
+                info!("Loading table: {}", name);
+                let table =
+                    table_def
+                        .load(files, data_path)
+                        .map_err(|source| TableCollectionLoadError::TableError {
+                            name: name.clone(),
+                            source,
+                        })?;
 
                 if tables.contains_key(&name) {
                     return Err(TableCollectionLoadError::DuplicateTableName { name });
@@ -333,17 +470,20 @@ impl LoadedTableCollection {
     }
 }
 
+// No `VisitReferences` impl on purpose: only the type holding a `TableDataRef` knows whether it
+// reads a single value or an array, so these implement `VisitReferences` themselves.
 #[skip_serializing_none]
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll, PartialEq)]
+#[derive(
+    serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitMetrics, PywrVisitPaths, PartialEq,
+)]
 #[serde(deny_unknown_fields)]
-#[cfg_attr(feature = "pyo3", pyclass)]
+#[cfg_attr(feature = "pyo3", pyclass(from_py_object))]
 pub struct TableDataRef {
     pub table: String,
     pub column: Option<TableIndex>,
     pub row: Option<TableIndex>,
 }
 
-#[cfg(feature = "core")]
 impl TableDataRef {
     pub fn key(&self) -> Vec<&str> {
         let mut key: Vec<&str> = Vec::new();
@@ -394,6 +534,7 @@ impl TryFrom<TableDataRefV1> for TableDataRef {
 #[cfg(feature = "core")]
 mod tests {
     use super::*;
+    use crate::FileSystem;
     use std::fs;
     use std::fs::File;
     use std::io::Write;
@@ -437,11 +578,39 @@ my-reservoir,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2,0.2";
         // Deserialize the representation
         let tbl: DataTable = serde_json::from_str(&table_def).unwrap();
         // Load the table definition
-        let tbl = tbl.load(None).unwrap();
+        let tbl = tbl.load(&FileSystem, None).unwrap();
 
         let values: Vec<f64> = tbl.get_vec_f64(&["my-reservoir"]).unwrap().to_vec();
 
         assert_eq!(values, vec![0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2]);
+    }
+
+    /// [`CsvDataTable::is_lookup_supported`] should hold for exactly the lookups the loader takes.
+    /// It refuses any other before opening the file, so no file is needed.
+    #[test]
+    fn test_is_lookup_supported_follows_the_loader() {
+        let lookups = (0..=5)
+            .flat_map(|n| [CsvDataTableLookup::Row { cols: n }, CsvDataTableLookup::Col { rows: n }])
+            .chain((0..=3).flat_map(|rows| (0..=3).map(move |cols| CsvDataTableLookup::Both { rows, cols })));
+
+        for lookup in lookups {
+            for ty in [DataTableValueType::Scalar, DataTableValueType::Array] {
+                let table = CsvDataTable {
+                    meta: NamedMeta::default(),
+                    ty,
+                    lookup: lookup.clone(),
+                    url: PathBuf::from("missing.csv"),
+                    checksum: None,
+                };
+
+                let supported = !matches!(
+                    table.load_f64(&FileSystem, None),
+                    Err(TableError::FormatNotSupported(_))
+                );
+
+                assert_eq!(table.is_lookup_supported(), supported, "{ty} table with {lookup:?}");
+            }
+        }
     }
 
     /// Test all the documentation examples successfully deserialize.

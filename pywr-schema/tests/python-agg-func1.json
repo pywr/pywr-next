@@ -4,7 +4,7 @@
     "description": "A simple example showing how to use a Python function to aggregate data.",
     "minimum_version": "0.1"
   },
-  "timestepper": {
+  "time": {
     "start": "2015-01-01",
     "end": "2015-01-03",
     "timestep": {
@@ -95,6 +95,7 @@
             "multiplier": 1.5
           }
         },
+        "phase": "Before",
         "metrics": [
           {
             "type": "Parameter",
@@ -109,7 +110,7 @@
     ],
     "metric_sets": [
       {
-        "name": "parameters",
+        "meta": {"name": "parameters"},
         "metrics": [
           {
             "type": "Parameter",
@@ -120,7 +121,7 @@
     ],
     "outputs": [
       {
-        "name": "nodes",
+        "meta": {"name": "nodes"},
         "type": "CSV",
         "format": "Long",
         "filename": "python-agg-func1-expected.csv",

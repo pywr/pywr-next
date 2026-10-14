@@ -1,6 +1,7 @@
 [
   {
     "type": "Threshold",
+    "phase": "Before",
     "meta": {
       "name": "my-threshold-param"
     },
@@ -16,10 +17,11 @@
   },
   {
     "type": "IndexedArray",
+    "phase": "Before",
     "meta": {
       "name": "my-indexed-array-param"
     },
-    "index_parameter": {
+    "index_metric": {
       "type": "Parameter",
       "name": "my-threshold-param"
     },

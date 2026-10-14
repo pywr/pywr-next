@@ -1,14 +1,15 @@
 use crate::error::ComponentConversionError;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
+use crate::meta::NamedMeta;
 use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::network::LoadArgs;
-use crate::parameters::{ConversionData, ParameterMeta};
+use crate::parameters::ConversionData;
 use crate::v1::{TryFromV1, TryIntoV2};
-
+use crate::validation::ParameterProblem;
 #[cfg(feature = "core")]
-use pywr_core::parameters::{ParameterIndex, ParameterName};
+use pywr_core::parameters::ParameterName;
 use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::parameters::DiscountFactorParameter as DiscountFactorParameterV1;
 use schemars::JsonSchema;
@@ -17,26 +18,39 @@ use schemars::JsonSchema;
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct DiscountFactorParameter {
-    pub meta: ParameterMeta,
+    pub meta: NamedMeta,
     pub discount_rate: Metric,
-    pub base_year: i32,
+    pub base_year: i16,
+}
+
+impl DiscountFactorParameter {
+    /// Check that a literal `discount_rate` is above -1: core divides by `(1 + rate)^year`.
+    pub fn validate(&self) -> Result<(), Vec<ParameterProblem>> {
+        match self.discount_rate {
+            Metric::Literal { value } if value <= -1.0 => Err(vec![ParameterProblem::DiscountRateTooLow]),
+            _ => Ok(()),
+        }
+    }
 }
 
 #[cfg(feature = "core")]
 impl DiscountFactorParameter {
-    pub fn add_to_model(
+    pub fn add_to_network(
         &self,
-        network: &mut pywr_core::network::Network,
+        network: &mut pywr_core::network::NetworkBuilder,
         args: &LoadArgs,
         parent: Option<&str>,
-    ) -> Result<ParameterIndex<f64>, SchemaError> {
-        let discount_rate = self.discount_rate.load(network, args, None)?;
-        let p = pywr_core::parameters::DiscountFactorParameter::new(
+    ) -> Result<(), SchemaError> {
+        let discount_rate = self.discount_rate.load(network, args, parent)?;
+        let p = pywr_core::parameters::DiscountFactorParameterBuilder::new(
             ParameterName::new(&self.meta.name, parent),
             discount_rate,
             self.base_year,
         );
-        Ok(network.add_parameter(Box::new(p))?)
+
+        network.parameters().f64(Box::new(p));
+
+        Ok(())
     }
 }
 
@@ -48,12 +62,12 @@ impl TryFromV1<DiscountFactorParameterV1> for DiscountFactorParameter {
         parent_node: Option<&str>,
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: ParameterMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
+        let meta: NamedMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
         let discount_rate = Metric::from(v1.rate);
         Ok(Self {
             meta,
             discount_rate,
-            base_year: v1.base_year as i32,
+            base_year: v1.base_year as i16,
         })
     }
 }

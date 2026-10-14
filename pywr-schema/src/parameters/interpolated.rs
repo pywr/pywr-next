@@ -2,14 +2,15 @@ use crate::ConversionError;
 use crate::error::ComponentConversionError;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
+use crate::meta::NamedMeta;
 use crate::metric::{Metric, NodeAttrReference};
 #[cfg(feature = "core")]
 use crate::network::LoadArgs;
-use crate::parameters::{ConversionData, ParameterMeta};
+use crate::parameters::{ConversionData, ParameterPhase};
 use crate::v1::{TryFromV1, TryIntoV2, try_convert_parameter_attr};
-
+use crate::validation::{ParameterProblem, check_interpolation_points};
 #[cfg(feature = "core")]
-use pywr_core::parameters::{ParameterIndex, ParameterName};
+use pywr_core::parameters::ParameterName;
 use pywr_schema_macros::{PywrVisitAll, skip_serializing_none};
 use pywr_v1_schema::parameters::{
     InterpolatedFlowParameter as InterpolatedFlowParameterV1,
@@ -25,7 +26,8 @@ use schemars::JsonSchema;
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct InterpolatedParameter {
-    pub meta: ParameterMeta,
+    pub meta: NamedMeta,
+    pub phase: ParameterPhase,
     pub x: Metric,
     pub xp: Vec<Metric>,
     pub fp: Vec<Metric>,
@@ -33,15 +35,34 @@ pub struct InterpolatedParameter {
     pub error_on_bounds: Option<bool>,
 }
 
+impl InterpolatedParameter {
+    pub const DEFAULT_ERROR_ON_BOUNDS: bool = true;
+
+    /// Check that `xp` and `fp` can be interpolated between.
+    pub fn validate(&self) -> Result<(), Vec<ParameterProblem>> {
+        let xp: Vec<Option<f64>> = self
+            .xp
+            .iter()
+            .map(|x| match x {
+                Metric::Literal { value } => Some(*value),
+                _ => None,
+            })
+            .collect();
+
+        check_interpolation_points(&xp, self.fp.len())
+            .map_err(|problems| problems.into_iter().map(ParameterProblem::Interpolation).collect())
+    }
+}
+
 #[cfg(feature = "core")]
 impl InterpolatedParameter {
-    pub fn add_to_model(
+    pub fn add_to_network(
         &self,
-        network: &mut pywr_core::network::Network,
+        network: &mut pywr_core::network::NetworkBuilder,
         args: &LoadArgs,
         parent: Option<&str>,
-    ) -> Result<ParameterIndex<f64>, SchemaError> {
-        let x = self.x.load(network, args, None)?;
+    ) -> Result<(), SchemaError> {
+        let x = self.x.load(network, args, parent)?;
 
         // Sense check the points
         if self.xp.len() != self.fp.len() {
@@ -54,23 +75,34 @@ impl InterpolatedParameter {
         let xp = self
             .xp
             .iter()
-            .map(|p| p.load(network, args, None))
+            .map(|p| p.load(network, args, parent))
             .collect::<Result<Vec<_>, _>>()?;
         let fp = self
             .fp
             .iter()
-            .map(|p| p.load(network, args, None))
+            .map(|p| p.load(network, args, parent))
             .collect::<Result<Vec<_>, _>>()?;
 
         let points = xp.into_iter().zip(fp).collect::<Vec<_>>();
 
-        let p = pywr_core::parameters::InterpolatedParameter::new(
-            ParameterName::new(&self.meta.name, parent),
-            x,
-            points,
-            self.error_on_bounds.unwrap_or(true),
-        );
-        Ok(network.add_parameter(Box::new(p))?)
+        let name = ParameterName::new(&self.meta.name, parent);
+        let error_on_bounds = self.error_on_bounds.unwrap_or(Self::DEFAULT_ERROR_ON_BOUNDS);
+
+        let builder = match self.phase {
+            ParameterPhase::Before => {
+                pywr_core::parameters::InterpolatedParameterBuilder::before(name, x, points, error_on_bounds)
+            }
+            ParameterPhase::After => {
+                pywr_core::parameters::InterpolatedParameterBuilder::after(name, x, points, error_on_bounds)
+            }
+            ParameterPhase::Both => {
+                pywr_core::parameters::InterpolatedParameterBuilder::both(name, x, points, error_on_bounds)
+            }
+        };
+
+        network.parameters().f64(Box::new(builder));
+
+        Ok(())
     }
 }
 
@@ -82,7 +114,7 @@ impl TryFromV1<InterpolatedFlowParameterV1> for InterpolatedParameter {
         parent_node: Option<&str>,
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: ParameterMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
+        let meta: NamedMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
 
         // Convert the node reference to a metric
         let node_ref = NodeAttrReference {
@@ -115,18 +147,17 @@ impl TryFromV1<InterpolatedFlowParameterV1> for InterpolatedParameter {
             }
 
             // Check if non-linear interpolation is requested; this is not supported at the moment.
-            if let Some(kind) = interp_kwargs.get("kind") {
-                if let Some(kind_str) = kind.as_str() {
-                    if kind_str != "linear" {
-                        return Err(Box::new(ComponentConversionError::Parameter {
-                            name: meta.name.clone(),
-                            attr: "interp_kwargs".to_string(),
-                            error: ConversionError::UnsupportedFeature {
-                                feature: "Interpolation with `kind` other than `linear` is not supported.".to_string(),
-                            },
-                        }));
-                    }
-                }
+            if let Some(kind) = interp_kwargs.get("kind")
+                && let Some(kind_str) = kind.as_str()
+                && kind_str != "linear"
+            {
+                return Err(Box::new(ComponentConversionError::Parameter {
+                    name: meta.name.clone(),
+                    attr: "interp_kwargs".to_string(),
+                    error: ConversionError::UnsupportedFeature {
+                        feature: "Interpolation with `kind` other than `linear` is not supported.".to_string(),
+                    },
+                }));
             }
         }
 
@@ -136,6 +167,7 @@ impl TryFromV1<InterpolatedFlowParameterV1> for InterpolatedParameter {
             xp,
             fp,
             error_on_bounds,
+            phase: ParameterPhase::Before,
         })
     }
 }
@@ -148,7 +180,7 @@ impl TryFromV1<InterpolatedVolumeParameterV1> for InterpolatedParameter {
         parent_node: Option<&str>,
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: ParameterMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
+        let meta: NamedMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
 
         // Convert the node reference to a metric
         let node_ref = NodeAttrReference {
@@ -181,18 +213,17 @@ impl TryFromV1<InterpolatedVolumeParameterV1> for InterpolatedParameter {
             }
 
             // Check if non-linear interpolation is requested; this is not supported at the moment.
-            if let Some(kind) = interp_kwargs.get("kind") {
-                if let Some(kind_str) = kind.as_str() {
-                    if kind_str != "linear" {
-                        return Err(Box::new(ComponentConversionError::Parameter {
-                            name: meta.name.clone(),
-                            attr: "interp_kwargs".to_string(),
-                            error: ConversionError::UnsupportedFeature {
-                                feature: "Interpolation with `kind` other than `linear` is not supported.".to_string(),
-                            },
-                        }));
-                    }
-                }
+            if let Some(kind) = interp_kwargs.get("kind")
+                && let Some(kind_str) = kind.as_str()
+                && kind_str != "linear"
+            {
+                return Err(Box::new(ComponentConversionError::Parameter {
+                    name: meta.name.clone(),
+                    attr: "interp_kwargs".to_string(),
+                    error: ConversionError::UnsupportedFeature {
+                        feature: "Interpolation with `kind` other than `linear` is not supported.".to_string(),
+                    },
+                }));
             }
         }
 
@@ -202,6 +233,7 @@ impl TryFromV1<InterpolatedVolumeParameterV1> for InterpolatedParameter {
             xp,
             fp,
             error_on_bounds,
+            phase: ParameterPhase::Before,
         })
     }
 }

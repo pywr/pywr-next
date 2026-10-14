@@ -1,12 +1,9 @@
-use crate::metric::{MetricF64, MetricF64Error};
-use crate::network::Network;
+use crate::metric::{MetricConsumerPhase, MetricF64, MetricF64Error, MetricF64ResolutionError, UnresolvedMetricF64};
+use crate::network::{Network, ResolutionMaps};
 use crate::recorders::aggregator::{Aggregator, AggregatorState, PeriodValue};
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
 use crate::timestep::Timestep;
-use std::fmt;
-use std::fmt::{Display, Formatter};
-use std::ops::Deref;
 use thiserror::Error;
 
 /// A container for a [`MetricF64`] that retains additional information from the schema.
@@ -25,18 +22,8 @@ pub struct OutputMetric {
 }
 
 impl OutputMetric {
-    pub fn new(name: &str, attribute: &str, ty: &str, sub_type: Option<&str>, metric: MetricF64) -> Self {
-        Self {
-            name: name.to_string(),
-            attribute: attribute.to_string(),
-            ty: ty.to_string(),
-            sub_type: sub_type.map(|s| s.to_string()),
-            metric,
-        }
-    }
-
-    pub fn get_value(&self, model: &Network, state: &State) -> Result<f64, MetricF64Error> {
-        self.metric.get_value(model, state)
+    pub fn get_value(&self, network: &Network, state: &State) -> Result<f64, MetricF64Error> {
+        self.metric.get_value(network, state)
     }
 
     pub fn name(&self) -> &str {
@@ -53,28 +40,49 @@ impl OutputMetric {
     pub fn sub_type(&self) -> Option<&str> {
         self.sub_type.as_deref()
     }
-}
 
-#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Debug)]
-pub struct MetricSetIndex(usize);
-
-impl MetricSetIndex {
-    pub fn new(idx: usize) -> Self {
-        Self(idx)
+    /// Get a fully qualified name for the metric that includes the type and subtype (if any) and
+    /// attribute.
+    pub fn fully_qualified_name(&self) -> String {
+        if let Some(sub_type) = &self.sub_type {
+            format!("{}.{}.{}.{}", self.ty, sub_type, self.name, self.attribute)
+        } else {
+            format!("{}.{}.{}", self.ty, self.name, self.attribute)
+        }
     }
 }
 
-impl Deref for MetricSetIndex {
-    type Target = usize;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
+#[derive(Debug, Clone, PartialEq)]
+pub struct UnresolvedOutputMetric {
+    name: String,
+    attribute: String,
+    // The originating type of the metric (e.g. node, parameter, etc.)
+    ty: String,
+    // The originating subtype of the metric (e.g. node type, parameter type, etc.)
+    sub_type: Option<String>,
+    metric: UnresolvedMetricF64,
 }
 
-impl Display for MetricSetIndex {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
+impl UnresolvedOutputMetric {
+    pub fn new(name: &str, attribute: &str, ty: &str, sub_type: Option<&str>, metric: UnresolvedMetricF64) -> Self {
+        Self {
+            name: name.to_string(),
+            attribute: attribute.to_string(),
+            ty: ty.to_string(),
+            sub_type: sub_type.map(|s| s.to_string()),
+            metric,
+        }
+    }
+
+    pub fn resolve(self, resolution_maps: &ResolutionMaps) -> Result<OutputMetric, MetricF64ResolutionError> {
+        let metric = self.metric.resolve(resolution_maps, MetricConsumerPhase::After)?;
+        Ok(OutputMetric {
+            name: self.name,
+            attribute: self.attribute,
+            ty: self.ty,
+            sub_type: self.sub_type,
+            metric,
+        })
     }
 }
 
@@ -94,7 +102,7 @@ impl MetricSetState {
 
 #[derive(Debug, Error)]
 pub enum MetricSetSaveError {
-    #[error("Metric error: {0}")]
+    #[error("Metric error.")]
     MetricF64Error(#[from] MetricF64Error),
 }
 
@@ -107,20 +115,12 @@ pub struct MetricSet {
 }
 
 impl MetricSet {
-    pub fn new(name: &str, aggregator: Option<Aggregator>, metrics: Vec<OutputMetric>) -> Self {
-        Self {
-            name: name.to_string(),
-            aggregator,
-            metrics,
-        }
-    }
-
     /// The name of the [`MetricSet`].
     pub fn name(&self) -> &str {
         &self.name
     }
-    pub fn iter_metrics(&self) -> impl Iterator<Item = &OutputMetric> + '_ {
-        self.metrics.iter()
+    pub fn metrics(&self) -> &[OutputMetric] {
+        &self.metrics
     }
 
     /// Setup a new [`MetricSetState`] for this [`MetricSet`].
@@ -138,7 +138,7 @@ impl MetricSet {
         &self,
         timestep: &Timestep,
         _scenario_index: &ScenarioIndex,
-        model: &Network,
+        network: &Network,
         state: &State,
         internal_state: &mut MetricSetState,
     ) -> Result<(), MetricSetSaveError> {
@@ -147,7 +147,7 @@ impl MetricSet {
             .metrics
             .iter()
             .map(|metric| {
-                let value = metric.get_value(model, state)?;
+                let value = metric.get_value(network, state)?;
                 Ok::<PeriodValue<f64>, MetricF64Error>(PeriodValue::new(timestep.date, timestep.duration, value))
             })
             .collect::<Result<Vec<_>, _>>()?;
@@ -207,5 +207,118 @@ impl MetricSet {
         } else {
             internal_state.current_values = None;
         }
+    }
+}
+
+#[derive(Error, Debug)]
+pub enum MetricSetBuilderError {
+    #[error("Could not resolve output f64 metric `{name}`.")]
+    ResolveMetricF64Error {
+        name: String,
+        #[source]
+        source: MetricF64ResolutionError,
+    },
+}
+
+/// What [`MetricSetBuilder::build`] does with a metric whose parameter does not calculate the
+/// phase it asks for.
+#[derive(Debug)]
+enum IfNotCalculated {
+    Fail,
+    Drop,
+}
+
+#[derive(Debug)]
+pub struct MetricSetBuilder {
+    name: String,
+    aggregator: Option<Aggregator>,
+    metrics: Vec<(UnresolvedOutputMetric, IfNotCalculated)>,
+}
+
+impl MetricSetBuilder {
+    pub fn new(name: &str) -> Self {
+        Self {
+            name: name.to_string(),
+            aggregator: None,
+            metrics: Vec::new(),
+        }
+    }
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn aggregator(&mut self, aggregator: Aggregator) -> &mut Self {
+        self.aggregator = Some(aggregator);
+        self
+    }
+
+    pub fn metric(&mut self, metric: UnresolvedOutputMetric) -> &mut Self {
+        self.metrics.push((metric, IfNotCalculated::Fail));
+        self
+    }
+
+    /// Add a metric that is dropped, rather than failing the build, if its parameter does not
+    /// calculate the phase it asks for.
+    pub fn metric_if_calculated(&mut self, metric: UnresolvedOutputMetric) -> &mut Self {
+        self.metrics.push((metric, IfNotCalculated::Drop));
+        self
+    }
+
+    pub fn build(self, resolution_maps: &ResolutionMaps) -> Result<MetricSet, MetricSetBuilderError> {
+        use MetricF64ResolutionError::ParameterNotRegisteredInCorrectPhase;
+
+        let mut metrics = Vec::with_capacity(self.metrics.len());
+        for (metric, if_not_calculated) in self.metrics {
+            let name = metric.name.clone();
+            match (metric.resolve(resolution_maps), if_not_calculated) {
+                (Ok(metric), _) => metrics.push(metric),
+                (Err(ParameterNotRegisteredInCorrectPhase { .. }), IfNotCalculated::Drop) => {}
+                (Err(source), _) => return Err(MetricSetBuilderError::ResolveMetricF64Error { name, source }),
+            }
+        }
+
+        let ms = MetricSet {
+            name: self.name,
+            aggregator: self.aggregator,
+            metrics,
+        };
+
+        Ok(ms)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{MetricSetBuilder, UnresolvedOutputMetric};
+    use crate::metric::UnresolvedMetricF64;
+    use crate::network::NetworkBuilder;
+    use crate::parameters::ConstantParameterBuilder;
+    use crate::test_utils::default_domain;
+    use std::collections::HashMap;
+
+    /// Asking for a constant parameter's after value, which it does not calculate, drops a metric
+    /// added by `metric_if_calculated` and fails the build for one added by `metric`.
+    #[test]
+    fn test_metric_if_calculated() {
+        let output_metric = |metric| UnresolvedOutputMetric::new("p", "value", "Parameter", None, metric);
+        let build = |metric_set| {
+            let mut builder = NetworkBuilder::default();
+            builder
+                .parameters()
+                .f64(Box::new(ConstantParameterBuilder::new("p".into(), 1.0)));
+            builder.metric_set(metric_set);
+            builder.build(&default_domain(), &HashMap::new())
+        };
+
+        let mut metric_set = MetricSetBuilder::new("metric-if-calculated");
+        metric_set
+            .metric(output_metric(UnresolvedMetricF64::new_parameter_before("p")))
+            .metric_if_calculated(output_metric(UnresolvedMetricF64::new_parameter_after("p")));
+        let (network, _) = build(metric_set).unwrap();
+        assert_eq!(network.metric_sets()[0].metrics().len(), 1);
+
+        let mut metric_set = MetricSetBuilder::new("metric");
+        metric_set.metric(output_metric(UnresolvedMetricF64::new_parameter_after("p")));
+        assert!(build(metric_set).is_err());
     }
 }

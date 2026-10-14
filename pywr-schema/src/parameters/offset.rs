@@ -1,12 +1,12 @@
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
+use crate::meta::NamedMeta;
 use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::network::LoadArgs;
-use crate::parameters::{ConstantValue, ParameterMeta, VariableSettings};
-
+use crate::parameters::{ConstantValue, ParameterPhase, VariableSettings};
 #[cfg(feature = "core")]
-use pywr_core::parameters::{ParameterIndex, ParameterName};
+use pywr_core::parameters::ParameterName;
 use pywr_schema_macros::{PywrVisitAll, skip_serializing_none};
 use schemars::JsonSchema;
 
@@ -29,7 +29,8 @@ use schemars::JsonSchema;
 #[serde(deny_unknown_fields)]
 pub struct OffsetParameter {
     /// Meta-data.
-    pub meta: ParameterMeta,
+    pub meta: NamedMeta,
+    pub phase: ParameterPhase,
     /// The offset value applied to the metric.
     ///
     /// In the simple case this will be the value used by the network. However, if an activation
@@ -44,19 +45,29 @@ pub struct OffsetParameter {
 
 #[cfg(feature = "core")]
 impl OffsetParameter {
-    pub fn add_to_model(
+    pub fn add_to_network(
         &self,
-        network: &mut pywr_core::network::Network,
+        network: &mut pywr_core::network::NetworkBuilder,
         args: &LoadArgs,
         parent: Option<&str>,
-    ) -> Result<ParameterIndex<f64>, SchemaError> {
-        let idx = self.metric.load(network, args, None)?;
+    ) -> Result<(), SchemaError> {
+        let metric = self.metric.load(network, args, parent)?;
+        let name = ParameterName::new(&self.meta.name, parent);
 
-        let p = pywr_core::parameters::OffsetParameter::new(
-            ParameterName::new(&self.meta.name, parent),
-            idx,
-            self.offset.load(args.tables)?,
-        );
-        Ok(network.add_parameter(Box::new(p))?)
+        let p = match self.phase {
+            ParameterPhase::Before => {
+                pywr_core::parameters::OffsetParameterBuilder::before(name, metric, self.offset.load(args.tables)?)
+            }
+            ParameterPhase::After => {
+                pywr_core::parameters::OffsetParameterBuilder::after(name, metric, self.offset.load(args.tables)?)
+            }
+            ParameterPhase::Both => {
+                pywr_core::parameters::OffsetParameterBuilder::both(name, metric, self.offset.load(args.tables)?)
+            }
+        };
+
+        network.parameters().f64(Box::new(p));
+
+        Ok(())
     }
 }

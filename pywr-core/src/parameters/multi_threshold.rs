@@ -1,37 +1,22 @@
-use crate::metric::MetricF64;
-use crate::network::Network;
-use crate::parameters::errors::{ParameterCalculationError, ParameterSetupError};
+use crate::metric::{MetricConsumerPhase, MetricF64, UnresolvedMetricF64};
+use crate::network::ResolutionMaps;
+use crate::parameters::errors::{GeneralCalculationError, ParameterSetupError};
 use crate::parameters::{
-    GeneralParameter, Parameter, ParameterMeta, ParameterName, ParameterState, Predicate, downcast_internal_state_mut,
+    BuiltParameter, GeneralAfterParameter, GeneralBeforeParameter, GeneralParameter, GeneralParameterContext,
+    GeneralParameterEntry, MaybeBuiltParameter, Parameter, ParameterBuildError, ParameterBuilder, ParameterMeta,
+    ParameterName, ParameterState, Predicate, downcast_internal_state_mut,
 };
 use crate::scenario::ScenarioIndex;
-use crate::state::State;
 use crate::timestep::Timestep;
+use crate::{resolve_metric_f64, resolve_metric_f64_vec};
 
+#[derive(Debug)]
 pub struct MultiThresholdParameter {
     meta: ParameterMeta,
     metric: MetricF64,
     thresholds: Vec<MetricF64>,
     predicate: Predicate,
     ratchet: bool,
-}
-
-impl MultiThresholdParameter {
-    pub fn new(
-        name: ParameterName,
-        metric: MetricF64,
-        thresholds: &[MetricF64],
-        predicate: Predicate,
-        ratchet: bool,
-    ) -> Self {
-        Self {
-            meta: ParameterMeta::new(name),
-            metric,
-            thresholds: thresholds.to_vec(),
-            predicate,
-            ratchet,
-        }
-    }
 }
 
 impl Parameter for MultiThresholdParameter {
@@ -50,24 +35,30 @@ impl Parameter for MultiThresholdParameter {
     }
 }
 
-impl GeneralParameter<u64> for MultiThresholdParameter {
+impl GeneralParameter for MultiThresholdParameter {
+    fn as_parameter(&self) -> &dyn Parameter
+    where
+        Self: Sized,
+    {
+        self
+    }
+}
+
+impl GeneralBeforeParameter<u64> for MultiThresholdParameter {
     fn before(
         &self,
-        _timestep: &Timestep,
-        _scenario_index: &ScenarioIndex,
-        model: &Network,
-        state: &State,
+        ctx: GeneralParameterContext<'_>,
         internal_state: &mut Option<Box<dyn ParameterState>>,
-    ) -> Result<Option<u64>, ParameterCalculationError> {
+    ) -> Result<u64, GeneralCalculationError> {
         // Downcast the internal state to the correct type
         let previous_max = downcast_internal_state_mut::<u64>(internal_state);
 
-        let value = self.metric.get_value(model, state)?;
+        let value = self.metric.get_value(ctx.network, ctx.state)?;
 
         // Determine the first threshold that is met
         let mut position: u64 = 0;
         for threshold in &self.thresholds {
-            let t = threshold.get_value(model, state)?;
+            let t = threshold.get_value(ctx.network, ctx.state)?;
             let active = self.predicate.apply(value, t);
 
             if active {
@@ -81,56 +72,169 @@ impl GeneralParameter<u64> for MultiThresholdParameter {
             if position > *previous_max {
                 *previous_max = position;
             } else {
-                return Ok(Some(*previous_max));
+                return Ok(*previous_max);
             }
         }
 
-        Ok(Some(position))
+        Ok(position)
+    }
+}
+
+impl GeneralAfterParameter<u64> for MultiThresholdParameter {
+    fn after(
+        &self,
+        ctx: GeneralParameterContext<'_>,
+        internal_state: &mut Option<Box<dyn ParameterState>>,
+    ) -> Result<u64, GeneralCalculationError> {
+        // Downcast the internal state to the correct type
+        let previous_max = downcast_internal_state_mut::<u64>(internal_state);
+
+        let value = self.metric.get_value(ctx.network, ctx.state)?;
+
+        // Determine the first threshold that is met
+        let mut position: u64 = 0;
+        for threshold in &self.thresholds {
+            let t = threshold.get_value(ctx.network, ctx.state)?;
+            let active = self.predicate.apply(value, t);
+
+            if active {
+                break;
+            }
+            position += 1;
+        }
+
+        if self.ratchet {
+            // If ratchet is enabled, we only update if the new position is greater than the previous max
+            if position > *previous_max {
+                *previous_max = position;
+            } else {
+                return Ok(*previous_max);
+            }
+        }
+
+        Ok(position)
+    }
+}
+
+#[derive(Debug)]
+pub struct MultiThresholdParameterBuilder {
+    meta: ParameterMeta,
+    metric: UnresolvedMetricF64,
+    thresholds: Vec<UnresolvedMetricF64>,
+    predicate: Predicate,
+    ratchet: bool,
+    phase: MetricConsumerPhase,
+}
+
+impl MultiThresholdParameterBuilder {
+    /// Create a new builder for [`MultiThresholdParameter`] that is evaluated in the "before" phase.
+    pub fn before(name: ParameterName, metric: UnresolvedMetricF64, predicate: Predicate) -> Self {
+        Self {
+            meta: ParameterMeta::new(name),
+            metric,
+            thresholds: Vec::new(),
+            predicate,
+            ratchet: false,
+            phase: MetricConsumerPhase::Before,
+        }
     }
 
-    fn as_parameter(&self) -> &dyn Parameter
-    where
-        Self: Sized,
-    {
+    /// Create a new builder for [`MultiThresholdParameter`] that is evaluated in the "after" phase.
+    pub fn after(name: ParameterName, metric: UnresolvedMetricF64, predicate: Predicate) -> Self {
+        Self {
+            meta: ParameterMeta::new(name),
+            metric,
+            thresholds: Vec::new(),
+            predicate,
+            ratchet: false,
+            phase: MetricConsumerPhase::After,
+        }
+    }
+
+    /// Create a new builder for [`MultiThresholdParameter`] that is evaluated in both "before" and "after" phases.
+    pub fn both(name: ParameterName, metric: UnresolvedMetricF64, predicate: Predicate) -> Self {
+        Self {
+            meta: ParameterMeta::new(name),
+            metric,
+            thresholds: Vec::new(),
+            predicate,
+            ratchet: false,
+            phase: MetricConsumerPhase::Both,
+        }
+    }
+
+    /// Enable ratchet
+    pub fn ratchet(&mut self) -> &mut Self {
+        self.ratchet = true;
         self
+    }
+
+    /// Add a threshold to the builder. The thresholds should be added in order.
+    pub fn threshold(&mut self, threshold: UnresolvedMetricF64) -> &mut Self {
+        self.thresholds.push(threshold);
+        self
+    }
+}
+
+impl ParameterBuilder<u64> for MultiThresholdParameterBuilder {
+    fn name(&self) -> &ParameterName {
+        &self.meta.name
+    }
+
+    fn build(
+        self: Box<Self>,
+        resolution_maps: &ResolutionMaps,
+    ) -> Result<MaybeBuiltParameter<u64>, ParameterBuildError> {
+        let metric = resolve_metric_f64!(self, self.metric, resolution_maps, self.phase, "metric");
+        let thresholds = resolve_metric_f64_vec!(self, &self.thresholds, resolution_maps, self.phase, "thresholds");
+
+        let p = MultiThresholdParameter {
+            meta: self.meta,
+            metric,
+            thresholds,
+            predicate: self.predicate,
+            ratchet: self.ratchet,
+        };
+
+        let built = match self.phase {
+            MetricConsumerPhase::Before => BuiltParameter::General(GeneralParameterEntry::before(p)),
+            MetricConsumerPhase::After => BuiltParameter::General(GeneralParameterEntry::after(p)),
+            MetricConsumerPhase::Both => BuiltParameter::General(GeneralParameterEntry::both(p)),
+        };
+
+        Ok(built.into())
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::MultiThresholdParameter;
-    use crate::metric::MetricF64;
-    use crate::parameters::{Array1Parameter, Predicate};
-    use crate::test_utils::{run_and_assert_parameter_u64, simple_model};
-    use ndarray::{Array1, Array2, Axis, concatenate};
+    use super::MultiThresholdParameterBuilder;
+    use crate::metric::UnresolvedMetricF64;
+    use crate::parameters::{Array1ParameterBuilder, Predicate};
+    use crate::test_utils::{arrow_linspace_f64, run_and_assert_parameter_u64, simple_model};
+    use arrow::compute::concat;
+    use ndarray::{Array1, Array2, Axis};
 
     /// Basic functional test of the `MultiThresholdParameter` parameter.
     #[test]
     fn test_multi_threshold() {
-        let mut model = simple_model(1, None);
+        let mut model_builder = simple_model(1, None);
 
         // Create an artificial volume series to use for the delay test
-        let v1 = Array1::linspace(1.0, 0.0, 11);
-        let v2 = Array1::linspace(0.1, 1.0, 10);
+        let v1 = arrow_linspace_f64(1.0, 0.0, 11);
+        let v2 = arrow_linspace_f64(0.1, 1.0, 10);
+        let volumes = concat(&[&v1, &v2]).unwrap();
+        let volume = Array1ParameterBuilder::from_array_ref("test-x".into(), &volumes);
 
-        let volumes = concatenate![Axis(0), v1, v2];
+        model_builder.network_builder().parameters().f64(Box::new(volume));
 
-        let volume = Array1Parameter::new("test-x".into(), volumes.clone(), None);
-
-        let volume_idx = model.network_mut().add_simple_parameter(Box::new(volume)).unwrap();
-
-        let t1: MetricF64 = 0.75.into();
-        let t2: MetricF64 = 0.5.into();
-
-        let thresholds = vec![t1, t2];
-
-        let parameter = MultiThresholdParameter::new(
+        let mut parameter = MultiThresholdParameterBuilder::before(
             "test-parameter".into(),
-            volume_idx.into_metric_f64_before(),
-            &thresholds,
+            UnresolvedMetricF64::new_parameter_before("test-x"),
             Predicate::GreaterThan,
-            false,
         );
+
+        parameter.threshold(0.75.into()).threshold(0.5.into());
 
         // The multi-threshold parameter should return the index of the first threshold that is met.
         // In this case, the thresholds are 0.75 and 0.5,
@@ -138,36 +242,30 @@ mod tests {
 
         let expected_values: Array2<u64> = expected_values.insert_axis(Axis(1));
 
-        run_and_assert_parameter_u64(&mut model, Box::new(parameter), expected_values);
+        run_and_assert_parameter_u64(model_builder, Box::new(parameter), expected_values);
     }
 
     /// Basic functional test of the `MultiThresholdParameter` parameter with ratchet enabled.
     #[test]
     fn test_multi_threshold_with_ratchet() {
-        let mut model = simple_model(1, None);
+        let mut model_builder = simple_model(1, None);
 
         // Create an artificial volume series to use for the delay test
-        let v1 = Array1::linspace(1.0, 0.0, 11);
-        let v2 = Array1::linspace(0.1, 1.0, 10);
+        let v1 = arrow_linspace_f64(1.0, 0.0, 11);
+        let v2 = arrow_linspace_f64(0.1, 1.0, 10);
+        let volumes = concat(&[&v1, &v2]).unwrap();
 
-        let volumes = concatenate![Axis(0), v1, v2];
+        let volume = Array1ParameterBuilder::from_array_ref("test-x".into(), &volumes);
 
-        let volume = Array1Parameter::new("test-x".into(), volumes.clone(), None);
+        model_builder.network_builder().parameters().f64(Box::new(volume));
 
-        let volume_idx = model.network_mut().add_simple_parameter(Box::new(volume)).unwrap();
-
-        let t1: MetricF64 = 0.75.into();
-        let t2: MetricF64 = 0.5.into();
-
-        let thresholds = vec![t1, t2];
-
-        let parameter = MultiThresholdParameter::new(
+        let mut parameter = MultiThresholdParameterBuilder::before(
             "test-parameter".into(),
-            volume_idx.into_metric_f64_before(),
-            &thresholds,
+            UnresolvedMetricF64::new_parameter_before("test-x"),
             Predicate::GreaterThan,
-            true,
         );
+
+        parameter.threshold(0.75.into()).threshold(0.5.into()).ratchet();
 
         // The multi-threshold parameter should return the index of the first threshold that is met,
         // but with ratchet enabled, it should not decrease the value once it has been set.
@@ -176,6 +274,6 @@ mod tests {
 
         let expected_values: Array2<u64> = expected_values.insert_axis(Axis(1));
 
-        run_and_assert_parameter_u64(&mut model, Box::new(parameter), expected_values);
+        run_and_assert_parameter_u64(model_builder, Box::new(parameter), expected_values);
     }
 }

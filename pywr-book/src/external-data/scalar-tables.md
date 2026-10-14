@@ -7,7 +7,7 @@ easily change the model's parameters without modifying the JSON. However, this c
 the values are not directly visible in the JSON.
 
 > **Note**: Currently, Pywr supports up to 4 keys for scalar data tables. This means you can have up to 4 row indices,
-> or a combination of row and column indices that total 4.
+> up to 4 column indices, or 1 or 2 row indices combined with 1 or 2 column indices.
 
 ## Row-based scalar data tables
 

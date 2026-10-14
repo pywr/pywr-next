@@ -6,6 +6,8 @@
 pub mod clp {
     include!("clp.rs");
 
+    include!("clp_extensions.rs");
+
     #[cfg(test)]
     mod tests {
 

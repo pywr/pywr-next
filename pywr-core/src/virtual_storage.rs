@@ -1,184 +1,313 @@
 use crate::NodeIndex;
-use crate::metric::{MetricF64, MetricF64Error, SimpleMetricF64, SimpleMetricF64Error};
-use crate::network::{Network, NetworkError};
-use crate::node::{NodeMeta, StorageConstraints, StorageInitialVolume};
+use crate::aggregated_node::RelationshipBuildError;
+use crate::metric::{
+    MetricConsumerPhase, MetricF64, MetricF64Error, MetricF64ResolutionError, SimpleMetricF64Error, UnresolvedMetricF64,
+};
+use crate::network::{Network, ResolutionMaps, VirtualStorageIndex};
+use crate::node::{NodeMeta, StorageConstraints, StorageInitialVolume, UnresolvedNode, UnresolvedStorageInitialVolume};
 use crate::state::{NetworkStateError, State, StateError, VirtualStorageState};
 use crate::timestep::Timestep;
-use chrono::{Datelike, Month, NaiveDate, NaiveDateTime};
-use std::fmt;
-use std::fmt::{Display, Formatter};
+use jiff::civil::{Date, DateTime};
 use std::num::NonZeroUsize;
-use std::ops::{Deref, DerefMut};
 use thiserror::Error;
 
-#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Debug, Hash)]
-pub struct VirtualStorageIndex(usize);
-
-impl Deref for VirtualStorageIndex {
-    type Target = usize;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
+#[derive(Debug, Error)]
+pub enum VirtualStorageNodeBuilderError {
+    #[error("Index not found in resolution map.")]
+    IndexNotFound,
+    #[error("Could not resolve f64 metric for `{attr}` attribute.")]
+    ResolveMetricF64Error {
+        attr: String,
+        #[source]
+        source: MetricF64ResolutionError,
+    },
+    #[error("Could not simplify f64 metric for `{attr}` attribute.")]
+    CouldNotSimplifyMetricF64 {
+        attr: String,
+        #[source]
+        source: MetricF64Error,
+    },
+    #[error("Reference to node not found.")]
+    NodeIndexNotFound { node: UnresolvedNode },
+    #[error(
+        "Found {num_factors} factors and {num_nodes} nodes. The number of factors should equal the number of nodes."
+    )]
+    IncorrectNumberOfFactors { num_factors: usize, num_nodes: usize },
+    #[error("Error building relationship.")]
+    RelationshipBuildError(#[from] RelationshipBuildError),
 }
 
-impl Display for VirtualStorageIndex {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-#[derive(Default)]
-pub struct VirtualStorageVec {
-    nodes: Vec<VirtualStorage>,
-}
-
-impl Deref for VirtualStorageVec {
-    type Target = Vec<VirtualStorage>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.nodes
-    }
-}
-
-impl DerefMut for VirtualStorageVec {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.nodes
-    }
-}
-
-impl VirtualStorageVec {
-    pub fn get(&self, index: &VirtualStorageIndex) -> Option<&VirtualStorage> {
-        self.nodes.get(index.0)
-    }
-
-    pub fn get_mut(&mut self, index: &VirtualStorageIndex) -> Option<&mut VirtualStorage> {
-        self.nodes.get_mut(index.0)
-    }
-
-    pub fn push_new(&mut self, builder: VirtualStorageBuilder) -> Result<VirtualStorageIndex, NetworkError> {
-        if self.nodes.iter().any(|n| n.name() == builder.name) {
-            return Err(NetworkError::NodeAlreadyExists {
-                name: builder.name.clone(),
-                sub_name: builder.sub_name.clone(),
-            });
-        }
-
-        let node_index = VirtualStorageIndex(self.nodes.len());
-        let node = builder.build(node_index);
-        self.nodes.push(node);
-        Ok(node_index)
-    }
-}
-
-/// Builder for creating a [`VirtualStorage`] node.
-pub struct VirtualStorageBuilder {
-    name: String,
-    sub_name: Option<String>,
-    nodes: Vec<NodeIndex>,
-    factors: Option<Vec<f64>>,
-    initial_volume: StorageInitialVolume,
+/// Builder for creating a [`VirtualStorageNode`] node.
+#[derive(Debug)]
+pub struct VirtualStorageNodeBuilder {
+    name: UnresolvedNode,
+    nodes: Vec<UnresolvedNode>,
+    factors: Vec<f64>,
+    initial_volume: UnresolvedStorageInitialVolume,
     reset: VirtualStorageReset,
     reset_volume: VirtualStorageResetVolume,
     rolling_window: Option<NonZeroUsize>,
     active_period: VirtualStorageActivePeriod,
+    cost: Option<UnresolvedMetricF64>,
+    max_volume: Option<UnresolvedMetricF64>,
+    min_volume: Option<UnresolvedMetricF64>,
 }
 
-impl VirtualStorageBuilder {
-    pub fn new(name: &str, nodes: &[NodeIndex]) -> Self {
+impl VirtualStorageNodeBuilder {
+    /// `factors` holds one factor for each node, in the same order.
+    pub fn new(
+        name: &str,
+        nodes: &[UnresolvedNode],
+        factors: &[f64],
+        initial_volume: UnresolvedStorageInitialVolume,
+        reset: VirtualStorageReset,
+        reset_volume: VirtualStorageResetVolume,
+        active_period: VirtualStorageActivePeriod,
+    ) -> Self {
+        let name = UnresolvedNode::new(name, None);
         Self {
-            name: name.to_string(),
-            sub_name: None,
+            name,
             nodes: nodes.to_vec(),
-            factors: None,
-            initial_volume: StorageInitialVolume::Absolute(0.0),
-            reset: VirtualStorageReset::Never,
-            reset_volume: VirtualStorageResetVolume::Initial,
+            factors: factors.to_vec(),
+            initial_volume,
+            reset,
+            reset_volume,
             rolling_window: None,
-            active_period: VirtualStorageActivePeriod::Always,
+            active_period,
+            cost: None,
+            max_volume: None,
+            min_volume: None,
         }
     }
 
-    pub fn sub_name(mut self, sub_name: &str) -> Self {
-        self.sub_name = Some(sub_name.to_string());
+    pub fn name(&self) -> &UnresolvedNode {
+        &self.name
+    }
+
+    /// The slice of regular node names linked to the virtual storage builder.
+    pub fn nodes(&self) -> &[UnresolvedNode] {
+        &self.nodes
+    }
+
+    pub fn sub_name(&mut self, sub_name: &str) -> &mut Self {
+        self.name.set_sub_name(Some(sub_name));
         self
     }
 
-    pub fn factors(mut self, factors: &[f64]) -> Self {
-        self.factors = Some(factors.to_vec());
+    pub fn cost(&mut self, cost: UnresolvedMetricF64) -> &mut Self {
+        self.cost = Some(cost);
         self
     }
 
-    pub fn initial_volume(mut self, initial_volume: StorageInitialVolume) -> Self {
-        self.initial_volume = initial_volume;
+    pub fn max_volume(&mut self, max_volume: UnresolvedMetricF64) -> &mut Self {
+        self.max_volume = Some(max_volume);
         self
     }
 
-    pub fn reset(mut self, reset: VirtualStorageReset) -> Self {
-        self.reset = reset;
+    pub fn min_volume(&mut self, min_volume: UnresolvedMetricF64) -> &mut Self {
+        self.min_volume = Some(min_volume);
         self
     }
 
-    pub fn reset_volume(mut self, reset_volume: VirtualStorageResetVolume) -> Self {
-        self.reset_volume = reset_volume;
-        self
-    }
-
-    pub fn rolling_window(mut self, rolling_window: NonZeroUsize) -> Self {
+    pub fn rolling_window(&mut self, rolling_window: NonZeroUsize) -> &mut Self {
         self.rolling_window = Some(rolling_window);
         self
     }
 
-    pub fn active_period(mut self, active_period: VirtualStorageActivePeriod) -> Self {
-        self.active_period = active_period;
-        self
+    /// Build a [`StorageConstraints`] from the builder.
+    fn build_storage_constraints(
+        &self,
+        resolution_maps: &ResolutionMaps,
+    ) -> Result<StorageConstraints, VirtualStorageNodeBuilderError> {
+        let min_volume = self
+            .min_volume
+            .as_ref()
+            .map(|min_volume| {
+                min_volume
+                    .resolve(resolution_maps, MetricConsumerPhase::Before)
+                    .map_err(|source| VirtualStorageNodeBuilderError::ResolveMetricF64Error {
+                        attr: "min_volume".to_string(),
+                        source,
+                    })?
+                    .try_into()
+                    .map_err(|source| VirtualStorageNodeBuilderError::CouldNotSimplifyMetricF64 {
+                        attr: "max_volume".to_string(),
+                        source,
+                    })
+            })
+            .transpose()?;
+
+        let max_volume = self
+            .max_volume
+            .as_ref()
+            .map(|max_volume| {
+                max_volume
+                    .resolve(resolution_maps, MetricConsumerPhase::Before)
+                    .map_err(|source| VirtualStorageNodeBuilderError::ResolveMetricF64Error {
+                        attr: "max_volume".to_string(),
+                        source,
+                    })?
+                    .try_into()
+                    .map_err(|source| VirtualStorageNodeBuilderError::CouldNotSimplifyMetricF64 {
+                        attr: "max_volume".to_string(),
+                        source,
+                    })
+            })
+            .transpose()?;
+
+        let storage_constraints = StorageConstraints::new(min_volume, max_volume);
+
+        Ok(storage_constraints)
     }
 
-    pub fn build(self, index: VirtualStorageIndex) -> VirtualStorage {
-        // Default to unit factors if none provided
-        let factors = self.factors.unwrap_or(vec![1.0; self.nodes.len()]);
+    fn build_storage_initial_volume(
+        &self,
+        resolution_maps: &ResolutionMaps,
+    ) -> Result<StorageInitialVolume, VirtualStorageNodeBuilderError> {
+        match &self.initial_volume {
+            UnresolvedStorageInitialVolume::Absolute(iv) => Ok(StorageInitialVolume::Absolute(*iv)),
+            UnresolvedStorageInitialVolume::Proportional(iv) => Ok(StorageInitialVolume::Proportional(*iv)),
+            UnresolvedStorageInitialVolume::DistributedAbsolute {
+                absolute,
+                prior_max_volume,
+            } => {
+                let prior_max_volume = prior_max_volume
+                    .resolve(resolution_maps, MetricConsumerPhase::Before)
+                    .map_err(|source| VirtualStorageNodeBuilderError::ResolveMetricF64Error {
+                        attr: "prior_max_volume".to_string(),
+                        source,
+                    })?
+                    .try_into()
+                    .map_err(|source| VirtualStorageNodeBuilderError::CouldNotSimplifyMetricF64 {
+                        attr: "prior_max_volume".to_string(),
+                        source,
+                    })?;
+                Ok(StorageInitialVolume::DistributedAbsolute {
+                    absolute: *absolute,
+                    prior_max_volume,
+                })
+            }
+            UnresolvedStorageInitialVolume::DistributedProportional {
+                proportion,
+                total_volume,
+                prior_max_volume,
+            } => {
+                let total_volume = total_volume
+                    .resolve(resolution_maps, MetricConsumerPhase::Before)
+                    .map_err(|source| VirtualStorageNodeBuilderError::ResolveMetricF64Error {
+                        attr: "total_volume".to_string(),
+                        source,
+                    })?
+                    .try_into()
+                    .map_err(|source| VirtualStorageNodeBuilderError::CouldNotSimplifyMetricF64 {
+                        attr: "total_volume".to_string(),
+                        source,
+                    })?;
+                let prior_max_volume = prior_max_volume
+                    .resolve(resolution_maps, MetricConsumerPhase::Before)
+                    .map_err(|source| VirtualStorageNodeBuilderError::ResolveMetricF64Error {
+                        attr: "prior_max_volume".to_string(),
+                        source,
+                    })?
+                    .try_into()
+                    .map_err(|source| VirtualStorageNodeBuilderError::CouldNotSimplifyMetricF64 {
+                        attr: "prior_max_volume".to_string(),
+                        source,
+                    })?;
 
-        VirtualStorage {
-            meta: NodeMeta::new(index, &self.name, self.sub_name.as_deref()),
-            nodes: self.nodes,
-            factors,
-            initial_volume: self.initial_volume,
-            storage_constraints: StorageConstraints::new(None, None),
-            reset: self.reset,
-            reset_volume: self.reset_volume,
-            rolling_window: self.rolling_window,
-            active_period: self.active_period,
-            cost: None,
+                Ok(StorageInitialVolume::DistributedProportional {
+                    total_volume,
+                    proportion: *proportion,
+                    prior_max_volume,
+                })
+            }
         }
+    }
+
+    pub fn build(
+        &self,
+        resolution_maps: &ResolutionMaps,
+    ) -> Result<VirtualStorageNode, VirtualStorageNodeBuilderError> {
+        let index = resolution_maps
+            .virtual_storage_node
+            .get(&self.name)
+            .ok_or(VirtualStorageNodeBuilderError::IndexNotFound)?;
+        let meta = NodeMeta::from_unresolved_name(self.name.clone(), *index);
+
+        if self.factors.len() != self.nodes.len() {
+            return Err(VirtualStorageNodeBuilderError::IncorrectNumberOfFactors {
+                num_factors: self.factors.len(),
+                num_nodes: self.nodes.len(),
+            });
+        }
+        let nodes = self
+            .nodes
+            .iter()
+            .map(|unresolved| {
+                resolution_maps.nodes.get(unresolved).copied().ok_or_else(|| {
+                    VirtualStorageNodeBuilderError::NodeIndexNotFound {
+                        node: unresolved.clone(),
+                    }
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let cost = self
+            .cost
+            .as_ref()
+            .map(|cost| cost.resolve(resolution_maps, MetricConsumerPhase::Before))
+            .transpose()
+            .map_err(|source| VirtualStorageNodeBuilderError::ResolveMetricF64Error {
+                attr: "cost".to_string(),
+                source,
+            })?;
+
+        let vs = VirtualStorageNode {
+            meta,
+            nodes,
+            factors: self.factors.clone(),
+            initial_volume: self.build_storage_initial_volume(resolution_maps)?,
+            storage_constraints: self.build_storage_constraints(resolution_maps)?,
+            reset: self.reset.clone(),
+            reset_volume: self.reset_volume.clone(),
+            rolling_window: self.rolling_window,
+            active_period: self.active_period.clone(),
+            cost,
+        };
+
+        Ok(vs)
     }
 }
 
 /// Defines when the virtual storage volume should be reset.
+#[derive(Debug, Clone)]
 pub enum VirtualStorageReset {
     Never,
-    DayOfYear { day: u32, month: Month },
+    DayOfYear { day: i8, month: i8 },
     NumberOfMonths { months: i32 },
 }
 
 /// When resetting the virtual storage volume, this enum defines how much volume to set.
+#[derive(Debug, Clone)]
 pub enum VirtualStorageResetVolume {
     Initial,
     Max,
 }
 
 /// Active periods for a virtual storage node.
+#[derive(Debug, Clone)]
 pub enum VirtualStorageActivePeriod {
     Always,
     Period {
-        start_day: u32,
-        start_month: Month,
-        end_day: u32,
-        end_month: Month,
+        start_day: i8,
+        start_month: i8,
+        end_day: i8,
+        end_month: i8,
     },
 }
 
 impl VirtualStorageActivePeriod {
-    fn is_active(&self, timestep: &NaiveDate) -> bool {
+    fn is_active(&self, timestep: &Date) -> bool {
         match self {
             Self::Always => true,
             Self::Period {
@@ -187,21 +316,17 @@ impl VirtualStorageActivePeriod {
                 end_day,
                 end_month,
             } => {
-                let start_month_num = start_month.number_from_month();
-                let end_month_num = end_month.number_from_month();
                 let current_month = timestep.month();
                 let current_day = timestep.day();
 
-                if start_month_num < end_month_num || (start_month_num == end_month_num && start_day <= end_day) {
+                if start_month < end_month || (start_month == end_month && start_day <= end_day) {
                     // Period does not wrap around the year end
-                    (current_month > start_month_num || (current_month == start_month_num && current_day >= *start_day))
-                        && (current_month < end_month_num
-                            || (current_month == end_month_num && current_day <= *end_day))
+                    (current_month > *start_month || (current_month == *start_month && current_day >= *start_day))
+                        && (current_month < *end_month || (current_month == *end_month && current_day <= *end_day))
                 } else {
                     // Period wraps around the year end
-                    (current_month > start_month_num || (current_month == start_month_num && current_day >= *start_day))
-                        || (current_month < end_month_num
-                            || (current_month == end_month_num && current_day <= *end_day))
+                    (current_month > *start_month || (current_month == *start_month && current_day >= *start_day))
+                        || (current_month < *end_month || (current_month == *end_month && current_day <= *end_day))
                 }
             }
         }
@@ -210,11 +335,11 @@ impl VirtualStorageActivePeriod {
 
 #[derive(Debug, Error)]
 pub enum VirtualStorageError {
-    #[error("Network state error: {0}")]
+    #[error("Network state error.")]
     NetworkStateError(#[from] NetworkStateError),
-    #[error("State error: {0}")]
+    #[error("State error.")]
     StateError(#[from] StateError),
-    #[error("Simple metric error: {0}")]
+    #[error("Simple metric error.")]
     SimpleMetricError(#[from] SimpleMetricF64Error),
 }
 
@@ -222,14 +347,15 @@ pub enum VirtualStorageError {
 ///
 /// Virtual storage are not part of the main network but can have their volume "used" by
 /// association with real nodes. Flow through one or more nodes lowers the virtual storage
-/// volume by a corresponding factor (default 1.0). Flow can be constrained in those nodes
+/// volume by a corresponding factor. Flow can be constrained in those nodes
 /// if it were to violate the virtual storage's min or max volume limits.
 ///
 /// Virtual storage volume can be reset at different frequencies. See [`VirtualStorageReset`]
 /// for the choices. In addition, a rolling window can be provided as a number of time-steps.
 /// Volume is recovered into the virtual storage after this number of time-steps once per time-step
 /// with the oldest value added back to the volume.
-pub struct VirtualStorage {
+#[derive(Debug)]
+pub struct VirtualStorageNode {
     meta: NodeMeta<VirtualStorageIndex>,
     nodes: Vec<NodeIndex>,
     factors: Vec<f64>,
@@ -242,7 +368,7 @@ pub struct VirtualStorage {
     cost: Option<MetricF64>,
 }
 
-impl VirtualStorage {
+impl VirtualStorageNode {
     pub fn name(&self) -> &str {
         self.meta.name()
     }
@@ -272,18 +398,6 @@ impl VirtualStorage {
         }
     }
 
-    pub fn set_cost(&mut self, cost: Option<MetricF64>) {
-        self.cost = cost;
-    }
-
-    pub fn set_min_volume_constraint(&mut self, min_volume: Option<SimpleMetricF64>) {
-        self.storage_constraints.min_volume = min_volume;
-    }
-
-    pub fn set_max_volume_constraint(&mut self, max_volume: Option<SimpleMetricF64>) {
-        self.storage_constraints.max_volume = max_volume;
-    }
-
     pub fn before(&self, timestep: &Timestep, state: &mut State) -> Result<(), VirtualStorageError> {
         let do_reset = if timestep.is_first() {
             // Set the initial volume if it is the first timestep.
@@ -296,7 +410,7 @@ impl VirtualStorage {
             match self.reset {
                 VirtualStorageReset::Never => false,
                 VirtualStorageReset::DayOfYear { day, month } => {
-                    (timestep.date.day() == day) && (timestep.date.month() == month.number_from_month())
+                    (timestep.date.day() == day) && (timestep.date.month() == month)
                 }
                 VirtualStorageReset::NumberOfMonths { months } => {
                     // Get the date when the virtual storage was last reset
@@ -375,172 +489,223 @@ impl VirtualStorage {
 }
 
 /// Calculate the number of months between `current` [Timestep] and the `last_reset` [Timestep].
-fn months_since_last_reset(current: &NaiveDateTime, last_reset: &NaiveDateTime) -> i32 {
-    (current.year() - last_reset.year()) * 12 + current.month() as i32 - last_reset.month() as i32
+fn months_since_last_reset(current: &DateTime, last_reset: &DateTime) -> i32 {
+    (current.year() - last_reset.year()) as i32 * 12 + current.month() as i32 - last_reset.month() as i32
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::metric::MetricF64;
-    use crate::models::Model;
-    use crate::network::Network;
-    use crate::node::{CostAggFunc, StorageInitialVolume};
-    use crate::parameters::ControlCurveInterpolatedParameter;
-    use crate::recorders::{AssertionF64Recorder, AssertionFnRecorder};
+    use crate::metric::UnresolvedMetricF64;
+    use crate::models::ModelBuilder;
+    use crate::network::{NetworkBuildError, NetworkBuilder};
+    use crate::node::{CostAggFunc, NodeBuilder, NodeType, UnresolvedNode, UnresolvedStorageInitialVolume};
+    use crate::parameters::ControlCurveInterpolatedParameterBuilder;
+    use crate::recorders::{AssertionF64RecorderBuilder, AssertionFnRecorderBuilder};
     use crate::scenario::ScenarioIndex;
-    use crate::test_utils::{default_timestepper, run_all_solvers, simple_model};
-    use crate::timestep::{Timestep, TimestepDuration, Timestepper};
+    use crate::test_utils::{default_domain, run_all_solvers, simple_model};
+    use crate::timestep::{TimeDomainBuilder, Timestep, TimestepDuration};
     use crate::virtual_storage::{
-        VirtualStorageActivePeriod, VirtualStorageBuilder, VirtualStorageReset, months_since_last_reset,
+        VirtualStorageActivePeriod, VirtualStorageNodeBuilder, VirtualStorageNodeBuilderError, VirtualStorageReset,
+        VirtualStorageResetVolume, months_since_last_reset,
     };
-    use chrono::{Datelike, Month, NaiveDate};
+    use jiff::civil::date;
     use ndarray::Array;
+    use std::collections::HashMap;
     use std::num::{NonZeroU64, NonZeroUsize};
 
     /// Test the calculation of number of months since last reset
     #[test]
     fn test_months_since_last_reset() {
-        let current = NaiveDate::from_ymd_opt(2022, 12, 31)
-            .unwrap()
-            .and_hms_opt(0, 0, 0)
-            .unwrap();
-        let last_reset = NaiveDate::from_ymd_opt(2022, 12, 31)
-            .unwrap()
-            .and_hms_opt(0, 0, 0)
-            .unwrap();
+        let current = date(2022, 12, 31).at(0, 0, 0, 0);
+        let last_reset = date(2022, 12, 31).at(0, 0, 0, 0);
         assert_eq!(months_since_last_reset(&current, &last_reset), 0);
 
-        let current = NaiveDate::from_ymd_opt(2023, 12, 31)
-            .unwrap()
-            .and_hms_opt(0, 0, 0)
-            .unwrap();
-        let last_reset = NaiveDate::from_ymd_opt(2022, 12, 31)
-            .unwrap()
-            .and_hms_opt(0, 0, 0)
-            .unwrap();
+        let current = date(2023, 12, 31).at(0, 0, 0, 0);
+        let last_reset = date(2022, 12, 31).at(0, 0, 0, 0);
+
         assert_eq!(months_since_last_reset(&current, &last_reset), 12);
 
-        let current = NaiveDate::from_ymd_opt(2023, 1, 1)
-            .unwrap()
-            .and_hms_opt(0, 0, 0)
-            .unwrap();
-        let last_reset = NaiveDate::from_ymd_opt(2022, 12, 31)
-            .unwrap()
-            .and_hms_opt(0, 0, 0)
-            .unwrap();
+        let current = date(2023, 1, 1).at(0, 0, 0, 0);
+        let last_reset = date(2022, 12, 31).at(0, 0, 0, 0);
+
         assert_eq!(months_since_last_reset(&current, &last_reset), 1);
 
-        let current = NaiveDate::from_ymd_opt(2022, 12, 1)
-            .unwrap()
-            .and_hms_opt(0, 0, 0)
-            .unwrap();
-        let last_reset = NaiveDate::from_ymd_opt(2022, 12, 31)
-            .unwrap()
-            .and_hms_opt(0, 0, 0)
-            .unwrap();
+        let current = date(2022, 12, 1).at(0, 0, 0, 0);
+        let last_reset = date(2022, 12, 31).at(0, 0, 0, 0);
         assert_eq!(months_since_last_reset(&current, &last_reset), 0);
     }
 
     /// Test the virtual storage constraints
     #[test]
     fn test_basic_virtual_storage() {
-        let mut network = Network::default();
+        let mut network_builder = NetworkBuilder::default();
 
-        let input_node = network.add_input_node("input", None).unwrap();
-        let link_node0 = network.add_link_node("link", Some("0")).unwrap();
-        let output_node0 = network.add_output_node("output", Some("0")).unwrap();
+        let input_node = NodeBuilder::new("input", NodeType::Input);
+        network_builder.node(input_node);
 
-        network.connect_nodes(input_node, link_node0).unwrap();
-        network.connect_nodes(link_node0, output_node0).unwrap();
+        let mut link_node0 = NodeBuilder::new("link", NodeType::Link);
+        link_node0.sub_name("0");
+        network_builder.node(link_node0);
 
-        let link_node1 = network.add_link_node("link", Some("1")).unwrap();
-        let output_node1 = network.add_output_node("output", Some("1")).unwrap();
+        let mut output_node0 = NodeBuilder::new("output", NodeType::Output);
+        output_node0.sub_name("0").max_flow(10.0.into()).cost((-10.0).into());
+        network_builder.node(output_node0);
 
-        network.connect_nodes(input_node, link_node1).unwrap();
-        network.connect_nodes(link_node1, output_node1).unwrap();
+        network_builder.connect("input", UnresolvedNode::new("link", Some("0")));
+        network_builder.connect(
+            UnresolvedNode::new("link", Some("0")),
+            UnresolvedNode::new("output", Some("0")),
+        );
+
+        let mut link_node1 = NodeBuilder::new("link", NodeType::Link);
+        link_node1.sub_name("1");
+        network_builder.node(link_node1);
+
+        let mut output_node1 = NodeBuilder::new("output", NodeType::Output);
+        output_node1.sub_name("1").max_flow(10.0.into()).cost((-10.0).into());
+        network_builder.node(output_node1);
+
+        network_builder.connect("input", UnresolvedNode::new("link", Some("1")));
+        network_builder.connect(
+            UnresolvedNode::new("link", Some("1")),
+            UnresolvedNode::new("output", Some("1")),
+        );
 
         // Virtual storage with contributions from link-node0 than link-node1
-        let vs_builder = VirtualStorageBuilder::new("virtual-storage", &[link_node0, link_node1])
-            .factors(&[2.0, 1.0])
-            .initial_volume(StorageInitialVolume::Absolute(100.0))
-            .reset(VirtualStorageReset::Never);
+        let mut vs_builder = VirtualStorageNodeBuilder::new(
+            "virtual-storage",
+            &[
+                UnresolvedNode::new("link", Some("0")),
+                UnresolvedNode::new("link", Some("1")),
+            ],
+            &[2.0, 1.0],
+            UnresolvedStorageInitialVolume::Absolute(100.0),
+            VirtualStorageReset::Never,
+            VirtualStorageResetVolume::Initial,
+            VirtualStorageActivePeriod::Always,
+        );
 
-        let vs_idx = network.add_virtual_storage_node(vs_builder).unwrap();
-        network
-            .set_virtual_storage_max_volume("virtual-storage", None, Some(100.0.into()))
-            .unwrap();
+        vs_builder.max_volume(100.0.into());
 
-        // Setup a demand on output-0 and output-1
-        for sub_name in &["0", "1"] {
-            let output_node = network.get_mut_node_by_name("output", Some(sub_name)).unwrap();
-            output_node.set_max_flow_constraint(Some(10.0.into())).unwrap();
-            output_node.set_cost(Some((-10.0).into()));
-        }
+        network_builder.virtual_storage_node(vs_builder);
 
         // With a demand of 10 on each link node. The virtual storage will deplete at a rate of
         // 30 per day.
         let expected_vol = |ts: &Timestep, _si: &ScenarioIndex| (70.0 - ts.index as f64 * 30.0).max(0.0);
-        let recorder = AssertionFnRecorder::new(
+        let recorder = AssertionFnRecorderBuilder::new(
             "vs-volume",
-            MetricF64::VirtualStorageVolume(vs_idx),
+            UnresolvedMetricF64::VirtualStorageVolume("virtual-storage".into()),
             expected_vol,
-            None,
-            None,
         );
-        network.add_recorder(Box::new(recorder)).unwrap();
+
+        network_builder.recorder(Box::new(recorder));
+
         // Set-up assertion for "link" node
-        let idx = network.get_node_by_name("link", Some("0")).unwrap().index();
         let expected = |ts: &Timestep, _si: &ScenarioIndex| {
             if ts.index < 3 { 10.0 } else { 0.0 }
         };
-        let recorder = AssertionFnRecorder::new("link-0-flow", MetricF64::NodeOutFlow(idx), expected, None, None);
-        network.add_recorder(Box::new(recorder)).unwrap();
+        let recorder = AssertionFnRecorderBuilder::new(
+            "link-0-flow",
+            UnresolvedMetricF64::NodeOutFlow(UnresolvedNode::new("link", Some("0"))),
+            expected,
+        );
+        network_builder.recorder(Box::new(recorder));
 
         // Set-up assertion for "input" node
-        let idx = network.get_node_by_name("link", Some("1")).unwrap().index();
         let expected = |ts: &Timestep, _si: &ScenarioIndex| {
             if ts.index < 4 { 10.0 } else { 0.0 }
         };
-        let recorder = AssertionFnRecorder::new("link-1-flow", MetricF64::NodeOutFlow(idx), expected, None, None);
-        network.add_recorder(Box::new(recorder)).unwrap();
+        let recorder = AssertionFnRecorderBuilder::new(
+            "link-1-flow",
+            UnresolvedMetricF64::NodeOutFlow(UnresolvedNode::new("link", Some("1"))),
+            expected,
+        );
+        network_builder.recorder(Box::new(recorder));
 
-        let domain = default_timestepper().try_into().unwrap();
-        let model = Model::new(domain, network);
+        let domain = default_domain();
+        let model = ModelBuilder::new(domain, network_builder).build().unwrap();
         // Test all solvers
-        run_all_solvers(&model, &["ipm-ocl", "ipm-simd"], &[], &[]);
+        run_all_solvers(&model, &["ipm-ocl-f64", "ipm-simd"], &[], &[]);
+    }
+
+    #[test]
+    /// Test that a list of factors shorter or longer than the list of nodes is refused
+    fn test_virtual_storage_node_incorrect_number_of_factors() {
+        for factors in [&[1.0][..], &[1.0, 1.0, 1.0]] {
+            let mut network_builder = NetworkBuilder::default();
+            network_builder
+                .node(NodeBuilder::input("input"))
+                .node(NodeBuilder::output("output"));
+            network_builder.connect("input", "output");
+
+            let vs_builder = VirtualStorageNodeBuilder::new(
+                "vs",
+                &["input".into(), "output".into()],
+                factors,
+                UnresolvedStorageInitialVolume::Absolute(0.0),
+                VirtualStorageReset::Never,
+                VirtualStorageResetVolume::Initial,
+                VirtualStorageActivePeriod::Always,
+            );
+            network_builder.virtual_storage_node(vs_builder);
+
+            let build_err = network_builder
+                .build(&default_domain(), &HashMap::new())
+                .expect_err("Builder should error.");
+
+            if let NetworkBuildError::VirtualStorageNodeBuilderError { name, source } = &build_err
+                && let VirtualStorageNodeBuilderError::IncorrectNumberOfFactors { num_factors, num_nodes } =
+                    source.as_ref()
+            {
+                assert_eq!(name.to_string(), "vs");
+                assert_eq!(*num_factors, factors.len());
+                assert_eq!(*num_nodes, 2);
+            } else {
+                panic!("Incorrect error returned, expected IncorrectNumberOfFactors: {build_err:?}");
+            }
+        }
     }
 
     #[test]
     /// Test virtual storage node costs
     fn test_virtual_storage_node_costs() {
-        let mut model = simple_model(1, None);
-        let network = model.network_mut();
+        let mut model_builder = simple_model(1, None);
+        let network_builder = model_builder.network_builder();
 
         // Make the input use any VS costs
-        let node = network.get_mut_node_by_name("input", None).unwrap();
-        node.set_cost_agg_func(Some(CostAggFunc::Max)).unwrap();
+        let name = "input".into();
+        let node = network_builder.node_builder(&name).unwrap();
+        node.cost_agg_func(CostAggFunc::Max);
 
-        let nodes = vec![network.get_node_index_by_name("input", None).unwrap()];
+        let nodes = vec!["input".into()];
         // Virtual storage node cost is high enough to prevent any flow
 
-        let vs_builder = VirtualStorageBuilder::new("vs", &nodes)
-            .initial_volume(StorageInitialVolume::Proportional(1.0))
-            .reset(VirtualStorageReset::Never);
+        let mut vs_builder = VirtualStorageNodeBuilder::new(
+            "vs",
+            &nodes,
+            &[1.0],
+            UnresolvedStorageInitialVolume::Proportional(1.0),
+            VirtualStorageReset::Never,
+            VirtualStorageResetVolume::Initial,
+            VirtualStorageActivePeriod::Always,
+        );
+        vs_builder.cost(20.0.into()).max_volume(100.0.into());
 
-        network.add_virtual_storage_node(vs_builder).unwrap();
-        network.set_virtual_storage_cost("vs", None, Some(20.0.into())).unwrap();
-        network
-            .set_virtual_storage_max_volume("vs", None, Some(100.0.into()))
-            .unwrap();
+        network_builder.virtual_storage_node(vs_builder);
 
         let expected = Array::zeros((366, 1));
 
-        let idx = network.get_node_by_name("output", None).unwrap().index();
-        let recorder = AssertionF64Recorder::new("output-flow", MetricF64::NodeInFlow(idx), expected, None, None);
-        network.add_recorder(Box::new(recorder)).unwrap();
+        let recorder = AssertionF64RecorderBuilder::new(
+            "output-flow",
+            UnresolvedMetricF64::NodeInFlow("output".into()),
+            expected,
+        );
+        network_builder.recorder(Box::new(recorder));
+
+        let model = model_builder.build().unwrap();
 
         // Test all solvers
-        run_all_solvers(&model, &["ipm-ocl", "ipm-simd"], &[], &[]);
+        run_all_solvers(&model, &["ipm-ocl-f64", "ipm-simd"], &[], &[]);
     }
 
     #[test]
@@ -548,48 +713,42 @@ mod tests {
     /// uses the derived proportional volume receives the correct value after each reset.
     fn test_virtual_storage_node_cost_dynamic() {
         // This test needs to be run over a period of time to see the cost change
-        let start = NaiveDate::from_ymd_opt(2020, 1, 1)
-            .unwrap()
-            .and_hms_opt(0, 0, 0)
-            .unwrap();
-        let end = NaiveDate::from_ymd_opt(2020, 12, 31)
-            .unwrap()
-            .and_hms_opt(0, 0, 0)
-            .unwrap();
+        let start = date(2020, 1, 1).at(0, 0, 0, 0);
+        let end = date(2020, 12, 31).at(0, 0, 0, 0);
         let duration = TimestepDuration::Days(NonZeroU64::new(1).unwrap());
 
-        let mut model = simple_model(1, Some(Timestepper::new(start, end, duration)));
-        let network = model.network_mut();
+        let mut model_builder = simple_model(1, Some(TimeDomainBuilder::new(start, end, duration)));
+        let network_builder = model_builder.network_builder();
 
         // Make the input use any VS costs
-        let node = network.get_mut_node_by_name("input", None).unwrap();
-        node.set_cost_agg_func(Some(CostAggFunc::Max)).unwrap();
+        let name = "input".into();
+        let node = network_builder.node_builder(&name).unwrap();
+        node.cost_agg_func(CostAggFunc::Max);
 
-        let nodes = vec![network.get_node_index_by_name("input", None).unwrap()];
+        let mut vs_builder = VirtualStorageNodeBuilder::new(
+            "vs",
+            &["input".into()],
+            &[1.0],
+            UnresolvedStorageInitialVolume::Proportional(1.0),
+            VirtualStorageReset::NumberOfMonths { months: 1 },
+            VirtualStorageResetVolume::Initial,
+            VirtualStorageActivePeriod::Always,
+        );
+        vs_builder
+            .cost(UnresolvedMetricF64::new_parameter_before("cost"))
+            .max_volume(100.0.into());
 
-        let vs_builder = VirtualStorageBuilder::new("vs", &nodes)
-            .initial_volume(StorageInitialVolume::Proportional(1.0))
-            .reset(VirtualStorageReset::NumberOfMonths { months: 1 });
-
-        let vs_idx = network.add_virtual_storage_node(vs_builder).unwrap();
+        network_builder.virtual_storage_node(vs_builder);
 
         // Virtual storage node cost increases with decreasing volume
-        let cost_param = ControlCurveInterpolatedParameter::new(
+        let mut cost_param = ControlCurveInterpolatedParameterBuilder::before(
             "cost".into(),
-            MetricF64::VirtualStorageProportionalVolume(vs_idx),
-            vec![],
-            vec![0.0.into(), 20.0.into()],
+            UnresolvedMetricF64::VirtualStorageProportionalVolume("vs".into()),
         );
 
-        let cost_param = network.add_parameter(Box::new(cost_param)).unwrap();
+        cost_param.value(0.0.into()).value(20.0.into());
 
-        network
-            .set_virtual_storage_node_cost("vs", None, Some(cost_param.into_metric_f64_before()))
-            .unwrap();
-
-        network
-            .set_virtual_storage_max_volume("vs", None, Some(100.0.into()))
-            .unwrap();
+        network_builder.parameters().f64(Box::new(cost_param));
 
         let expected = |ts: &Timestep, _si: &ScenarioIndex| {
             // Calculate the current volume within each month
@@ -607,33 +766,42 @@ mod tests {
                 0.0
             }
         };
-        let idx = network.get_node_by_name("output", None).unwrap().index();
-        let recorder = AssertionFnRecorder::new("output-flow", MetricF64::NodeInFlow(idx), expected, None, None);
-        network.add_recorder(Box::new(recorder)).unwrap();
+
+        let recorder = AssertionFnRecorderBuilder::new(
+            "output-flow",
+            UnresolvedMetricF64::NodeInFlow("output".into()),
+            expected,
+        );
+        network_builder.recorder(Box::new(recorder));
+
+        let model = model_builder.build().unwrap();
 
         // Test all solvers
-        run_all_solvers(&model, &["ipm-ocl", "ipm-simd"], &[], &[]);
+        run_all_solvers(&model, &["ipm-ocl-f64", "ipm-simd"], &[], &[]);
     }
 
     #[test]
     /// Test virtual storage rolling window constraint
     fn test_virtual_storage_node_rolling_constraint() {
-        let mut model = simple_model(1, None);
-        let network = model.network_mut();
-
-        let nodes = vec![network.get_node_index_by_name("input", None).unwrap()];
+        let mut model_builder = simple_model(1, None);
+        let network_builder = model_builder.network_builder();
 
         // Virtual storage with contributions from input
         // Max volume is 2.5 and is assumed to start full
-        let vs_builder = VirtualStorageBuilder::new("virtual-storage", &nodes)
-            .factors(&[1.0])
-            .initial_volume(StorageInitialVolume::Absolute(2.5))
-            .reset(VirtualStorageReset::Never)
-            .rolling_window(NonZeroUsize::new(5).unwrap());
-        let _vs = network.add_virtual_storage_node(vs_builder);
-        network
-            .set_virtual_storage_max_volume("virtual-storage", None, Some(2.5.into()))
-            .unwrap();
+        let mut vs_builder = VirtualStorageNodeBuilder::new(
+            "virtual-storage",
+            &["input".into()],
+            &[1.0],
+            UnresolvedStorageInitialVolume::Absolute(2.5),
+            VirtualStorageReset::Never,
+            VirtualStorageResetVolume::Initial,
+            VirtualStorageActivePeriod::Always,
+        );
+        vs_builder
+            .rolling_window(NonZeroUsize::new(5).unwrap())
+            .max_volume(2.5.into());
+
+        network_builder.virtual_storage_node(vs_builder);
 
         // Expected values will follow a pattern set by the first few time-steps
         let expected = |ts: &Timestep, _si: &ScenarioIndex| {
@@ -647,12 +815,18 @@ mod tests {
                 _ => panic!("Unexpected timestep index"),
             }
         };
-        let idx = network.get_node_by_name("output", None).unwrap().index();
-        let recorder = AssertionFnRecorder::new("output-flow", MetricF64::NodeInFlow(idx), expected, None, None);
-        network.add_recorder(Box::new(recorder)).unwrap();
+
+        let recorder = AssertionFnRecorderBuilder::new(
+            "output-flow",
+            UnresolvedMetricF64::NodeInFlow("output".into()),
+            expected,
+        );
+        network_builder.recorder(Box::new(recorder));
+
+        let model = model_builder.build().unwrap();
 
         // Test all solvers
-        run_all_solvers(&model, &["ipm-ocl", "ipm-simd"], &[], &[]);
+        run_all_solvers(&model, &["ipm-ocl-f64", "ipm-simd"], &[], &[]);
     }
 
     #[test]
@@ -660,85 +834,85 @@ mod tests {
     fn test_virtual_storage_node_active_period() {
         let period = VirtualStorageActivePeriod::Period {
             start_day: 15,
-            start_month: Month::March,
+            start_month: 3,
             end_day: 15,
-            end_month: Month::September,
+            end_month: 9,
         };
 
         // Dates inside the period
-        assert!(period.is_active(&NaiveDate::from_ymd_opt(2016, 3, 15).unwrap()));
-        assert!(period.is_active(&NaiveDate::from_ymd_opt(2016, 7, 8).unwrap()));
-        assert!(period.is_active(&NaiveDate::from_ymd_opt(2016, 9, 15).unwrap()));
+        assert!(period.is_active(&date(2016, 3, 15)));
+        assert!(period.is_active(&date(2016, 7, 8)));
+        assert!(period.is_active(&date(2016, 9, 15)));
 
         // Dates outside the period
-        assert!(!period.is_active(&NaiveDate::from_ymd_opt(2016, 3, 14).unwrap()));
-        assert!(!period.is_active(&NaiveDate::from_ymd_opt(2016, 9, 16).unwrap()));
-        assert!(!period.is_active(&NaiveDate::from_ymd_opt(2016, 12, 31).unwrap()));
+        assert!(!period.is_active(&date(2016, 3, 14)));
+        assert!(!period.is_active(&date(2016, 9, 16)));
+        assert!(!period.is_active(&date(2016, 12, 31)));
     }
 
     #[test]
     fn test_virtual_storage_node_active_period_wrap() {
         let period = VirtualStorageActivePeriod::Period {
             start_day: 15,
-            start_month: Month::September,
+            start_month: 9,
             end_day: 15,
-            end_month: Month::March,
+            end_month: 3,
         };
 
         // Dates inside the period
-        assert!(period.is_active(&NaiveDate::from_ymd_opt(2016, 9, 15).unwrap()));
-        assert!(period.is_active(&NaiveDate::from_ymd_opt(2016, 12, 31).unwrap()));
-        assert!(period.is_active(&NaiveDate::from_ymd_opt(2017, 1, 1).unwrap()));
-        assert!(period.is_active(&NaiveDate::from_ymd_opt(2017, 3, 15).unwrap()));
+        assert!(period.is_active(&date(2016, 9, 15)));
+        assert!(period.is_active(&date(2016, 12, 31)));
+        assert!(period.is_active(&date(2017, 1, 1)));
+        assert!(period.is_active(&date(2017, 3, 15)));
 
         // Dates outside the period
-        assert!(!period.is_active(&NaiveDate::from_ymd_opt(2016, 9, 14).unwrap()));
-        assert!(!period.is_active(&NaiveDate::from_ymd_opt(2016, 3, 16).unwrap()));
-        assert!(!period.is_active(&NaiveDate::from_ymd_opt(2016, 6, 1).unwrap()));
+        assert!(!period.is_active(&date(2016, 9, 14)));
+        assert!(!period.is_active(&date(2016, 3, 16)));
+        assert!(!period.is_active(&date(2016, 6, 1)));
     }
 
     #[test]
     fn test_virtual_storage_node_active_period_same_month() {
         let period = VirtualStorageActivePeriod::Period {
             start_day: 10,
-            start_month: Month::June,
+            start_month: 6,
             end_day: 20,
-            end_month: Month::June,
+            end_month: 6,
         };
 
         // Dates inside the period
-        assert!(period.is_active(&NaiveDate::from_ymd_opt(2016, 6, 10).unwrap()));
-        assert!(period.is_active(&NaiveDate::from_ymd_opt(2016, 6, 15).unwrap()));
-        assert!(period.is_active(&NaiveDate::from_ymd_opt(2016, 6, 20).unwrap()));
+        assert!(period.is_active(&date(2016, 6, 10)));
+        assert!(period.is_active(&date(2016, 6, 15)));
+        assert!(period.is_active(&date(2016, 6, 20)));
 
         // Dates outside the period
-        assert!(!period.is_active(&NaiveDate::from_ymd_opt(2016, 6, 9).unwrap()));
-        assert!(!period.is_active(&NaiveDate::from_ymd_opt(2016, 6, 21).unwrap()));
-        assert!(!period.is_active(&NaiveDate::from_ymd_opt(2016, 5, 31).unwrap()));
-        assert!(!period.is_active(&NaiveDate::from_ymd_opt(2016, 7, 1).unwrap()));
+        assert!(!period.is_active(&date(2016, 6, 9)));
+        assert!(!period.is_active(&date(2016, 6, 21)));
+        assert!(!period.is_active(&date(2016, 5, 31)));
+        assert!(!period.is_active(&date(2016, 7, 1)));
     }
 
     #[test]
     fn test_virtual_storage_node_active_period_same_month_wrap() {
         let period = VirtualStorageActivePeriod::Period {
             start_day: 20,
-            start_month: Month::June,
+            start_month: 6,
             end_day: 10,
-            end_month: Month::June,
+            end_month: 6,
         };
 
         // Dates inside the period
-        assert!(period.is_active(&NaiveDate::from_ymd_opt(2016, 6, 20).unwrap()));
-        assert!(period.is_active(&NaiveDate::from_ymd_opt(2016, 6, 25).unwrap()));
-        assert!(period.is_active(&NaiveDate::from_ymd_opt(2016, 6, 30).unwrap()));
-        assert!(period.is_active(&NaiveDate::from_ymd_opt(2016, 6, 1).unwrap()));
-        assert!(period.is_active(&NaiveDate::from_ymd_opt(2016, 6, 5).unwrap()));
-        assert!(period.is_active(&NaiveDate::from_ymd_opt(2016, 6, 10).unwrap()));
-        assert!(period.is_active(&NaiveDate::from_ymd_opt(2016, 5, 31).unwrap()));
-        assert!(period.is_active(&NaiveDate::from_ymd_opt(2016, 7, 1).unwrap()));
+        assert!(period.is_active(&date(2016, 6, 20)));
+        assert!(period.is_active(&date(2016, 6, 25)));
+        assert!(period.is_active(&date(2016, 6, 30)));
+        assert!(period.is_active(&date(2016, 6, 1)));
+        assert!(period.is_active(&date(2016, 6, 5)));
+        assert!(period.is_active(&date(2016, 6, 10)));
+        assert!(period.is_active(&date(2016, 5, 31)));
+        assert!(period.is_active(&date(2016, 7, 1)));
 
         // Dates outside the period
-        assert!(!period.is_active(&NaiveDate::from_ymd_opt(2016, 6, 19).unwrap()));
-        assert!(!period.is_active(&NaiveDate::from_ymd_opt(2016, 6, 11).unwrap()));
+        assert!(!period.is_active(&date(2016, 6, 19)));
+        assert!(!period.is_active(&date(2016, 6, 11)));
     }
 }

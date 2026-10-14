@@ -4,7 +4,7 @@
     "description": "An example of using custom Python parameters.",
     "minimum_version": "0.1"
   },
-  "timestepper": {
+  "time": {
     "start": "2015-01-01",
     "end": "2015-01-15",
     "timestep": {
@@ -96,7 +96,7 @@
     ],
     "metric_sets": [
       {
-        "name": "parameters",
+        "meta": {"name": "parameters"},
         "metrics": [
           {
             "type": "Parameter",
@@ -111,7 +111,7 @@
     ],
     "outputs": [
       {
-        "name": "nodes",
+        "meta": {"name": "nodes"},
         "type": "CSV",
         "format": "Long",
         "filename": "python-parameter1-expected.csv",

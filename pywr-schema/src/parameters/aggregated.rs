@@ -2,13 +2,15 @@ use crate::agg_funcs::{AggFunc, IndexAggFunc};
 use crate::error::ComponentConversionError;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
+use crate::meta::NamedMeta;
 use crate::metric::{IndexMetric, Metric};
 #[cfg(feature = "core")]
 use crate::network::LoadArgs;
-use crate::parameters::{ConversionData, ParameterMeta};
+use crate::parameters::{ConversionData, ParameterPhase};
 use crate::v1::{TryFromV1, TryIntoV2, try_convert_parameter_attr};
+use crate::validation::ParameterProblem;
 #[cfg(feature = "core")]
-use pywr_core::parameters::{ParameterIndex, ParameterName};
+use pywr_core::parameters::ParameterName;
 use pywr_schema_macros::PywrVisitAll;
 use pywr_v1_schema::parameters::{
     AggregatedIndexParameter as AggregatedIndexParameterV1, AggregatedParameter as AggregatedParameterV1,
@@ -42,32 +44,48 @@ use std::collections::HashMap;
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct AggregatedParameter {
-    pub meta: ParameterMeta,
+    pub meta: NamedMeta,
+    pub phase: ParameterPhase,
     pub agg_func: AggFunc,
     pub metrics: Vec<Metric>,
 }
 
+impl AggregatedParameter {
+    pub fn validate(&self) -> Result<(), Vec<ParameterProblem>> {
+        let mut problems = self.agg_func.validate().err().unwrap_or_default();
+        if self.metrics.is_empty() {
+            problems.push(ParameterProblem::NoMetrics);
+        }
+
+        if problems.is_empty() { Ok(()) } else { Err(problems) }
+    }
+}
+
 #[cfg(feature = "core")]
 impl AggregatedParameter {
-    pub fn add_to_model(
+    pub fn add_to_network(
         &self,
-        network: &mut pywr_core::network::Network,
+        network: &mut pywr_core::network::NetworkBuilder,
         args: &LoadArgs,
         parent: Option<&str>,
-    ) -> Result<ParameterIndex<f64>, SchemaError> {
-        let metrics = self
-            .metrics
-            .iter()
-            .map(|v| v.load(network, args, None))
-            .collect::<Result<Vec<_>, _>>()?;
+    ) -> Result<(), SchemaError> {
+        let name = ParameterName::new(&self.meta.name, parent);
+        let agg_func = self.agg_func.load(args.data_path)?;
 
-        let p = pywr_core::parameters::AggregatedParameter::new(
-            ParameterName::new(&self.meta.name, parent),
-            &metrics,
-            self.agg_func.load(args.data_path)?,
-        );
+        let mut builder = match self.phase {
+            ParameterPhase::Before => pywr_core::parameters::AggregatedParameterBuilder::before(name, agg_func),
+            ParameterPhase::After => pywr_core::parameters::AggregatedParameterBuilder::after(name, agg_func),
+            ParameterPhase::Both => pywr_core::parameters::AggregatedParameterBuilder::both(name, agg_func),
+        };
 
-        Ok(network.add_parameter(Box::new(p))?)
+        for metric in &self.metrics {
+            let m = metric.load(network, args, parent)?;
+            builder.metric(m);
+        }
+
+        network.parameters().f64(Box::new(builder));
+
+        Ok(())
     }
 }
 
@@ -79,7 +97,7 @@ impl TryFromV1<AggregatedParameterV1> for AggregatedParameter {
         parent_node: Option<&str>,
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: ParameterMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
+        let meta: NamedMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
 
         let metrics = v1
             .parameters
@@ -91,6 +109,7 @@ impl TryFromV1<AggregatedParameterV1> for AggregatedParameter {
             meta,
             agg_func: v1.agg_func.into(),
             metrics,
+            phase: ParameterPhase::Before,
         };
         Ok(p)
     }
@@ -99,7 +118,8 @@ impl TryFromV1<AggregatedParameterV1> for AggregatedParameter {
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct AggregatedIndexParameter {
-    pub meta: ParameterMeta,
+    pub meta: NamedMeta,
+    pub phase: ParameterPhase,
     pub agg_func: IndexAggFunc,
     pub metrics: Vec<IndexMetric>,
 }
@@ -109,37 +129,40 @@ impl AggregatedIndexParameter {
         HashMap::new()
     }
 
-    // pub fn parameters(&self) -> HashMap<&str, DynamicFloatValueType> {
-    //     let mut attributes = HashMap::new();
-    //
-    //     let parameters = &self.parameters;
-    //     attributes.insert("parameters", parameters.into());
-    //
-    //     attributes
-    // }
+    pub fn validate(&self) -> Result<(), Vec<ParameterProblem>> {
+        if self.metrics.is_empty() {
+            Err(vec![ParameterProblem::NoMetrics])
+        } else {
+            Ok(())
+        }
+    }
 }
 
 #[cfg(feature = "core")]
 impl AggregatedIndexParameter {
-    pub fn add_to_model(
+    pub fn add_to_network(
         &self,
-        network: &mut pywr_core::network::Network,
+        network: &mut pywr_core::network::NetworkBuilder,
         args: &LoadArgs,
         parent: Option<&str>,
-    ) -> Result<ParameterIndex<u64>, SchemaError> {
-        let metrics = self
-            .metrics
-            .iter()
-            .map(|v| v.load(network, args, None))
-            .collect::<Result<Vec<_>, _>>()?;
+    ) -> Result<(), SchemaError> {
+        let name = ParameterName::new(&self.meta.name, parent);
+        let agg_func = self.agg_func.load(args.data_path)?;
 
-        let p = pywr_core::parameters::AggregatedIndexParameter::new(
-            ParameterName::new(&self.meta.name, parent),
-            &metrics,
-            self.agg_func.load(args.data_path)?,
-        );
+        let mut builder = match self.phase {
+            ParameterPhase::Before => pywr_core::parameters::AggregatedIndexParameterBuilder::before(name, agg_func),
+            ParameterPhase::After => pywr_core::parameters::AggregatedIndexParameterBuilder::after(name, agg_func),
+            ParameterPhase::Both => pywr_core::parameters::AggregatedIndexParameterBuilder::both(name, agg_func),
+        };
 
-        Ok(network.add_index_parameter(Box::new(p))?)
+        for metric in &self.metrics {
+            let m = metric.load(network, args, parent)?;
+            builder.metric(m);
+        }
+
+        network.parameters().u64(Box::new(builder));
+
+        Ok(())
     }
 }
 
@@ -151,7 +174,7 @@ impl TryFromV1<AggregatedIndexParameterV1> for AggregatedIndexParameter {
         parent_node: Option<&str>,
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let meta: ParameterMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
+        let meta: NamedMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
 
         let metrics = v1
             .parameters
@@ -161,6 +184,7 @@ impl TryFromV1<AggregatedIndexParameterV1> for AggregatedIndexParameter {
 
         let p = Self {
             meta,
+            phase: ParameterPhase::Before,
             agg_func: v1.agg_func.into(),
             metrics,
         };
@@ -184,6 +208,7 @@ mod tests {
                 "agg_func": {
                   "type": "Min"
                 },
+                "phase": "Before",
                 "metrics": [
                   {
                     "type": "Parameter",

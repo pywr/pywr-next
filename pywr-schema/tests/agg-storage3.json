@@ -4,7 +4,7 @@
     "description": "Test behaviour of aggregated storage node.",
     "minimum_version": "0.1"
   },
-  "timestepper": {
+  "time": {
     "start": "2015-01-01",
     "end": "2015-01-10",
     "timestep": {
@@ -183,6 +183,7 @@
           "name": "demand"
         },
         "type": "ControlCurve",
+        "phase": "Before",
         "storage_metric": {
           "type": "VirtualNode",
           "name": "total-storage",
@@ -208,7 +209,7 @@
     ],
     "metric_sets": [
       {
-        "name": "nodes",
+        "meta": {"name": "nodes"},
         "filters": {
           "all_nodes": true,
           "all_virtual_nodes": true
@@ -217,7 +218,7 @@
     ],
     "outputs": [
       {
-        "name": "my-outputs",
+        "meta": {"name": "my-outputs"},
         "type": "CSV",
         "format": "Long",
         "filename": "agg-storage3-expected.csv",

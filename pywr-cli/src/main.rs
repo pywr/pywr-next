@@ -1,22 +1,20 @@
-mod tracing;
-
-use crate::tracing::setup_tracing;
-use ::tracing::info;
 use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand, ValueEnum};
+use log::info;
 #[cfg(feature = "cbc")]
-use pywr_core::solvers::{CbcSolver, CbcSolverSettings, CbcSolverSettingsBuilder};
+use pywr_core::solvers::{CbcSolverSettings, CbcSolverSettingsBuilder};
 #[cfg(feature = "ipm-ocl")]
-use pywr_core::solvers::{ClIpmF32Solver, ClIpmF64Solver, ClIpmSolverSettings, ClIpmSolverSettingsBuilder};
-use pywr_core::solvers::{ClpSolver, ClpSolverSettings, ClpSolverSettingsBuilder};
+use pywr_core::solvers::{ClIpmF32Settings, ClIpmF32SettingsBuilder, ClIpmF64Settings, ClIpmF64SettingsBuilder};
+use pywr_core::solvers::{ClpSolverSettings, ClpSolverSettingsBuilder};
 #[cfg(feature = "highs")]
-use pywr_core::solvers::{HighsSolver, HighsSolverSettings, HighsSolverSettingsBuilder};
+use pywr_core::solvers::{HighsSolverSettings, HighsSolverSettingsBuilder};
 #[cfg(feature = "microlp")]
-use pywr_core::solvers::{MicroLpSolver, MicroLpSolverSettings, MicroLpSolverSettingsBuilder};
+use pywr_core::solvers::{MicroLpSolverSettings, MicroLpSolverSettingsBuilder};
 #[cfg(feature = "ipm-simd")]
-use pywr_core::solvers::{SimdIpmF64Solver, SimdIpmSolverSettings, SimdIpmSolverSettingsBuilder};
-use pywr_core::test_utils::make_random_model;
-use pywr_schema::{ComponentConversionError, ModelSchema, MultiNetworkModelSchema, NetworkSchema};
+use pywr_core::solvers::{SimdIpmSolverSettings, SimdIpmSolverSettingsBuilder};
+use pywr_core::test_utils::make_random_model_builder;
+use pywr_runner_service::RunnerServiceConfig;
+use pywr_schema::{ComponentConversionError, FileSystem, ModelSchema, MultiNetworkModelSchema, NetworkSchema};
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use schemars::schema_for;
@@ -60,10 +58,18 @@ impl Display for Solver {
     }
 }
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum)]
+enum RunServerMode {
+    /// Listen for connections on a namespaced local socket.
+    LocalSocket,
+    /// Serve one framed connection using process stdin and stdout.
+    Stdio,
+}
+
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
 struct Cli {
-    /// Turn debugging information on
+    /// Enabled debug level logging for Pywr.
     #[arg(long, default_value_t = false)]
     debug: bool,
     #[command(subcommand)]
@@ -129,11 +135,78 @@ enum Commands {
         /// Path to save the JSON schema.
         out: PathBuf,
     },
+    /// Run the Pywr model runner service over a local socket or standard I/O.
+    RunServer {
+        /// IPC transport to use.
+        #[arg(long, value_enum, default_value_t = RunServerMode::LocalSocket)]
+        mode: RunServerMode,
+        /// Portable local-socket namespace name.
+        ///
+        /// This option applies only when `--mode local-socket` is selected.
+        #[arg(long, default_value = "pywr-runner")]
+        socket_name: String,
+    },
+    RunProject {
+        /// Path to Pywr project JSON.
+        project: PathBuf,
+        /// Name of the definition to build.
+        #[arg(short = 'd', long = "definition")]
+        definition: String,
+        /// Solver to use.
+        #[arg(short, long, default_value_t=Solver::Clp)]
+        solver: Solver,
+        #[arg(long)]
+        data_path: Option<PathBuf>,
+        #[arg(short, long)]
+        output_path: Option<PathBuf>,
+        /// The number of threads to use in parallel simulation.
+        #[arg(short, long, default_value_t = 1)]
+        threads: usize,
+        /// Ignore the feature requirements of a solver.
+        #[arg(short, long, default_value_t = false)]
+        ignore_feature_requirements: bool,
+    },
+    // InitProject {
+    //     /// Location to initialise the project directory.
+    //     location: PathBuf,
+    //     /// Project filename (e.g. pywr-project.json).
+    //     #[arg(short = 'f', long = "file", default_value = "pywr-project.json")]
+    //     project_filename: String,
+    //     /// Relative path for base model JSON.
+    //     #[arg(short = 'b', long = "base", default_value = "models/base.json")]
+    //     base_model_rel: String,
+    //     /// Option set directories in the project (comma-separated name=dir pairs, e.g. "upgrades=options/upgrades,policy=options/policy").
+    //     #[arg(short = 'o', long = "options")]
+    //     option_sets: Vec<String>,
+    // },
+}
+
+fn build_logger(debug: bool) -> env_logger::Logger {
+    let mut builder = env_logger::Builder::new();
+
+    builder.format_timestamp_micros().format_level(true);
+
+    let level = if debug {
+        log::LevelFilter::Debug
+    } else {
+        log::LevelFilter::Info
+    };
+
+    builder
+        .target(env_logger::Target::Stderr)
+        .filter_module("pywr_v1_schema", level)
+        .filter_module("pywr_core", level)
+        .filter_module("pywr_schema", level)
+        .filter_module("pywr_runner_service", level)
+        .filter_module("pywr_cli", level);
+
+    builder.build()
 }
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
-    setup_tracing(cli.debug)?;
+    pywr_runner_service::install_log_router_with(Box::new(build_logger(cli.debug)))
+        .map_err(|_| anyhow::anyhow!("a global logger has already been installed"))?;
 
     match &cli.command {
         Commands::Convert {
@@ -171,6 +244,32 @@ fn main() -> Result<()> {
             solver,
         } => run_random(*num_systems, *density, *num_scenarios, solver),
         Commands::ExportSchema { out } => export_schema(out)?,
+        Commands::RunServer { mode, socket_name } => {
+            run_server(*mode, socket_name)?;
+        }
+        Commands::RunProject {
+            project,
+            definition,
+            solver,
+            data_path,
+            output_path,
+            threads,
+            ignore_feature_requirements,
+        } => run_project(
+            project,
+            definition,
+            solver,
+            data_path.as_deref(),
+            output_path.as_deref(),
+            *threads,
+            *ignore_feature_requirements,
+        ),
+        // Commands::InitProject {
+        //     location,
+        //     project_filename,
+        //     base_model_rel,
+        //     option_sets,
+        // } => init_project_cli(location, project_filename, base_model_rel, option_sets)?,
     }
 
     Ok(())
@@ -189,17 +288,16 @@ fn convert(in_path: &Path, out_path: &Path, stop_on_error: bool, network_only: b
         {
             let path = entry.path();
 
-            if path.is_file() {
-                if let Some(ext) = path.extension() {
-                    if ext == "json" {
-                        let out_fn = out_path.join(
-                            path.file_name()
-                                .with_context(|| "Failed to determine output filename.".to_string())?,
-                        );
+            if path.is_file()
+                && let Some(ext) = path.extension()
+                && ext == "json"
+            {
+                let out_fn = out_path.join(
+                    path.file_name()
+                        .with_context(|| "Failed to determine output filename.".to_string())?,
+                );
 
-                        v1_to_v2(&path, &out_fn, stop_on_error, network_only)?;
-                    }
-                }
+                v1_to_v2(&path, &out_fn, stop_on_error, network_only)?;
             }
         }
     } else {
@@ -278,101 +376,104 @@ fn run(
     let data_path = data_path.or_else(|| path.parent());
     let schema_v2: ModelSchema = serde_json::from_str(data.as_str()).unwrap();
 
-    let model = schema_v2.build_model(data_path, output_path).unwrap();
+    let builder = schema_v2
+        .create_model_builder(&FileSystem, data_path, output_path)
+        .unwrap();
+    let model = builder.build().unwrap();
 
     match *solver {
         Solver::Clp => {
-            let mut settings_builder = ClpSolverSettingsBuilder::default();
+            let mut solver_config_builder = ClpSolverSettingsBuilder::default();
             if threads > 1 {
-                settings_builder = settings_builder.parallel();
-                settings_builder = settings_builder.threads(threads);
+                solver_config_builder = solver_config_builder.parallel();
+                solver_config_builder = solver_config_builder.threads(threads);
             }
             if ignore_feature_requirements {
-                settings_builder = settings_builder.ignore_feature_requirements();
+                solver_config_builder = solver_config_builder.ignore_feature_requirements();
             }
-            let settings = settings_builder.build();
-            model.run::<ClpSolver>(&settings)
+            let settings = solver_config_builder.build();
+            model.run(&settings)
         }
         #[cfg(feature = "cbc")]
         Solver::Cbc => {
-            let mut settings_builder = CbcSolverSettingsBuilder::default();
+            let mut solver_config_builder = CbcSolverSettingsBuilder::default();
             if threads > 1 {
-                settings_builder = settings_builder.parallel();
-                settings_builder = settings_builder.threads(threads);
+                solver_config_builder = solver_config_builder.parallel();
+                solver_config_builder = solver_config_builder.threads(threads);
             }
             if ignore_feature_requirements {
-                settings_builder = settings_builder.ignore_feature_requirements();
+                solver_config_builder = solver_config_builder.ignore_feature_requirements();
             }
-            let settings = settings_builder.build();
-            model.run::<CbcSolver>(&settings)
+            let settings = solver_config_builder.build();
+            model.run(&settings)
         }
         #[cfg(feature = "highs")]
         Solver::Highs => {
-            let mut settings_builder = HighsSolverSettingsBuilder::default();
+            let mut solver_config_builder = HighsSolverSettingsBuilder::default();
             if threads > 1 {
-                settings_builder = settings_builder.parallel();
-                settings_builder = settings_builder.threads(threads);
+                solver_config_builder = solver_config_builder.parallel();
+                solver_config_builder = solver_config_builder.threads(threads);
             }
             if ignore_feature_requirements {
-                settings_builder = settings_builder.ignore_feature_requirements();
+                solver_config_builder = solver_config_builder.ignore_feature_requirements();
             }
-            let settings = settings_builder.build();
-            model.run::<HighsSolver>(&settings)
+            let settings = solver_config_builder.build();
+            model.run(&settings)
         }
         #[cfg(feature = "ipm-ocl")]
         Solver::CLIPMF32 => {
-            let mut settings_builder = ClIpmSolverSettingsBuilder::default();
+            let mut solver_config_builder = ClIpmF32SettingsBuilder::default();
             if threads > 1 {
-                settings_builder = settings_builder.parallel();
-                settings_builder = settings_builder.threads(threads);
+                solver_config_builder = solver_config_builder.parallel();
+                solver_config_builder = solver_config_builder.threads(threads);
             }
             if ignore_feature_requirements {
-                settings_builder = settings_builder.ignore_feature_requirements();
+                solver_config_builder = solver_config_builder.ignore_feature_requirements();
             }
 
-            let settings = settings_builder.build();
-            model.run_multi_scenario::<ClIpmF32Solver>(&settings)
+            let settings = solver_config_builder.build();
+            model.run_multi_scenario(&settings)
         }
         #[cfg(feature = "ipm-ocl")]
         Solver::CLIPMF64 => {
-            let mut settings_builder = ClIpmSolverSettingsBuilder::default();
+            let mut solver_config_builder = ClIpmF64SettingsBuilder::default();
             if threads > 1 {
-                settings_builder = settings_builder.parallel();
-                settings_builder = settings_builder.threads(threads);
+                solver_config_builder = solver_config_builder.parallel();
+                solver_config_builder = solver_config_builder.threads(threads);
             }
             if ignore_feature_requirements {
-                settings_builder = settings_builder.ignore_feature_requirements();
+                solver_config_builder = solver_config_builder.ignore_feature_requirements();
             }
 
-            let settings = settings_builder.build();
-            model.run_multi_scenario::<ClIpmF64Solver>(&settings)
+            let settings = solver_config_builder.build();
+            model.run_multi_scenario(&settings)
         }
         #[cfg(feature = "ipm-simd")]
         Solver::IpmSimd => {
-            let mut settings_builder = SimdIpmSolverSettingsBuilder::default();
+            let mut solver_config_builder = SimdIpmSolverSettingsBuilder::default();
             if threads > 1 {
-                settings_builder = settings_builder.parallel();
-                settings_builder = settings_builder.threads(threads);
+                solver_config_builder = solver_config_builder.parallel();
+                solver_config_builder = solver_config_builder.threads(threads);
             }
             if ignore_feature_requirements {
-                settings_builder = settings_builder.ignore_feature_requirements();
+                solver_config_builder = solver_config_builder.ignore_feature_requirements();
             }
 
-            let settings = settings_builder.build();
-            model.run_multi_scenario::<SimdIpmF64Solver>(&settings)
+            let settings = solver_config_builder.build();
+            model.run_multi_scenario(&settings)
         }
         #[cfg(feature = "microlp")]
         Solver::Microlp => {
-            let mut settings_builder = MicroLpSolverSettingsBuilder::default();
+            let mut solver_config_builder = MicroLpSolverSettingsBuilder::default();
             if threads > 1 {
-                settings_builder = settings_builder.parallel();
-                settings_builder = settings_builder.threads(threads);
+                solver_config_builder = solver_config_builder.parallel();
+                solver_config_builder = solver_config_builder.threads(threads);
             }
             if ignore_feature_requirements {
-                settings_builder = settings_builder.ignore_feature_requirements();
+                solver_config_builder = solver_config_builder.ignore_feature_requirements();
             }
-            let settings = settings_builder.build();
-            model.run::<MicroLpSolver>(&settings)
+            let settings = solver_config_builder.build();
+            model.run(&settings)
         }
     }
     .unwrap();
@@ -384,44 +485,48 @@ fn run_multi(path: &Path, solver: &Solver, data_path: Option<&Path>, output_path
 
     let schema_v2: MultiNetworkModelSchema = serde_json::from_str(data.as_str()).unwrap();
 
-    let model = schema_v2.build_model(data_path, output_path).unwrap();
+    let builder = schema_v2
+        .create_model_builder(&FileSystem, data_path, output_path)
+        .unwrap();
+    let model = builder.build().unwrap();
 
     match *solver {
-        Solver::Clp => model.run::<ClpSolver>(&ClpSolverSettings::default()),
+        Solver::Clp => model.run(&ClpSolverSettings::default()),
         #[cfg(feature = "highs")]
-        Solver::Highs => model.run::<HighsSolver>(&HighsSolverSettings::default()),
+        Solver::Highs => model.run(&HighsSolverSettings::default()),
         #[cfg(feature = "cbc")]
-        Solver::Cbc => model.run::<CbcSolver>(&CbcSolverSettings::default()),
+        Solver::Cbc => model.run(&CbcSolverSettings::default()),
         #[cfg(feature = "ipm-ocl")]
-        Solver::CLIPMF32 => model.run_multi_scenario::<ClIpmF32Solver>(&ClIpmSolverSettings::default()),
+        Solver::CLIPMF32 => model.run_multi_scenario(&ClIpmF32Settings::default()),
         #[cfg(feature = "ipm-ocl")]
-        Solver::CLIPMF64 => model.run_multi_scenario::<ClIpmF64Solver>(&ClIpmSolverSettings::default()),
+        Solver::CLIPMF64 => model.run_multi_scenario(&ClIpmF64Settings::default()),
         #[cfg(feature = "ipm-simd")]
-        Solver::IpmSimd => model.run_multi_scenario::<SimdIpmF64Solver>(&SimdIpmSolverSettings::default()),
+        Solver::IpmSimd => model.run_multi_scenario(&SimdIpmSolverSettings::default()),
         #[cfg(feature = "microlp")]
-        Solver::Microlp => model.run::<MicroLpSolver>(&MicroLpSolverSettings::default()),
+        Solver::Microlp => model.run(&MicroLpSolverSettings::default()),
     }
     .unwrap();
 }
 
 fn run_random(num_systems: usize, density: usize, num_scenarios: usize, solver: &Solver) {
     let mut rng = ChaCha8Rng::seed_from_u64(0);
-    let model = make_random_model(num_systems, density, num_scenarios, &mut rng).unwrap();
+    let builder = make_random_model_builder(num_systems, density, num_scenarios, &mut rng);
+    let model = builder.build().unwrap();
 
     match *solver {
-        Solver::Clp => model.run::<ClpSolver>(&ClpSolverSettings::default()),
+        Solver::Clp => model.run(&ClpSolverSettings::default()),
         #[cfg(feature = "highs")]
-        Solver::Highs => model.run::<HighsSolver>(&HighsSolverSettings::default()),
+        Solver::Highs => model.run(&HighsSolverSettings::default()),
         #[cfg(feature = "cbc")]
-        Solver::Cbc => model.run::<CbcSolver>(&CbcSolverSettings::default()),
+        Solver::Cbc => model.run(&CbcSolverSettings::default()),
         #[cfg(feature = "ipm-ocl")]
-        Solver::CLIPMF32 => model.run_multi_scenario::<ClIpmF32Solver>(&ClIpmSolverSettings::default()),
+        Solver::CLIPMF32 => model.run_multi_scenario(&ClIpmF32Settings::default()),
         #[cfg(feature = "ipm-ocl")]
-        Solver::CLIPMF64 => model.run_multi_scenario::<ClIpmF64Solver>(&ClIpmSolverSettings::default()),
+        Solver::CLIPMF64 => model.run_multi_scenario(&ClIpmF64Settings::default()),
         #[cfg(feature = "ipm-simd")]
-        Solver::IpmSimd => model.run_multi_scenario::<SimdIpmF64Solver>(&SimdIpmSolverSettings::default()),
+        Solver::IpmSimd => model.run_multi_scenario(&SimdIpmSolverSettings::default()),
         #[cfg(feature = "microlp")]
-        Solver::Microlp => model.run::<MicroLpSolver>(&MicroLpSolverSettings::default()),
+        Solver::Microlp => model.run(&MicroLpSolverSettings::default()),
     }
     .unwrap();
 }
@@ -435,4 +540,193 @@ fn export_schema(out_path: &Path) -> Result<()> {
     .with_context(|| format!("Failed to write file: {out_path:?}",))?;
 
     Ok(())
+}
+
+fn run_server(mode: RunServerMode, socket_name: &str) -> Result<()> {
+    use pywr_runner_service::{RunnerServiceConfigBuilder, run_local_socket_server, run_stdio_server};
+
+    let config: RunnerServiceConfig = RunnerServiceConfigBuilder::new().build();
+
+    match mode {
+        RunServerMode::LocalSocket => {
+            info!("Starting Pywr runner service on socket: {socket_name}");
+            run_local_socket_server(socket_name, config)
+                .with_context(|| "Failed to run Pywr runner service".to_string())?;
+        }
+        RunServerMode::Stdio => {
+            info!("Starting Pywr runner service over standard input/output");
+            run_stdio_server(config).with_context(|| "Failed to run Pywr runner service".to_string())?;
+        }
+    }
+
+    Ok(())
+}
+
+fn run_project(
+    path: &Path,
+    definition: &str,
+    solver: &Solver,
+    data_path: Option<&Path>,
+    output_path: Option<&Path>,
+    threads: usize,
+    ignore_feature_requirements: bool,
+) {
+    let project = pywr_project::Project::open(path).unwrap();
+    let data_path = data_path.or_else(|| path.parent());
+
+    let composed_model = project.compose_model(definition).unwrap();
+    let composed_schemas = composed_model.load().unwrap();
+    let options = pywr_schema::NetworkMergeOptions::default();
+    let schema_v2 = composed_schemas.into_model_schema(&options).unwrap();
+    let model_builder = schema_v2
+        .create_model_builder(&FileSystem, data_path, output_path)
+        .unwrap();
+    let model = model_builder.build().unwrap();
+
+    match *solver {
+        Solver::Clp => {
+            let mut settings_builder = ClpSolverSettingsBuilder::default();
+            if threads > 1 {
+                settings_builder = settings_builder.parallel();
+                settings_builder = settings_builder.threads(threads);
+            }
+            if ignore_feature_requirements {
+                settings_builder = settings_builder.ignore_feature_requirements();
+            }
+            let settings = settings_builder.build();
+            model.run(&settings)
+        }
+        #[cfg(feature = "cbc")]
+        Solver::Cbc => {
+            let mut settings_builder = CbcSolverSettingsBuilder::default();
+            if threads > 1 {
+                settings_builder = settings_builder.parallel();
+                settings_builder = settings_builder.threads(threads);
+            }
+            if ignore_feature_requirements {
+                settings_builder = settings_builder.ignore_feature_requirements();
+            }
+            let settings = settings_builder.build();
+            model.run(&settings)
+        }
+        #[cfg(feature = "highs")]
+        Solver::Highs => {
+            let mut settings_builder = HighsSolverSettingsBuilder::default();
+            if threads > 1 {
+                settings_builder = settings_builder.parallel();
+                settings_builder = settings_builder.threads(threads);
+            }
+            if ignore_feature_requirements {
+                settings_builder = settings_builder.ignore_feature_requirements();
+            }
+            let settings = settings_builder.build();
+            model.run(&settings)
+        }
+        #[cfg(feature = "ipm-ocl")]
+        Solver::CLIPMF32 => {
+            let mut settings_builder = ClIpmF32SettingsBuilder::default();
+            if threads > 1 {
+                settings_builder = settings_builder.parallel();
+                settings_builder = settings_builder.threads(threads);
+            }
+            if ignore_feature_requirements {
+                settings_builder = settings_builder.ignore_feature_requirements();
+            }
+
+            let settings = settings_builder.build();
+            model.run_multi_scenario(&settings)
+        }
+        #[cfg(feature = "ipm-ocl")]
+        Solver::CLIPMF64 => {
+            let mut settings_builder = ClIpmF64SettingsBuilder::default();
+            if threads > 1 {
+                settings_builder = settings_builder.parallel();
+                settings_builder = settings_builder.threads(threads);
+            }
+            if ignore_feature_requirements {
+                settings_builder = settings_builder.ignore_feature_requirements();
+            }
+
+            let settings = settings_builder.build();
+            model.run_multi_scenario(&settings)
+        }
+        #[cfg(feature = "ipm-simd")]
+        Solver::IpmSimd => {
+            let mut settings_builder = SimdIpmSolverSettingsBuilder::default();
+            if threads > 1 {
+                settings_builder = settings_builder.parallel();
+                settings_builder = settings_builder.threads(threads);
+            }
+            if ignore_feature_requirements {
+                settings_builder = settings_builder.ignore_feature_requirements();
+            }
+
+            let settings = settings_builder.build();
+            model.run_multi_scenario(&settings)
+        }
+        #[cfg(feature = "microlp")]
+        Solver::Microlp => {
+            let mut settings_builder = MicroLpSolverSettingsBuilder::default();
+            if threads > 1 {
+                settings_builder = settings_builder.parallel();
+                settings_builder = settings_builder.threads(threads);
+            }
+            if ignore_feature_requirements {
+                settings_builder = settings_builder.ignore_feature_requirements();
+            }
+            let settings = settings_builder.build();
+            model.run(&settings)
+        }
+    }
+    .unwrap();
+}
+
+// fn init_project_cli(
+//     location: &Path,
+//     project_filename: &str,
+//     base_model_rel: &str,
+//     option_sets: &[String],
+// ) -> Result<()> {
+//     use pywr_project::NetworkSet;
+//     // Parse option set definitions from name=dir strings
+//     let sets: Vec<NetworkSet> = option_sets
+//         .iter()
+//         .map(|s| {
+//             let (name, dir) = s.split_once('=').unwrap_or((s.as_str(), s.as_str()));
+//             NetworkSet {
+//                 name: name.to_string(),
+//                 dir: PathBuf::from(dir),
+//                 min_files: None,
+//                 max_files: None,
+//             }
+//         })
+//         .collect();
+//     let project_path =
+//         pywr_project::Project::init_project(location, project_filename, Path::new(base_model_rel), &sets)?;
+//     info!("Initialised project at {}", project_path.display());
+//     Ok(())
+// }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn run_server_mode_defaults_to_local_socket() {
+        let cli = Cli::try_parse_from(["pywr", "run-server"]).unwrap();
+        let Commands::RunServer { mode, socket_name } = cli.command else {
+            panic!("expected run-server command");
+        };
+        assert_eq!(mode, RunServerMode::LocalSocket);
+        assert_eq!(socket_name, "pywr-runner");
+    }
+
+    #[test]
+    fn run_server_accepts_stdio_mode() {
+        let cli = Cli::try_parse_from(["pywr", "run-server", "--mode", "stdio"]).unwrap();
+        let Commands::RunServer { mode, .. } = cli.command else {
+            panic!("expected run-server command");
+        };
+        assert_eq!(mode, RunServerMode::Stdio);
+    }
 }

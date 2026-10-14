@@ -1,16 +1,17 @@
 use crate::error::ComponentConversionError;
-use crate::error::SchemaError;
 use crate::metric::Metric;
-#[cfg(feature = "core")]
-use crate::network::LoadArgs;
-#[cfg(feature = "core")]
-use crate::nodes::{NodeAttribute, NodeComponent};
-use crate::nodes::{NodeMeta, NodeSlot};
+use crate::nodes::NodeMeta;
 use crate::parameters::Parameter;
 use crate::v1::{ConversionData, TryFromV1, try_convert_node_attr, try_convert_node_meta};
+#[cfg(feature = "core")]
+use crate::{
+    error::SchemaError,
+    network::LoadArgs,
+    nodes::{NodeAttribute, NodeComponent, NodeSlot},
+};
 use crate::{mermaid, node_attribute_subset_enum, node_component_subset_enum};
 #[cfg(feature = "core")]
-use pywr_core::metric::MetricF64;
+use pywr_core::{metric::UnresolvedMetricF64, node::UnresolvedNode};
 use pywr_schema_macros::PywrVisitAll;
 use pywr_schema_macros::skip_serializing_none;
 use pywr_v1_schema::nodes::PiecewiseLinkNode as PiecewiseLinkNodeV1;
@@ -66,35 +67,6 @@ impl PiecewiseLinkNode {
     const DEFAULT_ATTRIBUTE: PiecewiseLinkNodeAttribute = PiecewiseLinkNodeAttribute::Outflow;
     const DEFAULT_COMPONENT: PiecewiseLinkNodeComponent = PiecewiseLinkNodeComponent::Outflow;
 
-    fn step_sub_name(i: usize) -> Option<String> {
-        Some(format!("step-{i:02}"))
-    }
-
-    pub fn input_connectors(&self, slot: Option<&NodeSlot>) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
-        if let Some(slot) = slot {
-            Err(SchemaError::InputNodeSlotNotSupported { slot: slot.clone() })
-        } else {
-            Ok(self
-                .steps
-                .iter()
-                .enumerate()
-                .map(|(i, _)| (self.meta.name.as_str(), Self::step_sub_name(i)))
-                .collect())
-        }
-    }
-    pub fn output_connectors(&self, slot: Option<&NodeSlot>) -> Result<Vec<(&str, Option<String>)>, SchemaError> {
-        if let Some(slot) = slot {
-            Err(SchemaError::OutputNodeSlotNotSupported { slot: slot.clone() })
-        } else {
-            Ok(self
-                .steps
-                .iter()
-                .enumerate()
-                .map(|(i, _)| (self.meta.name.as_str(), Self::step_sub_name(i)))
-                .collect())
-        }
-    }
-
     pub fn default_attribute(&self) -> PiecewiseLinkNodeAttribute {
         Self::DEFAULT_ATTRIBUTE
     }
@@ -106,100 +78,105 @@ impl PiecewiseLinkNode {
 
 #[cfg(feature = "core")]
 impl PiecewiseLinkNode {
-    pub fn node_indices_for_flow_constraints(
+    fn step_sub_name(&self, i: usize) -> UnresolvedNode {
+        UnresolvedNode::new(&self.meta.name, Some(&format!("step-{i:02}")))
+    }
+
+    pub fn input_connectors(&self, slot: Option<&NodeSlot>) -> Result<Vec<UnresolvedNode>, SchemaError> {
+        if let Some(slot) = slot {
+            Err(SchemaError::InputNodeSlotNotSupported { slot: slot.clone() })
+        } else {
+            Ok(self
+                .steps
+                .iter()
+                .enumerate()
+                .map(|(i, _)| self.step_sub_name(i))
+                .collect())
+        }
+    }
+    pub fn output_connectors(&self, slot: Option<&NodeSlot>) -> Result<Vec<UnresolvedNode>, SchemaError> {
+        if let Some(slot) = slot {
+            Err(SchemaError::OutputNodeSlotNotSupported { slot: slot.clone() })
+        } else {
+            Ok(self
+                .steps
+                .iter()
+                .enumerate()
+                .map(|(i, _)| self.step_sub_name(i))
+                .collect())
+        }
+    }
+    pub fn nodes_for_flow_constraints(
         &self,
-        network: &pywr_core::network::Network,
         component: Option<NodeComponent>,
-    ) -> Result<Vec<pywr_core::node::NodeIndex>, SchemaError> {
+    ) -> Result<Vec<UnresolvedNode>, SchemaError> {
         // Use the default component if none is specified
         let component = match component {
             Some(c) => c.try_into()?,
             None => Self::DEFAULT_COMPONENT,
         };
 
-        let indices = match component {
+        let nodes = match component {
             PiecewiseLinkNodeComponent::Inflow | PiecewiseLinkNodeComponent::Outflow => self
                 .steps
                 .iter()
                 .enumerate()
-                .map(|(i, _)| {
-                    network
-                        .get_node_index_by_name(self.meta.name.as_str(), Self::step_sub_name(i).as_deref())
-                        .ok_or_else(|| SchemaError::CoreNodeNotFound {
-                            name: self.meta.name.clone(),
-                            sub_name: Self::step_sub_name(i),
-                        })
-                })
-                .collect::<Result<Vec<_>, _>>()?,
+                .map(|(i, _)| self.step_sub_name(i))
+                .collect::<Vec<_>>(),
         };
 
-        Ok(indices)
+        Ok(nodes)
     }
-    pub fn add_to_model(&self, network: &mut pywr_core::network::Network) -> Result<(), SchemaError> {
-        // create a link node for each step
-        for (i, _) in self.steps.iter().enumerate() {
-            network.add_link_node(self.meta.name.as_str(), Self::step_sub_name(i).as_deref())?;
-        }
-        Ok(())
-    }
-    pub fn set_constraints(
+    pub fn add_to_network(
         &self,
-        network: &mut pywr_core::network::Network,
+        network: &mut pywr_core::network::NetworkBuilder,
         args: &LoadArgs,
     ) -> Result<(), SchemaError> {
+        // create a link node for each step
         for (i, step) in self.steps.iter().enumerate() {
-            let sub_name = Self::step_sub_name(i);
+            let mut link_node = pywr_core::node::NodeBuilder::link(self.step_sub_name(i));
 
             if let Some(cost) = &step.cost {
                 let value = cost.load(network, args, Some(&self.meta.name))?;
-                network.set_node_cost(self.meta.name.as_str(), sub_name.as_deref(), value.into())?;
+                link_node.cost(value);
             }
 
             if let Some(max_flow) = &step.max_flow {
                 let value = max_flow.load(network, args, Some(&self.meta.name))?;
-                network.set_node_max_flow(self.meta.name.as_str(), sub_name.as_deref(), value.into())?;
+                link_node.max_flow(value);
             }
 
             if let Some(min_flow) = &step.min_flow {
                 let value = min_flow.load(network, args, Some(&self.meta.name))?;
-                network.set_node_min_flow(self.meta.name.as_str(), sub_name.as_deref(), value.into())?;
+                link_node.min_flow(value);
             }
-        }
 
+            network.node(link_node);
+        }
         Ok(())
     }
-    pub fn create_metric(
-        &self,
-        network: &pywr_core::network::Network,
-        attribute: Option<NodeAttribute>,
-    ) -> Result<MetricF64, SchemaError> {
+
+    pub fn create_metric(&self, attribute: Option<NodeAttribute>) -> Result<UnresolvedMetricF64, SchemaError> {
         // Use the default attribute if none is specified
         let attr = match attribute {
             Some(attr) => attr.try_into()?,
             None => Self::DEFAULT_ATTRIBUTE,
         };
 
-        let indices = self
+        let nodes = self
             .steps
             .iter()
             .enumerate()
-            .map(|(i, _)| {
-                network
-                    .get_node_index_by_name(self.meta.name.as_str(), Self::step_sub_name(i).as_deref())
-                    .ok_or_else(|| SchemaError::CoreNodeNotFound {
-                        name: self.meta.name.clone(),
-                        sub_name: Self::step_sub_name(i),
-                    })
-            })
-            .collect::<Result<Vec<_>, _>>()?;
+            .map(|(i, _)| self.step_sub_name(i))
+            .collect::<Vec<_>>();
 
         let metric = match attr {
-            PiecewiseLinkNodeAttribute::Inflow => MetricF64::MultiNodeInFlow {
-                indices,
+            PiecewiseLinkNodeAttribute::Inflow => UnresolvedMetricF64::MultiNodeInFlow {
+                nodes,
                 name: self.meta.name.to_string(),
             },
-            PiecewiseLinkNodeAttribute::Outflow => MetricF64::MultiNodeOutFlow {
-                indices,
+            PiecewiseLinkNodeAttribute::Outflow => UnresolvedMetricF64::MultiNodeOutFlow {
+                nodes,
                 name: self.meta.name.to_string(),
             },
         };

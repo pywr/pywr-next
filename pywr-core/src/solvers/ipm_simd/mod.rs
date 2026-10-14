@@ -1,23 +1,21 @@
 mod settings;
 
-use crate::edge::EdgeIndex;
-use crate::network::Network;
+use crate::clock::Instant;
+use crate::network::{EdgeIndex, Network};
 use crate::node::{Node, NodeBounds, NodeType};
 use crate::solvers::col_edge_map::{ColumnEdgeMap, ColumnEdgeMapBuilder};
-use crate::solvers::{MultiStateSolver, SolverFeatures, SolverSetupError, SolverSolveError, SolverTimings};
+use crate::solvers::{
+    MultiStateSolver, MultiStateSolverConfig, SolverFeatures, SolverSetupError, SolverSolveError, SolverTimings,
+};
 use crate::state::State;
 use crate::timestep::Timestep;
 use ipm_simd::{PathFollowingDirectSimdSolver, Tolerances};
 use rayon::iter::IndexedParallelIterator;
 use rayon::iter::ParallelIterator;
 use rayon::prelude::ParallelSliceMut;
-#[cfg(feature = "pyo3")]
-pub use settings::build_ipm_simd_settings_py;
 pub use settings::{SimdIpmSolverSettings, SimdIpmSolverSettingsBuilder};
 use std::collections::BTreeMap;
 use std::num::NonZeroUsize;
-use std::ops::Deref;
-use std::time::Instant;
 use wide::f64x4;
 
 const B_MAX: f64 = 999999.0;
@@ -316,7 +314,7 @@ impl BuiltSolver {
     /// Update edge objective coefficients
     fn update_edge_objectives(&mut self, network: &Network, states: &[State]) -> Result<(), SolverSolveError> {
         self.lp.zero_obj_coefficients();
-        for edge in network.edges().deref() {
+        for edge in network.edges() {
             // Collect all of the costs for all states together
             let cost = states
                 .iter()
@@ -362,7 +360,7 @@ impl BuiltSolver {
 
         let dt = timestep.days();
 
-        for node in network.nodes().deref() {
+        for node in network.nodes() {
             match node.node_type() {
                 NodeType::Input | NodeType::Output | NodeType::Link => {
                     if !node.is_max_flow_unconstrained().unwrap() {
@@ -497,7 +495,7 @@ impl SolverBuilder {
 
     /// Create mass balance constraints for each edge
     fn create_mass_balance_constraints(&mut self, network: &Network) {
-        for node in network.nodes().deref() {
+        for node in network.nodes() {
             // Only link nodes create mass-balance constraints
 
             if let NodeType::Link = node.node_type() {
@@ -567,7 +565,7 @@ impl SolverBuilder {
     fn create_node_constraints(&mut self, network: &Network) -> Vec<usize> {
         let mut row_ids = Vec::with_capacity(network.nodes().len());
 
-        for node in network.nodes().deref() {
+        for node in network.nodes() {
             match node.node_type() {
                 NodeType::Input | NodeType::Output | NodeType::Link => {
                     // Only create node constraints for nodes that could become constrained
@@ -605,22 +603,18 @@ pub struct SimdIpmF64Solver {
     max_iterations: NonZeroUsize,
 }
 
-impl MultiStateSolver for SimdIpmF64Solver {
-    type Settings = SimdIpmSolverSettings;
+impl MultiStateSolverConfig for SimdIpmSolverSettings {
+    type Solver = SimdIpmF64Solver;
 
-    fn name() -> &'static str {
+    fn name(&self) -> &'static str {
         "ipm-simd"
     }
 
-    fn features() -> &'static [SolverFeatures] {
+    fn features(&self) -> &'static [SolverFeatures] {
         &[]
     }
 
-    fn setup(
-        network: &Network,
-        num_scenarios: usize,
-        settings: &Self::Settings,
-    ) -> Result<Box<Self>, SolverSetupError> {
+    fn setup(&self, network: &Network, num_scenarios: usize) -> Result<Box<Self::Solver>, SolverSetupError> {
         let mut built_solvers = Vec::new();
         let mut ipms = Vec::new();
 
@@ -645,14 +639,16 @@ impl MultiStateSolver for SimdIpmF64Solver {
             ipms.push(ipm)
         }
 
-        Ok(Box::new(Self {
+        Ok(Box::new(Self::Solver {
             built: built_solvers,
             ipm: ipms,
-            tolerances: settings.tolerances(),
-            max_iterations: settings.max_iterations(),
+            tolerances: self.tolerances(),
+            max_iterations: self.max_iterations(),
         }))
     }
+}
 
+impl MultiStateSolver for SimdIpmF64Solver {
     fn solve(
         &mut self,
         network: &Network,
@@ -690,7 +686,7 @@ impl MultiStateSolver for SimdIpmF64Solver {
                     state.get_mut_network_state().reset();
                 }
 
-                for edge in network.edges().deref() {
+                for edge in network.edges() {
                     let col = built.col_for_edge(&edge.index());
                     let flows = solution[col];
 

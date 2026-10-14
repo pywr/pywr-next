@@ -1,15 +1,16 @@
 use crate::error::ComponentConversionError;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
+use crate::meta::NamedMeta;
 use crate::metric::{Metric, NodeAttrReference};
 #[cfg(feature = "core")]
 use crate::network::LoadArgs;
 use crate::nodes::NodeAttribute;
-use crate::parameters::{ConversionData, ParameterMeta};
+use crate::parameters::{ConversionData, ParameterPhase};
 use crate::v1::{TryFromV1, TryIntoV2};
-
+use crate::validation::ParameterProblem;
 #[cfg(feature = "core")]
-use pywr_core::parameters::{ParameterIndex, ParameterName};
+use pywr_core::parameters::ParameterName;
 use pywr_schema_macros::{PywrVisitAll, skip_serializing_none};
 use pywr_v1_schema::parameters::Polynomial1DParameter as Polynomial1DParameterV1;
 use schemars::JsonSchema;
@@ -18,31 +19,57 @@ use schemars::JsonSchema;
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct Polynomial1DParameter {
-    pub meta: ParameterMeta,
+    pub meta: NamedMeta,
+    pub phase: ParameterPhase,
     pub metric: Metric,
     pub coefficients: Vec<f64>,
     pub scale: Option<f64>,
     pub offset: Option<f64>,
 }
 
+impl Polynomial1DParameter {
+    pub const DEFAULT_SCALE: f64 = 1.0;
+    pub const DEFAULT_OFFSET: f64 = 0.0;
+
+    /// Check that there are `coefficients`; with none, the polynomial is always 0.
+    pub fn validate(&self) -> Result<(), Vec<ParameterProblem>> {
+        if self.coefficients.is_empty() {
+            Err(vec![ParameterProblem::NoCoefficients])
+        } else {
+            Ok(())
+        }
+    }
+}
+
 #[cfg(feature = "core")]
 impl Polynomial1DParameter {
-    pub fn add_to_model(
+    pub fn add_to_network(
         &self,
-        network: &mut pywr_core::network::Network,
+        network: &mut pywr_core::network::NetworkBuilder,
         args: &LoadArgs,
         parent: Option<&str>,
-    ) -> Result<ParameterIndex<f64>, SchemaError> {
-        let metric = self.metric.load(network, args, None)?;
+    ) -> Result<(), SchemaError> {
+        let metric = self.metric.load(network, args, parent)?;
+        let name = ParameterName::new(&self.meta.name, parent);
+        let coefficients = self.coefficients.clone();
+        let scale = self.scale.unwrap_or(Self::DEFAULT_SCALE);
+        let offset = self.offset.unwrap_or(Self::DEFAULT_OFFSET);
 
-        let p = pywr_core::parameters::Polynomial1DParameter::new(
-            ParameterName::new(&self.meta.name, parent),
-            metric,
-            self.coefficients.clone(),
-            self.scale.unwrap_or(1.0),
-            self.offset.unwrap_or(0.0),
-        );
-        Ok(network.add_parameter(Box::new(p))?)
+        let builder = match self.phase {
+            ParameterPhase::Before => {
+                pywr_core::parameters::Polynomial1DParameterBuilder::before(name, metric, coefficients, scale, offset)
+            }
+            ParameterPhase::After => {
+                pywr_core::parameters::Polynomial1DParameterBuilder::after(name, metric, coefficients, scale, offset)
+            }
+            ParameterPhase::Both => {
+                pywr_core::parameters::Polynomial1DParameterBuilder::both(name, metric, coefficients, scale, offset)
+            }
+        };
+
+        network.parameters().f64(Box::new(builder));
+
+        Ok(())
     }
 }
 
@@ -70,6 +97,7 @@ impl TryFromV1<Polynomial1DParameterV1> for Polynomial1DParameter {
             coefficients: v1.coefficients,
             scale: v1.scale,
             offset: v1.offset,
+            phase: ParameterPhase::Before,
         })
     }
 }
