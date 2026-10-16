@@ -2346,12 +2346,13 @@ dependencies = [
 
 [[package]]
 name = "pywr-v1-schema"
-version = "0.25.0"
+version = "0.25.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "537f27adb2c17afb091174b4af4bec3b1ca80cc410ea4b1642e7e9eb647f8988"
+checksum = "e5b7423a37a475bead57ce5057ed71432c40d1ec37dc7abe9a3592b543037615"
 dependencies = [
  "jiff",
  "pywr-v1-schema-macros",
+ "schemars",
  "serde",
  "serde_json",
  "strum",

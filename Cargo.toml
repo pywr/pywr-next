@@ -75,7 +75,7 @@ ocl = "0.19"
 parquet = { version = "60.0", default-features = false, features = ["arrow", "base64", "brotli", "flate2-zlib-rs", "lz4", "simdutf8", "snap"] }
 pyo3 = { version = "0.29" }
 pyo3-log = "0.13"
-pywr-v1-schema = "0.25"
+pywr-v1-schema = "0.25.1"
 quote = "1.0"
 rand = "0.10"
 rand_chacha = "0.10"
