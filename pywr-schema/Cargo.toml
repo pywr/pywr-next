@@ -13,7 +13,7 @@ categories.workspace = true
 
 [features]
 # Core feature requires additional dependencies
-core = ["dep:pywr-core", "dep:ndarray", "dep:arrow", "dep:parquet"]
+core = ["dep:pywr-core", "dep:ndarray", "dep:arrow", "dep:parquet", "pywr-output-metadata/arrow"]
 default = ["core", "pyo3", "hdf5", "clp"]
 
 # Core solvers
@@ -49,6 +49,7 @@ parquet = { workspace = true, optional = true }
 pyo3 = { workspace = true, optional = true }
 # pyo3-polars = { workspace = true, optional = true }
 pywr-core = { path = "../pywr-core", default-features = false, optional = true }
+pywr-output-metadata = { path = "../pywr-output-metadata" }
 pywr-schema-macros = { path = "../pywr-schema-macros" }
 pywr-v1-schema = { workspace = true }
 relative-path = { workspace = true }

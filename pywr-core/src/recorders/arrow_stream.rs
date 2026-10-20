@@ -13,9 +13,11 @@ use arrow::error::ArrowError;
 use arrow::ipc::writer::StreamWriter;
 use arrow::record_batch::RecordBatch;
 use arrow_schema::Metadata;
-use arrow_schema::extension::{EXTENSION_TYPE_METADATA_KEY, EXTENSION_TYPE_NAME_KEY, ExtensionType};
 use jiff::civil::DateTime;
-use serde::{Deserialize, Serialize};
+use pywr_output_metadata::{
+    MetricColumnExtension, MetricColumnMetadata, SCENARIO_GROUPS_KEY, SCENARIOS_KEY, ScenarioGroupMetadata,
+    ScenarioMetadata, VERSION_KEY,
+};
 use std::collections::HashMap;
 use std::fs::{File, OpenOptions};
 use std::io::{self, Write};
@@ -26,98 +28,6 @@ use std::sync::Arc;
 use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
 use std::thread::{self, JoinHandle};
 use thiserror::Error;
-
-/// Metadata identifying a metric column in an [`ArrowStreamOutput`] schema.
-///
-/// The physical Arrow type is `FixedSizeList<Float64>`; this metadata is encoded as the
-/// `org.pywr.metric` Arrow extension type on the corresponding field.
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
-pub struct MetricColumnMetadata {
-    pub metric_set: String,
-    pub name: String,
-    pub attribute: String,
-    #[serde(rename = "type")]
-    pub ty: String,
-    pub sub_type: Option<String>,
-}
-
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
-struct ScenarioMetadata {
-    simulation_id: usize,
-    simulation_indices: Vec<usize>,
-    scenario_labels: Vec<String>,
-}
-
-#[derive(Clone, Debug, Serialize)]
-struct ScenarioGroupMetadata<'a> {
-    name: &'a str,
-    size: usize,
-}
-
-/// Arrow extension type used for Pywr metric columns.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct MetricColumnExtension(MetricColumnMetadata);
-
-impl MetricColumnExtension {
-    pub fn new(metadata: MetricColumnMetadata) -> Self {
-        Self(metadata)
-    }
-
-    /// Create the extension-typed Arrow field for this metric.
-    pub fn field(&self, column_name: impl Into<String>, scenario_count: i32) -> Field {
-        let mut metadata = HashMap::new();
-        metadata.insert(EXTENSION_TYPE_NAME_KEY.to_string(), Self::NAME.to_string());
-        metadata.insert(
-            EXTENSION_TYPE_METADATA_KEY.to_string(),
-            self.serialize_metadata()
-                .expect("metric extension metadata is serializable"),
-        );
-        Field::new(
-            column_name,
-            DataType::FixedSizeList(Arc::new(Field::new("value", DataType::Float64, true)), scenario_count),
-            false,
-        )
-        .with_metadata(metadata)
-    }
-}
-
-impl ExtensionType for MetricColumnExtension {
-    const NAME: &'static str = "org.pywr.metric";
-    type Metadata = MetricColumnMetadata;
-
-    fn metadata(&self) -> &Self::Metadata {
-        &self.0
-    }
-
-    fn serialize_metadata(&self) -> Option<String> {
-        serde_json::to_string(&self.0).ok()
-    }
-
-    fn deserialize_metadata(metadata: Option<&str>) -> Result<Self::Metadata, ArrowError> {
-        let metadata = metadata
-            .ok_or_else(|| ArrowError::InvalidArgumentError("Pywr metric extension metadata is missing".to_string()))?;
-        serde_json::from_str(metadata).map_err(|error| {
-            ArrowError::InvalidArgumentError(format!("Invalid Pywr metric extension metadata: {error}"))
-        })
-    }
-
-    fn supports_data_type(&self, data_type: &DataType) -> Result<(), ArrowError> {
-        if matches!(data_type, DataType::FixedSizeList(field, size) if *size > 0 && field.data_type() == &DataType::Float64)
-        {
-            Ok(())
-        } else {
-            Err(ArrowError::InvalidArgumentError(format!(
-                "Pywr metric extension requires FixedSizeList<Float64> storage, got {data_type:?}"
-            )))
-        }
-    }
-
-    fn try_new(data_type: &DataType, metadata: Self::Metadata) -> Result<Self, ArrowError> {
-        let extension = Self(metadata);
-        extension.supports_data_type(data_type)?;
-        Ok(extension)
-    }
-}
 
 /// A notification sent after a complete record batch has been written and flushed.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -254,7 +164,7 @@ fn make_schema(metric_set_name: &str, scenario_domain: &ScenarioDomain, metrics:
     }
 
     let mut metadata = Metadata::new();
-    metadata.insert("PYWR_VERSION", env!("CARGO_PKG_VERSION"));
+    metadata.insert(VERSION_KEY, env!("CARGO_PKG_VERSION"));
     let scenarios: Vec<_> = scenario_domain
         .indices()
         .iter()
@@ -265,7 +175,7 @@ fn make_schema(metric_set_name: &str, scenario_domain: &ScenarioDomain, metrics:
         })
         .collect();
     metadata.insert(
-        "PYWR_SCENARIOS",
+        SCENARIOS_KEY,
         serde_json::to_string(&scenarios).expect("scenario metadata is serializable"),
     );
 
@@ -273,12 +183,12 @@ fn make_schema(metric_set_name: &str, scenario_domain: &ScenarioDomain, metrics:
         .groups()
         .iter()
         .map(|group| ScenarioGroupMetadata {
-            name: group.name(),
+            name: group.name().to_string(),
             size: group.size(),
         })
         .collect();
     metadata.insert(
-        "PYWR_SCENARIO_GROUPS",
+        SCENARIO_GROUPS_KEY,
         serde_json::to_string(&groups).expect("scenario group metadata is serializable"),
     );
 
@@ -782,24 +692,6 @@ mod tests {
     use super::*;
     use arrow::ipc::reader::StreamReader;
     use std::fs;
-
-    #[test]
-    fn metric_extension_round_trips_through_field_metadata() {
-        let metadata = MetricColumnMetadata {
-            metric_set: "outputs".to_string(),
-            name: "reservoir".to_string(),
-            attribute: "volume".to_string(),
-            ty: "node".to_string(),
-            sub_type: Some("storage".to_string()),
-        };
-        let field = MetricColumnExtension::new(metadata.clone()).field("reservoir", 2);
-        assert_eq!(
-            MetricColumnExtension::try_new_from_field_metadata(field.data_type(), field.metadata())
-                .unwrap()
-                .metadata(),
-            &metadata
-        );
-    }
 
     /// Two metrics over two scenarios.
     fn two_metric_schema() -> Arc<Schema> {
