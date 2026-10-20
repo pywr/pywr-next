@@ -2039,6 +2039,7 @@ dependencies = [
  "num",
  "ocl",
  "pyo3",
+ "pywr-output-metadata",
  "rand",
  "rand_chacha",
  "rand_distr",
@@ -2048,6 +2049,15 @@ dependencies = [
  "thiserror 2.0.21",
  "web-time",
  "wide",
+]
+
+[[package]]
+name = "pywr-output-metadata"
+version = "2.0.0-rc1"
+dependencies = [
+ "arrow-schema",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -2150,6 +2160,7 @@ dependencies = [
  "parquet",
  "pyo3",
  "pywr-core",
+ "pywr-output-metadata",
  "pywr-schema-macros",
  "pywr-v1-schema",
  "relative-path",
