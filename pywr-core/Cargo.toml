@@ -45,6 +45,7 @@ nalgebra = { workspace = true }
 ndarray = { workspace = true }
 num = { workspace = true }
 ocl = { workspace = true, optional = true }
+parquet = { workspace = true }
 pyo3 = { workspace = true, features = ["jiff-02", "macros"], optional = true }
 pywr-output-metadata = { path = "../pywr-output-metadata", features = ["arrow"] }
 rand = { workspace = true }
@@ -60,6 +61,10 @@ wide = { workspace = true, optional = true }
 # rand draws its seeds through getrandom, which needs the JavaScript host in the browser.
 getrandom = { workspace = true, features = ["wasm_js"] }
 web-time = { workspace = true }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+# Gives back parquet's default `zstd`, which the workspace leaves out for wasm.
+parquet = { workspace = true, features = ["zstd"] }
 
 [dev-dependencies]
 criterion = { workspace = true, features = ["html_reports"] }
