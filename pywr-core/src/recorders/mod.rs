@@ -1,4 +1,5 @@
 mod aggregator;
+mod arrow_batch;
 mod arrow_stream;
 mod csv;
 
@@ -6,6 +7,7 @@ mod csv;
 mod hdf;
 mod memory;
 mod metric_set;
+mod parquet;
 mod py;
 mod snapshot;
 
@@ -22,6 +24,7 @@ use crate::scenario::ScenarioIndex;
 use crate::state::State;
 use crate::timestep::Timestep;
 pub use aggregator::{AggregationFrequency, Aggregator, PeriodValue};
+pub use arrow_batch::MetricSetBatchError;
 pub use arrow_stream::{
     ArrowStreamCommit, ArrowStreamError, ArrowStreamOutput, ArrowStreamOutputBuilder, ArrowStreamSink,
 };
@@ -37,6 +40,7 @@ pub use metric_set::{
 };
 use ndarray::Array2;
 use ndarray::prelude::*;
+pub use parquet::{ParquetOutput, ParquetOutputBuilder, ParquetOutputError};
 pub use pywr_output_metadata::{MetricColumnExtension, MetricColumnMetadata};
 pub use snapshot::{
     Snapshot, SnapshotBuffer, SnapshotData, SnapshotMeta, SnapshotMetricSetItem, SnapshotMetricSetMeta,
@@ -67,6 +71,8 @@ impl RecorderMeta {
 pub enum RecorderSetupError {
     #[error("Arrow stream error.")]
     ArrowStreamError(#[from] ArrowStreamError),
+    #[error("Parquet output error.")]
+    ParquetOutputError(#[from] ParquetOutputError),
     #[error("CSV error.")]
     CSVError(#[from] CsvError),
     #[cfg(feature = "hdf5")]
@@ -81,6 +87,8 @@ pub enum RecorderSetupError {
 pub enum RecorderSaveError {
     #[error("Arrow stream error.")]
     ArrowStreamError(#[from] ArrowStreamError),
+    #[error("Parquet output error.")]
+    ParquetOutputError(#[from] ParquetOutputError),
     #[error("F64 metric error.")]
     MetricF64Error(#[from] MetricF64Error),
     #[error("U64 metric error.")]
@@ -99,6 +107,8 @@ pub enum RecorderSaveError {
 pub enum RecorderFinaliseError {
     #[error("Arrow stream error.")]
     ArrowStreamError(#[from] ArrowStreamError),
+    #[error("Parquet output error.")]
+    ParquetOutputError(#[from] ParquetOutputError),
     #[error("Metric set index `{index}` not found")]
     MetricSetIndexNotFound { index: MetricSetIndex },
     #[error("CSV error.")]
