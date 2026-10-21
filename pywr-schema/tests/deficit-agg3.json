@@ -34,7 +34,7 @@
         "meta": {
           "name": "demand11"
         },
-        "type": "Output",
+        "type": "Demand",
         "max_flow": {
           "type": "Parameter",
           "name": "demand"
@@ -48,7 +48,7 @@
         "meta": {
           "name": "demand12"
         },
-        "type": "Output",
+        "type": "Demand",
         "max_flow": {
           "type": "Parameter",
           "name": "demand"

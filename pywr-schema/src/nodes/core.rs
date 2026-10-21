@@ -16,7 +16,6 @@ use log::warn;
 use pywr_core::{
     metric::UnresolvedMetricF64,
     node::{UnresolvedNode, UnresolvedStorageInitialVolume},
-    parameters::{DeficitParameterBuilder, ParameterName},
 };
 use pywr_schema_macros::PywrVisitAll;
 use pywr_schema_macros::skip_serializing_none;
@@ -44,7 +43,8 @@ node_component_subset_enum! {
 /// A node that represents an input to the model, such as a river inflow or a reservoir inflow.
 ///
 /// Flow is constrained by the `max_flow` and `min_flow` metrics. If `max_flow` is not specified,
-/// the flow is unconstrained. If `min_flow` is not specified it defaults to 0.
+/// the flow is unconstrained. If `min_flow` is not specified it defaults to 0. See
+/// [`crate::nodes::DemandNode`] for an output with a required `max_flow` and a `Deficit` attribute.
 ///
 /// # Available attributes and components
 ///
@@ -676,8 +676,10 @@ impl TryFromV1<BreakLinkNodeV1> for LinkNode {
 node_attribute_subset_enum! {
     pub enum OutputNodeAttribute {
         Inflow,
-        /// The deficit of the inflow compared to the `max_flow` metric.
-        Deficit,
+        /// The value of the `max_flow` metric. Requires `max_flow` to be defined.
+        MaxFlow,
+        /// The value of the `min_flow` metric. Defaults to 0 if `min_flow` is not defined.
+        MinFlow,
     }
 }
 
@@ -755,11 +757,7 @@ impl OutputNode {
 
         Ok(vec![node])
     }
-    pub fn create_metric(
-        &self,
-        network: &mut pywr_core::network::NetworkBuilder,
-        attribute: Option<NodeAttribute>,
-    ) -> Result<UnresolvedMetricF64, SchemaError> {
+    pub fn create_metric(&self, attribute: Option<NodeAttribute>) -> Result<UnresolvedMetricF64, SchemaError> {
         // Use the default attribute if none is specified
         let attr = match attribute {
             Some(attr) => attr.try_into()?,
@@ -770,23 +768,25 @@ impl OutputNode {
 
         let metric = match attr {
             OutputNodeAttribute::Inflow => UnresolvedMetricF64::NodeInFlow(name),
-            OutputNodeAttribute::Deficit => {
-                let deficit_parameter_name = ParameterName::new("deficit", Some(self.meta.name.as_str()));
-
-                // Create a parameter for the deficit metric if it does not already exist
-                if !network.parameters().contains_name(&deficit_parameter_name) {
-                    let flow = UnresolvedMetricF64::NodeInFlow(self.meta.name.as_str().into());
-                    let max_flow = UnresolvedMetricF64::NodeMaxFlow(self.meta.name.as_str().into());
-                    let deficit_builder = DeficitParameterBuilder::new(deficit_parameter_name.clone(), flow, max_flow);
-
-                    network.parameters().f64(Box::new(deficit_builder));
-                }
-
-                UnresolvedMetricF64::new_parameter_after_else_initial(deficit_parameter_name)
+            OutputNodeAttribute::MaxFlow => {
+                self.require_max_flow()?;
+                UnresolvedMetricF64::NodeMaxFlow(name)
             }
+            OutputNodeAttribute::MinFlow => UnresolvedMetricF64::NodeMinFlow(name),
         };
 
         Ok(metric)
+    }
+
+    /// Return an error if `max_flow` is not defined.
+    fn require_max_flow(&self) -> Result<(), SchemaError> {
+        if self.max_flow.is_none() {
+            return Err(SchemaError::MissingNodeAttribute {
+                attr: "max_flow".to_string(),
+                name: self.meta.name.clone(),
+            });
+        }
+        Ok(())
     }
 
     pub fn add_to_network(
@@ -1266,6 +1266,31 @@ mod tests {
         let node: InputNode = serde_json::from_str(data).unwrap();
 
         assert_eq!(node.meta.name, "supply1");
+    }
+
+    /// The `MaxFlow` attribute requires `max_flow` to be defined; `MinFlow` does not.
+    #[test]
+    #[cfg(feature = "core")]
+    fn test_output_attributes_without_max_flow() {
+        use crate::error::SchemaError;
+        use crate::nodes::{NodeAttribute, OutputNode};
+
+        let data = r#"
+            {
+                "meta": {
+                    "name": "demand1"
+                }
+            }
+            "#;
+
+        let node: OutputNode = serde_json::from_str(data).unwrap();
+
+        let err = node.create_metric(Some(NodeAttribute::MaxFlow)).unwrap_err();
+        assert!(
+            matches!(err, SchemaError::MissingNodeAttribute { ref attr, ref name } if attr == "max_flow" && name == "demand1")
+        );
+
+        assert!(node.create_metric(Some(NodeAttribute::MinFlow)).is_ok());
     }
 
     #[test]

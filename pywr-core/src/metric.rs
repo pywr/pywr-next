@@ -127,6 +127,8 @@ pub enum MetricF64Error {
     VirtualStorageIndexNotFound(VirtualStorageIndex),
     #[error("Error getting node max flow.")]
     NodeGetMaxFlowError(#[source] Box<NodeError>),
+    #[error("Error getting node min flow.")]
+    NodeGetMinFlowError(#[source] Box<NodeError>),
     #[error("Error getting node max volume.")]
     NodeGetMaxVolumeError(#[source] Box<NodeError>),
     #[error("Aggregated node index not found: {0}")]
@@ -150,6 +152,7 @@ pub enum MetricF64 {
     NodeInFlow(NodeIndex),
     NodeOutFlow(NodeIndex),
     NodeMaxFlow(NodeIndex),
+    NodeMinFlow(NodeIndex),
     NodeVolume(NodeIndex),
     NodeProportionalVolume(NodeIndex),
     NodeMaxVolume(NodeIndex),
@@ -204,6 +207,11 @@ impl MetricF64 {
                 .ok_or(MetricF64Error::NodeIndexNotFound(*idx))?
                 .get_max_flow(network, state)
                 .map_err(|e| MetricF64Error::NodeGetMaxFlowError(Box::new(e)))?),
+            MetricF64::NodeMinFlow(idx) => Ok(network
+                .get_node(idx)
+                .ok_or(MetricF64Error::NodeIndexNotFound(*idx))?
+                .get_min_flow(network, state)
+                .map_err(|e| MetricF64Error::NodeGetMinFlowError(Box::new(e)))?),
             MetricF64::NodeVolume(idx) => Ok(state.get_network_state().get_node_volume(idx)?),
             MetricF64::NodeProportionalVolume(idx) => {
                 Ok(state.get_network_state().get_node_proportional_volume(idx)?)
@@ -490,6 +498,7 @@ pub enum UnresolvedMetricF64 {
     NodeProportionalVolume(UnresolvedNode),
     NodeMaxVolume(UnresolvedNode),
     NodeMaxFlow(UnresolvedNode),
+    NodeMinFlow(UnresolvedNode),
     AggregatedNodeInFlow(UnresolvedNode),
     AggregatedNodeOutFlow(UnresolvedNode),
     AggregatedStorageNodeVolume(UnresolvedNode),
@@ -653,6 +662,15 @@ impl UnresolvedMetricF64 {
                         node: unresolved.clone(),
                     })?;
                 MetricF64::NodeMaxFlow(*idx)
+            }
+            UnresolvedMetricF64::NodeMinFlow(unresolved) => {
+                let idx = maps
+                    .nodes
+                    .get(unresolved)
+                    .ok_or_else(|| MetricF64ResolutionError::NodeNotFound {
+                        node: unresolved.clone(),
+                    })?;
+                MetricF64::NodeMinFlow(*idx)
             }
             UnresolvedMetricF64::AggregatedNodeInFlow(unresolved) => {
                 let idx = maps.aggregated_nodes.get(unresolved).ok_or_else(|| {
