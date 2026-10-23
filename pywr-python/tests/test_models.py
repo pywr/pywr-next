@@ -26,15 +26,17 @@ def model_dir(test_dir: Path):
     return test_dir / "models"
 
 
-def test_simple_time_series(model_dir: Path, tmpdir: Path):
+def test_simple_time_series(model_dir: Path, tmp_path: Path):
     """Test the simple model"""
 
     filename = model_dir / "simple-time-series" / "model.json"
 
-    output_fn = tmpdir / "outputs.h5"
+    output_fn = tmp_path / "outputs.h5"
 
     schema = ModelSchema.from_path(filename)
-    model = schema.build(data_path=model_dir / "simple-time-series", output_path=tmpdir)
+    model = schema.build(
+        data_path=model_dir / "simple-time-series", output_path=tmp_path
+    )
     result = model.run("clp")
 
     assert isinstance(result, ModelResult)
@@ -84,12 +86,12 @@ def test_simple_time_series(model_dir: Path, tmpdir: Path):
         "piecewise-link1",
     ],
 )
-def test_model(model_dir: Path, tmpdir: Path, model_name: str):
+def test_model(model_dir: Path, tmp_path: Path, model_name: str):
     filename = model_dir / model_name / "model.json"
-    output_fn = tmpdir / "outputs.h5"
+    output_fn = tmp_path / "outputs.h5"
 
     schema = ModelSchema.from_path(filename)
-    model = schema.build(data_path=model_dir / model_name, output_path=tmpdir)
+    model = schema.build(data_path=model_dir / model_name, output_path=tmp_path)
     model.run("clp")
 
     assert output_fn.exists()
@@ -141,13 +143,17 @@ def test_multi_model(model_dir: Path, model_name: str):
     ],
 )
 def test_timeseries_backends(
-    model_dir: Path, tmpdir: Path, backend: str, file_format: str, infer_time_col: bool
+    model_dir: Path,
+    tmp_path: Path,
+    backend: str,
+    file_format: str,
+    infer_time_col: bool,
 ):
     """Test the simple model with different timeseries backends"""
     filename = model_dir / "time-series-formats" / "model.json"
     input_csv = model_dir / "time-series-formats" / "inflow.csv"
 
-    output_fn = tmpdir / "outputs.h5"
+    output_fn = tmp_path / "outputs.h5"
 
     with open(filename) as fh:
         schema_data = json.load(fh)
@@ -160,7 +166,7 @@ def test_timeseries_backends(
             match file_format:
                 case "csv":
                     # Write the input CSV to the temporary directory
-                    input_df.to_csv(tmpdir / "inflow.csv")
+                    input_df.to_csv(tmp_path / "inflow.csv")
                     ts_data.update(
                         {
                             "type": "Pandas",
@@ -172,7 +178,7 @@ def test_timeseries_backends(
                         ts_data["kwargs"] = {"index_col": 0, "parse_dates": True}
 
                 case "xlsx":
-                    input_df.to_excel(tmpdir / "inflow.xlsx")
+                    input_df.to_excel(tmp_path / "inflow.xlsx")
                     ts_data.update(
                         {
                             "type": "Pandas",
@@ -180,7 +186,7 @@ def test_timeseries_backends(
                         }
                     )
                 case "h5":
-                    input_df.to_hdf(tmpdir / "inflow.h5", key="data")
+                    input_df.to_hdf(tmp_path / "inflow.h5", key="data")
                     ts_data.update(
                         {
                             "type": "Pandas",
@@ -194,7 +200,7 @@ def test_timeseries_backends(
             input_df = pl.read_csv(input_csv, try_parse_dates=True)
             match file_format:
                 case "csv":
-                    input_df.write_csv(tmpdir / "inflow.csv")
+                    input_df.write_csv(tmp_path / "inflow.csv")
                     ts_data.update(
                         {
                             "type": "Polars",
@@ -202,7 +208,7 @@ def test_timeseries_backends(
                         }
                     )
                 case "parquet":
-                    input_df.write_parquet(str(tmpdir / "inflow.parquet"))
+                    input_df.write_parquet(str(tmp_path / "inflow.parquet"))
                     ts_data.update(
                         {
                             "type": "Polars",
@@ -210,7 +216,7 @@ def test_timeseries_backends(
                         }
                     )
                 case "json":
-                    input_df.write_json(tmpdir / "inflow.json")
+                    input_df.write_json(tmp_path / "inflow.json")
                     ts_data.update(
                         {
                             "type": "Polars",
@@ -229,7 +235,7 @@ def test_timeseries_backends(
     schema_data["network"]["time_series"] = [ts_data]
 
     schema = ModelSchema.from_json_string(json.dumps(schema_data))
-    model = schema.build(data_path=tmpdir, output_path=tmpdir)
+    model = schema.build(data_path=tmp_path, output_path=tmp_path)
     result = model.run("clp")
 
     assert isinstance(result, ModelResult)
