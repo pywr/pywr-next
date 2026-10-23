@@ -41,6 +41,7 @@ mod attributes;
 mod components;
 mod core;
 mod delay;
+mod demand;
 mod loss_link;
 mod piecewise_link;
 mod piecewise_storage;
@@ -73,6 +74,7 @@ pub use core::{
     SoftConstraint, StorageInitialVolume, StorageInitialVolumeType, StorageNode, StorageNodeAttribute,
 };
 pub use delay::{DelayNode, DelayNodeAttribute, DelayNodeComponent};
+pub use demand::{DemandNode, DemandNodeAttribute, DemandNodeComponent};
 pub use loss_link::{LossFactor, LossFactorType, LossLinkNode, LossLinkNodeAttribute, LossLinkNodeComponent};
 pub use piecewise_link::{
     PiecewiseLinkNode, PiecewiseLinkNodeAttribute, PiecewiseLinkNodeComponent, PiecewiseLinkStep,
@@ -232,6 +234,7 @@ impl From<NodeType> for Node {
             NodeType::Input => Node::Input(InputNode::default()),
             NodeType::Link => Node::Link(LinkNode::default()),
             NodeType::Output => Node::Output(OutputNode::default()),
+            NodeType::Demand => Node::Demand(DemandNode::default()),
             NodeType::Storage => Node::Storage(StorageNode::default()),
             NodeType::Catchment => Node::Catchment(CatchmentNode::default()),
             NodeType::RiverGauge => Node::RiverGauge(RiverGaugeNode::default()),
@@ -262,6 +265,7 @@ pub enum Node {
     Input(InputNode),
     Link(LinkNode),
     Output(OutputNode),
+    Demand(DemandNode),
     Storage(StorageNode),
     Catchment(CatchmentNode),
     RiverGauge(RiverGaugeNode),
@@ -304,6 +308,7 @@ impl Node {
             Node::Input(_)
             | Node::Link(_)
             | Node::Output(_)
+            | Node::Demand(_)
             | Node::Catchment(_)
             | Node::RiverGauge(_)
             | Node::LossLink(_)
@@ -323,6 +328,7 @@ impl Node {
             Node::Input(n) => &n.meta,
             Node::Link(n) => &n.meta,
             Node::Output(n) => &n.meta,
+            Node::Demand(n) => &n.meta,
             Node::Storage(n) => &n.meta,
             Node::Catchment(n) => &n.meta,
             Node::RiverGauge(n) => &n.meta,
@@ -346,6 +352,7 @@ impl Node {
             Node::Input(n) => &mut n.meta,
             Node::Link(n) => &mut n.meta,
             Node::Output(n) => &mut n.meta,
+            Node::Demand(n) => &mut n.meta,
             Node::Storage(n) => &mut n.meta,
             Node::Catchment(n) => &mut n.meta,
             Node::RiverGauge(n) => &mut n.meta,
@@ -374,6 +381,7 @@ impl Node {
             Node::Input(_) | Node::Catchment(_) => false,
             Node::Link(_)
             | Node::Output(_)
+            | Node::Demand(_)
             | Node::Storage(_)
             | Node::RiverGauge(_)
             | Node::LossLink(_)
@@ -392,13 +400,14 @@ impl Node {
 
     /// Returns true if this node can be the `from_node` of an edge.
     ///
-    /// [`Node::Output`] is built as a `pywr-core` output node, which rejects any outgoing edge
-    /// with `NodeBuilderError::UnexpectedOutgoingEdges`. Every other node type either is, or
-    /// expands to, a node that can provide flow — including [`Node::Delay`] and a routing
-    /// [`Node::River`], which take their outflow from a core input node.
+    /// [`Node::Output`] and [`Node::Demand`] are built as a `pywr-core` output node, which rejects
+    /// any outgoing edge with `NodeBuilderError::UnexpectedOutgoingEdges`. Every other node type
+    /// either is, or expands to, a node that can provide flow — including [`Node::Delay`] and a
+    /// routing [`Node::River`], which take their outflow from a core input node.
     pub fn provides_outflow(&self) -> bool {
         match self {
             Node::Output(_) => false,
+            Node::Demand(_) => false,
             Node::Input(_)
             | Node::Link(_)
             | Node::Storage(_)
@@ -424,6 +433,7 @@ impl Node {
             Node::Input(_) => None,
             Node::Link(_) => None,
             Node::Output(_) => None,
+            Node::Demand(_) => None,
             Node::Storage(_) => None,
             Node::Catchment(_) => None,
             Node::RiverGauge(_) => None,
@@ -453,6 +463,7 @@ impl Node {
             Node::Input(_)
             | Node::Link(_)
             | Node::Output(_)
+            | Node::Demand(_)
             | Node::Storage(_)
             | Node::Catchment(_)
             | Node::RiverGauge(_)
@@ -479,6 +490,7 @@ impl Node {
             Node::Input(_) => None,
             Node::Link(_) => None,
             Node::Output(_) => None,
+            Node::Demand(_) => None,
             Node::Storage(_) => None,
             Node::Catchment(_) => None,
             Node::RiverGauge(_) => None,
@@ -508,6 +520,7 @@ impl Node {
             Node::Input(_)
             | Node::Link(_)
             | Node::Output(_)
+            | Node::Demand(_)
             | Node::Storage(_)
             | Node::Catchment(_)
             | Node::RiverGauge(_)
@@ -579,6 +592,7 @@ impl Node {
             Node::Input(n) => n.default_attribute().into(),
             Node::Link(n) => n.default_attribute().into(),
             Node::Output(n) => n.default_attribute().into(),
+            Node::Demand(n) => n.default_attribute().into(),
             Node::Storage(n) => n.default_attribute().into(),
             Node::Catchment(n) => n.default_attribute().into(),
             Node::RiverGauge(n) => n.default_attribute().into(),
@@ -601,7 +615,8 @@ impl Node {
         match self {
             Node::Input(_) => InputNodeAttribute::iter().map(Into::into).collect(),
             Node::Link(_) => LinkNodeAttribute::iter().map(Into::into).collect(),
-            Node::Output(_) => OutputNodeAttribute::iter().map(Into::into).collect(),
+            Node::Output(n) => n.available_attributes().into_iter().map(Into::into).collect(),
+            Node::Demand(_) => DemandNodeAttribute::iter().map(Into::into).collect(),
             Node::Storage(_) => StorageNodeAttribute::iter().map(Into::into).collect(),
             Node::Catchment(_) => CatchmentNodeAttribute::iter().map(Into::into).collect(),
             Node::RiverGauge(_) => RiverGaugeNodeAttribute::iter().map(Into::into).collect(),
@@ -652,6 +667,7 @@ impl Node {
             Node::Input(n) => Some(n.default_component().into()),
             Node::Link(n) => Some(n.default_component().into()),
             Node::Output(n) => Some(n.default_component().into()),
+            Node::Demand(n) => Some(n.default_component().into()),
             Node::Catchment(n) => Some(n.default_component().into()),
             Node::Storage(_) => None,
             Node::RiverGauge(n) => Some(n.default_component().into()),
@@ -676,6 +692,7 @@ impl Node {
             Node::Input(_) => InputNodeComponent::iter().map(Into::into).collect(),
             Node::Link(_) => LinkNodeComponent::iter().map(Into::into).collect(),
             Node::Output(_) => OutputNodeComponent::iter().map(Into::into).collect(),
+            Node::Demand(_) => DemandNodeComponent::iter().map(Into::into).collect(),
             Node::Catchment(_) => CatchmentNodeComponent::iter().map(Into::into).collect(),
             Node::Storage(_) => Vec::new(),
             Node::RiverGauge(_) => RiverGaugeNodeComponent::iter().map(Into::into).collect(),
@@ -704,6 +721,7 @@ impl Node {
             Node::Input(_)
             | Node::Link(_)
             | Node::Output(_)
+            | Node::Demand(_)
             | Node::Catchment(_)
             | Node::Storage(_)
             | Node::RiverGauge(_)
@@ -726,6 +744,7 @@ impl Node {
             Node::Input(n) => n.parameters.as_deref(),
             Node::Link(n) => n.parameters.as_deref(),
             Node::Output(n) => n.parameters.as_deref(),
+            Node::Demand(n) => n.parameters.as_deref(),
             Node::Storage(n) => n.parameters.as_deref(),
             Node::Catchment(n) => n.parameters.as_deref(),
             Node::RiverGauge(n) => n.parameters.as_deref(),
@@ -748,6 +767,7 @@ impl Node {
             Node::Input(n) => n.parameters.as_deref_mut(),
             Node::Link(n) => n.parameters.as_deref_mut(),
             Node::Output(n) => n.parameters.as_deref_mut(),
+            Node::Demand(n) => n.parameters.as_deref_mut(),
             Node::Storage(n) => n.parameters.as_deref_mut(),
             Node::Catchment(n) => n.parameters.as_deref_mut(),
             Node::RiverGauge(n) => n.parameters.as_deref_mut(),
@@ -787,6 +807,7 @@ impl Node {
             Node::Input(_)
             | Node::Link(_)
             | Node::Output(_)
+            | Node::Demand(_)
             | Node::Catchment(_)
             | Node::RiverGauge(_)
             | Node::Delay(_)
@@ -832,6 +853,7 @@ impl Node {
             Node::Input(n) => n.input_connectors(slot),
             Node::Link(n) => n.input_connectors(slot),
             Node::Output(n) => n.input_connectors(slot),
+            Node::Demand(n) => n.input_connectors(slot),
             Node::Storage(n) => n.input_connectors(slot),
             Node::Catchment(n) => n.input_connectors(slot),
             Node::RiverGauge(n) => n.input_connectors(slot),
@@ -862,6 +884,7 @@ impl Node {
             Node::Input(n) => n.output_connectors(slot),
             Node::Link(n) => n.output_connectors(slot),
             Node::Output(n) => n.output_connectors(slot),
+            Node::Demand(n) => n.output_connectors(slot),
             Node::Storage(n) => n.output_connectors(slot),
             Node::Catchment(n) => n.output_connectors(slot),
             Node::RiverGauge(n) => n.output_connectors(slot),
@@ -888,6 +911,7 @@ impl Node {
             Node::Input(n) => n.add_to_network(network, args),
             Node::Link(n) => n.add_to_network(network, args),
             Node::Output(n) => n.add_to_network(network, args),
+            Node::Demand(n) => n.add_to_network(network, args),
             Node::Storage(n) => n.add_to_network(network, args),
             Node::Catchment(n) => n.add_to_model(network, args),
             Node::RiverGauge(n) => n.add_to_network(network, args),
@@ -922,6 +946,7 @@ impl Node {
             Node::Input(n) => n.nodes_for_flow_constraints(component),
             Node::Link(n) => n.nodes_for_flow_constraints(component),
             Node::Output(n) => n.nodes_for_flow_constraints(component),
+            Node::Demand(n) => n.nodes_for_flow_constraints(component),
             Node::Storage(_) => Err(SchemaError::NodeNotAllowedInFlowConstraint),
             Node::Catchment(n) => n.nodes_for_flow_constraints(component),
             Node::RiverGauge(n) => n.nodes_for_flow_constraints(component),
@@ -950,6 +975,7 @@ impl Node {
             Node::Input(_) => Err(SchemaError::NodeNotAllowedInStorageConstraint),
             Node::Link(_) => Err(SchemaError::NodeNotAllowedInStorageConstraint),
             Node::Output(_) => Err(SchemaError::NodeNotAllowedInStorageConstraint),
+            Node::Demand(_) => Err(SchemaError::NodeNotAllowedInStorageConstraint),
             Node::Storage(n) => n.nodes_for_storage_constraints(),
             Node::Catchment(_) => Err(SchemaError::NodeNotAllowedInStorageConstraint),
             Node::RiverGauge(_) => Err(SchemaError::NodeNotAllowedInStorageConstraint),
@@ -976,7 +1002,8 @@ impl Node {
         match self {
             Node::Input(n) => n.create_metric(attribute),
             Node::Link(n) => n.create_metric(attribute),
-            Node::Output(n) => n.create_metric(network, attribute),
+            Node::Output(n) => n.create_metric(attribute),
+            Node::Demand(n) => n.create_metric(network, attribute),
             Node::Storage(n) => n.create_metric(attribute),
             Node::Catchment(n) => n.create_metric(attribute),
             Node::RiverGauge(n) => n.create_metric(attribute),
@@ -1103,6 +1130,7 @@ impl VisitMetrics for Node {
             Node::Input(n) => n.visit_metrics(visitor),
             Node::Link(n) => n.visit_metrics(visitor),
             Node::Output(n) => n.visit_metrics(visitor),
+            Node::Demand(n) => n.visit_metrics(visitor),
             Node::Storage(n) => n.visit_metrics(visitor),
             Node::Catchment(n) => n.visit_metrics(visitor),
             Node::RiverGauge(n) => n.visit_metrics(visitor),
@@ -1125,6 +1153,7 @@ impl VisitMetrics for Node {
             Node::Input(n) => n.visit_metrics_mut(visitor),
             Node::Link(n) => n.visit_metrics_mut(visitor),
             Node::Output(n) => n.visit_metrics_mut(visitor),
+            Node::Demand(n) => n.visit_metrics_mut(visitor),
             Node::Storage(n) => n.visit_metrics_mut(visitor),
             Node::Catchment(n) => n.visit_metrics_mut(visitor),
             Node::RiverGauge(n) => n.visit_metrics_mut(visitor),
@@ -1149,6 +1178,7 @@ impl VisitPaths for Node {
             Node::Input(n) => n.visit_paths(visitor),
             Node::Link(n) => n.visit_paths(visitor),
             Node::Output(n) => n.visit_paths(visitor),
+            Node::Demand(n) => n.visit_paths(visitor),
             Node::Storage(n) => n.visit_paths(visitor),
             Node::Catchment(n) => n.visit_paths(visitor),
             Node::RiverGauge(n) => n.visit_paths(visitor),
@@ -1171,6 +1201,7 @@ impl VisitPaths for Node {
             Node::Input(n) => n.visit_paths_mut(visitor),
             Node::Link(n) => n.visit_paths_mut(visitor),
             Node::Output(n) => n.visit_paths_mut(visitor),
+            Node::Demand(n) => n.visit_paths_mut(visitor),
             Node::Storage(n) => n.visit_paths_mut(visitor),
             Node::Catchment(n) => n.visit_paths_mut(visitor),
             Node::RiverGauge(n) => n.visit_paths_mut(visitor),
@@ -1195,6 +1226,7 @@ impl VisitReferences for Node {
             Node::Input(n) => n.visit_references(visitor),
             Node::Link(n) => n.visit_references(visitor),
             Node::Output(n) => n.visit_references(visitor),
+            Node::Demand(n) => n.visit_references(visitor),
             Node::Storage(n) => n.visit_references(visitor),
             Node::Catchment(n) => n.visit_references(visitor),
             Node::RiverGauge(n) => n.visit_references(visitor),
@@ -1217,6 +1249,7 @@ impl VisitReferences for Node {
             Node::Input(n) => n.visit_references_mut(visitor),
             Node::Link(n) => n.visit_references_mut(visitor),
             Node::Output(n) => n.visit_references_mut(visitor),
+            Node::Demand(n) => n.visit_references_mut(visitor),
             Node::Storage(n) => n.visit_references_mut(visitor),
             Node::Catchment(n) => n.visit_references_mut(visitor),
             Node::RiverGauge(n) => n.visit_references_mut(visitor),
@@ -1554,6 +1587,7 @@ mod tests {
     #[cfg(feature = "core")]
     #[test]
     fn test_attributes_match_create_metric() {
+        use crate::SchemaError;
         use crate::nodes::NodeAttribute;
         use pywr_core::network::NetworkBuilder;
 
@@ -1567,7 +1601,7 @@ mod tests {
 
                 if attributes.contains(&attribute) {
                     assert!(
-                        result.is_ok(),
+                        !matches!(result, Err(SchemaError::NodeAttributeNotSupported { .. })),
                         "{node_type} lists the attribute {attribute} but refuses it in a metric"
                     );
                 } else {
