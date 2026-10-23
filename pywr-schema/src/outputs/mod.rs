@@ -2,6 +2,7 @@ mod arrow_stream;
 mod csv;
 mod hdf;
 mod memory;
+mod parquet;
 mod placeholder;
 
 pub use self::csv::{CsvFormat, CsvMetricSet, CsvMetricSetType, CsvOutput};
@@ -11,6 +12,7 @@ use crate::meta::NamedMeta;
 pub use arrow_stream::ArrowStreamOutput;
 pub use hdf::Hdf5Output;
 pub use memory::{MemoryAggregation, MemoryAggregationOrder, MemoryOutput};
+pub use parquet::{ParquetCompression, ParquetOutput};
 pub use placeholder::PlaceholderOutput;
 #[cfg(feature = "core")]
 pub use pywr_output_metadata::MetricColumnExtension;
@@ -43,6 +45,7 @@ pub enum Output {
     CSV(CsvOutput),
     HDF5(Hdf5Output),
     Memory(Box<MemoryOutput>),
+    Parquet(ParquetOutput),
     Placeholder(PlaceholderOutput),
 }
 
@@ -57,6 +60,7 @@ impl Output {
             Self::CSV(o) => &o.meta,
             Self::HDF5(o) => &o.meta,
             Self::Memory(o) => &o.meta,
+            Self::Parquet(o) => &o.meta,
             Self::Placeholder(o) => &o.meta,
         }
     }
@@ -67,6 +71,7 @@ impl Output {
             Self::CSV(o) => &mut o.meta,
             Self::HDF5(o) => &mut o.meta,
             Self::Memory(o) => &mut o.meta,
+            Self::Parquet(o) => &mut o.meta,
             Self::Placeholder(o) => &mut o.meta,
         }
     }
@@ -88,6 +93,7 @@ impl Output {
             Self::CSV(o) => o.add_to_network(network, output_path),
             Self::HDF5(o) => o.add_to_network(network, output_path),
             Self::Memory(o) => o.add_to_network(network, data_path),
+            Self::Parquet(o) => o.add_to_network(network, output_path),
             Self::Placeholder(o) => o.add_to_network(),
         }
     }
