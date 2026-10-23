@@ -1453,8 +1453,8 @@ mod tests {
                 vec![ControlCurveValues { required: 3, found: 2 }],
             ),
             (
-                control_curve("ControlCurvePiecewiseInterpolated", json!(null)),
-                vec![ControlCurveValues { required: 2, found: 0 }],
+                control_curve("ControlCurvePiecewiseInterpolated", json!([[0.0, 1.0]])),
+                vec![ControlCurveValues { required: 2, found: 1 }],
             ),
             (
                 interpolated(json!([x(0.0), x(1.0)]), 1),

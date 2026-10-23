@@ -734,14 +734,14 @@ fn scenario_problems<'a>(
 
     for (network_name, network) in networks {
         network.visit_owned_references(&mut |owner, reference| {
-            if let Reference::ScenarioGroup(group) = reference {
-                if !groups.contains(group) {
-                    problems.push(ScenarioProblem::UnknownGroupReference {
-                        network: network_name.map(ToString::to_string),
-                        owner: owner.into(),
-                        group: group.to_string(),
-                    });
-                }
+            if let Reference::ScenarioGroup(group) = reference
+                && !groups.contains(group)
+            {
+                problems.push(ScenarioProblem::UnknownGroupReference {
+                    network: network_name.map(ToString::to_string),
+                    owner: owner.into(),
+                    group: group.to_string(),
+                });
             }
         });
     }
@@ -890,7 +890,7 @@ impl ModelSchema {
 }
 
 #[skip_serializing_none]
-#[derive(serde::Deserialize, serde::Serialize, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct MultiNetworkTransfer {
     pub from_network: String,
@@ -899,7 +899,7 @@ pub struct MultiNetworkTransfer {
     pub initial_value: Option<f64>,
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct MultiNetworkEntry {
     pub name: String,
@@ -999,7 +999,7 @@ pub enum MultiNetworkModelSchemaBuildError {
 ///
 ///
 #[skip_serializing_none]
-#[derive(serde::Deserialize, serde::Serialize, Clone)]
+#[derive(serde::Deserialize, serde::Serialize, Clone, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct MultiNetworkModelSchema {
     pub metadata: Metadata,

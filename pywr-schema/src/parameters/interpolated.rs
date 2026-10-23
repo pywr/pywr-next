@@ -147,18 +147,17 @@ impl TryFromV1<InterpolatedFlowParameterV1> for InterpolatedParameter {
             }
 
             // Check if non-linear interpolation is requested; this is not supported at the moment.
-            if let Some(kind) = interp_kwargs.get("kind") {
-                if let Some(kind_str) = kind.as_str() {
-                    if kind_str != "linear" {
-                        return Err(Box::new(ComponentConversionError::Parameter {
-                            name: meta.name.clone(),
-                            attr: "interp_kwargs".to_string(),
-                            error: ConversionError::UnsupportedFeature {
-                                feature: "Interpolation with `kind` other than `linear` is not supported.".to_string(),
-                            },
-                        }));
-                    }
-                }
+            if let Some(kind) = interp_kwargs.get("kind")
+                && let Some(kind_str) = kind.as_str()
+                && kind_str != "linear"
+            {
+                return Err(Box::new(ComponentConversionError::Parameter {
+                    name: meta.name.clone(),
+                    attr: "interp_kwargs".to_string(),
+                    error: ConversionError::UnsupportedFeature {
+                        feature: "Interpolation with `kind` other than `linear` is not supported.".to_string(),
+                    },
+                }));
             }
         }
 
@@ -214,18 +213,17 @@ impl TryFromV1<InterpolatedVolumeParameterV1> for InterpolatedParameter {
             }
 
             // Check if non-linear interpolation is requested; this is not supported at the moment.
-            if let Some(kind) = interp_kwargs.get("kind") {
-                if let Some(kind_str) = kind.as_str() {
-                    if kind_str != "linear" {
-                        return Err(Box::new(ComponentConversionError::Parameter {
-                            name: meta.name.clone(),
-                            attr: "interp_kwargs".to_string(),
-                            error: ConversionError::UnsupportedFeature {
-                                feature: "Interpolation with `kind` other than `linear` is not supported.".to_string(),
-                            },
-                        }));
-                    }
-                }
+            if let Some(kind) = interp_kwargs.get("kind")
+                && let Some(kind_str) = kind.as_str()
+                && kind_str != "linear"
+            {
+                return Err(Box::new(ComponentConversionError::Parameter {
+                    name: meta.name.clone(),
+                    attr: "interp_kwargs".to_string(),
+                    error: ConversionError::UnsupportedFeature {
+                        feature: "Interpolation with `kind` other than `linear` is not supported.".to_string(),
+                    },
+                }));
             }
         }
 

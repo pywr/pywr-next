@@ -416,7 +416,7 @@ pub struct ControlCurvePiecewiseInterpolatedParameter {
     pub phase: ParameterPhase,
     pub control_curves: Vec<Metric>,
     pub storage_metric: Metric,
-    pub values: Option<Vec<[f64; 2]>>,
+    pub values: Vec<[f64; 2]>,
     pub minimum: Option<f64>,
     pub maximum: Option<f64>,
 }
@@ -425,10 +425,9 @@ impl ControlCurvePiecewiseInterpolatedParameter {
     pub const DEFAULT_MINIMUM: f64 = 0.0;
     pub const DEFAULT_MAXIMUM: f64 = 1.0;
 
-    /// Check that `values` has one pair per zone: one more than the control curves. Unset, it
-    /// has none.
+    /// Check that `values` has one pair per zone: one more than the control curves.
     pub fn validate(&self) -> Result<(), Vec<ParameterProblem>> {
-        check_value_count(self.control_curves.len() + 1, self.values.as_ref().map_or(0, Vec::len))
+        check_value_count(self.control_curves.len() + 1, self.values.len())
     }
 }
 
@@ -462,10 +461,8 @@ impl ControlCurvePiecewiseInterpolatedParameter {
             builder.control_curve(cc.load(network, args, parent)?);
         }
 
-        if let Some(values) = &self.values {
-            for value in values {
-                builder.value(*value);
-            }
+        for value in &self.values {
+            builder.value(*value);
         }
 
         network.parameters().f64(Box::new(builder));
@@ -506,11 +503,21 @@ impl TryFromV1<ControlCurvePiecewiseInterpolatedParameterV1> for ControlCurvePie
             .into()
         };
 
+        let Some(values) = v1.values else {
+            return Err(Box::new(ComponentConversionError::Parameter {
+                name: meta.name,
+                attr: "values".to_string(),
+                error: ConversionError::MissingAttribute {
+                    attrs: vec!["values".to_string()],
+                },
+            }));
+        };
+
         let p = Self {
             meta,
             control_curves,
             storage_metric: storage_node,
-            values: v1.values,
+            values,
             minimum: v1.minimum,
             maximum: None,
             phase: ParameterPhase::Before,

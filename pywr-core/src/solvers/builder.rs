@@ -872,15 +872,15 @@ where
                 _ => None,
             };
 
-            if let Some(bounds) = bounds {
-                if bounds.min_flow > bounds.max_flow {
-                    return Err(SolverSetupError::NodeBoundsInfeasible {
-                        name: node.name().to_string(),
-                        sub_name: node.sub_name().map(|s| s.to_string()),
-                        lower_bound: bounds.min_flow,
-                        upper_bound: bounds.max_flow,
-                    });
-                }
+            if let Some(bounds) = bounds
+                && bounds.min_flow > bounds.max_flow
+            {
+                return Err(SolverSetupError::NodeBoundsInfeasible {
+                    name: node.name().to_string(),
+                    sub_name: node.sub_name().map(|s| s.to_string()),
+                    lower_bound: bounds.min_flow,
+                    upper_bound: bounds.max_flow,
+                });
             }
 
             // If there are binary variables associated with this node, then we need to add a row

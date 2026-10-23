@@ -38,13 +38,20 @@
           "proportion": 1.0
         },
         "compensation": {
-          "type": "Literal",
-          "value": 1.0
+          "flow": {
+            "type": "Literal",
+            "value": 1.0
+          }
         },
-        "spill": "OutputNode",
+        "spill": {
+        },
+        "outflow_node_type": "OutputNode",
         "surface_area": {
           "data": {
-            "Polynomial": [0.0, 0.01]
+            "Polynomial": [
+              0.0,
+              0.01
+            ]
           },
           "is_storage_proportional": false
         },

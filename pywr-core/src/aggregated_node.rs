@@ -988,10 +988,10 @@ fn get_const_norm_ratio_factor_pairs<'a>(
 
     let f0 = factors[0].try_get_constant_value(values)?;
 
-    if let Some(v0) = f0 {
-        if v0 <= 0.0 {
-            return Err(ConstantRatioFactorError::NegativeOrZeroFactor { value: v0 });
-        }
+    if let Some(v0) = f0
+        && v0 <= 0.0
+    {
+        return Err(ConstantRatioFactorError::NegativeOrZeroFactor { value: v0 });
     }
 
     let pairs = nodes
@@ -1001,10 +1001,10 @@ fn get_const_norm_ratio_factor_pairs<'a>(
         .map(|(n1, f1)| {
             let v1 = f1.try_get_constant_value(values)?;
 
-            if let Some(v) = v1 {
-                if v <= 0.0 {
-                    return Err(ConstantRatioFactorError::NegativeOrZeroFactor { value: v });
-                }
+            if let Some(v) = v1
+                && v <= 0.0
+            {
+                return Err(ConstantRatioFactorError::NegativeOrZeroFactor { value: v });
             }
 
             let v1 = v1.and_then(|v| f0.map(|f0| -f0 / v));

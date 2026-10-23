@@ -7,7 +7,9 @@
 # See https://keats.github.io/tera/docs/#introduction
 header = """
 # Changelog\n
-All notable changes to this project since v2.0.0-beta will be documented in this file.\n
+This changelog records changes since the v2.0.0 beta series.
+
+The versioned entries below record implementation-level changes.\n
 """
 body = """
 {% if version %}\

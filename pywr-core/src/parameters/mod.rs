@@ -2488,10 +2488,10 @@ impl ParameterCollection {
         internal_states: &mut ParameterStates,
         mut timings: Option<&mut ParameterTimings>,
     ) -> Result<(), ParameterCollectionGeneralCalculationError> {
-        if let Some(timings) = timings.as_deref() {
-            if timings.id != self.id {
-                return Err(ParameterCollectionGeneralCalculationError::TimingsFromAnotherCollection);
-            }
+        if let Some(timings) = timings.as_deref()
+            && timings.id != self.id
+        {
+            return Err(ParameterCollectionGeneralCalculationError::TimingsFromAnotherCollection);
         }
 
         for p in &self.general_before_order {
@@ -2630,10 +2630,10 @@ impl ParameterCollection {
         internal_states: &mut ParameterStates,
         mut timings: Option<&mut ParameterTimings>,
     ) -> Result<(), ParameterCollectionGeneralCalculationError> {
-        if let Some(timings) = timings.as_deref() {
-            if timings.id != self.id {
-                return Err(ParameterCollectionGeneralCalculationError::TimingsFromAnotherCollection);
-            }
+        if let Some(timings) = timings.as_deref()
+            && timings.id != self.id
+        {
+            return Err(ParameterCollectionGeneralCalculationError::TimingsFromAnotherCollection);
         }
 
         for p in &self.general_after_order {

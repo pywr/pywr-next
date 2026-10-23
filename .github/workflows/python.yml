@@ -4,7 +4,12 @@ name: Python
 
 on:
   push:
+    branches: [ '**' ]
   pull_request:
+  workflow_call:
+
+permissions:
+  contents: read
 
 jobs:
   windows:
@@ -19,7 +24,7 @@ jobs:
         uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
-          python-version: 3.13
+          python-version: 3.14
       - uses: dtolnay/rust-toolchain@stable
       - name: Install the project
         run: uv sync --locked --all-extras --dev
@@ -46,7 +51,7 @@ jobs:
         uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
-          python-version: 3.13
+          python-version: 3.14
       - uses: dtolnay/rust-toolchain@stable
       - name: Install the project
         run: uv sync --locked --all-extras --dev

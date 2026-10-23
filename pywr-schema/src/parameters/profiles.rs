@@ -238,10 +238,10 @@ impl UniformDrawdownProfileParameter {
             }
         }
 
-        if let Some(ConstantValue::Literal { value }) = self.residual_days {
-            if u8::try_from(value).is_err() {
-                problems.push(ParameterProblem::ResidualDaysTooLarge(value));
-            }
+        if let Some(ConstantValue::Literal { value }) = self.residual_days
+            && u8::try_from(value).is_err()
+        {
+            problems.push(ParameterProblem::ResidualDaysTooLarge(value));
         }
 
         if problems.is_empty() { Ok(()) } else { Err(problems) }

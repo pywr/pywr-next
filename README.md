@@ -1,3 +1,5 @@
+<a id="readme-top"></a>
+
 <!-- PROJECT SHIELDS -->
 <!--
 *** I'm using markdown "reference style" links for readability.
@@ -28,9 +30,9 @@
 <h3 align="center">Pywr-next</h3>
 
   <p align="center">
-    This is repository contains the current work-in-progress for the next major revision to
-    <a href="https://github.com/pywr/pywr">Pywr.</a> It uses Rust as a backend instead of Cython. It
-    is currently not ready for use beyond development and experimentation. Comments and discussions are welcome.
+    The next major release of <a href="https://github.com/pywr/pywr">Pywr</a>, a water-resource allocation
+    modelling system. Pywr v2 combines a Rust computational core with Python bindings and a command line interface.
+    It is now at its first release candidate, moving beyond the experimental stage towards a stable v2.0 release.
     <br />
     <br />
     <a href="https://pywr.github.io/pywr-next/">User Guide</a>
@@ -50,22 +52,25 @@
     <li>
       <a href="#about-the-project">About The Project</a>
       <ul>
+        <li><a href="#benefits-over-pywr-v1x">Benefits over Pywr v1.x</a></li>
+        <li><a href="#features">Features</a></li>
         <li><a href="#built-with">Built With</a></li>
       </ul>
     </li>
     <li>
       <a href="#getting-started">Getting Started</a>
       <ul>
-        <li><a href="#prerequisites">Prerequisites</a></li>
-        <li><a href="#installation">Installation</a></li>
+        <li><a href="#installing-from-pypi">Installing from PyPI</a></li>
+        <li><a href="#compiling-from-source">Compiling from source</a></li>
       </ul>
     </li>
     <li><a href="#usage">Usage</a></li>
-    <li><a href="#roadmap">Roadmap</a></li>
+    <li><a href="#porting-a-pywr-v1x-model-to-v2x">Porting a Pywr v1.x model to v2.x</a></li>
+    <li><a href="#crates">Crates</a></li>
+    <li><a href="#release-status">Release status</a></li>
     <li><a href="#contributing">Contributing</a></li>
     <li><a href="#license">License</a></li>
     <li><a href="#contact">Contact</a></li>
-    <li><a href="#acknowledgments">Acknowledgments</a></li>
   </ol>
 </details>
 
@@ -75,28 +80,46 @@
 
 ## About The Project
 
-Pywr-1.x is a Python library which utilises Cython for performance. Over time this has resulted in a "core"
-set of data structures and objects that are written in Cython to gain maximum performance. Cython has the nice benefit
-of making it easy to extend that core functionality using regular Python. However, the border between what is Python and
-what is Cython is a bit blurred and not well designed in certain places.
+Pywr simulates the allocation of water through a network of sources, stores, links and demands. Costs and constraints
+control allocation at each time step, while parameters describe changing conditions and operating rules across
+scenarios.
 
-One option for the future development of Pywr (e.g. Pywr-2.x) would be a more explicit separation between the compute
-"core" and higher level functionality. Rust is a candidate for writing that core largely independent of Python, and
-possibly offers the benefits of (1) greater performance than Cython, and (2) easier maintenance in the future.
+This repository contains Pywr v2. It retains the flexible, parameter-driven modelling approach of Pywr v1.x, with a
+redesigned Rust core, a typed JSON model schema, and Python interfaces for running models and extending their behaviour.
+
+### Benefits over Pywr v1.x
+
+- **A reusable computational core.** The Rust engine can be used independently of Python, with separate crates for
+  model schemas, project composition and command line tools. Python remains available for custom model logic and
+  analysis.
+- **Explicit model definitions and validation.** A typed JSON schema and structured validation help identify invalid
+  references, connections and parameter types before simulation. JSON Schema can also be exported for external tooling.
+- **Parallel scenario execution.** The engine supports running scenarios in parallel and releases Python's GIL during
+  Rust model execution. Performance depends on the model, solver and use of Python callbacks rather than a universal
+  speedup over v1.x.
+- **Redesigned outputs and metrics.** Metric sets separate the quantities being recorded from their output format, with
+  aggregation and in-memory results alongside CSV, HDF5 and Arrow outputs.
+- **More explicit Python extensions.** Custom Python parameters declare their dependencies and can maintain per-scenario
+  state, making calculation order and state ownership clearer.
+
+Pywr v2 is not a drop-in replacement for v1.x: the JSON schema and Python API have changed. See the
+[migration guidance below](#porting-a-pywr-v1x-model-to-v2x) before upgrading existing models.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
-### Requirements
+### Features
 
-Any major revision to Pywr will have the following feature requirements:
+- Network components for reservoirs, catchments, abstractions, losses, treatment works and hydropower, including
+  virtual and aggregated nodes.
+- A parameter system with profiles, control curves, thresholds, arithmetic, interpolation, rolling calculations,
+  delays and custom Python functions or classes.
+- Delay and Muskingum river routing, and multi-network models with inter-network transfers.
+- Multiple optimisation backends, including Clp, HiGHS and Cbc, with additional solver options in the Rust crates.
+- Native CSV, Arrow IPC and Parquet time-series input, plus Python-backed data loaders.
+- Metric aggregation and CSV, HDF5, Arrow-stream and in-memory outputs for subsequent analysis in Python.
+- Multi-file project composition and command line tools for running models, converting v1.x files and exporting schemas.
 
-- Retain the "Parameter" system from Pywr-1.x - this is core functionality that makes Pywr really flexible.
-- Extendable in Python space.
-- An improved approach for outputting data and metrics.
-- Better error handling.
-- Cross-platform.
-- Faster!
-- Strong input file (JSON) schema.
+See the [User Guide](https://pywr.github.io/pywr-next/) for model concepts, supported components and examples.
 
 ### Built With
 
@@ -110,33 +133,56 @@ Any major revision to Pywr will have the following feature requirements:
 
 <!-- GETTING STARTED -->
 
-### Getting started
+## Getting started
 
-#### Installing pre-compiled wheels
+### Installing from PyPI
 
-See instructions in the [Pywr book](https://pywr.github.io/pywr-next/getting_started.html).
+The Python package is named **`pywr`** and requires **Python 3.11 or later**. Use a separate virtual environment when
+trying v2 alongside an existing v1.x installation.
 
-#### Compiling from source
-
-This repository contains a version of Clp using Git submodules. In order to build those submodules must be initialised
-first.
+To install the v2 release candidate (`2.0.0rc1`) or a newer v2 release from PyPI:
 
 ```bash
-git submodule init
-git submodule update
+python -m pip install --upgrade "pywr>=2.0.0rc1,<3"
 ```
 
-Rust is required for installation of the Python extension. To create a Python development installation requires first
-compiling the Rust library and then the Python extension. The following example uses a virtual environment to install
-the Python dependencies, compile the Pywr extension and run the Pywr Python CLI.
+Once the stable v2 release is published, use:
 
 ```bash
+python -m pip install --upgrade "pywr>=2,<3"
+```
+
+The version constraint selects v2 rather than v1.x. To remain on v1.x, use `python -m pip install "pywr<2"` instead.
+
+Optional extras are available for data integrations: `pandas`, `polars`, `excel` and `hdf`. For example, to install the
+v2 release candidate with Pandas and Excel support:
+
+```bash
+python -m pip install --upgrade "pywr[pandas,excel]>=2.0.0rc1,<3"
+python -m pywr --help
+```
+
+Wheel builds target Linux x86-64, Windows x64, and macOS Intel and Apple Silicon. Installing a compatible wheel does not
+require Rust or a C/C++ compiler. If no wheel is available for your platform and Python version, a source build is
+required.
+See the [installation guide](https://pywr.github.io/pywr-next/getting_started.html) for more details.
+
+### Compiling from source
+
+Source builds require a current stable Rust toolchain, Python 3.11 or later, C/C++ build tools, CMake, and
+Clang/libclang
+for native dependencies. The bundled COIN-OR solvers use Git submodules; initialise them before building.
+
+From the repository root, create a Python development installation using Maturin:
+
+```bash
+git submodule update --init --recursive
 python -m venv .venv # create a new virtual environment
 source .venv/bin/activate # activate the virtual environment (linux)
 # .venv\Scripts\activate # activate the virtual environment (windows)
-pip install maturin  # install maturin for building the Python extension
-maturin develop # compile the Pywr Python extension
-python -m pywr  # run the Pywr Python CLI
+python -m pip install "maturin>=1.15,<2"
+maturin develop --release # build and install the Python extension
+python -m pywr --help
 ```
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
@@ -149,46 +195,55 @@ python -m pywr  # run the Pywr Python CLI
 
 ### Rust CLI
 
-A basic command line interface is included such that you can use this version of Pywr without Python. This CLI is in the
-`pywr-cli` crate.
+The `pywr-cli` crate provides commands for running single-network, multi-network and project models, converting v1.x
+models, and exporting JSON Schema. The commands below are run from the repository root. The default build includes
+Python support for models that use Python extensions.
 
 To see the CLI commands available run the following:
 
 ```bash
-cargo run -p pywr-cli -- --help
+cargo run --release -p pywr-cli -- --help
 ```
 
 To run a Pywr v2 model use the following:
 
 ```bash
-cargo run -p pywr-cli -- run tests/models/simple1.json
+cargo run --release -p pywr-cli -- run pywr-schema/tests/simple1.json
 ```
 
 ### Python CLI
 
-If the Python extension has been compiled using the above instructions a model can be run using the basic Python CLI.
+After installing from PyPI or building from source, run a model with `python -m pywr run path/to/model.json`.
+For example, from a checkout of this repository:
 
 ```bash
-python -m pywr run tests/models/simple1.json
+python -m pywr run pywr-schema/tests/simple1.json
 ```
+
+Use `python -m pywr run --help` for solver, input-data and output-directory options. The Python CLI supports Clp (the
+default), HiGHS and Cbc. The example above writes an HDF5 output file.
 
 ## Porting a Pywr v1.x model to v2.x
 
-This version of Pywr is not backward compatible with Pywr v1.x. One of the major reasons for this version is the lack of
-a strong schema in the Pywr v1.x JSON files. Pywr v2.x uses an updated JSON schema that is defined in this repository.
-Therefore, v1.x JSON files must be converted to the v2.x JSON schema. This conversion can be undertaken manually, but
-there is also a work-in-progress conversion tool. The conversion tool uses a v1.x schema defined in
-the [pywr-schema](https://github.com/pywr/pywr-schema) project.
-
-**Please note that conversion from Pywr v1.x to v2.x is experimental and not all features of Pywr are implemented in
-`pywr-schema` or have been implemented in Pywr v2.x yet. Due to the changes between these versions it is very likely an
-automatic conversion will not completely convert your model, and it _WILL_ require manual testing and checking.**
+Pywr v2 uses a new JSON schema and Python API. Existing v1.x models must be migrated; upgrading the Python package alone
+is not sufficient. The Rust CLI includes a conversion tool to help translate v1.x JSON models:
 
 ```bash
-cargo run --no-default-features -- convert /path/to/my/v1.x/model.json
+cargo run --release -p pywr-cli -- convert old-model.json converted-model.json --stop-on-error
 ```
 
-Feedback on porting models is very welcome, so please open an issue with any questions or problems.
+**Conversion is a starting point, not a guarantee of an equivalent model.** Not all v1.x features are supported, and
+without `--stop-on-error` the converter may produce a partial model alongside conversion errors. Review all diagnostics,
+complete the migration manually, and compare model outputs before relying on the converted model.
+
+In particular:
+
+- Tables and recorders/outputs are not automatically migrated; configure v2 data sources, metric sets and outputs.
+- Custom Python parameters need updating to the new interface.
+- Input time series must match the model's time resolution; v2 does not automatically resample them as v1.x did.
+
+See the [migration guide](https://pywr.github.io/pywr-next/migration_guide.html) for details. Feedback on porting models
+is welcome via [GitHub issues](https://github.com/pywr/pywr-next/issues).
 
 
 <!-- _For more examples, please refer to the [Documentation](https://example.com)_ -->
@@ -205,31 +260,41 @@ This repository contains the following crates:
 
 A low-level Rust library for constructing network models. This crate interfaces with linear program solvers.
 
-Feature flags:
+Feature flags (defaults for this crate when used directly):
 
-| Feature    | Description                                      | Default |
-|------------|--------------------------------------------------|---------|
-| `pyo3`     | Enable the Python bindings.                      | True    |
-| `highs`    | Enable the HiGHS LP solver.                      | False   |
-| `ipm-ocl`  | Enable the OpenCL IPM solver (requires nightly). | False   |
-| `ipm-simd` | Enable the AVX IPM solver (requires nightly).    | False   |
-| `cbc`      | Enable the CBC MILP solver.                      | False   |
+| Feature    | Description                          | Default |
+|------------|--------------------------------------|---------|
+| `pyo3`     | Enable Python integration.           | Yes     |
+| `clp`      | Enable the Clp LP solver.            | No      |
+| `cbc`      | Enable the Cbc MILP solver.          | No      |
+| `highs`    | Enable the HiGHS solver.             | No      |
+| `microlp`  | Enable the pure-Rust MicroLP solver. | No      |
+| `ipm-ocl`  | Enable the OpenCL IPM solver.        | No      |
+| `ipm-simd` | Enable the SIMD IPM solver.          | No      |
+| `hdf5`     | Enable HDF5 output.                  | No      |
 
 ### Pywr-schema
 
 A Rust library for validating Pywr JSON files against a schema, and then building a model from the schema using
 `pywr-core`.
 
-Feature flags:
+Feature flags (defaults for this crate when used directly):
 
-| Feature    | Description                                                                                                                                                                                                                                          | Default |
-|------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------|
-| `core`     | Enable building models from the schema with `pywr-core`. This feature is enabled by default, but requires a lot of dependencies. If you only require schema validation and manipulation consider building this crate with `default-features = false` | True    |
-| `pyo3`     | Enable the Python bindings.                                                                                                                                                                                                                          | True    |
-| `highs`    | Enable the HiGHS LP solver.                                                                                                                                                                                                                          | False   |
-| `ipm-ocl`  | Enable the OpenCL IPM solver (requires nightly).                                                                                                                                                                                                     | False   |
-| `ipm-simd` | Enable the AVX IPM solver (requires nightly).                                                                                                                                                                                                        | False   |
-| `cbc`      | Enable the CBC MILP solver.                                                                                                                                                                                                                          | False   |
+| Feature    | Description                                | Default |
+|------------|--------------------------------------------|---------|
+| `core`     | Build executable models using `pywr-core`. | Yes     |
+| `pyo3`     | Enable Python integration.                 | Yes     |
+| `clp`      | Enable the Clp LP solver.                  | Yes     |
+| `hdf5`     | Enable HDF5 support.                       | Yes     |
+| `cbc`      | Enable the Cbc MILP solver.                | No      |
+| `highs`    | Enable the HiGHS solver.                   | No      |
+| `microlp`  | Enable the pure-Rust MicroLP solver.       | No      |
+| `ipm-ocl`  | Enable the OpenCL IPM solver.              | No      |
+| `ipm-simd` | Enable the SIMD IPM solver.                | No      |
+
+For schema validation and manipulation without the simulation engine, use `default-features = false`.
+Solver availability in applications depends on their enabled features and exposed interfaces; OpenCL also requires
+a suitable runtime and device.
 
 ### Pywr-cli
 
@@ -239,19 +304,34 @@ A command line interface for running Pywr models.
 
 A Python extension (and package) for constructing and running Pywr models.
 
+### Pywr-project
 
-<!-- ROADMAP -->
+Schemas and composition tools for projects that assemble models from multiple files and options.
 
-## Roadmap
+### Supporting crates
 
-- [x] Proof-of-concept - demonstrate the benefits of the RIIR approach.
-- [ ] Redesign of outputs & metrics.
-- [ ] Redesign of variable API for integration with external optimisation algorithms.
-- [ ] Implement outstanding `Parameters` from Pywr v1.x
-- [ ] Design & implement Python API using Rust extension.
-- [ ] Release Pywr v2.x beta
+- `pywr-runner-engine`, `pywr-runner-service`, `pywr-runner-protocol` and `pywr-runner-transport`: local model execution
+  service, protocol and transport.
+- `coin-or-sys`: bindings to the bundled COIN-OR solvers.
+- `ipm-common`, `ipm-simd` and `ipm-ocl`: interior-point solver implementations and shared utilities.
+- `pywr-schema-macros`: procedural macros supporting the model schema.
 
-See the [open issues](https://github.com/pywr/pywr-next/issues) for a full list of proposed features (and known issues).
+<!-- RELEASE STATUS -->
+
+## Release status
+
+Pywr v2 is now at **2.0.0-rc1**, its first release candidate (Python version **2.0.0rc1**). The core modelling engine,
+Python bindings, schema validation and redesigned output system are implemented. This marks the transition out of
+the experimental stage towards the first stable v2.0 release. The release candidate is still a prerelease.
+
+Release readiness does not imply complete feature parity or backwards compatibility with v1.x. Testing representative
+models, checking migration results and reporting issues with the release candidate are especially valuable ahead of
+the stable release.
+
+See
+the [changelog](https://github.com/pywr/pywr-next/blob/main/CHANGELOG.md), [releases](https://github.com/pywr/pywr-next/releases)
+and
+[open issues](https://github.com/pywr/pywr-next/issues) for release notes, planned work and known limitations.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -280,7 +360,12 @@ simply open an issue with the tag "enhancement". Don't forget to give the projec
 
 ## License
 
-Distributed under the Apache 2.0 or MIT License. See `LICENSE.txt` for more information.
+The Pywr code in this repository is dual-licensed under
+the [Apache 2.0](https://github.com/pywr/pywr-next/blob/main/LICENSE-APACHE)
+or [MIT](https://github.com/pywr/pywr-next/blob/main/LICENSE-MIT) license.
+Bundled third-party components have additional licensing terms, including EPL-2.0 for COIN-OR components in the Python
+distribution. See [NOTICE](https://github.com/pywr/pywr-next/blob/main/NOTICE) and the bundled license files for
+details.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -333,4 +418,4 @@ Project Link: [https://github.com/pywr/pywr-next](https://github.com/pywr/pywr-n
 
 [Python-url]: https://www.python.org/
 
-Copyright (C) 2020-2023 James Tomlinson Associates Ltd.
+Copyright (C) 2020-2026 James Tomlinson Associates Ltd.
