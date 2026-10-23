@@ -24,6 +24,7 @@ use pywr_v1_schema::nodes::{
     LinkNode as LinkNodeV1, OutputNode as OutputNodeV1, ReservoirNode as ReservoirNodeV1, StorageNode as StorageNodeV1,
 };
 use schemars::JsonSchema;
+use strum::IntoEnumIterator;
 use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumString, IntoStaticStr};
 
 // This macro generates a subset enum for the `InputNode` attributes.
@@ -43,8 +44,7 @@ node_component_subset_enum! {
 /// A node that represents an input to the model, such as a river inflow or a reservoir inflow.
 ///
 /// Flow is constrained by the `max_flow` and `min_flow` metrics. If `max_flow` is not specified,
-/// the flow is unconstrained. If `min_flow` is not specified it defaults to 0. See
-/// [`crate::nodes::DemandNode`] for an output with a required `max_flow` and a `Deficit` attribute.
+/// the flow is unconstrained. If `min_flow` is not specified it defaults to 0.
 ///
 /// # Available attributes and components
 ///
@@ -692,7 +692,8 @@ node_component_subset_enum! {
 /// A node that represents an output from the model, such as a river estuary or demand centre.
 ///
 /// Flow is constrained by the `max_flow` and `min_flow` metrics. If `max_flow` is not specified,
-/// the flow is unconstrained. If `min_flow` is not specified it defaults to 0.
+/// the flow is unconstrained. If `min_flow` is not specified it defaults to 0. See
+/// [`crate::nodes::DemandNode`] for an output with a required `max_flow` and a `Deficit` attribute.
 ///
 /// # Available attributes and components
 ///
@@ -721,6 +722,24 @@ impl OutputNode {
 
     pub fn default_component(&self) -> OutputNodeComponent {
         Self::DEFAULT_COMPONENT
+    }
+
+    pub fn available_attributes(&self) -> Vec<OutputNodeAttribute> {
+        let mut attributes = vec![];
+
+        for attr in OutputNodeAttribute::iter() {
+            match attr {
+                OutputNodeAttribute::Inflow => attributes.push(attr),
+                OutputNodeAttribute::MinFlow => attributes.push(attr),
+                OutputNodeAttribute::MaxFlow => {
+                    if self.max_flow.is_some() {
+                        attributes.push(attr);
+                    }
+                }
+            }
+        }
+
+        attributes
     }
 }
 
@@ -769,24 +788,19 @@ impl OutputNode {
         let metric = match attr {
             OutputNodeAttribute::Inflow => UnresolvedMetricF64::NodeInFlow(name),
             OutputNodeAttribute::MaxFlow => {
-                self.require_max_flow()?;
+                if self.max_flow.is_none() {
+                    return Err(SchemaError::NodeAttributeNotEnabled {
+                        attr: attr.into(),
+                        name: self.meta.name.clone(),
+                        requires: "Requires `max_flow` to be set.".to_string(),
+                    });
+                }
                 UnresolvedMetricF64::NodeMaxFlow(name)
             }
             OutputNodeAttribute::MinFlow => UnresolvedMetricF64::NodeMinFlow(name),
         };
 
         Ok(metric)
-    }
-
-    /// Return an error if `max_flow` is not defined.
-    fn require_max_flow(&self) -> Result<(), SchemaError> {
-        if self.max_flow.is_none() {
-            return Err(SchemaError::MissingNodeAttribute {
-                attr: "max_flow".to_string(),
-                name: self.meta.name.clone(),
-            });
-        }
-        Ok(())
     }
 
     pub fn add_to_network(
@@ -1287,7 +1301,7 @@ mod tests {
 
         let err = node.create_metric(Some(NodeAttribute::MaxFlow)).unwrap_err();
         assert!(
-            matches!(err, SchemaError::MissingNodeAttribute { ref attr, ref name } if attr == "max_flow" && name == "demand1")
+            matches!(err, SchemaError::NodeAttributeNotEnabled { ref attr, ref name, ref requires } if attr == &NodeAttribute::MaxFlow && name == "demand1" && requires == "Requires `max_flow` to be set.")
         );
 
         assert!(node.create_metric(Some(NodeAttribute::MinFlow)).is_ok());

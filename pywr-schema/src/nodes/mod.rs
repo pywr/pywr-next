@@ -615,7 +615,7 @@ impl Node {
         match self {
             Node::Input(_) => InputNodeAttribute::iter().map(Into::into).collect(),
             Node::Link(_) => LinkNodeAttribute::iter().map(Into::into).collect(),
-            Node::Output(_) => OutputNodeAttribute::iter().map(Into::into).collect(),
+            Node::Output(n) => n.available_attributes().into_iter().map(Into::into).collect(),
             Node::Demand(_) => DemandNodeAttribute::iter().map(Into::into).collect(),
             Node::Storage(_) => StorageNodeAttribute::iter().map(Into::into).collect(),
             Node::Catchment(_) => CatchmentNodeAttribute::iter().map(Into::into).collect(),
@@ -1583,9 +1583,7 @@ mod tests {
     /// The attributes a node lists should be exactly those its build accepts.
     ///
     /// This pins the schema-only list to [`Node::create_metric`], which is where an unsupported
-    /// attribute is refused, so that the two cannot drift apart. A listed attribute may still be
-    /// refused for other reasons (e.g. a default `Output` node missing the `max_flow` required for `MaxFlow`),
-    /// so only [`SchemaError::NodeAttributeNotSupported`] counts as a refusal here.
+    /// attribute is refused, so that the two cannot drift apart.
     #[cfg(feature = "core")]
     #[test]
     fn test_attributes_match_create_metric() {
