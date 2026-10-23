@@ -24,6 +24,7 @@ pub mod time_series;
 mod util;
 mod v1;
 mod validation;
+mod variable_config;
 mod visit;
 
 pub use digest::{Checksum, ChecksumError};
@@ -43,4 +44,5 @@ pub use validation::{
     ParameterReferenceProblem, PointsProblem, ProblemOwner, ScenarioProblem, ScenarioValidationError,
     TableReferenceProblem, ValidationError, VirtualNodeProblem,
 };
+pub use variable_config::VariableConfigs;
 pub use visit::{Owner, Reference, ReferenceMut, VisitMetrics, VisitPaths, VisitReferences};
