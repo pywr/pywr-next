@@ -80,6 +80,7 @@ impl VisitReferences for CsvMetricSet {
 ///
 #[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitPaths, PywrVisitReferences)]
+#[serde(deny_unknown_fields)]
 pub struct CsvOutput {
     pub meta: NamedMeta,
     pub filename: PathBuf,

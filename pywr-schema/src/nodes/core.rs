@@ -185,6 +185,7 @@ impl TryFromV1<InputNodeV1> for InputNode {
 
 /// Cost and flow metric for soft node's constraints
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
+#[serde(deny_unknown_fields)]
 pub struct SoftConstraint {
     pub cost: Option<Metric>,
     pub flow: Option<Metric>,

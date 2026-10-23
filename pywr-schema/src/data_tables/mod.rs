@@ -172,6 +172,7 @@ pub enum CsvDataTableLookup {
 
 /// An external table of data that can be referenced
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitPaths)]
+#[serde(deny_unknown_fields)]
 pub struct CsvDataTable {
     pub meta: NamedMeta,
     #[serde(rename = "type")]
@@ -244,6 +245,7 @@ impl CsvDataTable {
 
 /// A placeholder for an external table of data that can be referenced
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitPaths)]
+#[serde(deny_unknown_fields)]
 pub struct PlaceholderTable {
     pub meta: NamedMeta,
 }

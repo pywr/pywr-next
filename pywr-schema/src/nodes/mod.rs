@@ -116,6 +116,7 @@ pub use water_treatment_works::{
 };
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Copy, JsonSchema, PywrVisitAll)]
+#[serde(deny_unknown_fields)]
 pub struct NodePosition {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub schematic: Option<(f32, f32)>,
@@ -159,6 +160,7 @@ impl From<NodePositionV1> for NodePosition {
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Default, JsonSchema, PywrVisitAll)]
+#[serde(deny_unknown_fields)]
 pub struct NodeMeta {
     pub name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
