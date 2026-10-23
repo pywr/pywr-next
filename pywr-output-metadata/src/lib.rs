@@ -49,7 +49,7 @@ pub struct MetricColumnMetadata {
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub struct ScenarioMetadata {
     pub simulation_id: usize,
-    /// The index of this scenario within each scenario group.
+    /// The index of the simulated scenarios within each scenario group.
     pub simulation_indices: Vec<usize>,
     /// The label of this scenario within each scenario group.
     pub scenario_labels: Vec<String>,
