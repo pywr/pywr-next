@@ -1,7 +1,7 @@
 {
   "metadata": {
     "title": "Abstraction 1",
-    "comment": "Test behaviour of an abstraction node with no MRF"
+    "description": "Test behaviour of an abstraction node with no MRF"
   },
   "time": {
     "start": "2021-01-01",
