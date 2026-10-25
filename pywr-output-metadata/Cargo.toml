@@ -1,0 +1,24 @@
+[package]
+name = "pywr-output-metadata"
+readme.workspace = true
+description = "Metadata types and key names used in Pywr's Arrow outputs."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[features]
+# Adds the `MetricColumnExtension` Arrow extension type.
+arrow = ["dep:arrow-schema", "dep:serde_json"]
+
+[dependencies]
+arrow-schema = { workspace = true, optional = true }
+serde = { workspace = true }
+serde_json = { workspace = true, optional = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }

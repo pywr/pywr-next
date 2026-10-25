@@ -9,6 +9,7 @@ members = [
     "pywr-book/listings/*",
     "pywr-cli",
     "pywr-core",
+    "pywr-output-metadata",
     "pywr-python", "pywr-runner-engine",
     "pywr-runner-protocol", "pywr-runner-service", "pywr-runner-transport",
     "pywr-schema",
@@ -20,6 +21,7 @@ members = [
 default-members = [
     "coin-or-sys",
     "pywr-core",
+    "pywr-output-metadata",
     "pywr-schema",
     "pywr-cli",
     # "pywr-python",

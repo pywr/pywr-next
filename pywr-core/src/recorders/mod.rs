@@ -24,7 +24,6 @@ use crate::timestep::Timestep;
 pub use aggregator::{AggregationFrequency, Aggregator, PeriodValue};
 pub use arrow_stream::{
     ArrowStreamCommit, ArrowStreamError, ArrowStreamOutput, ArrowStreamOutputBuilder, ArrowStreamSink,
-    MetricColumnExtension, MetricColumnMetadata,
 };
 pub use csv::{CsvLongFmtOutput, CsvLongFmtOutputBuilder, CsvLongFmtRecord, CsvWideFmtOutput, CsvWideFmtOutputBuilder};
 use float_cmp::{ApproxEq, F64Margin, approx_eq};
@@ -38,6 +37,7 @@ pub use metric_set::{
 };
 use ndarray::Array2;
 use ndarray::prelude::*;
+pub use pywr_output_metadata::{MetricColumnExtension, MetricColumnMetadata};
 pub use snapshot::{
     Snapshot, SnapshotBuffer, SnapshotData, SnapshotMeta, SnapshotMetricSetItem, SnapshotMetricSetMeta,
     SnapshotRecorder, SnapshotRecorderBuilder,
