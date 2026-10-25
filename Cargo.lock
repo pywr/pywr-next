@@ -2038,6 +2038,7 @@ dependencies = [
  "ndarray",
  "num",
  "ocl",
+ "parquet",
  "pyo3",
  "pywr-output-metadata",
  "rand",
