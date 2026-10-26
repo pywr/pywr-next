@@ -67,3 +67,8 @@ criterion = { workspace = true, features = ["html_reports"] }
 name = "random_models"
 harness = false
 required-features = ["clp"]
+
+[[bench]]
+name = "py_gil_contention"
+harness = false
+required-features = ["clp", "pyo3"]
