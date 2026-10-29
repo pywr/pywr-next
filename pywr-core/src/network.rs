@@ -6,13 +6,14 @@ use crate::clock::Instant;
 use crate::edge::Edge;
 use crate::metric::CalculationPhase;
 use crate::models::{ModelDomain, MultiNetworkTransferIndex};
+use crate::network_variable_config::{NetworkVariableConfig, NetworkVariableConfigError};
 use crate::node::{Node, NodeBuilder, NodeBuilderError, NodeError, UnresolvedNode};
 use crate::parameters::{
     GeneralParameterIndex, GeneralParameterType, ParameterCollection, ParameterCollectionBuilder,
     ParameterCollectionBuilderError, ParameterCollectionConstCalculationError, ParameterCollectionError,
     ParameterCollectionGeneralCalculationError, ParameterCollectionIdMismatchError, ParameterCollectionSetupError,
     ParameterCollectionSimpleCalculationError, ParameterIndex, ParameterName, ParameterStates, ParameterTiming,
-    ParameterTimings, VariableConfig,
+    ParameterTimings,
 };
 use crate::recorders::{
     MetricSet, MetricSetBuilder, MetricSetBuilderError, MetricSetSaveError, MetricSetState, RecorderAggregationError,
@@ -340,6 +341,8 @@ pub enum NetworkSetupError {
     ParameterSetupError(#[from] ParameterCollectionSetupError),
     #[error("Error computing constant parameters.")]
     ConstantParameterCalculationError(#[from] ParameterCollectionConstCalculationError),
+    #[error("Error applying variable values.")]
+    VariableApplyError(#[from] NetworkVariableConfigError),
 }
 
 #[derive(Debug, Error)]
@@ -451,20 +454,6 @@ pub enum NetworkError {
     MetricSetNameAlreadyExists(String),
     #[error("Metric set `{0}` not found")]
     MetricSetNotFound(String),
-    #[error("Parameter state not found for parameter `{name}`.")]
-    ParameterStateNotFound { name: ParameterName },
-    #[error("Parameter `{name}` is not of a type that supports variable values.")]
-    ParameterTypeNotVariable { name: ParameterName },
-    #[error("F64 Parameter with index `{0}` not found")]
-    ParameterF64IndexNotFound(ParameterIndex<f64>),
-    #[error("U64 Parameter with index `{0}` not found")]
-    ParameterU64IndexNotFound(ParameterIndex<u64>),
-    #[error("Error with variable parameter `{name}`.")]
-    VariableParameterError {
-        name: ParameterName,
-        #[source]
-        source: parameters::VariableParameterError,
-    },
 }
 
 #[derive(Error, Debug)]
@@ -564,6 +553,39 @@ impl Network {
         scenario_indices: &[ScenarioIndex],
         num_inter_network_transfers: usize,
     ) -> Result<NetworkState, NetworkSetupError> {
+        self.setup_network_impl(timesteps, scenario_indices, num_inter_network_transfers, None)
+    }
+
+    /// Setup the network and create the initial state for each scenario, applying the
+    /// given variable values to every scenario.
+    ///
+    /// The variable values are applied before the constant parameters are computed, so
+    /// variable constant parameters are reflected in the constant values (and any solver
+    /// subsequently created from them).
+    pub fn setup_network_with_variables(
+        &self,
+        timesteps: &[Timestep],
+        scenario_indices: &[ScenarioIndex],
+        num_inter_network_transfers: usize,
+        variable_config: &NetworkVariableConfig,
+        values_f64: &[f64],
+        values_u64: &[u64],
+    ) -> Result<NetworkState, NetworkSetupError> {
+        self.setup_network_impl(
+            timesteps,
+            scenario_indices,
+            num_inter_network_transfers,
+            Some((variable_config, values_f64, values_u64)),
+        )
+    }
+
+    fn setup_network_impl(
+        &self,
+        timesteps: &[Timestep],
+        scenario_indices: &[ScenarioIndex],
+        num_inter_network_transfers: usize,
+        variables: Option<(&NetworkVariableConfig, &[f64], &[u64])>,
+    ) -> Result<NetworkState, NetworkSetupError> {
         let mut states: Vec<State> = Vec::with_capacity(scenario_indices.len());
         let mut parameter_internal_states: Vec<ParameterStates> = Vec::with_capacity(scenario_indices.len());
         let mut metric_set_internal_states: Vec<_> = Vec::with_capacity(scenario_indices.len());
@@ -584,6 +606,11 @@ impl Network {
             let mut internal_states = ParameterStates::from_collection(&self.parameters, timesteps, scenario_index)?;
 
             metric_set_internal_states.push(self.metric_sets.iter().map(|p| p.setup()).collect::<Vec<_>>());
+
+            // Apply any variable values before the constant parameters are computed
+            if let Some((variable_config, values_f64, values_u64)) = variables {
+                variable_config.apply_to_parameter_states(self, values_f64, values_u64, &mut internal_states)?;
+            }
 
             // Calculate parameters that implement `ConstParameter`
             // First we update the simple parameters
@@ -1304,240 +1331,6 @@ impl Network {
             None => Err(NetworkError::MetricSetNotFound(name.to_string())),
         }
     }
-
-    /// Set the variable values on the parameter `parameter_index`.
-    ///
-    /// This will update the internal state of the parameter with the new values for all scenarios.
-    pub fn set_f64_parameter_variable_values(
-        &self,
-        parameter_index: ParameterIndex<f64>,
-        values: &[f64],
-        variable_config: &dyn VariableConfig,
-        state: &mut NetworkState,
-    ) -> Result<(), NetworkError> {
-        match self.parameters.get_f64(parameter_index) {
-            Some(parameter) => match parameter.as_f64_variable() {
-                Some(variable) => {
-                    // Iterate over all scenarios and set the variable values
-                    for parameter_states in state.iter_parameter_states_mut() {
-                        let internal_state = parameter_states.get_mut_f64_state(parameter_index).ok_or(
-                            NetworkError::ParameterStateNotFound {
-                                name: parameter.name().clone(),
-                            },
-                        )?;
-
-                        variable
-                            .set_variables(values, variable_config, internal_state)
-                            .map_err(|source| NetworkError::VariableParameterError {
-                                name: parameter.name().clone(),
-                                source,
-                            })?;
-                    }
-
-                    Ok(())
-                }
-                None => Err(NetworkError::ParameterTypeNotVariable {
-                    name: parameter.name().clone(),
-                }),
-            },
-            None => Err(NetworkError::ParameterF64IndexNotFound(parameter_index)),
-        }
-    }
-
-    /// Set the variable values on the parameter `parameter_index` and scenario `scenario_index`.
-    ///
-    /// Only the internal state of the parameter for the given scenario will be updated.
-    pub fn set_f64_parameter_variable_values_for_scenario(
-        &self,
-        parameter_index: ParameterIndex<f64>,
-        scenario_index: ScenarioIndex,
-        values: &[f64],
-        variable_config: &dyn VariableConfig,
-        state: &mut NetworkState,
-    ) -> Result<(), NetworkError> {
-        match self.parameters.get_f64(parameter_index) {
-            Some(parameter) => match parameter.as_f64_variable() {
-                Some(variable) => {
-                    let internal_state = state
-                        .parameter_states_mut(&scenario_index)
-                        .get_mut_f64_state(parameter_index)
-                        .ok_or(NetworkError::ParameterStateNotFound {
-                            name: parameter.name().clone(),
-                        })?;
-
-                    variable
-                        .set_variables(values, variable_config, internal_state)
-                        .map_err(|source| NetworkError::VariableParameterError {
-                            name: parameter.name().clone(),
-                            source,
-                        })
-                }
-                None => Err(NetworkError::ParameterTypeNotVariable {
-                    name: parameter.name().clone(),
-                }),
-            },
-            None => Err(NetworkError::ParameterF64IndexNotFound(parameter_index)),
-        }
-    }
-
-    /// Return a vector of the current values of active variable parameters.
-    pub fn get_f64_parameter_variable_values_for_scenario(
-        &self,
-        parameter_index: ParameterIndex<f64>,
-        scenario_index: ScenarioIndex,
-        state: &NetworkState,
-    ) -> Result<Option<Vec<f64>>, NetworkError> {
-        match self.parameters.get_f64(parameter_index) {
-            Some(parameter) => match parameter.as_f64_variable() {
-                Some(variable) => {
-                    let internal_state = state
-                        .parameter_states(&scenario_index)
-                        .get_f64_state(parameter_index)
-                        .ok_or(NetworkError::ParameterStateNotFound {
-                            name: parameter.name().clone(),
-                        })?;
-
-                    Ok(variable.get_variables(internal_state))
-                }
-                None => Err(NetworkError::ParameterTypeNotVariable {
-                    name: parameter.name().clone(),
-                }),
-            },
-            None => Err(NetworkError::ParameterF64IndexNotFound(parameter_index)),
-        }
-    }
-
-    pub fn get_f64_parameter_variable_values(
-        &self,
-        parameter_index: ParameterIndex<f64>,
-        state: &NetworkState,
-    ) -> Result<Vec<Option<Vec<f64>>>, NetworkError> {
-        match self.parameters.get_f64(parameter_index) {
-            Some(parameter) => match parameter.as_f64_variable() {
-                Some(variable) => {
-                    let values = state
-                        .iter_parameter_states()
-                        .map(|parameter_states| {
-                            let internal_state = parameter_states.get_f64_state(parameter_index).ok_or(
-                                NetworkError::ParameterStateNotFound {
-                                    name: parameter.name().clone(),
-                                },
-                            )?;
-
-                            Ok(variable.get_variables(internal_state))
-                        })
-                        .collect::<Result<_, NetworkError>>()?;
-
-                    Ok(values)
-                }
-                None => Err(NetworkError::ParameterTypeNotVariable {
-                    name: parameter.name().clone(),
-                }),
-            },
-            None => Err(NetworkError::ParameterF64IndexNotFound(parameter_index)),
-        }
-    }
-
-    /// Set the variable values on the parameter `parameter_index`.
-    ///
-    /// This will update the internal state of the parameter with the new values for scenarios.
-    pub fn set_u32_parameter_variable_values(
-        &self,
-        parameter_index: ParameterIndex<f64>,
-        values: &[u32],
-        variable_config: &dyn VariableConfig,
-        state: &mut NetworkState,
-    ) -> Result<(), NetworkError> {
-        match self.parameters.get_f64(parameter_index) {
-            Some(parameter) => match parameter.as_u32_variable() {
-                Some(variable) => {
-                    // Iterate over all scenarios and set the variable values
-                    for parameter_states in state.iter_parameter_states_mut() {
-                        let internal_state = parameter_states.get_mut_f64_state(parameter_index).ok_or(
-                            NetworkError::ParameterStateNotFound {
-                                name: parameter.name().clone(),
-                            },
-                        )?;
-
-                        variable
-                            .set_variables(values, variable_config, internal_state)
-                            .map_err(|source| NetworkError::VariableParameterError {
-                                name: parameter.name().clone(),
-                                source,
-                            })?;
-                    }
-
-                    Ok(())
-                }
-                None => Err(NetworkError::ParameterTypeNotVariable {
-                    name: parameter.name().clone(),
-                }),
-            },
-            None => Err(NetworkError::ParameterF64IndexNotFound(parameter_index)),
-        }
-    }
-
-    /// Set the variable values on the parameter `parameter_index` and scenario `scenario_index`.
-    ///
-    /// Only the internal state of the parameter for the given scenario will be updated.
-    pub fn set_u32_parameter_variable_values_for_scenario(
-        &self,
-        parameter_index: ParameterIndex<f64>,
-        scenario_index: ScenarioIndex,
-        values: &[u32],
-        variable_config: &dyn VariableConfig,
-        state: &mut NetworkState,
-    ) -> Result<(), NetworkError> {
-        match self.parameters.get_f64(parameter_index) {
-            Some(parameter) => match parameter.as_u32_variable() {
-                Some(variable) => {
-                    let internal_state = state
-                        .parameter_states_mut(&scenario_index)
-                        .get_mut_f64_state(parameter_index)
-                        .ok_or(NetworkError::ParameterStateNotFound {
-                            name: parameter.name().clone(),
-                        })?;
-
-                    variable
-                        .set_variables(values, variable_config, internal_state)
-                        .map_err(|source| NetworkError::VariableParameterError {
-                            name: parameter.name().clone(),
-                            source,
-                        })
-                }
-                None => Err(NetworkError::ParameterTypeNotVariable {
-                    name: parameter.name().clone(),
-                }),
-            },
-            None => Err(NetworkError::ParameterF64IndexNotFound(parameter_index)),
-        }
-    }
-
-    /// Return a vector of the current values of active variable parameters.
-    pub fn get_u32_parameter_variable_values_for_scenario(
-        &self,
-        parameter_index: ParameterIndex<f64>,
-        scenario_index: ScenarioIndex,
-        state: &NetworkState,
-    ) -> Result<Option<Vec<u32>>, NetworkError> {
-        match self.parameters.get_f64(parameter_index) {
-            Some(parameter) => match parameter.as_u32_variable() {
-                Some(variable) => {
-                    let internal_state = state
-                        .parameter_states(&scenario_index)
-                        .get_f64_state(parameter_index)
-                        .ok_or(NetworkError::ParameterStateNotFound {
-                            name: parameter.name().clone(),
-                        })?;
-                    Ok(variable.get_variables(internal_state))
-                }
-                None => Err(NetworkError::ParameterTypeNotVariable {
-                    name: parameter.name().clone(),
-                }),
-            },
-            None => Err(NetworkError::ParameterF64IndexNotFound(parameter_index)),
-        }
-    }
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
@@ -2217,11 +2010,13 @@ mod tests {
     use super::*;
     use crate::agg_funcs::AggFuncF64;
     use crate::metric::{MetricF64ResolutionError, UnresolvedMetricF64};
-    use crate::models::ModelBuilder;
+    use crate::models::{ModelBuilder, ModelRunError, ModelSetupError};
+    use crate::network_variable_config::{NetworkVariableConfigBuilder, NetworkVariableConfigBuilderError};
     use crate::parameters::test_utils::{TestParameterBuilder, test_parameter_state};
     use crate::parameters::{
         ActivationFunction, AggregatedParameterBuilder, Array1ParameterBuilder, ConstantParameterBuilder,
         ControlCurveInterpolatedParameterBuilder, MaxParameterBuilder, ParameterIndex, ParameterName,
+        RbfProfileVariableConfig, VariableParameterError, VariableParameterValues,
     };
     use crate::recorders::AssertionF64RecorderBuilder;
     use crate::scenario::{ScenarioDomainBuilder, ScenarioGroupBuilder};
@@ -2910,29 +2705,156 @@ mod tests {
 
         let model = model_builder.build().unwrap();
 
-        let mut state = model.setup(&ClpSolverSettings::default()).unwrap();
+        let variable_config = NetworkVariableConfigBuilder::new(model.network())
+            .add_variable_config(&my_constant, Box::new(variable))
+            .unwrap()
+            .build();
 
-        let input_max_flow_idx = model.network().get_parameter_index_by_name(&my_constant).unwrap();
+        assert_eq!(variable_config.size(model.network()).unwrap(), (1, 0));
+        assert_eq!(
+            variable_config.lower_bounds(model.network()).unwrap(),
+            VariableParameterValues {
+                f64: vec![0.0],
+                u64: vec![]
+            }
+        );
+        assert_eq!(
+            variable_config.upper_bounds(model.network()).unwrap(),
+            VariableParameterValues {
+                f64: vec![10.0],
+                u64: vec![]
+            }
+        );
 
-        // Initially the variable value should be unset
-        let variable_values = model
-            .network()
-            .get_f64_parameter_variable_values(input_max_flow_idx, state.network_state())
-            .unwrap();
+        // Without applying variable values they should be unset
+        let state = model.setup(&ClpSolverSettings::default()).unwrap();
+        let variable_values = variable_config.values(model.network(), state.network_state()).unwrap();
         assert_eq!(variable_values, vec![None]);
 
-        // Update the variable values
+        // After setup with variable values they should match what was set
+        let state = model
+            .setup_with_variables(&ClpSolverSettings::default(), &variable_config, &[5.0], &[])
+            .unwrap();
+        let variable_values = variable_config.values(model.network(), state.network_state()).unwrap();
+
+        assert_eq!(
+            variable_values,
+            vec![Some(VariableParameterValues {
+                f64: vec![5.0],
+                u64: vec![]
+            })]
+        );
+    }
+
+    #[test]
+    /// Test that variable values applied during setup are used when the model is run. This
+    /// includes constant parameters, which are computed during setup.
+    fn test_run_with_variables() {
+        let mut model_builder = simple_model(2, None);
+
+        // "total-demand" is 10.0 multiplied by the constant parameter "demand-factor" (default 1.2).
+        // Setting "demand-factor" to 0.5 should give a total demand of 5.0 in every scenario.
+        let expected = Array2::from_elem((366, 2), 5.0);
+        let recorder = AssertionF64RecorderBuilder::new(
+            "assert-total-demand",
+            UnresolvedMetricF64::new_parameter_before("total-demand"),
+            expected,
+        );
+        model_builder.network_builder().recorder(Box::new(recorder));
+
+        let model = model_builder.build().unwrap();
+
+        let variable_config = NetworkVariableConfigBuilder::new(model.network())
+            .add_variable_config(
+                &"demand-factor".into(),
+                Box::new(ActivationFunction::Unit { min: 0.0, max: 10.0 }),
+            )
+            .unwrap()
+            .build();
+
+        assert_eq!(variable_config.size(model.network()).unwrap(), (1, 0));
+
         model
-            .network()
-            .set_f64_parameter_variable_values(input_max_flow_idx, &[5.0], &variable, state.network_state_mut())
+            .run_with_variables(&ClpSolverSettings::default(), &variable_config, &[0.5], &[])
             .unwrap();
 
-        // After update the variable value should match what was set
-        let variable_values = model
-            .network()
-            .get_f64_parameter_variable_values(input_max_flow_idx, state.network_state())
-            .unwrap();
+        // An incorrect number of values is an error rather than a panic.
+        let result = model.run_with_variables(&ClpSolverSettings::default(), &variable_config, &[0.5, 1.0], &[]);
+        assert!(matches!(
+            result,
+            Err(ModelRunError::SetupError(ModelSetupError::NetworkSetupError(e)))
+                if matches!(
+                    *e,
+                    NetworkSetupError::VariableApplyError(
+                        NetworkVariableConfigError::IncorrectNumberOfValues { .. }
+                    )
+                )
+        ));
+    }
 
-        assert_eq!(variable_values, vec![Some(vec![5.0])]);
+    #[test]
+    /// Test that the variable config builder validates the parameters and their configs.
+    fn test_variable_config_builder() {
+        let model = simple_model(1, None).build().unwrap();
+        let unit = || Box::new(ActivationFunction::Unit { min: 0.0, max: 10.0 });
+
+        let result = NetworkVariableConfigBuilder::new(model.network()).add_variable_config(&"missing".into(), unit());
+        assert!(matches!(
+            result,
+            Err(NetworkVariableConfigBuilderError::ParameterNotFound(_))
+        ));
+
+        // An aggregated parameter can not be a variable
+        let result =
+            NetworkVariableConfigBuilder::new(model.network()).add_variable_config(&"total-demand".into(), unit());
+        assert!(matches!(
+            result,
+            Err(NetworkVariableConfigBuilderError::ParameterNotVariable(_))
+        ));
+
+        // A constant parameter requires an activation function config
+        let result = NetworkVariableConfigBuilder::new(model.network()).add_variable_config(
+            &"demand-factor".into(),
+            Box::new(RbfProfileVariableConfig::new(None, 1.0, 0.0)),
+        );
+        assert!(matches!(
+            result,
+            Err(NetworkVariableConfigBuilderError::InvalidConfig {
+                source: VariableParameterError::IncorrectConfigType { .. },
+                ..
+            })
+        ));
+
+        let result = NetworkVariableConfigBuilder::new(model.network()).add_variable_config(
+            &"demand-factor".into(),
+            Box::new(ActivationFunction::Unit { min: 1.0, max: 0.0 }),
+        );
+        assert!(matches!(
+            result,
+            Err(NetworkVariableConfigBuilderError::InvalidConfig {
+                source: VariableParameterError::InvalidBounds { .. },
+                ..
+            })
+        ));
+
+        let result = NetworkVariableConfigBuilder::new(model.network())
+            .add_variable_config(&"demand-factor".into(), unit())
+            .unwrap()
+            .add_variable_config(&"demand-factor".into(), unit());
+        assert!(matches!(
+            result,
+            Err(NetworkVariableConfigBuilderError::DuplicateParameter(_))
+        ));
+
+        // Variables are kept in the order they are added
+        let variable_config = NetworkVariableConfigBuilder::new(model.network())
+            .add_variable_config(&"demand-cost".into(), unit())
+            .unwrap()
+            .add_variable_config(&"demand-factor".into(), unit())
+            .unwrap()
+            .build();
+
+        let names: Vec<_> = variable_config.iter().map(|(name, _)| name.clone()).collect();
+        assert_eq!(names, vec!["demand-cost".into(), "demand-factor".into()]);
     }
 }

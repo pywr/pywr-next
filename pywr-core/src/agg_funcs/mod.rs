@@ -185,12 +185,13 @@ impl AggFuncU64 {
 
 #[cfg(test)]
 mod tests {
-    use crate::agg_funcs::{AggFuncF64, AggFuncU64, py};
+    #[cfg(feature = "pyo3")]
+    use crate::agg_funcs::py;
+    use crate::agg_funcs::{AggFuncF64, AggFuncU64};
     use float_cmp::assert_approx_eq;
-    use pyo3::{Py, PyAny};
     #[cfg(feature = "pyo3")]
     use pyo3::{
-        Python,
+        Py, PyAny, Python,
         ffi::c_str,
         prelude::{PyAnyMethods, PyModule},
         types::{PyDict, PyTuple},

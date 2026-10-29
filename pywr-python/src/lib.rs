@@ -2,9 +2,9 @@ mod exceptions;
 mod solver_settings;
 
 use crate::exceptions::{
-    PyModelBuilderError, PyModelRunError, PyModelSchemaBuildError, PyModelSchemaReadError,
-    PyMultiNetworkModelBuilderError, PyMultiNetworkModelRunError, PyMultiNetworkModelSchemaBuildError,
-    PyRecorderAggregationError,
+    PyModelBuilderError, PyModelProblemBuildError, PyModelProblemEvaluateError, PyModelRunError,
+    PyModelSchemaBuildError, PyModelSchemaReadError, PyMultiNetworkModelBuilderError, PyMultiNetworkModelRunError,
+    PyMultiNetworkModelSchemaBuildError, PyRecorderAggregationError,
 };
 use anyhow::anyhow;
 use arrow::array::{Float64Builder, RecordBatch, StringBuilder, TimestampMillisecondBuilder, UInt64Builder};
@@ -12,7 +12,7 @@ use arrow::pyarrow::PyArrowType;
 use jiff::civil::DateTime;
 use log::info;
 use pyo3::IntoPyObjectExt;
-use pyo3::exceptions::{PyKeyError, PyRuntimeError};
+use pyo3::exceptions::{PyKeyError, PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyTuple, PyType};
 use pywr_core::models::{
@@ -20,6 +20,7 @@ use pywr_core::models::{
 };
 use pywr_core::network::NetworkResult;
 use pywr_core::parameters::{ParameterInfo, PyScenarioIndex, PyTimestep};
+use pywr_core::problem::{Evaluation, ModelProblem, ObjectiveSense};
 use pywr_core::recorders::LongFmtArrowRecord;
 #[cfg(any(feature = "ipm-simd", feature = "ipm-ocl"))]
 use pywr_core::solvers::MultiStateSolverConfig;
@@ -30,8 +31,9 @@ use pywr_runner_service::{install_interrupt_handler, install_log_router_with};
 use pywr_schema::metric::Metric;
 use pywr_schema::{
     ComponentConversionError, ConversionData, ConversionError, FileSystem, ModelSchema, MultiNetworkModelSchema,
-    TryIntoV2,
+    ProblemConfig, TryIntoV2,
 };
+use rayon::prelude::*;
 use schemars::schema_for;
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -436,6 +438,285 @@ impl PyMultiNetworkModel {
     }
 }
 
+/// The result of evaluating a [`PyModelProblem`].
+#[pyclass(name = "Evaluation", frozen)]
+struct PyEvaluation {
+    objectives: Vec<f64>,
+    constraints: Vec<f64>,
+    constraint_violations: Vec<f64>,
+}
+
+#[pymethods]
+impl PyEvaluation {
+    /// The objective values, in the order of the problem's objectives.
+    #[getter]
+    fn objectives(&self) -> Vec<f64> {
+        self.objectives.clone()
+    }
+
+    /// The constraint values, in the order of the problem's constraints.
+    #[getter]
+    fn constraints(&self) -> Vec<f64> {
+        self.constraints.clone()
+    }
+
+    /// The amount by which each constraint value is outside its bounds (zero if satisfied).
+    #[getter]
+    fn constraint_violations(&self) -> Vec<f64> {
+        self.constraint_violations.clone()
+    }
+
+    /// Whether all the constraints are satisfied.
+    #[getter]
+    fn is_feasible(&self) -> bool {
+        self.constraint_violations.iter().all(|v| *v <= 0.0)
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "<Evaluation objectives={:?} constraints={:?}>",
+            self.objectives, self.constraints
+        )
+    }
+}
+
+/// An optimisation problem for a model.
+#[pyclass(name = "ModelProblem", frozen)]
+struct PyModelProblem {
+    inner: ModelProblem,
+}
+
+impl PyModelProblem {
+    fn to_py_evaluation(&self, evaluation: Evaluation) -> PyEvaluation {
+        let constraint_violations = self
+            .inner
+            .constraints()
+            .iter()
+            .zip(&evaluation.constraints)
+            .map(|(constraint, value)| constraint.violation(*value))
+            .collect();
+
+        PyEvaluation {
+            objectives: evaluation.objectives,
+            constraints: evaluation.constraints,
+            constraint_violations,
+        }
+    }
+
+    /// Evaluate each set of variable values in parallel with the given solver, unlocking the GIL.
+    #[cfg(any(feature = "clp", feature = "cbc", feature = "highs"))]
+    fn evaluate_batch_with<C>(
+        &self,
+        py: Python<'_>,
+        solver_config: &C,
+        values: &[(Vec<f64>, Vec<u64>)],
+    ) -> PyResult<Vec<PyEvaluation>>
+    where
+        C: SolverConfig + Sync,
+    {
+        let evaluations = py
+            .detach(|| {
+                values
+                    .par_iter()
+                    .map(|(values_f64, values_u64)| self.inner.evaluate(solver_config, values_f64, values_u64))
+                    .collect::<Result<Vec<_>, _>>()
+            })
+            .map_err(PyModelProblemEvaluateError::from)?;
+
+        Ok(evaluations.into_iter().map(|e| self.to_py_evaluation(e)).collect())
+    }
+
+    #[cfg_attr(
+        not(any(feature = "clp", feature = "cbc", feature = "highs")),
+        allow(unused_variables)
+    )]
+    fn evaluate_batch_py(
+        &self,
+        py: Python<'_>,
+        solver_name: &str,
+        solver_kwargs: Option<&Bound<'_, PyDict>>,
+        values: &[(Vec<f64>, Vec<u64>)],
+    ) -> PyResult<Vec<PyEvaluation>> {
+        match solver_name {
+            #[cfg(feature = "clp")]
+            "clp" => {
+                let solver_config = solver_settings::build_clp_settings_py(solver_kwargs)?;
+                self.evaluate_batch_with(py, &solver_config, values)
+            }
+            #[cfg(feature = "cbc")]
+            "cbc" => {
+                let solver_config = solver_settings::build_cbc_settings_py(solver_kwargs)?;
+                self.evaluate_batch_with(py, &solver_config, values)
+            }
+            #[cfg(feature = "highs")]
+            "highs" => {
+                let solver_config = solver_settings::build_highs_settings_py(solver_kwargs)?;
+                self.evaluate_batch_with(py, &solver_config, values)
+            }
+            _ => Err(PyRuntimeError::new_err(format!(
+                "Unknown or unsupported solver for problems: {solver_name}",
+            ))),
+        }
+    }
+}
+
+#[pymethods]
+impl PyModelProblem {
+    /// The number of f64 and u64 variable values required to evaluate the problem.
+    #[getter]
+    fn size(&self) -> PyResult<(usize, usize)> {
+        self.inner
+            .size()
+            .map_err(|e| PyRuntimeError::new_err(format!("{:?}", anyhow!(e))))
+    }
+
+    /// The lower bounds of the f64 and u64 variable values.
+    fn lower_bounds(&self) -> PyResult<(Vec<f64>, Vec<u64>)> {
+        let bounds = self
+            .inner
+            .lower_bounds()
+            .map_err(|e| PyRuntimeError::new_err(format!("{:?}", anyhow!(e))))?;
+        Ok((bounds.f64, bounds.u64))
+    }
+
+    /// The upper bounds of the f64 and u64 variable values.
+    fn upper_bounds(&self) -> PyResult<(Vec<f64>, Vec<u64>)> {
+        let bounds = self
+            .inner
+            .upper_bounds()
+            .map_err(|e| PyRuntimeError::new_err(format!("{:?}", anyhow!(e))))?;
+        Ok((bounds.f64, bounds.u64))
+    }
+
+    /// The names of the outputs used as objectives.
+    #[getter]
+    fn objective_names(&self) -> Vec<String> {
+        self.inner
+            .objectives()
+            .iter()
+            .map(|o| o.recorder().to_string())
+            .collect()
+    }
+
+    /// Whether each objective should be minimised (`"Minimise"`) or maximised (`"Maximise"`).
+    #[getter]
+    fn objective_senses(&self) -> Vec<&'static str> {
+        self.inner
+            .objectives()
+            .iter()
+            .map(|o| match o.sense() {
+                ObjectiveSense::Minimise => "Minimise",
+                ObjectiveSense::Maximise => "Maximise",
+            })
+            .collect()
+    }
+
+    /// The names of the outputs used as constraints.
+    #[getter]
+    fn constraint_names(&self) -> Vec<String> {
+        self.inner
+            .constraints()
+            .iter()
+            .map(|c| c.recorder().to_string())
+            .collect()
+    }
+
+    /// The lower and upper bound of each constraint. A bound is `None` if it is not defined.
+    #[getter]
+    fn constraint_bounds(&self) -> Vec<(Option<f64>, Option<f64>)> {
+        self.inner
+            .constraints()
+            .iter()
+            .map(|c| (c.lower_bound(), c.upper_bound()))
+            .collect()
+    }
+
+    /// Evaluate the problem with the given variable values.
+    #[pyo3(signature = (values_f64, values_u64=None, solver_name="clp", solver_kwargs=None))]
+    fn evaluate(
+        &self,
+        py: Python<'_>,
+        values_f64: Vec<f64>,
+        values_u64: Option<Vec<u64>>,
+        solver_name: &str,
+        solver_kwargs: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<PyEvaluation> {
+        let values = [(values_f64, values_u64.unwrap_or_default())];
+        let mut evaluations = self.evaluate_batch_py(py, solver_name, solver_kwargs, &values)?;
+        evaluations
+            .pop()
+            .ok_or_else(|| PyRuntimeError::new_err("No evaluation was returned."))
+    }
+
+    /// Evaluate the problem with each set of variable values in parallel.
+    ///
+    /// The number of threads used can be controlled with the `RAYON_NUM_THREADS` environment variable.
+    #[pyo3(signature = (values_f64, values_u64=None, solver_name="clp", solver_kwargs=None))]
+    fn evaluate_batch(
+        &self,
+        py: Python<'_>,
+        values_f64: Vec<Vec<f64>>,
+        values_u64: Option<Vec<Vec<u64>>>,
+        solver_name: &str,
+        solver_kwargs: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<Vec<PyEvaluation>> {
+        let values_u64 = match values_u64 {
+            Some(values_u64) if values_u64.len() != values_f64.len() => {
+                return Err(PyValueError::new_err(format!(
+                    "Expected {} sets of u64 values to match the f64 values, but received {}.",
+                    values_f64.len(),
+                    values_u64.len()
+                )));
+            }
+            Some(values_u64) => values_u64,
+            None => vec![Vec::new(); values_f64.len()],
+        };
+
+        let values: Vec<_> = values_f64.into_iter().zip(values_u64).collect();
+        self.evaluate_batch_py(py, solver_name, solver_kwargs, &values)
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "<ModelProblem with {} objectives and {} constraints>",
+            self.inner.objectives().len(),
+            self.inner.constraints().len()
+        )
+    }
+}
+
+/// The definition of an optimisation problem for a model.
+#[pyclass(name = "ProblemConfig", frozen)]
+struct PyProblemConfig {
+    inner: ProblemConfig,
+}
+
+#[pymethods]
+impl PyProblemConfig {
+    /// Create a new problem config from a file path.
+    #[classmethod]
+    fn from_path(_cls: &Bound<'_, PyType>, path: PathBuf) -> PyResult<Self> {
+        let inner = ProblemConfig::from_path(path)
+            .map_err(|e| PyErr::new::<exceptions::SchemaReadError, _>(format!("{:?}", anyhow!(e))))?;
+        Ok(Self { inner })
+    }
+
+    /// Create a new problem config from a JSON string.
+    #[classmethod]
+    fn from_json_string(_cls: &Bound<'_, PyType>, data: &str) -> PyResult<Self> {
+        let inner = serde_json::from_str(data)
+            .map_err(|e| PyErr::new::<exceptions::SchemaReadError, _>(format!("{:?}", anyhow!(e))))?;
+        Ok(Self { inner })
+    }
+
+    /// Serialize the problem config to a JSON string.
+    fn to_json_string(&self) -> PyResult<String> {
+        let data = serde_json::to_string_pretty(&self.inner)
+            .map_err(|e| PyRuntimeError::new_err(format!("{:?}", anyhow!(e))))?;
+        Ok(data)
+    }
+}
+
 #[pyclass(name = "ModelSchema")]
 struct PyModelSchema {
     inner: ModelSchema,
@@ -479,6 +760,27 @@ impl PyModelSchema {
             .map_err(PyModelSchemaBuildError::from)?;
         let inner = builder.build().map_err(PyModelBuilderError::from)?;
         Ok(PyModel { inner })
+    }
+
+    /// Build the schema in to a Pywr model, and create an optimisation problem for it from the
+    /// given problem config.
+    #[pyo3(signature = (problem_config, data_path=None, output_path=None))]
+    fn build_problem(
+        &mut self,
+        problem_config: PyRef<'_, PyProblemConfig>,
+        data_path: Option<PathBuf>,
+        output_path: Option<PathBuf>,
+    ) -> PyResult<PyModelProblem> {
+        let builder = self
+            .inner
+            .create_model_builder(&FileSystem, data_path.as_deref(), output_path.as_deref())
+            .map_err(PyModelSchemaBuildError::from)?;
+        let model = builder.build().map_err(PyModelBuilderError::from)?;
+        let inner = problem_config
+            .inner
+            .build_model_problem(model)
+            .map_err(PyModelProblemBuildError::from)?;
+        Ok(PyModelProblem { inner })
     }
 }
 
@@ -575,6 +877,9 @@ fn pywr(py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyModelTimings>()?;
     m.add_class::<PyMultiNetworkModelTimings>()?;
     m.add_class::<PyNetworkResult>()?;
+    m.add_class::<PyProblemConfig>()?;
+    m.add_class::<PyModelProblem>()?;
+    m.add_class::<PyEvaluation>()?;
     m.add_class::<Metric>()?;
     m.add_class::<PyTimestep>()?;
     m.add_class::<PyScenarioIndex>()?;
@@ -610,6 +915,12 @@ fn pywr(py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add(
         "RecorderDoesNotSupportAggregation",
         py.get_type::<exceptions::RecorderDoesNotSupportAggregation>(),
+    )?;
+
+    m.add("ProblemBuildError", py.get_type::<exceptions::ProblemBuildError>())?;
+    m.add(
+        "ProblemEvaluateError",
+        py.get_type::<exceptions::ProblemEvaluateError>(),
     )?;
 
     Ok(())

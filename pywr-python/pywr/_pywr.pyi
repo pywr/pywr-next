@@ -1,5 +1,7 @@
+from collections.abc import Sequence
 from datetime import datetime
 from os import PathLike
+from typing import Literal
 
 import pyarrow as pa
 
@@ -139,6 +141,20 @@ class ModelSchema:
     ) -> Model:
         """Build the schema in to a Pywr model."""
 
+    def build_problem(
+        self,
+        problem_config: ProblemConfig,
+        data_path: PathLike | None = None,
+        output_path: PathLike | None = None,
+    ) -> ModelProblem:
+        """Build the schema in to a Pywr model, and create an optimisation problem for it.
+
+        Args:
+            problem_config: The variables, objectives and constraints of the problem.
+            data_path: Optional path to the model's input data.
+            output_path: Optional path for the model's outputs.
+        """
+
 class MultiNetworkModelSchema:
     def __init__(
         self,
@@ -198,6 +214,121 @@ class ModelResult:
     @property
     def timings(self) -> ModelTimings:
         """Returns the model timings object."""
+
+class ProblemConfig:
+    """The definition of an optimisation problem for a model.
+
+    This defines the variable parameters, and the objectives and constraints, which are
+    calculated from the aggregated values of the model's outputs.
+    """
+
+    @classmethod
+    def from_path(cls, path: PathLike) -> ProblemConfig:
+        """Create a new problem config from a file path.
+
+        Args:
+            path: The path to the problem config JSON file.
+        """
+
+    @classmethod
+    def from_json_string(cls, json_string: str) -> ProblemConfig:
+        """Create a new problem config from a JSON string.
+
+        Args:
+            json_string: The JSON string representing the problem config.
+        """
+
+    def to_json_string(self) -> str:
+        """Serialize the problem config to a JSON string."""
+
+class ModelProblem:
+    """An optimisation problem for a model.
+
+    Each evaluation runs the model with the given variable values and returns the values of
+    the objectives and constraints. Evaluations are independent, so `evaluate_batch` runs
+    them in parallel.
+    """
+
+    @property
+    def size(self) -> tuple[int, int]:
+        """The number of float and integer variable values required."""
+
+    def lower_bounds(self) -> tuple[list[float], list[int]]:
+        """The lower bounds of the float and integer variable values."""
+
+    def upper_bounds(self) -> tuple[list[float], list[int]]:
+        """The upper bounds of the float and integer variable values."""
+
+    @property
+    def objective_names(self) -> list[str]:
+        """The names of the outputs used as objectives."""
+
+    @property
+    def objective_senses(self) -> list[Literal["Minimise", "Maximise"]]:
+        """Whether each objective should be minimised or maximised."""
+
+    @property
+    def constraint_names(self) -> list[str]:
+        """The names of the outputs used as constraints."""
+
+    @property
+    def constraint_bounds(self) -> list[tuple[float | None, float | None]]:
+        """The lower and upper bound of each constraint, or `None` if not defined."""
+
+    def evaluate(
+        self,
+        values_f64: Sequence[float],
+        values_u64: Sequence[int] | None = None,
+        solver_name: str = "clp",
+        solver_kwargs: dict | None = None,
+    ) -> Evaluation:
+        """Evaluate the problem with the given variable values.
+
+        Args:
+            values_f64: The float variable values.
+            values_u64: The integer variable values, if the problem has any.
+            solver_name: The name of the solver to use.
+            solver_kwargs: Optional keyword arguments to pass to the solver.
+        """
+
+    def evaluate_batch(
+        self,
+        values_f64: Sequence[Sequence[float]],
+        values_u64: Sequence[Sequence[int]] | None = None,
+        solver_name: str = "clp",
+        solver_kwargs: dict | None = None,
+    ) -> list[Evaluation]:
+        """Evaluate the problem with each set of variable values in parallel.
+
+        The number of threads used can be controlled with the `RAYON_NUM_THREADS`
+        environment variable.
+
+        Args:
+            values_f64: A set of float variable values for each evaluation.
+            values_u64: A set of integer variable values for each evaluation, if the
+                problem has any.
+            solver_name: The name of the solver to use.
+            solver_kwargs: Optional keyword arguments to pass to the solver.
+        """
+
+class Evaluation:
+    """The result of evaluating a `ModelProblem`."""
+
+    @property
+    def objectives(self) -> list[float]:
+        """The objective values, in the order of the problem's objectives."""
+
+    @property
+    def constraints(self) -> list[float]:
+        """The constraint values, in the order of the problem's constraints."""
+
+    @property
+    def constraint_violations(self) -> list[float]:
+        """The amount each constraint value is outside its bounds (zero if satisfied)."""
+
+    @property
+    def is_feasible(self) -> bool:
+        """Whether all the constraints are satisfied."""
 
 class MultiNetworkModelResult:
     def network_results(self, name: str) -> NetworkResult:
@@ -268,5 +399,7 @@ class StepError(PywrError): ...
 class FinaliseError(PywrError): ...
 class AggregationError(PywrError): ...
 class RecorderDoesNotSupportAggregation(PywrError): ...
+class ProblemBuildError(PywrError): ...
+class ProblemEvaluateError(PywrError): ...
 
 def run_server(socket_name: str): ...

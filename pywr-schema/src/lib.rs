@@ -19,11 +19,13 @@ mod network;
 pub mod nodes;
 pub mod outputs;
 pub mod parameters;
+mod problem;
 mod py_utils;
 pub mod time_series;
 mod util;
 mod v1;
 mod validation;
+mod variable_config;
 mod visit;
 
 pub use digest::{Checksum, ChecksumError};
@@ -35,6 +37,7 @@ pub use model::{ModelSchemaBuildError, MultiNetworkModelSchemaBuildError};
 #[cfg(feature = "core")]
 pub use network::{LoadArgs, NetworkSchemaBuildError};
 pub use network::{NetworkMergeError, NetworkMergeOptions, NetworkSchema, NetworkSchemaReadError, NetworkSchemaRef};
+pub use problem::{ConstraintConfig, ObjectiveConfig, ObjectiveSense, ProblemConfig, ProblemConfigReadError};
 pub use py_utils::{PythonSource, PythonSourceType, PythonSourceTypeIter};
 pub use v1::{ConversionData, TryFromV1, TryIntoV2};
 pub use validation::{
@@ -43,4 +46,5 @@ pub use validation::{
     ParameterReferenceProblem, PointsProblem, ProblemOwner, ScenarioProblem, ScenarioValidationError,
     TableReferenceProblem, ValidationError, VirtualNodeProblem,
 };
+pub use variable_config::{NamedVariableConfig, VariableConfig};
 pub use visit::{Owner, Reference, ReferenceMut, VisitMetrics, VisitPaths, VisitReferences};

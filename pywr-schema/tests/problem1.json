@@ -1,0 +1,112 @@
+{
+  "metadata": {
+    "title": "Simple problem",
+    "description": "A simple model with a variable demand, used to test optimisation problems."
+  },
+  "time": {
+    "start": "2021-01-01",
+    "end": "2021-01-31",
+    "timestep": {
+      "type": "Days",
+      "days": 1
+    }
+  },
+  "network": {
+    "nodes": [
+      {
+        "meta": {
+          "name": "input1"
+        },
+        "type": "Input",
+        "max_flow": {
+          "type": "Literal",
+          "value": 8.0
+        }
+      },
+      {
+        "meta": {
+          "name": "link1"
+        },
+        "type": "Link"
+      },
+      {
+        "meta": {
+          "name": "output1"
+        },
+        "type": "Output",
+        "cost": {
+          "type": "Literal",
+          "value": -10.0
+        },
+        "max_flow": {
+          "type": "Parameter",
+          "name": "demand"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "from_node": "input1",
+        "to_node": "link1"
+      },
+      {
+        "from_node": "link1",
+        "to_node": "output1"
+      }
+    ],
+    "parameters": [
+      {
+        "meta": {
+          "name": "demand"
+        },
+        "type": "Constant",
+        "value": {
+          "type": "Literal",
+          "value": 10.0
+        }
+      }
+    ],
+    "metric_sets": [
+      {
+        "meta": {"name": "demand"},
+        "metrics": [
+          {
+            "type": "Parameter",
+            "name": "demand"
+          }
+        ]
+      },
+      {
+        "meta": {"name": "delivered"},
+        "metrics": [
+          {
+            "type": "Node",
+            "name": "output1"
+          }
+        ]
+      }
+    ],
+    "outputs": [
+      {
+        "meta": {"name": "mean-demand"},
+        "type": "Memory",
+        "metric_set": "demand",
+        "aggregation": {
+          "time": {
+            "type": "Mean"
+          }
+        }
+      },
+      {
+        "meta": {"name": "mean-delivered"},
+        "type": "Memory",
+        "metric_set": "delivered",
+        "aggregation": {
+          "time": {
+            "type": "Mean"
+          }
+        }
+      }
+    ]
+  }
+}

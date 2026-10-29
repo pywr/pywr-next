@@ -1,0 +1,47 @@
+{
+  "variables": [
+    {
+      "name": "demand-factor",
+      "config": {
+        "type": "ActivationFunction",
+        "activation": {
+          "type": "Unit",
+          "min": 0.0,
+          "max": 2.0
+        }
+      }
+    },
+    {
+      "name": "my-monthly-profile",
+      "config": {
+        "type": "MonthlyProfile",
+        "upper_bounds": [10.0, 10.0, 10.0, 10.0, 10.0, 10.0, 10.0, 10.0, 10.0, 10.0, 10.0, 10.0]
+      }
+    },
+    {
+      "name": "my-interpolated-profile",
+      "config": {
+        "type": "RbfProfile",
+        "days_of_year_range": 30,
+        "value_upper_bounds": 1.0,
+        "value_lower_bounds": 0.0
+      }
+    }
+  ],
+  "objectives": [
+    {
+      "output": "total-deficit",
+      "sense": "Minimise"
+    },
+    {
+      "output": "total-cost",
+      "sense": "Minimise"
+    }
+  ],
+  "constraints": [
+    {
+      "output": "minimum-storage",
+      "lower_bound": 0.2
+    }
+  ]
+}

@@ -134,16 +134,6 @@ impl From<ActivationFunction> for pywr_core::parameters::ActivationFunction {
     }
 }
 
-/// Settings for a variable value.
-#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
-#[serde(deny_unknown_fields)]
-pub struct VariableSettings {
-    /// Is this parameter an active variable?
-    pub is_active: bool,
-    /// The activation function to use for the variable.
-    pub activation: ActivationFunction,
-}
-
 /// A constant parameter.
 ///
 /// This is the most basic type of parameter which represents a single constant value.
@@ -155,10 +145,8 @@ pub struct VariableSettings {
 #[doc = include_str!("doc_examples/constant_simple.json")]
 /// ```
 ///
-/// An example specifying the parameter as a variable and defining the activation function:
-/// ```json
-#[doc = include_str!("doc_examples/constant_variable.json")]
-/// ```
+/// The parameter can be made variable by an external variable config (see
+/// [`crate::ProblemConfig`]) using an activation function.
 ///
 #[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
@@ -168,12 +156,9 @@ pub struct ConstantParameter {
     pub meta: NamedMeta,
     /// The value the parameter should return.
     ///
-    /// In the simple case this will be the value used by the network. However, if an activation
-    /// function is specified this value will be the `x` value for that activation function.
+    /// This is the value used by the network, unless the parameter is made variable by an
+    /// external variable config.
     pub value: ConstantValue<f64>,
-    /// Optional settings for configuring how the value of this parameter can be varied. This
-    /// is used by, for example, external algorithms to optimise the value of the parameter.
-    pub variable: Option<VariableSettings>,
 }
 
 #[cfg(feature = "core")]
@@ -213,11 +198,7 @@ impl TryFromV1<ConstantParameterV1> for ConstantParameter {
             0.0.into()
         };
 
-        let p = Self {
-            meta,
-            value,
-            variable: None, // TODO convert variable settings
-        };
+        let p = Self { meta, value };
         Ok(p)
     }
 }

@@ -197,6 +197,24 @@ impl TryFromV1<MonthlyProfileParameterV1> for MonthlyProfileParameter {
     }
 }
 
+/// Settings for a variable monthly profile.
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Copy, JsonSchema, PywrVisitAll)]
+#[serde(deny_unknown_fields)]
+pub struct MonthlyProfileVariableConfig {
+    /// Upper bound for the value of each month. This must be finite.
+    pub upper_bounds: [f64; 12],
+    /// Optional lower bound for the value of each month. If this is `None` then
+    ///  the lower bound is zero.
+    pub lower_bounds: Option<[f64; 12]>,
+}
+
+#[cfg(feature = "core")]
+impl From<MonthlyProfileVariableConfig> for pywr_core::parameters::MonthlyProfileVariableConfig {
+    fn from(settings: MonthlyProfileVariableConfig) -> Self {
+        Self::new(settings.upper_bounds, settings.lower_bounds.unwrap_or([0.0; 12]))
+    }
+}
+
 #[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
@@ -323,7 +341,7 @@ impl RadialBasisFunction {
     /// Convert the schema representation of the RBF into `pywr_core` type.
     ///
     /// If required this will estimate values of from the provided points.
-    fn into_core_rbf(self, points: &[(u32, f64)]) -> Result<pywr_core::parameters::RadialBasisFunction, SchemaError> {
+    fn into_core_rbf(self, points: &[(u64, f64)]) -> Result<pywr_core::parameters::RadialBasisFunction, SchemaError> {
         let rbf = match self {
             Self::Linear => pywr_core::parameters::RadialBasisFunction::Linear,
             Self::Cubic => pywr_core::parameters::RadialBasisFunction::Cubic,
@@ -363,7 +381,7 @@ impl RadialBasisFunction {
 ///
 /// If there `points` is empty then `None` is returned.
 #[cfg(feature = "core")]
-fn estimate_epsilon(points: &[(u32, f64)]) -> Option<f64> {
+fn estimate_epsilon(points: &[(u64, f64)]) -> Option<f64> {
     if points.is_empty() {
         return None;
     }
@@ -389,34 +407,31 @@ fn estimate_epsilon(points: &[(u32, f64)]) -> Option<f64> {
 /// Settings for a variable RBF profile.
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, Copy, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
-pub struct RbfProfileVariableSettings {
-    /// Is this parameter an active variable?
-    pub is_active: bool,
+pub struct RbfProfileVariableConfig {
     /// Optional maximum number of days that the interpolation points can be moved from their
     ///  original position. If this is `None` then the points can not be moved from their
     ///  original day of the year.
-    pub days_of_year_range: Option<u32>,
-    /// Optional upper bound for the value of each interpolation point. If this is `None` then
-    ///  there is no upper bound.
-    pub value_upper_bounds: Option<f64>,
+    pub days_of_year_range: Option<u64>,
+    /// Upper bound for the value of each interpolation point. This must be finite.
+    pub value_upper_bounds: f64,
     /// Optional lower bound for the value of each interpolation point. If this is `None` then
     ///  the lower bound is zero.
     pub value_lower_bounds: Option<f64>,
 }
 
-impl RbfProfileVariableSettings {
+impl RbfProfileVariableConfig {
     pub const DEFAULT_VALUE_LOWER_BOUNDS: f64 = 0.0;
 }
 
 #[cfg(feature = "core")]
-impl From<RbfProfileVariableSettings> for pywr_core::parameters::RbfProfileVariableConfig {
-    fn from(settings: RbfProfileVariableSettings) -> Self {
+impl From<RbfProfileVariableConfig> for pywr_core::parameters::RbfProfileVariableConfig {
+    fn from(settings: RbfProfileVariableConfig) -> Self {
         Self::new(
             settings.days_of_year_range,
-            settings.value_upper_bounds.unwrap_or(f64::INFINITY),
+            settings.value_upper_bounds,
             settings
                 .value_lower_bounds
-                .unwrap_or(RbfProfileVariableSettings::DEFAULT_VALUE_LOWER_BOUNDS),
+                .unwrap_or(RbfProfileVariableConfig::DEFAULT_VALUE_LOWER_BOUNDS),
         )
     }
 }
@@ -432,13 +447,8 @@ impl From<RbfProfileVariableSettings> for pywr_core::parameters::RbfProfileVaria
 #[doc = include_str!("doc_examples/rbf_1.json")]
 /// ```
 ///
-///  The example below shows the definition of a [`RbfProfileParameter`] in JSON with variable
-///  settings defined. This settings determine how the interpolation points be modified by
-///  external algorithms. See [`RbfProfileVariableSettings`] for more information.
-///
-/// ```json
-#[doc = include_str!("doc_examples/rbf_2.json")]
-/// ```
+/// The values and positions of the interpolation points can be made variable by an external
+/// variable config (see [`crate::ProblemConfig`] and [`RbfProfileVariableConfig`]).
 ///
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
@@ -446,12 +456,9 @@ pub struct RbfProfileParameter {
     pub meta: NamedMeta,
     /// The points are the profile positions defined by an ordinal day of the year and a value.
     /// Radial basis function interpolation is used to create a daily profile from these points.
-    pub points: Vec<(u32, f64)>,
+    pub points: Vec<(u64, f64)>,
     /// The distance function used for interpolation.
     pub function: RadialBasisFunction,
-    /// Optional settings for configuring how the value of this parameter can be varied. This
-    /// is used by, for example, external algorithms to optimise the value of the parameter.
-    pub variable: Option<RbfProfileVariableSettings>,
 }
 
 impl RbfProfileParameter {
@@ -519,7 +526,12 @@ impl TryFromV1<RbfProfileParameterV1> for RbfProfileParameter {
     ) -> Result<Self, Self::Error> {
         let meta: NamedMeta = v1.meta.try_into_v2(parent_node, conversion_data)?;
 
-        let points = v1.days_of_year.into_iter().zip(v1.values).collect();
+        let points = v1
+            .days_of_year
+            .into_iter()
+            .map(|doy| doy as u64)
+            .zip(v1.values)
+            .collect();
 
         if v1.rbf_kwargs.contains_key("smooth") {
             return Err(Box::new(ComponentConversionError::Parameter {
@@ -594,12 +606,7 @@ impl TryFromV1<RbfProfileParameterV1> for RbfProfileParameter {
             RadialBasisFunction::MultiQuadric { epsilon }
         };
 
-        let p = Self {
-            meta,
-            points,
-            function,
-            variable: None, // TODO convert variable settings
-        };
+        let p = Self { meta, points, function };
 
         Ok(p)
     }

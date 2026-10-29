@@ -18,6 +18,7 @@
 - [Custom parameters](./custom_parameters.md)
 - [River routing and attenuation](./river-routing.md)
 - [Multi-models](./multi_models.md)
+- [Optimisation](./optimisation.md)
 - [Migration guide](./migration_guide.md)
 - [Model management](./model-management/README.md)
     - [Version control](./model-management/version-control.md)
