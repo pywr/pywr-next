@@ -186,6 +186,24 @@ class MultiNetworkModelSchema:
     ) -> MultiNetworkModel:
         """Build the schema in to a Pywr model."""
 
+    def build_problem(
+        self,
+        problem_config: ProblemConfig,
+        data_path: PathLike | None = None,
+        output_path: PathLike | None = None,
+    ) -> MultiNetworkModelProblem:
+        """Build the schema in to a Pywr multi-network model, and create an optimisation
+        problem for it.
+
+        Each variable, objective and constraint in the problem config must give the
+        `network` it belongs to.
+
+        Args:
+            problem_config: The variables, objectives and constraints of the problem.
+            data_path: Optional path to the model's input data.
+            output_path: Optional path for the model's outputs.
+        """
+
 class Model:
     def run(self, solver_name: str, solver_kwargs: dict | None = None) -> ModelResult:
         """Run the model using the specified solver.
@@ -311,8 +329,86 @@ class ModelProblem:
             solver_kwargs: Optional keyword arguments to pass to the solver.
         """
 
+class MultiNetworkModelProblem:
+    """An optimisation problem for a multi-network model.
+
+    This is the same as `ModelProblem`, except that each objective and constraint belongs
+    to one of the model's networks. The variable values are in the order the variables are
+    listed in the problem config, regardless of which network they belong to.
+    """
+
+    @property
+    def size(self) -> tuple[int, int]:
+        """The number of float and integer variable values required."""
+
+    def lower_bounds(self) -> tuple[list[float], list[int]]:
+        """The lower bounds of the float and integer variable values."""
+
+    def upper_bounds(self) -> tuple[list[float], list[int]]:
+        """The upper bounds of the float and integer variable values."""
+
+    @property
+    def objective_names(self) -> list[str]:
+        """The names of the outputs used as objectives."""
+
+    @property
+    def objective_networks(self) -> list[str]:
+        """The names of the networks of the outputs used as objectives."""
+
+    @property
+    def objective_senses(self) -> list[Literal["Minimise", "Maximise"]]:
+        """Whether each objective should be minimised or maximised."""
+
+    @property
+    def constraint_names(self) -> list[str]:
+        """The names of the outputs used as constraints."""
+
+    @property
+    def constraint_networks(self) -> list[str]:
+        """The names of the networks of the outputs used as constraints."""
+
+    @property
+    def constraint_bounds(self) -> list[tuple[float | None, float | None]]:
+        """The lower and upper bound of each constraint, or `None` if not defined."""
+
+    def evaluate(
+        self,
+        values_f64: Sequence[float],
+        values_u64: Sequence[int] | None = None,
+        solver_name: str = "clp",
+        solver_kwargs: dict | None = None,
+    ) -> Evaluation:
+        """Evaluate the problem with the given variable values.
+
+        Args:
+            values_f64: The float variable values.
+            values_u64: The integer variable values, if the problem has any.
+            solver_name: The name of the solver to use.
+            solver_kwargs: Optional keyword arguments to pass to the solver.
+        """
+
+    def evaluate_batch(
+        self,
+        values_f64: Sequence[Sequence[float]],
+        values_u64: Sequence[Sequence[int]] | None = None,
+        solver_name: str = "clp",
+        solver_kwargs: dict | None = None,
+    ) -> list[Evaluation]:
+        """Evaluate the problem with each set of variable values in parallel.
+
+        The number of threads used can be controlled with the `RAYON_NUM_THREADS`
+        environment variable.
+
+        Args:
+            values_f64: A set of float variable values for each evaluation.
+            values_u64: A set of integer variable values for each evaluation, if the
+                problem has any.
+            solver_name: The name of the solver to use.
+            solver_kwargs: Optional keyword arguments to pass to the solver.
+        """
+
 class Evaluation:
-    """The result of evaluating a `ModelProblem`."""
+    """The result of evaluating a `ModelProblem` or `MultiNetworkModelProblem`."""
 
     @property
     def objectives(self) -> list[float]:

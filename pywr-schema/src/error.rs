@@ -113,6 +113,18 @@ pub enum SchemaError {
     #[error("Problem build error: {0}")]
     #[cfg(feature = "core")]
     CoreModelProblemBuildError(#[from] pywr_core::problem::ModelProblemBuildError),
+    #[error("Multi-network variable config builder error: {0}")]
+    #[cfg(feature = "core")]
+    CoreMultiNetworkVariableConfigBuilderError(
+        #[from] pywr_core::network_variable_config::MultiNetworkVariableConfigBuilderError,
+    ),
+    #[error("Multi-network problem build error: {0}")]
+    #[cfg(feature = "core")]
+    CoreMultiNetworkModelProblemBuildError(#[from] pywr_core::problem::MultiNetworkModelProblemBuildError),
+    #[error("The {0} gives a `network`, which is only allowed for a multi-network model.")]
+    ProblemNetworkNotAllowed(String),
+    #[error("The {0} must give the `network` it belongs to in a multi-network model.")]
+    ProblemNetworkRequired(String),
     #[error("Node cannot be used in a flow constraint.")]
     NodeNotAllowedInFlowConstraint,
     #[error("Node cannot be used in a storage constraint.")]
