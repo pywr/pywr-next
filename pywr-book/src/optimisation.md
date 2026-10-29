@@ -88,6 +88,11 @@ and `upper_bounds()`), and the names and senses of the objectives and constraint
 the objective and constraint values. `evaluate_batch` evaluates several sets of values in
 parallel, which is useful for population-based algorithms.
 
+Both methods take a `solver_name`, which defaults to `"clp"`. Problems can be evaluated with the
+single-scenario solvers (`"clp"`, `"cbc"` and `"highs"`) and with the multi-scenario solvers
+(`"ipm-simd"`, `"clipm-f32"` and `"clipm-f64"`), which solve all of a model's scenarios
+together. Which solvers are available depends on the features Pywr was built with.
+
 The objective values are returned as calculated, so objectives that are maximised are not
 negated. `Evaluation.constraint_violations` gives the amount by which each constraint is outside
 its bounds, which is zero when the constraint is satisfied.

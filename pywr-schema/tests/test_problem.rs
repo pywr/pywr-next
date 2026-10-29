@@ -175,3 +175,23 @@ fn test_build_multi_network_model_problem_network_required() {
     let result = build_multi_network_model_problem(&config);
     assert!(matches!(result, Err(SchemaError::ProblemNetworkRequired(_))));
 }
+
+#[cfg(feature = "ipm-simd")]
+#[test]
+fn test_evaluate_multi_network_model_problem_multi_scenario() {
+    use pywr_core::solvers::SimdIpmSolverSettings;
+
+    let config = ProblemConfig::from_path(tests_dir().join("multi-problem1").join("problem.json")).unwrap();
+    let problem = build_multi_network_model_problem(&config).unwrap();
+
+    let solver_config = SimdIpmSolverSettings::default();
+
+    // network1 delivers its demand of 10.0, of which network2 takes its demand of 8.0. The
+    // interior point solver is approximate, so compare with a looser tolerance.
+    let evaluation = problem
+        .evaluate_multi_scenario(&solver_config, &[8.0, 10.0], &[])
+        .unwrap();
+    for (actual, expected) in evaluation.objectives.iter().zip([10.0, 8.0]) {
+        assert!((actual - expected).abs() < 1e-4, "{:?}", evaluation.objectives);
+    }
+}

@@ -376,45 +376,14 @@ impl MultiNetworkModel {
     where
         C: SolverConfig,
     {
-        let timesteps = self.domain.time.timesteps();
         let scenario_indices = self.domain.scenario.indices();
 
-        // Split the variable values between the networks
-        let split_values = match variables {
-            Some((variable_config, values_f64, values_u64)) => Some(
-                variable_config
-                    .split(self, values_f64, values_u64)
-                    .map_err(|source| MultiNetworkModelSetupError::VariableConfigError(Box::new(source)))?,
-            ),
-            None => None,
-        };
+        let states = self.setup_network_states(variables)?;
 
-        let mut states = Vec::with_capacity(self.networks.len());
         let mut recorder_states = Vec::with_capacity(self.networks.len());
         let mut solvers = Vec::with_capacity(self.networks.len());
 
-        for (idx, entry) in self.networks.iter().enumerate() {
-            let network_variables = variables
-                .and_then(|(variable_config, _, _)| variable_config.network(idx))
-                .zip(split_values.as_ref().and_then(|split| split.get(idx)));
-
-            let state = match network_variables {
-                Some((network_config, values)) => entry.network.setup_network_with_variables(
-                    timesteps,
-                    scenario_indices,
-                    entry.transfers.len(),
-                    network_config,
-                    &values.f64,
-                    &values.u64,
-                ),
-                None => entry
-                    .network
-                    .setup_network(timesteps, scenario_indices, entry.transfers.len()),
-            }
-            .map_err(|source| MultiNetworkModelSetupError::NetworkSetupError {
-                network: entry.name.clone(),
-                source: Box::new(source),
-            })?;
+        for (entry, state) in self.networks.iter().zip(&states) {
             let recorder_state = entry.network.setup_recorders(&self.domain).map_err(|source| {
                 MultiNetworkModelSetupError::RecorderSetupError {
                     network: entry.name.clone(),
@@ -423,13 +392,12 @@ impl MultiNetworkModel {
             })?;
             let solver = entry
                 .network
-                .setup_solver(scenario_indices, &state, solver_config)
+                .setup_solver(scenario_indices, state, solver_config)
                 .map_err(|source| MultiNetworkModelSetupError::SolverSetupError {
                     network: entry.name.clone(),
                     source: Box::new(source),
                 })?;
 
-            states.push(state);
             recorder_states.push(recorder_state);
             solvers.push(solver);
         }
@@ -449,22 +417,42 @@ impl MultiNetworkModel {
     where
         C: MultiStateSolverConfig,
     {
-        let timesteps = self.domain.time.timesteps();
+        self.setup_multi_scenario_impl(solver_config, None)
+    }
+
+    /// Setup the model for a [`MultiStateSolver`] with the given variable values applied to every
+    /// scenario.
+    ///
+    /// See [`MultiNetworkModel::setup_with_variables`] for details of how the values are applied.
+    pub fn setup_multi_scenario_with_variables<C>(
+        &self,
+        solver_config: &C,
+        variable_config: &MultiNetworkVariableConfig,
+        values_f64: &[f64],
+        values_u64: &[u64],
+    ) -> Result<MultiNetworkModelState<Box<C::Solver>>, MultiNetworkModelSetupError>
+    where
+        C: MultiStateSolverConfig,
+    {
+        self.setup_multi_scenario_impl(solver_config, Some((variable_config, values_f64, values_u64)))
+    }
+
+    fn setup_multi_scenario_impl<C>(
+        &self,
+        solver_config: &C,
+        variables: Option<(&MultiNetworkVariableConfig, &[f64], &[u64])>,
+    ) -> Result<MultiNetworkModelState<Box<C::Solver>>, MultiNetworkModelSetupError>
+    where
+        C: MultiStateSolverConfig,
+    {
         let scenario_indices = self.domain.scenario.indices();
 
-        let mut states = Vec::with_capacity(self.networks.len());
+        let states = self.setup_network_states(variables)?;
+
         let mut recorder_states = Vec::with_capacity(self.networks.len());
         let mut solvers = Vec::with_capacity(self.networks.len());
 
         for entry in &self.networks {
-            let state = entry
-                .network
-                .setup_network(timesteps, scenario_indices, entry.transfers.len())
-                .map_err(|source| MultiNetworkModelSetupError::NetworkSetupError {
-                    network: entry.name.clone(),
-                    source: Box::new(source),
-                })?;
-
             let recorder_state = entry.network.setup_recorders(&self.domain).map_err(|source| {
                 MultiNetworkModelSetupError::RecorderSetupError {
                     network: entry.name.clone(),
@@ -480,7 +468,6 @@ impl MultiNetworkModel {
                     source: Box::new(source),
                 })?;
 
-            states.push(state);
             recorder_states.push(recorder_state);
             solvers.push(solver);
         }
@@ -491,6 +478,54 @@ impl MultiNetworkModel {
             recorder_states,
             solvers,
         })
+    }
+
+    /// Setup the state of each network, applying any variable values before constant parameters
+    /// are computed.
+    fn setup_network_states(
+        &self,
+        variables: Option<(&MultiNetworkVariableConfig, &[f64], &[u64])>,
+    ) -> Result<Vec<NetworkState>, MultiNetworkModelSetupError> {
+        let timesteps = self.domain.time.timesteps();
+        let scenario_indices = self.domain.scenario.indices();
+
+        // Split the variable values between the networks
+        let split_values = match variables {
+            Some((variable_config, values_f64, values_u64)) => Some(
+                variable_config
+                    .split(self, values_f64, values_u64)
+                    .map_err(|source| MultiNetworkModelSetupError::VariableConfigError(Box::new(source)))?,
+            ),
+            None => None,
+        };
+
+        self.networks
+            .iter()
+            .enumerate()
+            .map(|(idx, entry)| {
+                let network_variables = variables
+                    .and_then(|(variable_config, _, _)| variable_config.network(idx))
+                    .zip(split_values.as_ref().and_then(|split| split.get(idx)));
+
+                match network_variables {
+                    Some((network_config, values)) => entry.network.setup_network_with_variables(
+                        timesteps,
+                        scenario_indices,
+                        entry.transfers.len(),
+                        network_config,
+                        &values.f64,
+                        &values.u64,
+                    ),
+                    None => entry
+                        .network
+                        .setup_network(timesteps, scenario_indices, entry.transfers.len()),
+                }
+                .map_err(|source| MultiNetworkModelSetupError::NetworkSetupError {
+                    network: entry.name.clone(),
+                    source: Box::new(source),
+                })
+            })
+            .collect()
     }
 
     /// Compute inter model transfers
@@ -853,6 +888,31 @@ impl MultiNetworkModel {
         C: MultiStateSolverConfig,
     {
         let mut state = self.setup_multi_scenario(solver_config)?;
+        let mut timings = MultiNetworkModelTimings::new_with_component_timings(&self.networks);
+
+        self.run_multi_scenario_with_state(&mut state, solver_config, &mut timings)?;
+
+        let result = self.finalise_multi_scenario(state, timings)?;
+
+        Ok(result)
+    }
+
+    /// Run the model with a [`MultiStateSolver`] and the given variable values applied to every
+    /// scenario.
+    ///
+    /// See [`MultiNetworkModel::setup_with_variables`] for details of how the values are applied.
+    pub fn run_multi_scenario_with_variables<C>(
+        &self,
+        solver_config: &C,
+        variable_config: &MultiNetworkVariableConfig,
+        values_f64: &[f64],
+        values_u64: &[u64],
+    ) -> Result<MultiNetworkModelResult, MultiNetworkModelRunError>
+    where
+        C: MultiStateSolverConfig,
+    {
+        let mut state =
+            self.setup_multi_scenario_with_variables(solver_config, variable_config, values_f64, values_u64)?;
         let mut timings = MultiNetworkModelTimings::new_with_component_timings(&self.networks);
 
         self.run_multi_scenario_with_state(&mut state, solver_config, &mut timings)?;

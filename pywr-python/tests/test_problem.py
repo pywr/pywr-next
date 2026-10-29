@@ -156,3 +156,24 @@ def test_multi_network_build_problem_network_required(multi_problem_dir: Path):
 
     with pytest.raises(ProblemBuildError):
         schema.build_problem(config, data_path=multi_problem_dir)
+
+
+def evaluate_or_skip(problem, values: list[float], solver_name: str):
+    """Evaluate the problem with a solver, skipping the test if the solver is not available."""
+    try:
+        return problem.evaluate(values, solver_name=solver_name)
+    except RuntimeError as error:
+        if "Unknown or unsupported solver" in str(error):
+            pytest.skip(f"Solver `{solver_name}` is not available.")
+        raise
+
+
+def test_evaluate_multi_scenario_solver(
+    problem: ModelProblem, multi_problem: MultiNetworkModelProblem
+):
+    """Test evaluating problems with a multi-scenario solver."""
+    evaluation = evaluate_or_skip(problem, [10.0], "ipm-simd")
+    assert evaluation.objectives == pytest.approx([10.0, 8.0], abs=1e-4)
+
+    evaluation = evaluate_or_skip(multi_problem, [8.0, 10.0], "ipm-simd")
+    assert evaluation.objectives == pytest.approx([10.0, 8.0], abs=1e-4)

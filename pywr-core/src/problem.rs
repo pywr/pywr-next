@@ -14,7 +14,7 @@ use crate::models::{
 use crate::network_variable_config::{MultiNetworkVariableConfig, NetworkVariableConfig, NetworkVariableConfigError};
 use crate::parameters::VariableParameterValues;
 use crate::recorders::RecorderAggregationError;
-use crate::solvers::SolverConfig;
+use crate::solvers::{MultiStateSolverConfig, SolverConfig};
 use thiserror::Error;
 
 /// Whether an objective should be minimised or maximised.
@@ -273,16 +273,41 @@ impl ModelProblem {
             .model
             .run_with_variables(solver_config, &self.variables, values_f64, values_u64)?;
 
+        self.evaluation(&result)
+    }
+
+    /// Evaluate the problem with a [`MultiStateSolver`](crate::solvers::MultiStateSolver), which
+    /// solves all the scenarios together.
+    ///
+    /// See [`ModelProblem::evaluate`] for details.
+    pub fn evaluate_multi_scenario<C>(
+        &self,
+        solver_config: &C,
+        values_f64: &[f64],
+        values_u64: &[u64],
+    ) -> Result<Evaluation, ModelProblemEvaluateError>
+    where
+        C: MultiStateSolverConfig,
+    {
+        let result =
+            self.model
+                .run_multi_scenario_with_variables(solver_config, &self.variables, values_f64, values_u64)?;
+
+        self.evaluation(&result)
+    }
+
+    /// The values of the objectives and constraints from the results of a model run.
+    fn evaluation(&self, result: &ModelResult) -> Result<Evaluation, ModelProblemEvaluateError> {
         let objectives = self
             .objectives
             .iter()
-            .map(|o| aggregated_value(&result, o.recorder()))
+            .map(|o| aggregated_value(result, o.recorder()))
             .collect::<Result<_, _>>()?;
 
         let constraints = self
             .constraints
             .iter()
-            .map(|c| aggregated_value(&result, c.recorder()))
+            .map(|c| aggregated_value(result, c.recorder()))
             .collect::<Result<_, _>>()?;
 
         Ok(Evaluation {
@@ -535,16 +560,44 @@ impl MultiNetworkModelProblem {
             .model
             .run_with_variables(solver_config, &self.variables, values_f64, values_u64)?;
 
+        self.evaluation(&result)
+    }
+
+    /// Evaluate the problem with a [`MultiStateSolver`](crate::solvers::MultiStateSolver), which
+    /// solves all the scenarios together.
+    ///
+    /// See [`MultiNetworkModelProblem::evaluate`] for details.
+    pub fn evaluate_multi_scenario<C>(
+        &self,
+        solver_config: &C,
+        values_f64: &[f64],
+        values_u64: &[u64],
+    ) -> Result<Evaluation, MultiNetworkModelProblemEvaluateError>
+    where
+        C: MultiStateSolverConfig,
+    {
+        let result =
+            self.model
+                .run_multi_scenario_with_variables(solver_config, &self.variables, values_f64, values_u64)?;
+
+        self.evaluation(&result)
+    }
+
+    /// The values of the objectives and constraints from the results of a model run.
+    fn evaluation(
+        &self,
+        result: &MultiNetworkModelResult,
+    ) -> Result<Evaluation, MultiNetworkModelProblemEvaluateError> {
         let objectives = self
             .objectives
             .iter()
-            .map(|o| multi_network_aggregated_value(&result, o.network(), o.objective().recorder()))
+            .map(|o| multi_network_aggregated_value(result, o.network(), o.objective().recorder()))
             .collect::<Result<_, _>>()?;
 
         let constraints = self
             .constraints
             .iter()
-            .map(|c| multi_network_aggregated_value(&result, c.network(), c.constraint().recorder()))
+            .map(|c| multi_network_aggregated_value(result, c.network(), c.constraint().recorder()))
             .collect::<Result<_, _>>()?;
 
         Ok(Evaluation {
@@ -976,5 +1029,59 @@ mod tests {
             result,
             Err(MultiNetworkVariableConfigBuilderError::NetworkNotFound(_))
         ));
+    }
+
+    #[cfg(feature = "ipm-simd")]
+    #[test]
+    /// Test that evaluating with a multi-scenario solver applies the variable values and gives the
+    /// same objectives as a single-scenario solver.
+    fn test_evaluate_multi_scenario() {
+        use crate::solvers::SimdIpmSolverSettings;
+
+        let mut builder = test_builder();
+        builder
+            .objective(Objective::new("mean-demand", ObjectiveSense::Minimise))
+            .constraint(Constraint::new("mean-demand", None, Some(6.0)));
+        let problem = builder.build().unwrap();
+
+        let evaluation = problem
+            .evaluate_multi_scenario(&SimdIpmSolverSettings::default(), &[0.5], &[])
+            .unwrap();
+        assert_approx_eq!(&[f64], &evaluation.objectives, &[5.0]);
+        assert_approx_eq!(&[f64], &evaluation.constraints, &[5.0]);
+
+        let expected = problem.evaluate(&ClpSolverSettings::default(), &[0.5], &[]).unwrap();
+        assert_approx_eq!(&[f64], &evaluation.objectives, &expected.objectives);
+    }
+
+    #[cfg(feature = "ipm-simd")]
+    #[test]
+    fn test_multi_network_evaluate_multi_scenario() {
+        use crate::solvers::SimdIpmSolverSettings;
+
+        let mut builder = test_multi_network_builder();
+        builder
+            .objective(NetworkObjective::new(
+                "network1",
+                Objective::new("mean-demand", ObjectiveSense::Minimise),
+            ))
+            .objective(NetworkObjective::new(
+                "network2",
+                Objective::new("mean-demand", ObjectiveSense::Maximise),
+            ));
+        let problem = builder.build().unwrap();
+
+        // The demand factor of network2 is 0.5 and of network1 is 0.2
+        let evaluation = problem
+            .evaluate_multi_scenario(&SimdIpmSolverSettings::default(), &[0.5, 0.2], &[])
+            .unwrap();
+        assert_approx_eq!(&[f64], &evaluation.objectives, &[2.0, 5.0]);
+
+        // An incorrect number of values is an error
+        assert!(
+            problem
+                .evaluate_multi_scenario(&SimdIpmSolverSettings::default(), &[0.5], &[])
+                .is_err()
+        );
     }
 }

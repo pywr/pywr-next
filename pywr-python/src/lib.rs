@@ -502,6 +502,15 @@ trait EvaluateProblem: Sync {
         values_u64: &[u64],
     ) -> Result<Evaluation, PyErr>;
 
+    /// Evaluate the problem with a multi-scenario solver, converting any error to a Python exception.
+    #[cfg(any(feature = "ipm-simd", feature = "ipm-ocl"))]
+    fn evaluate_multi_scenario_py<C: MultiStateSolverConfig>(
+        &self,
+        solver_config: &C,
+        values_f64: &[f64],
+        values_u64: &[u64],
+    ) -> Result<Evaluation, PyErr>;
+
     /// The constraints of the problem, in order.
     fn constraints_py(&self) -> Vec<&Constraint>;
 }
@@ -515,6 +524,18 @@ impl EvaluateProblem for ModelProblem {
     ) -> Result<Evaluation, PyErr> {
         Ok(self
             .evaluate(solver_config, values_f64, values_u64)
+            .map_err(PyModelProblemEvaluateError::from)?)
+    }
+
+    #[cfg(any(feature = "ipm-simd", feature = "ipm-ocl"))]
+    fn evaluate_multi_scenario_py<C: MultiStateSolverConfig>(
+        &self,
+        solver_config: &C,
+        values_f64: &[f64],
+        values_u64: &[u64],
+    ) -> Result<Evaluation, PyErr> {
+        Ok(self
+            .evaluate_multi_scenario(solver_config, values_f64, values_u64)
             .map_err(PyModelProblemEvaluateError::from)?)
     }
 
@@ -532,6 +553,18 @@ impl EvaluateProblem for MultiNetworkModelProblem {
     ) -> Result<Evaluation, PyErr> {
         Ok(self
             .evaluate(solver_config, values_f64, values_u64)
+            .map_err(PyMultiNetworkModelProblemEvaluateError::from)?)
+    }
+
+    #[cfg(any(feature = "ipm-simd", feature = "ipm-ocl"))]
+    fn evaluate_multi_scenario_py<C: MultiStateSolverConfig>(
+        &self,
+        solver_config: &C,
+        values_f64: &[f64],
+        values_u64: &[u64],
+    ) -> Result<Evaluation, PyErr> {
+        Ok(self
+            .evaluate_multi_scenario(solver_config, values_f64, values_u64)
             .map_err(PyMultiNetworkModelProblemEvaluateError::from)?)
     }
 
@@ -580,9 +613,42 @@ where
         .collect())
 }
 
+/// Evaluate each set of variable values in parallel with the given multi-scenario solver,
+/// unlocking the GIL.
+#[cfg(any(feature = "ipm-simd", feature = "ipm-ocl"))]
+fn evaluate_batch_multi_scenario_with<P, C>(
+    problem: &P,
+    py: Python<'_>,
+    solver_config: &C,
+    values: &[(Vec<f64>, Vec<u64>)],
+) -> PyResult<Vec<PyEvaluation>>
+where
+    P: EvaluateProblem,
+    C: MultiStateSolverConfig + Sync,
+{
+    let evaluations = py.detach(|| {
+        values
+            .par_iter()
+            .map(|(values_f64, values_u64)| problem.evaluate_multi_scenario_py(solver_config, values_f64, values_u64))
+            .collect::<Result<Vec<_>, _>>()
+    })?;
+
+    let constraints = problem.constraints_py();
+    Ok(evaluations
+        .into_iter()
+        .map(|e| to_py_evaluation(&constraints, e))
+        .collect())
+}
+
 /// Evaluate each set of variable values in parallel with the named solver.
 #[cfg_attr(
-    not(any(feature = "clp", feature = "cbc", feature = "highs")),
+    not(any(
+        feature = "clp",
+        feature = "cbc",
+        feature = "highs",
+        feature = "ipm-simd",
+        feature = "ipm-ocl"
+    )),
     allow(unused_variables)
 )]
 fn evaluate_batch_py<P: EvaluateProblem>(
@@ -608,6 +674,15 @@ fn evaluate_batch_py<P: EvaluateProblem>(
             let solver_config = solver_settings::build_highs_settings_py(solver_kwargs)?;
             evaluate_batch_with(problem, py, &solver_config, values)
         }
+        #[cfg(feature = "ipm-simd")]
+        "ipm-simd" => {
+            let solver_config = solver_settings::build_ipm_simd_settings_py(solver_kwargs)?;
+            evaluate_batch_multi_scenario_with(problem, py, &solver_config, values)
+        }
+        #[cfg(feature = "ipm-ocl")]
+        "clipm-f32" => evaluate_batch_multi_scenario_with(problem, py, &ClIpmF32Settings::default(), values),
+        #[cfg(feature = "ipm-ocl")]
+        "clipm-f64" => evaluate_batch_multi_scenario_with(problem, py, &ClIpmF64Settings::default(), values),
         _ => Err(PyRuntimeError::new_err(format!(
             "Unknown or unsupported solver for problems: {solver_name}",
         ))),
