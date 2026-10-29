@@ -3,8 +3,9 @@ mod solver_settings;
 
 use crate::exceptions::{
     PyModelBuilderError, PyModelProblemBuildError, PyModelProblemEvaluateError, PyModelRunError,
-    PyModelSchemaBuildError, PyModelSchemaReadError, PyMultiNetworkModelBuilderError, PyMultiNetworkModelRunError,
-    PyMultiNetworkModelSchemaBuildError, PyRecorderAggregationError,
+    PyModelSchemaBuildError, PyModelSchemaReadError, PyMultiNetworkModelBuilderError,
+    PyMultiNetworkModelProblemEvaluateError, PyMultiNetworkModelRunError, PyMultiNetworkModelSchemaBuildError,
+    PyRecorderAggregationError,
 };
 use anyhow::anyhow;
 use arrow::array::{Float64Builder, RecordBatch, StringBuilder, TimestampMillisecondBuilder, UInt64Builder};
@@ -19,8 +20,10 @@ use pywr_core::models::{
     Model, ModelResult, ModelTimings, MultiNetworkModel, MultiNetworkModelResult, MultiNetworkModelTimings,
 };
 use pywr_core::network::NetworkResult;
+use pywr_core::network_variable_config::NetworkVariableConfigError;
+use pywr_core::parameters::VariableParameterValues;
 use pywr_core::parameters::{ParameterInfo, PyScenarioIndex, PyTimestep};
-use pywr_core::problem::{Evaluation, ModelProblem, ObjectiveSense};
+use pywr_core::problem::{Constraint, Evaluation, ModelProblem, MultiNetworkModelProblem, ObjectiveSense};
 use pywr_core::recorders::LongFmtArrowRecord;
 #[cfg(any(feature = "ipm-simd", feature = "ipm-ocl"))]
 use pywr_core::solvers::MultiStateSolverConfig;
@@ -486,77 +489,176 @@ struct PyModelProblem {
     inner: ModelProblem,
 }
 
-impl PyModelProblem {
-    fn to_py_evaluation(&self, evaluation: Evaluation) -> PyEvaluation {
-        let constraint_violations = self
-            .inner
-            .constraints()
-            .iter()
-            .zip(&evaluation.constraints)
-            .map(|(constraint, value)| constraint.violation(*value))
-            .collect();
-
-        PyEvaluation {
-            objectives: evaluation.objectives,
-            constraints: evaluation.constraints,
-            constraint_violations,
-        }
-    }
-
-    /// Evaluate each set of variable values in parallel with the given solver, unlocking the GIL.
-    #[cfg(any(feature = "clp", feature = "cbc", feature = "highs"))]
-    fn evaluate_batch_with<C>(
+/// A problem that can be evaluated by the Python bindings.
+///
+/// This is implemented by [`ModelProblem`] and [`MultiNetworkModelProblem`] so that their Python
+/// classes can share the evaluation code.
+trait EvaluateProblem: Sync {
+    /// Evaluate the problem, converting any error to a Python exception.
+    fn evaluate_py<C: SolverConfig>(
         &self,
-        py: Python<'_>,
         solver_config: &C,
-        values: &[(Vec<f64>, Vec<u64>)],
-    ) -> PyResult<Vec<PyEvaluation>>
-    where
-        C: SolverConfig + Sync,
-    {
-        let evaluations = py
-            .detach(|| {
-                values
-                    .par_iter()
-                    .map(|(values_f64, values_u64)| self.inner.evaluate(solver_config, values_f64, values_u64))
-                    .collect::<Result<Vec<_>, _>>()
-            })
-            .map_err(PyModelProblemEvaluateError::from)?;
+        values_f64: &[f64],
+        values_u64: &[u64],
+    ) -> Result<Evaluation, PyErr>;
 
-        Ok(evaluations.into_iter().map(|e| self.to_py_evaluation(e)).collect())
+    /// The constraints of the problem, in order.
+    fn constraints_py(&self) -> Vec<&Constraint>;
+}
+
+impl EvaluateProblem for ModelProblem {
+    fn evaluate_py<C: SolverConfig>(
+        &self,
+        solver_config: &C,
+        values_f64: &[f64],
+        values_u64: &[u64],
+    ) -> Result<Evaluation, PyErr> {
+        Ok(self
+            .evaluate(solver_config, values_f64, values_u64)
+            .map_err(PyModelProblemEvaluateError::from)?)
     }
 
-    #[cfg_attr(
-        not(any(feature = "clp", feature = "cbc", feature = "highs")),
-        allow(unused_variables)
-    )]
-    fn evaluate_batch_py(
+    fn constraints_py(&self) -> Vec<&Constraint> {
+        self.constraints().iter().collect()
+    }
+}
+
+impl EvaluateProblem for MultiNetworkModelProblem {
+    fn evaluate_py<C: SolverConfig>(
         &self,
-        py: Python<'_>,
-        solver_name: &str,
-        solver_kwargs: Option<&Bound<'_, PyDict>>,
-        values: &[(Vec<f64>, Vec<u64>)],
-    ) -> PyResult<Vec<PyEvaluation>> {
-        match solver_name {
-            #[cfg(feature = "clp")]
-            "clp" => {
-                let solver_config = solver_settings::build_clp_settings_py(solver_kwargs)?;
-                self.evaluate_batch_with(py, &solver_config, values)
-            }
-            #[cfg(feature = "cbc")]
-            "cbc" => {
-                let solver_config = solver_settings::build_cbc_settings_py(solver_kwargs)?;
-                self.evaluate_batch_with(py, &solver_config, values)
-            }
-            #[cfg(feature = "highs")]
-            "highs" => {
-                let solver_config = solver_settings::build_highs_settings_py(solver_kwargs)?;
-                self.evaluate_batch_with(py, &solver_config, values)
-            }
-            _ => Err(PyRuntimeError::new_err(format!(
-                "Unknown or unsupported solver for problems: {solver_name}",
-            ))),
+        solver_config: &C,
+        values_f64: &[f64],
+        values_u64: &[u64],
+    ) -> Result<Evaluation, PyErr> {
+        Ok(self
+            .evaluate(solver_config, values_f64, values_u64)
+            .map_err(PyMultiNetworkModelProblemEvaluateError::from)?)
+    }
+
+    fn constraints_py(&self) -> Vec<&Constraint> {
+        self.constraints().iter().map(|c| c.constraint()).collect()
+    }
+}
+
+fn to_py_evaluation(constraints: &[&Constraint], evaluation: Evaluation) -> PyEvaluation {
+    let constraint_violations = constraints
+        .iter()
+        .zip(&evaluation.constraints)
+        .map(|(constraint, value)| constraint.violation(*value))
+        .collect();
+
+    PyEvaluation {
+        objectives: evaluation.objectives,
+        constraints: evaluation.constraints,
+        constraint_violations,
+    }
+}
+
+/// Evaluate each set of variable values in parallel with the given solver, unlocking the GIL.
+#[cfg(any(feature = "clp", feature = "cbc", feature = "highs"))]
+fn evaluate_batch_with<P, C>(
+    problem: &P,
+    py: Python<'_>,
+    solver_config: &C,
+    values: &[(Vec<f64>, Vec<u64>)],
+) -> PyResult<Vec<PyEvaluation>>
+where
+    P: EvaluateProblem,
+    C: SolverConfig + Sync,
+{
+    let evaluations = py.detach(|| {
+        values
+            .par_iter()
+            .map(|(values_f64, values_u64)| problem.evaluate_py(solver_config, values_f64, values_u64))
+            .collect::<Result<Vec<_>, _>>()
+    })?;
+
+    let constraints = problem.constraints_py();
+    Ok(evaluations
+        .into_iter()
+        .map(|e| to_py_evaluation(&constraints, e))
+        .collect())
+}
+
+/// Evaluate each set of variable values in parallel with the named solver.
+#[cfg_attr(
+    not(any(feature = "clp", feature = "cbc", feature = "highs")),
+    allow(unused_variables)
+)]
+fn evaluate_batch_py<P: EvaluateProblem>(
+    problem: &P,
+    py: Python<'_>,
+    solver_name: &str,
+    solver_kwargs: Option<&Bound<'_, PyDict>>,
+    values: &[(Vec<f64>, Vec<u64>)],
+) -> PyResult<Vec<PyEvaluation>> {
+    match solver_name {
+        #[cfg(feature = "clp")]
+        "clp" => {
+            let solver_config = solver_settings::build_clp_settings_py(solver_kwargs)?;
+            evaluate_batch_with(problem, py, &solver_config, values)
         }
+        #[cfg(feature = "cbc")]
+        "cbc" => {
+            let solver_config = solver_settings::build_cbc_settings_py(solver_kwargs)?;
+            evaluate_batch_with(problem, py, &solver_config, values)
+        }
+        #[cfg(feature = "highs")]
+        "highs" => {
+            let solver_config = solver_settings::build_highs_settings_py(solver_kwargs)?;
+            evaluate_batch_with(problem, py, &solver_config, values)
+        }
+        _ => Err(PyRuntimeError::new_err(format!(
+            "Unknown or unsupported solver for problems: {solver_name}",
+        ))),
+    }
+}
+
+/// Evaluate a single set of variable values with the named solver.
+fn evaluate_one_py<P: EvaluateProblem>(
+    problem: &P,
+    py: Python<'_>,
+    values_f64: Vec<f64>,
+    values_u64: Option<Vec<u64>>,
+    solver_name: &str,
+    solver_kwargs: Option<&Bound<'_, PyDict>>,
+) -> PyResult<PyEvaluation> {
+    let values = [(values_f64, values_u64.unwrap_or_default())];
+    let mut evaluations = evaluate_batch_py(problem, py, solver_name, solver_kwargs, &values)?;
+    evaluations
+        .pop()
+        .ok_or_else(|| PyRuntimeError::new_err("No evaluation was returned."))
+}
+
+/// Pair each set of f64 values with its set of u64 values, which default to empty.
+fn pair_batch_values(
+    values_f64: Vec<Vec<f64>>,
+    values_u64: Option<Vec<Vec<u64>>>,
+) -> PyResult<Vec<(Vec<f64>, Vec<u64>)>> {
+    let values_u64 = match values_u64 {
+        Some(values_u64) if values_u64.len() != values_f64.len() => {
+            return Err(PyValueError::new_err(format!(
+                "Expected {} sets of u64 values to match the f64 values, but received {}.",
+                values_f64.len(),
+                values_u64.len()
+            )));
+        }
+        Some(values_u64) => values_u64,
+        None => vec![Vec::new(); values_f64.len()],
+    };
+
+    Ok(values_f64.into_iter().zip(values_u64).collect())
+}
+
+fn bounds_py(bounds: Result<VariableParameterValues, NetworkVariableConfigError>) -> PyResult<(Vec<f64>, Vec<u64>)> {
+    let bounds = bounds.map_err(|e| PyRuntimeError::new_err(format!("{:?}", anyhow!(e))))?;
+    Ok((bounds.f64, bounds.u64))
+}
+
+fn sense_py(sense: ObjectiveSense) -> &'static str {
+    match sense {
+        ObjectiveSense::Minimise => "Minimise",
+        ObjectiveSense::Maximise => "Maximise",
     }
 }
 
@@ -572,20 +674,12 @@ impl PyModelProblem {
 
     /// The lower bounds of the f64 and u64 variable values.
     fn lower_bounds(&self) -> PyResult<(Vec<f64>, Vec<u64>)> {
-        let bounds = self
-            .inner
-            .lower_bounds()
-            .map_err(|e| PyRuntimeError::new_err(format!("{:?}", anyhow!(e))))?;
-        Ok((bounds.f64, bounds.u64))
+        bounds_py(self.inner.lower_bounds())
     }
 
     /// The upper bounds of the f64 and u64 variable values.
     fn upper_bounds(&self) -> PyResult<(Vec<f64>, Vec<u64>)> {
-        let bounds = self
-            .inner
-            .upper_bounds()
-            .map_err(|e| PyRuntimeError::new_err(format!("{:?}", anyhow!(e))))?;
-        Ok((bounds.f64, bounds.u64))
+        bounds_py(self.inner.upper_bounds())
     }
 
     /// The names of the outputs used as objectives.
@@ -601,14 +695,7 @@ impl PyModelProblem {
     /// Whether each objective should be minimised (`"Minimise"`) or maximised (`"Maximise"`).
     #[getter]
     fn objective_senses(&self) -> Vec<&'static str> {
-        self.inner
-            .objectives()
-            .iter()
-            .map(|o| match o.sense() {
-                ObjectiveSense::Minimise => "Minimise",
-                ObjectiveSense::Maximise => "Maximise",
-            })
-            .collect()
+        self.inner.objectives().iter().map(|o| sense_py(o.sense())).collect()
     }
 
     /// The names of the outputs used as constraints.
@@ -641,11 +728,7 @@ impl PyModelProblem {
         solver_name: &str,
         solver_kwargs: Option<&Bound<'_, PyDict>>,
     ) -> PyResult<PyEvaluation> {
-        let values = [(values_f64, values_u64.unwrap_or_default())];
-        let mut evaluations = self.evaluate_batch_py(py, solver_name, solver_kwargs, &values)?;
-        evaluations
-            .pop()
-            .ok_or_else(|| PyRuntimeError::new_err("No evaluation was returned."))
+        evaluate_one_py(&self.inner, py, values_f64, values_u64, solver_name, solver_kwargs)
     }
 
     /// Evaluate the problem with each set of variable values in parallel.
@@ -660,25 +743,137 @@ impl PyModelProblem {
         solver_name: &str,
         solver_kwargs: Option<&Bound<'_, PyDict>>,
     ) -> PyResult<Vec<PyEvaluation>> {
-        let values_u64 = match values_u64 {
-            Some(values_u64) if values_u64.len() != values_f64.len() => {
-                return Err(PyValueError::new_err(format!(
-                    "Expected {} sets of u64 values to match the f64 values, but received {}.",
-                    values_f64.len(),
-                    values_u64.len()
-                )));
-            }
-            Some(values_u64) => values_u64,
-            None => vec![Vec::new(); values_f64.len()],
-        };
-
-        let values: Vec<_> = values_f64.into_iter().zip(values_u64).collect();
-        self.evaluate_batch_py(py, solver_name, solver_kwargs, &values)
+        let values = pair_batch_values(values_f64, values_u64)?;
+        evaluate_batch_py(&self.inner, py, solver_name, solver_kwargs, &values)
     }
 
     fn __repr__(&self) -> String {
         format!(
             "<ModelProblem with {} objectives and {} constraints>",
+            self.inner.objectives().len(),
+            self.inner.constraints().len()
+        )
+    }
+}
+
+/// An optimisation problem for a multi-network model.
+#[pyclass(name = "MultiNetworkModelProblem", frozen)]
+struct PyMultiNetworkModelProblem {
+    inner: MultiNetworkModelProblem,
+}
+
+#[pymethods]
+impl PyMultiNetworkModelProblem {
+    /// The number of f64 and u64 variable values required to evaluate the problem.
+    #[getter]
+    fn size(&self) -> PyResult<(usize, usize)> {
+        self.inner
+            .size()
+            .map_err(|e| PyRuntimeError::new_err(format!("{:?}", anyhow!(e))))
+    }
+
+    /// The lower bounds of the f64 and u64 variable values.
+    fn lower_bounds(&self) -> PyResult<(Vec<f64>, Vec<u64>)> {
+        bounds_py(self.inner.lower_bounds())
+    }
+
+    /// The upper bounds of the f64 and u64 variable values.
+    fn upper_bounds(&self) -> PyResult<(Vec<f64>, Vec<u64>)> {
+        bounds_py(self.inner.upper_bounds())
+    }
+
+    /// The names of the outputs used as objectives.
+    #[getter]
+    fn objective_names(&self) -> Vec<String> {
+        self.inner
+            .objectives()
+            .iter()
+            .map(|o| o.objective().recorder().to_string())
+            .collect()
+    }
+
+    /// The names of the networks of the outputs used as objectives.
+    #[getter]
+    fn objective_networks(&self) -> Vec<String> {
+        self.inner
+            .objectives()
+            .iter()
+            .map(|o| o.network().to_string())
+            .collect()
+    }
+
+    /// Whether each objective should be minimised (`"Minimise"`) or maximised (`"Maximise"`).
+    #[getter]
+    fn objective_senses(&self) -> Vec<&'static str> {
+        self.inner
+            .objectives()
+            .iter()
+            .map(|o| sense_py(o.objective().sense()))
+            .collect()
+    }
+
+    /// The names of the outputs used as constraints.
+    #[getter]
+    fn constraint_names(&self) -> Vec<String> {
+        self.inner
+            .constraints()
+            .iter()
+            .map(|c| c.constraint().recorder().to_string())
+            .collect()
+    }
+
+    /// The names of the networks of the outputs used as constraints.
+    #[getter]
+    fn constraint_networks(&self) -> Vec<String> {
+        self.inner
+            .constraints()
+            .iter()
+            .map(|c| c.network().to_string())
+            .collect()
+    }
+
+    /// The lower and upper bound of each constraint. A bound is `None` if it is not defined.
+    #[getter]
+    fn constraint_bounds(&self) -> Vec<(Option<f64>, Option<f64>)> {
+        self.inner
+            .constraints()
+            .iter()
+            .map(|c| (c.constraint().lower_bound(), c.constraint().upper_bound()))
+            .collect()
+    }
+
+    /// Evaluate the problem with the given variable values.
+    #[pyo3(signature = (values_f64, values_u64=None, solver_name="clp", solver_kwargs=None))]
+    fn evaluate(
+        &self,
+        py: Python<'_>,
+        values_f64: Vec<f64>,
+        values_u64: Option<Vec<u64>>,
+        solver_name: &str,
+        solver_kwargs: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<PyEvaluation> {
+        evaluate_one_py(&self.inner, py, values_f64, values_u64, solver_name, solver_kwargs)
+    }
+
+    /// Evaluate the problem with each set of variable values in parallel.
+    ///
+    /// The number of threads used can be controlled with the `RAYON_NUM_THREADS` environment variable.
+    #[pyo3(signature = (values_f64, values_u64=None, solver_name="clp", solver_kwargs=None))]
+    fn evaluate_batch(
+        &self,
+        py: Python<'_>,
+        values_f64: Vec<Vec<f64>>,
+        values_u64: Option<Vec<Vec<u64>>>,
+        solver_name: &str,
+        solver_kwargs: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<Vec<PyEvaluation>> {
+        let values = pair_batch_values(values_f64, values_u64)?;
+        evaluate_batch_py(&self.inner, py, solver_name, solver_kwargs, &values)
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "<MultiNetworkModelProblem with {} objectives and {} constraints>",
             self.inner.objectives().len(),
             self.inner.constraints().len()
         )
@@ -828,6 +1023,27 @@ impl PyMultiNetworkModelSchema {
         let inner = builder.build().map_err(PyMultiNetworkModelBuilderError::from)?;
         Ok(PyMultiNetworkModel { inner })
     }
+
+    /// Build the schema in to a Pywr multi-network model, and create an optimisation problem for
+    /// it from the given problem config.
+    #[pyo3(signature = (problem_config, data_path=None, output_path=None))]
+    fn build_problem(
+        &mut self,
+        problem_config: PyRef<'_, PyProblemConfig>,
+        data_path: Option<PathBuf>,
+        output_path: Option<PathBuf>,
+    ) -> PyResult<PyMultiNetworkModelProblem> {
+        let builder = self
+            .inner
+            .create_model_builder(&FileSystem, data_path.as_deref(), output_path.as_deref())
+            .map_err(PyMultiNetworkModelSchemaBuildError::from)?;
+        let model = builder.build().map_err(PyMultiNetworkModelBuilderError::from)?;
+        let inner = problem_config
+            .inner
+            .build_multi_network_model_problem(model)
+            .map_err(PyModelProblemBuildError::from)?;
+        Ok(PyMultiNetworkModelProblem { inner })
+    }
 }
 
 #[pyfunction]
@@ -879,6 +1095,7 @@ fn pywr(py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyNetworkResult>()?;
     m.add_class::<PyProblemConfig>()?;
     m.add_class::<PyModelProblem>()?;
+    m.add_class::<PyMultiNetworkModelProblem>()?;
     m.add_class::<PyEvaluation>()?;
     m.add_class::<Metric>()?;
     m.add_class::<PyTimestep>()?;

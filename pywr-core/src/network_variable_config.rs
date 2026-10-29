@@ -1,8 +1,10 @@
+use crate::models::MultiNetworkModel;
 use crate::network::{Network, NetworkState};
 use crate::parameters::{
     Parameter, ParameterIndex, ParameterName, ParameterState, ParameterStates, VariableConfig, VariableParameter,
     VariableParameterError, VariableParameterValues,
 };
+use std::ops::Range;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -16,6 +18,12 @@ pub enum NetworkVariableConfigError {
         received_f64: usize,
         received_u64: usize,
     },
+    #[error("The variable config is for a model with {expected} networks, but the model has {received}.")]
+    IncorrectNumberOfNetworks { expected: usize, received: usize },
+    #[error("Expected the states of {expected} networks, but received {received}.")]
+    IncorrectNumberOfNetworkStates { expected: usize, received: usize },
+    #[error("Network with index `{0}` not found in the model.")]
+    NetworkIndexNotFound(usize),
     #[error("F64 parameter with index `{0}` not found.")]
     ParameterF64IndexNotFound(ParameterIndex<f64>),
     #[error("U64 parameter with index `{0}` not found.")]
@@ -114,6 +122,14 @@ impl NetworkVariableConfig {
         }
 
         Ok((size_f64, size_u64))
+    }
+
+    /// The number of f64 and u64 variable values required by each variable parameter, in order.
+    pub fn variable_sizes(&self, network: &Network) -> Result<Vec<(usize, usize)>, NetworkVariableConfigError> {
+        self.entries
+            .iter()
+            .map(|entry| Ok(entry.index.variable(network)?.size(entry.config.as_ref())))
+            .collect()
     }
 
     /// The lower bounds of the variable values, in the same order as the values.
@@ -329,5 +345,316 @@ impl<'n> NetworkVariableConfigBuilder<'n> {
 
     pub fn build(self) -> NetworkVariableConfig {
         NetworkVariableConfig { entries: self.entries }
+    }
+}
+
+/// The location of a variable parameter's values within its network's values.
+#[derive(Debug, Clone)]
+struct VariableLocation {
+    network_idx: usize,
+    f64: Range<usize>,
+    u64: Range<usize>,
+}
+
+/// The variable configuration for a [`MultiNetworkModel`].
+///
+/// Each variable parameter belongs to one of the model's networks. A flat vector of f64 and u64
+/// values is split between the parameters in the order they were added to the
+/// [`MultiNetworkVariableConfigBuilder`], regardless of which network they belong to.
+pub struct MultiNetworkVariableConfig {
+    /// The variable config of each network, by network index.
+    networks: Vec<NetworkVariableConfig>,
+    /// The network index of each variable parameter, in the order its values are given.
+    order: Vec<usize>,
+}
+
+impl MultiNetworkVariableConfig {
+    /// The variable config of the network with index `network_idx`.
+    pub fn network(&self, network_idx: usize) -> Option<&NetworkVariableConfig> {
+        self.networks.get(network_idx)
+    }
+
+    /// The total number of f64 and u64 variable values required by this configuration.
+    pub fn size(&self, model: &MultiNetworkModel) -> Result<(usize, usize), NetworkVariableConfigError> {
+        let locations = self.locations(model)?;
+        Ok(total_size(&locations))
+    }
+
+    /// The lower bounds of the variable values, in the same order as the values.
+    pub fn lower_bounds(
+        &self,
+        model: &MultiNetworkModel,
+    ) -> Result<VariableParameterValues, NetworkVariableConfigError> {
+        self.check_model(model)?;
+
+        let bounds = self
+            .networks
+            .iter()
+            .enumerate()
+            .map(|(idx, config)| config.lower_bounds(network(model, idx)?))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(gather(&self.locations(model)?, &bounds))
+    }
+
+    /// The upper bounds of the variable values, in the same order as the values.
+    pub fn upper_bounds(
+        &self,
+        model: &MultiNetworkModel,
+    ) -> Result<VariableParameterValues, NetworkVariableConfigError> {
+        self.check_model(model)?;
+
+        let bounds = self
+            .networks
+            .iter()
+            .enumerate()
+            .map(|(idx, config)| config.upper_bounds(network(model, idx)?))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(gather(&self.locations(model)?, &bounds))
+    }
+
+    /// The current variable values of each scenario, in the same order as the values.
+    ///
+    /// `states` are the states of each network, in network order. See
+    /// [`NetworkVariableConfig::values`] for details of the values returned.
+    pub fn values(
+        &self,
+        model: &MultiNetworkModel,
+        states: &[NetworkState],
+    ) -> Result<Vec<Option<VariableParameterValues>>, NetworkVariableConfigError> {
+        let locations = self.locations(model)?;
+
+        if states.len() != self.networks.len() {
+            return Err(NetworkVariableConfigError::IncorrectNumberOfNetworkStates {
+                expected: self.networks.len(),
+                received: states.len(),
+            });
+        }
+
+        // The values of each network, for each scenario
+        let network_values = self
+            .networks
+            .iter()
+            .zip(states)
+            .enumerate()
+            .map(|(idx, (config, state))| config.values(network(model, idx)?, state))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let num_scenarios = network_values.first().map_or(0, |values| values.len());
+
+        let values = (0..num_scenarios)
+            .map(|scenario| {
+                network_values
+                    .iter()
+                    .map(|values| values.get(scenario).cloned().flatten())
+                    .collect::<Option<Vec<_>>>()
+                    .map(|values| gather(&locations, &values))
+            })
+            .collect();
+
+        Ok(values)
+    }
+
+    /// Split the values in to the values of each network, in network order.
+    ///
+    /// An error is returned if the number of values does not match the size of the configuration.
+    pub fn split(
+        &self,
+        model: &MultiNetworkModel,
+        values_f64: &[f64],
+        values_u64: &[u64],
+    ) -> Result<Vec<VariableParameterValues>, NetworkVariableConfigError> {
+        let locations = self.locations(model)?;
+
+        let (expected_f64, expected_u64) = total_size(&locations);
+        if values_f64.len() != expected_f64 || values_u64.len() != expected_u64 {
+            return Err(NetworkVariableConfigError::IncorrectNumberOfValues {
+                expected_f64,
+                expected_u64,
+                received_f64: values_f64.len(),
+                received_u64: values_u64.len(),
+            });
+        }
+
+        let mut split = vec![VariableParameterValues::default(); self.networks.len()];
+        let mut offset_f64: usize = 0;
+        let mut offset_u64: usize = 0;
+
+        // The locations are in the order of the values, and within each network they are in
+        // the order of that network's values.
+        for location in &locations {
+            let size_f64 = location.f64.len();
+            let size_u64 = location.u64.len();
+
+            let network_values = &mut split[location.network_idx];
+            network_values
+                .f64
+                .extend_from_slice(&values_f64[offset_f64..offset_f64 + size_f64]);
+            network_values
+                .u64
+                .extend_from_slice(&values_u64[offset_u64..offset_u64 + size_u64]);
+
+            offset_f64 += size_f64;
+            offset_u64 += size_u64;
+        }
+
+        Ok(split)
+    }
+
+    /// The location of each variable parameter's values within its network's values, in the order
+    /// the values are given.
+    fn locations(&self, model: &MultiNetworkModel) -> Result<Vec<VariableLocation>, NetworkVariableConfigError> {
+        self.check_model(model)?;
+
+        let sizes = self
+            .networks
+            .iter()
+            .enumerate()
+            .map(|(idx, config)| config.variable_sizes(network(model, idx)?))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let mut next_variable = vec![0; self.networks.len()];
+        let mut offsets = vec![(0, 0); self.networks.len()];
+
+        let locations = self
+            .order
+            .iter()
+            .map(|&network_idx| {
+                let (size_f64, size_u64) = sizes[network_idx][next_variable[network_idx]];
+                let (offset_f64, offset_u64) = offsets[network_idx];
+
+                next_variable[network_idx] += 1;
+                offsets[network_idx] = (offset_f64 + size_f64, offset_u64 + size_u64);
+
+                VariableLocation {
+                    network_idx,
+                    f64: offset_f64..offset_f64 + size_f64,
+                    u64: offset_u64..offset_u64 + size_u64,
+                }
+            })
+            .collect();
+
+        Ok(locations)
+    }
+
+    /// Check that `model` has the same number of networks as the model the config was built for.
+    fn check_model(&self, model: &MultiNetworkModel) -> Result<(), NetworkVariableConfigError> {
+        if model.num_networks() == self.networks.len() {
+            Ok(())
+        } else {
+            Err(NetworkVariableConfigError::IncorrectNumberOfNetworks {
+                expected: self.networks.len(),
+                received: model.num_networks(),
+            })
+        }
+    }
+}
+
+fn network(model: &MultiNetworkModel, idx: usize) -> Result<&Network, NetworkVariableConfigError> {
+    model
+        .network(idx)
+        .ok_or(NetworkVariableConfigError::NetworkIndexNotFound(idx))
+}
+
+fn total_size(locations: &[VariableLocation]) -> (usize, usize) {
+    locations.iter().fold((0, 0), |(size_f64, size_u64), location| {
+        (size_f64 + location.f64.len(), size_u64 + location.u64.len())
+    })
+}
+
+/// Gather the values of each network in to a single set of values, in the order of `locations`.
+fn gather(locations: &[VariableLocation], network_values: &[VariableParameterValues]) -> VariableParameterValues {
+    let mut values = VariableParameterValues::default();
+
+    for location in locations {
+        let network_values = &network_values[location.network_idx];
+        values.f64.extend_from_slice(&network_values.f64[location.f64.clone()]);
+        values.u64.extend_from_slice(&network_values.u64[location.u64.clone()]);
+    }
+
+    values
+}
+
+#[derive(Debug, Error)]
+pub enum MultiNetworkVariableConfigBuilderError {
+    #[error("Network `{0}` not found.")]
+    NetworkNotFound(String),
+    #[error("Error adding a variable to network `{network}`.")]
+    NetworkError {
+        network: String,
+        #[source]
+        source: NetworkVariableConfigBuilderError,
+    },
+}
+
+pub struct MultiNetworkVariableConfigBuilder<'m> {
+    model: &'m MultiNetworkModel,
+    /// The builder of each network. A builder is only `None` while a variable is being added.
+    networks: Vec<Option<NetworkVariableConfigBuilder<'m>>>,
+    order: Vec<usize>,
+}
+
+impl<'m> MultiNetworkVariableConfigBuilder<'m> {
+    pub fn new(model: &'m MultiNetworkModel) -> Self {
+        let networks = (0..model.num_networks())
+            .filter_map(|idx| model.network(idx))
+            .map(|network| Some(NetworkVariableConfigBuilder::new(network)))
+            .collect();
+
+        Self {
+            model,
+            networks,
+            order: Vec::new(),
+        }
+    }
+
+    /// Add a variable parameter of the network `network_name` and its configuration.
+    ///
+    /// An error is returned if the network does not exist, or if the parameter can not be added
+    /// to the network's variable config (see [`NetworkVariableConfigBuilder::add_variable_config`]).
+    pub fn add_variable_config(
+        mut self,
+        network_name: &str,
+        parameter_name: &ParameterName,
+        config: Box<dyn VariableConfig>,
+    ) -> Result<Self, MultiNetworkVariableConfigBuilderError> {
+        let network_not_found = || MultiNetworkVariableConfigBuilderError::NetworkNotFound(network_name.to_string());
+
+        let network_idx = self
+            .model
+            .get_network_index_by_name(network_name)
+            .ok_or_else(network_not_found)?;
+
+        // Adding a variable consumes the network's builder, so take it and then put it back
+        let builder = self
+            .networks
+            .get_mut(network_idx)
+            .and_then(Option::take)
+            .ok_or_else(network_not_found)?;
+
+        let builder = builder.add_variable_config(parameter_name, config).map_err(|source| {
+            MultiNetworkVariableConfigBuilderError::NetworkError {
+                network: network_name.to_string(),
+                source,
+            }
+        })?;
+
+        self.networks[network_idx] = Some(builder);
+        self.order.push(network_idx);
+
+        Ok(self)
+    }
+
+    pub fn build(self) -> MultiNetworkVariableConfig {
+        MultiNetworkVariableConfig {
+            networks: self
+                .networks
+                .into_iter()
+                .flatten()
+                .map(|builder| builder.build())
+                .collect(),
+            order: self.order,
+        }
     }
 }
