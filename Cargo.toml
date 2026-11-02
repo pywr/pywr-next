@@ -41,8 +41,8 @@ categories = ["science", "simulation"]
 [workspace.dependencies]
 ahash = "0.8"
 anyhow = "1.0"
-arrow = { version = "60.0" }
-arrow-schema = "60.0"
+arrow = { version = "60.1" }
+arrow-schema = "60.1"
 bytes = "1"
 chrono = { version = "0.4", features = ["serde"] }
 clap = "4.6"

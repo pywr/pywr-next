@@ -5,6 +5,9 @@ updates:
     schedule:
       interval: "weekly"
     groups:
+      arrow:
+        patterns:
+          - "arrow*"
       digest:
         patterns:
           - "digest*"
