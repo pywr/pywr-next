@@ -1,6 +1,8 @@
 use crate::error::ComposeModelError;
-use crate::manifest::ProjectManifest;
-use crate::{Composed, ComposedModel, ComposedMultiModel, ComposedNetwork, ProjectError};
+use crate::manifest::{ProjectManifest, ResolveOptions};
+use crate::{
+    Composed, ComposedModel, ComposedMultiModel, ComposedNetwork, ProjectError, ProjectManifestValidationError,
+};
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
@@ -11,11 +13,17 @@ pub struct Project {
     /// Base directory of the project (can be inferred from file location if None).
     root: PathBuf,
     manifest: ProjectManifest,
+    options: ResolveOptions,
 }
 
 impl Project {
-    /// Open a project from a manifest JSON file.
+    /// Open a project from a manifest JSON file, allowing it to depend on any other project.
     pub fn open<P: AsRef<Path>>(manifest_path: P) -> Result<Self, ProjectError> {
+        Self::open_with(manifest_path, ResolveOptions::default())
+    }
+
+    /// Open a project from a manifest JSON file, resolving it with `options`.
+    pub fn open_with<P: AsRef<Path>>(manifest_path: P, options: ResolveOptions) -> Result<Self, ProjectError> {
         let manifest_path = manifest_path.as_ref();
         let manifest_path = if manifest_path.is_absolute() {
             manifest_path.to_path_buf()
@@ -47,6 +55,7 @@ impl Project {
             manifest_filename: manifest_fn.to_os_string(),
             root,
             manifest,
+            options,
         })
     }
 
@@ -65,24 +74,30 @@ impl Project {
         &self.root
     }
 
+    /// Validate the project manifest and return a report of all structural problems found.
+    pub fn validate(&self) -> Result<(), ProjectManifestValidationError> {
+        self.manifest.validate(&self.root, &self.options)
+    }
+
     /// Compose a model from the project manifest and a definition name.
     pub fn compose_model(&self, definition_name: &str) -> Result<ComposedModel, ComposeModelError> {
-        self.manifest.compose_model(&self.root, definition_name)
+        self.manifest.compose_model(&self.root, definition_name, &self.options)
     }
 
     /// Compose a model or multi-model from the project manifest and a definition name.
     pub fn compose(&self, definition_name: &str) -> Result<Composed, ComposeModelError> {
-        self.manifest.compose(&self.root, definition_name)
+        self.manifest.compose(&self.root, definition_name, &self.options)
     }
 
     /// Compose a multi-network model from the project manifest and a multi-model definition name.
     pub fn compose_multi_model(&self, definition_name: &str) -> Result<ComposedMultiModel, ComposeModelError> {
-        self.manifest.compose_multi_model(&self.root, definition_name)
+        self.manifest
+            .compose_multi_model(&self.root, definition_name, &self.options)
     }
 
     /// Compose a network from the project manifest and a network definition name.
     pub fn compose_network(&self, network_name: &str) -> Result<ComposedNetwork, ComposeModelError> {
-        self.manifest.compose_network(&self.root, network_name)
+        self.manifest.compose_network(&self.root, network_name, &self.options)
     }
 }
 
@@ -99,6 +114,8 @@ mod tests {
             base_model: Some("base_model.json".to_string()),
             sub_networks: vec![],
             multi_models: vec![],
+            dependencies: vec![],
+            exports: None,
             network_sets: vec![],
             networks: vec![],
             models: vec![],
