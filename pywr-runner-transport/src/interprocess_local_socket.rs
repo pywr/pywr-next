@@ -32,10 +32,7 @@ use super::{
 };
 use crate::framing::{FrameDecoder, MAX_FRAME_SIZE};
 use interprocess::local_socket::prelude::*;
-use interprocess::local_socket::{
-    GenericNamespaced, ListenerNonblockingMode, ListenerOptions, RecvHalf as LocalSocketRecvHalf,
-    SendHalf as LocalSocketSendHalf,
-};
+use interprocess::local_socket::{GenericNamespaced, ListenerNonblockingMode, ListenerOptions};
 use std::io::{ErrorKind, Read, Write};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -88,13 +85,15 @@ impl TransportListener for InterprocessLocalSocketListener {
 
     fn accept(&self) -> Result<Self::Connection, TransportError> {
         let stream = self.inner.accept()?;
-        Ok(InterprocessLocalSocketConnection { stream })
+        Ok(InterprocessLocalSocketConnection {
+            stream: Arc::new(stream),
+        })
     }
 }
 
 /// An accepted synchronous local-socket connection.
 pub struct InterprocessLocalSocketConnection {
-    stream: LocalSocketStream,
+    stream: Arc<LocalSocketStream>,
 }
 
 impl InterprocessLocalSocketConnection {
@@ -103,7 +102,9 @@ impl InterprocessLocalSocketConnection {
 
         let stream = LocalSocketStream::connect(socket_name)?;
 
-        Ok(Self { stream })
+        Ok(Self {
+            stream: Arc::new(stream),
+        })
     }
 }
 
@@ -120,11 +121,11 @@ impl TransportConnection for InterprocessLocalSocketConnection {
     }
 
     fn split(self) -> Result<(Self::Reader, Self::Writer), TransportError> {
-        let (recv, send) = self.stream.split();
-
         Ok((
-            InterprocessLocalSocketReader::spawn(recv)?,
-            InterprocessLocalSocketWriter { inner: Some(send) },
+            InterprocessLocalSocketReader::spawn(self.stream.clone())?,
+            InterprocessLocalSocketWriter {
+                inner: Some(self.stream.clone()),
+            },
         ))
     }
 }
@@ -146,7 +147,7 @@ struct ReaderWorker {
 }
 
 impl InterprocessLocalSocketReader {
-    fn spawn(stream: LocalSocketRecvHalf) -> Result<Self, TransportError> {
+    fn spawn(stream: Arc<LocalSocketStream>) -> Result<Self, TransportError> {
         platform::configure_stream(&stream)?;
         let interrupter = platform::ReadInterrupter::new(&stream)?;
 
@@ -211,7 +212,9 @@ impl TransportReader for InterprocessLocalSocketReader {
 }
 
 /// Reads from the stream until it closes, fails, the consumer goes away, or a stop is requested.
-fn read_frames(mut stream: LocalSocketRecvHalf, sender: SyncSender<FrameResult>, stop: &AtomicBool) {
+fn read_frames(stream: Arc<LocalSocketStream>, sender: SyncSender<FrameResult>, stop: &AtomicBool) {
+    // `&Stream` implements `Read`, so the shared stream can be read without exclusive access.
+    let mut stream: &LocalSocketStream = &stream;
     let mut decoder = FrameDecoder::default();
     let mut chunk = [0_u8; 8192];
 
@@ -285,17 +288,16 @@ fn closed_outcome(decoder: &FrameDecoder) -> FrameResult {
 /// and polls the stop flag. Windows named pipes do not, so the pending read is cancelled.
 #[cfg(unix)]
 mod platform {
-    use super::{LocalSocketRecvHalf, TransportError};
+    use super::{LocalSocketStream, TransportError};
+    use interprocess::local_socket::traits::Stream;
     use std::time::Duration;
 
     /// How often the reader thread checks whether it has been asked to stop while no data
     /// is arriving.
     const STOP_POLL_INTERVAL: Duration = Duration::from_millis(50);
 
-    pub(super) fn configure_stream(stream: &LocalSocketRecvHalf) -> Result<(), TransportError> {
-        use interprocess::local_socket::traits::RecvHalf as _;
-
-        stream.set_timeout(Some(STOP_POLL_INTERVAL))?;
+    pub(super) fn configure_stream(stream: &LocalSocketStream) -> Result<(), TransportError> {
+        stream.set_recv_timeout(Some(STOP_POLL_INTERVAL))?;
         Ok(())
     }
 
@@ -303,7 +305,7 @@ mod platform {
     pub(super) struct ReadInterrupter;
 
     impl ReadInterrupter {
-        pub(super) fn new(_stream: &LocalSocketRecvHalf) -> Result<Self, TransportError> {
+        pub(super) fn new(_stream: &LocalSocketStream) -> Result<Self, TransportError> {
             Ok(Self)
         }
 
@@ -313,13 +315,13 @@ mod platform {
 
 #[cfg(windows)]
 mod platform {
-    use super::{LocalSocketRecvHalf, TransportError};
+    use super::{LocalSocketStream, TransportError};
     use std::os::windows::io::{AsHandle, AsRawHandle, OwnedHandle};
     use windows_sys::Win32::System::IO::CancelIoEx;
 
     /// Named pipes do not support receive timeouts (and `interprocess` reports an error if
     /// one is requested), so the stream is used as-is.
-    pub(super) fn configure_stream(_stream: &LocalSocketRecvHalf) -> Result<(), TransportError> {
+    pub(super) fn configure_stream(_stream: &LocalSocketStream) -> Result<(), TransportError> {
         Ok(())
     }
 
@@ -333,9 +335,9 @@ mod platform {
     }
 
     impl ReadInterrupter {
-        pub(super) fn new(stream: &LocalSocketRecvHalf) -> Result<Self, TransportError> {
+        pub(super) fn new(stream: &LocalSocketStream) -> Result<Self, TransportError> {
             // On Windows the local-socket enum only has the named-pipe variant.
-            let LocalSocketRecvHalf::NamedPipe(pipe) = stream;
+            let LocalSocketStream::NamedPipe(pipe) = stream;
             let pipe = pipe.as_handle().try_clone_to_owned()?;
             Ok(Self { pipe })
         }
@@ -356,15 +358,15 @@ mod platform {
 
 /// Send half of a framed local-socket connection.
 pub struct InterprocessLocalSocketWriter {
-    // Option allows `close()` to drop the send half immediately.
-    inner: Option<LocalSocketSendHalf>,
+    // Option allows `close()` to release the writer's handle on the shared stream immediately.
+    inner: Option<Arc<LocalSocketStream>>,
 }
 
 impl InterprocessLocalSocketWriter {
     /// Write raw bytes without framing. Used by tests to exercise the decoder.
     #[cfg(test)]
     fn send_raw(&mut self, bytes: &[u8]) -> Result<(), TransportError> {
-        let writer = self.inner.as_mut().expect("connection is open");
+        let mut writer: &LocalSocketStream = self.inner.as_deref().expect("connection is open");
         writer.write_all(bytes)?;
         writer.flush()?;
         Ok(())
@@ -387,9 +389,10 @@ impl TransportWriter for InterprocessLocalSocketWriter {
             )));
         }
 
-        let writer = self
+        // `&Stream` implements `Write`, so the shared stream can be written without exclusive access.
+        let mut writer: &LocalSocketStream = self
             .inner
-            .as_mut()
+            .as_deref()
             .ok_or_else(|| TransportError::InvalidFrame("attempted to write to a closed connection".to_owned()))?;
 
         writer.write_all(&payload_len.to_be_bytes())?;
@@ -400,8 +403,8 @@ impl TransportWriter for InterprocessLocalSocketWriter {
     }
 
     fn close(&mut self) -> Result<(), TransportError> {
-        if let Some(mut writer) = self.inner.take() {
-            writer.flush()?;
+        if let Some(writer) = self.inner.take() {
+            (&*writer).flush()?;
             drop(writer);
         }
 
