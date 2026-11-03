@@ -1,4 +1,6 @@
-use crate::composition::{ComposedModel, ComposedModelBuilder, ComposedNetwork, ComposedNetworkPath, PositionOffset};
+use crate::composition::{
+    ComposedModel, ComposedModelBuilder, ComposedNetwork, ComposedNetworkPath, LoadContext, PositionOffset,
+};
 use crate::error::{ComposeModelError, ManifestResolutionError};
 use crate::manifest::DefinitionOverrides;
 use pywr_schema::meta::ProvenanceSource;
@@ -68,8 +70,22 @@ pub enum ProjectManifestProblem {
     DuplicateDefinition { definition: String, count: usize },
     #[error("The name `{network}` is used by {count} network definitions, but each name must be unique.")]
     DuplicateNetworkDefinition { network: String, count: usize },
+    #[error("The name `{sub_network}` is used by {count} sub-networks, but each name must be unique.")]
+    DuplicateSubNetwork { sub_network: String, count: usize },
+    #[error("The {kind} name `{name}` must not contain `::`.")]
+    InvalidName { kind: &'static str, name: String },
     #[error("The definition `{definition}` refers to the network definition `{network}`, which does not exist.")]
     NetworkNotFound { definition: String, network: String },
+    #[error("The definition `{definition}` refers to the sub-network `{sub_network}`, which does not exist.")]
+    SubNetworkNotFound { definition: String, sub_network: String },
+    #[error(
+        "The definition `{definition}` selects the network set `{set}`, but its sub-network `{sub_network}` is not active; list it in the model's `sub_networks` or use it as a network definition's `base`."
+    )]
+    SubNetworkNotActive {
+        definition: String,
+        set: String,
+        sub_network: String,
+    },
     #[error("The network definitions extend each other in a cycle: {}.", .cycle.join(" -> "))]
     NetworkCycle { cycle: Vec<String> },
     #[error(
@@ -150,6 +166,9 @@ pub struct ProjectManifest {
     /// give their own.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub base_model: Option<String>,
+    /// Sub-networks, each a directory with its own base network and network sets for part of the model.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sub_networks: Vec<SubNetwork>,
     /// Named sets of NetworkSchema fragments.
     #[serde(default)]
     pub network_sets: Vec<NetworkSet>,
@@ -166,12 +185,13 @@ impl ProjectManifest {
     pub fn validate(&self, root: &Path) -> Result<(), ProjectManifestValidationError> {
         let mut problems = self.manifest_problems();
         let base_model = self.resolve_base_model(root, &mut problems);
-        let sets = self.resolve_sets(root, &mut problems);
-        let mut networks = NetworkExpander::new(self, &sets);
+        let project = self.resolve_project(root, &mut problems);
+        let mut networks = NetworkExpander::new(self, &project);
         for model in &self.models {
             model.resolve(root, &base_model, &mut networks, &mut problems);
         }
         // Network definitions that no model uses are still validated; each is reported once.
+        // Sub-network activation is not checked here, because a model may activate it instead.
         for network in &self.networks {
             networks.expand(&network.name, &mut problems);
         }
@@ -187,12 +207,17 @@ impl ProjectManifest {
         };
         let mut problems = self.manifest_problems();
         let base_model = self.resolve_base_model(root, &mut problems);
-        let sets = self.resolve_sets(root, &mut problems);
-        model.resolve(root, &base_model, &mut NetworkExpander::new(self, &sets), &mut problems);
+        let project = self.resolve_project(root, &mut problems);
+        model.resolve(
+            root,
+            &base_model,
+            &mut NetworkExpander::new(self, &project),
+            &mut problems,
+        );
         into_result(problems)
     }
 
-    /// Validate a network definition against the project manifest.
+    /// Validate a network definition, composed on its own, against the project manifest.
     pub fn validate_network(&self, root: &Path, network_name: &str) -> Result<(), ProjectManifestValidationError> {
         if self.find_network(network_name).is_none() {
             return into_result(vec![ProjectManifestProblem::NetworkDefinitionNotFound {
@@ -200,8 +225,9 @@ impl ProjectManifest {
             }]);
         }
         let mut problems = self.manifest_problems();
-        let sets = self.resolve_sets(root, &mut problems);
-        NetworkExpander::new(self, &sets).expand(network_name, &mut problems);
+        let project = self.resolve_project(root, &mut problems);
+        let expansion = NetworkExpander::new(self, &project).expand(network_name, &mut problems);
+        check_active(network_name, &expansion, &mut problems);
         into_result(problems)
     }
 
@@ -218,8 +244,13 @@ impl ProjectManifest {
             return Err(problems.swap_remove(0).into());
         };
         let base_model = self.resolve_base_model(root, &mut problems);
-        let sets = self.resolve_sets(root, &mut problems);
-        let resolved = model.resolve(root, &base_model, &mut NetworkExpander::new(self, &sets), &mut problems);
+        let project = self.resolve_project(root, &mut problems);
+        let resolved = model.resolve(
+            root,
+            &base_model,
+            &mut NetworkExpander::new(self, &project),
+            &mut problems,
+        );
 
         match (problems.into_iter().next(), resolved.base_model) {
             (Some(problem), _) => Err(problem.into()),
@@ -249,14 +280,15 @@ impl ProjectManifest {
             });
             return Err(problems.swap_remove(0).into());
         }
-        let sets = self.resolve_sets(root, &mut problems);
-        let files = NetworkExpander::new(self, &sets).expand(network_name, &mut problems);
+        let project = self.resolve_project(root, &mut problems);
+        let expansion = NetworkExpander::new(self, &project).expand(network_name, &mut problems);
+        check_active(network_name, &expansion, &mut problems);
 
         match problems.into_iter().next() {
             Some(problem) => Err(problem.into()),
             None => Ok(ComposedNetwork::new(
                 network_name.to_string(),
-                files.into_iter().map(SelectedFile::into_composed).collect(),
+                expansion.files.into_iter().map(SelectedFile::into_composed).collect(),
             )),
         }
     }
@@ -288,19 +320,63 @@ impl ProjectManifest {
             &mut problems,
         );
         add_duplicate_problems(
-            &self.network_sets,
-            |set| &set.name,
+            &self.sub_networks,
+            |sub_network| &sub_network.name,
+            |name, count| ProjectManifestProblem::DuplicateSubNetwork {
+                sub_network: name,
+                count,
+            },
+            &mut problems,
+        );
+        let sets: Vec<_> = self
+            .network_sets
+            .iter()
+            .map(|set| (set.name.clone(), set))
+            .chain(self.sub_networks.iter().flat_map(|sub_network| {
+                sub_network
+                    .network_sets
+                    .iter()
+                    .map(|set| (qualified_name(&sub_network.name, &set.name), set))
+            }))
+            .collect();
+        add_duplicate_problems(
+            &sets,
+            |(name, _)| name,
             |name, count| ProjectManifestProblem::DuplicateNetworkSet { set: name, count },
             &mut problems,
         );
-        for set in &self.network_sets {
+        for (name, set) in &sets {
             if let (Some(min_files), Some(max_files)) = (set.min_files, set.max_files)
                 && min_files > max_files
             {
                 problems.push(ProjectManifestProblem::InvalidFileConstraints {
-                    set: set.name.clone(),
+                    set: name.clone(),
                     min_files,
                     max_files,
+                });
+            }
+        }
+
+        let names = self
+            .models
+            .iter()
+            .map(|model| ("model definition", &model.name))
+            .chain(
+                self.networks
+                    .iter()
+                    .map(|network| ("network definition", &network.name)),
+            )
+            .chain(
+                self.sub_networks
+                    .iter()
+                    .map(|sub_network| ("sub-network", &sub_network.name)),
+            )
+            .chain(sets.iter().map(|(_, set)| ("network set", &set.name)));
+        for (kind, name) in names {
+            if name.contains(NAME_SEPARATOR) {
+                problems.push(ProjectManifestProblem::InvalidName {
+                    kind,
+                    name: name.clone(),
                 });
             }
         }
@@ -321,21 +397,43 @@ impl ProjectManifest {
         }
     }
 
-    /// Resolve the network sets against the filesystem, appending any problems found.
-    fn resolve_sets(&self, root: &Path, problems: &mut Vec<ProjectManifestProblem>) -> ResolvedSets {
-        let mut sets = Vec::new();
-        let mut unresolved = HashSet::new();
+    /// Resolve the sub-networks and network sets against the filesystem, appending any problems found.
+    fn resolve_project(&self, root: &Path, problems: &mut Vec<ProjectManifestProblem>) -> ResolvedProject {
+        let mut project = ResolvedProject::default();
         for set in &self.network_sets {
-            match resolve_network_set(root, set) {
-                Ok(resolved) => sets.push(resolved),
+            project.add_set(&set.name, resolve_network_set(root, &set.name, set, None), problems);
+        }
+        for sub_network in &self.sub_networks {
+            match resolve_sub_network(root, sub_network) {
+                Ok((resolved, scope)) => {
+                    for set in &sub_network.network_sets {
+                        let name = qualified_name(&sub_network.name, &set.name);
+                        let resolved_set = resolve_network_set(&scope.root, &name, set, Some(&scope));
+                        project.add_set(&name, resolved_set, problems);
+                    }
+                    project.sub_networks.push(resolved);
+                }
                 Err(error) => {
                     problems.push(error.into());
-                    unresolved.insert(set.name.clone());
+                    project.unresolved_sub_networks.insert(sub_network.name.clone());
+                    project.unresolved_sets.extend(
+                        sub_network
+                            .network_sets
+                            .iter()
+                            .map(|set| qualified_name(&sub_network.name, &set.name)),
+                    );
                 }
             }
         }
-        ResolvedSets { sets, unresolved }
+        project
     }
+}
+
+/// Separates a sub-network's name from the name of one of its network sets, as in `upper::options`.
+const NAME_SEPARATOR: &str = "::";
+
+fn qualified_name(sub_network: &str, name: &str) -> String {
+    format!("{sub_network}{NAME_SEPARATOR}{name}")
 }
 
 fn into_result(problems: Vec<ProjectManifestProblem>) -> Result<(), ProjectManifestValidationError> {
@@ -357,28 +455,74 @@ enum ProjectBaseModel {
     Resolved(ResolvedBaseModel),
 }
 
-/// The network sets of a manifest resolved against the filesystem, shared by every definition.
-struct ResolvedSets {
-    /// Network sets that resolved, in declaration order.
+/// The sub-networks and network sets of a manifest resolved against the filesystem, shared by
+/// every definition.
+#[derive(Default)]
+struct ResolvedProject {
+    /// Network sets that resolved, in declaration order: the project's own sets, then each
+    /// sub-network's. Sub-network sets are named by their qualified names.
     sets: Vec<ResolvedNetworkSet>,
-    /// Names of network sets that failed to resolve. Their problems are already reported, so
-    /// selections of them are not reported again as missing sets.
-    unresolved: HashSet<String>,
+    /// Qualified names of network sets that failed to resolve. Their problems are already
+    /// reported, so selections of them are not reported again as missing sets.
+    unresolved_sets: HashSet<String>,
+    /// Sub-networks that resolved, in declaration order.
+    sub_networks: Vec<ResolvedSubNetwork>,
+    /// Names of sub-networks that failed to resolve, whose problems are already reported.
+    unresolved_sub_networks: HashSet<String>,
 }
 
-impl ResolvedSets {
-    fn get(&self, name: &str) -> Option<&ResolvedNetworkSet> {
+impl ResolvedProject {
+    fn add_set(
+        &mut self,
+        name: &str,
+        resolved: Result<ResolvedNetworkSet, ManifestResolutionError>,
+        problems: &mut Vec<ProjectManifestProblem>,
+    ) {
+        match resolved {
+            Ok(set) => self.sets.push(set),
+            Err(error) => {
+                problems.push(error.into());
+                self.unresolved_sets.insert(name.to_string());
+            }
+        }
+    }
+
+    fn set(&self, name: &str) -> Option<&ResolvedNetworkSet> {
         self.sets.iter().find(|set| set.name == name)
+    }
+
+    fn sub_network(&self, name: &str) -> Option<&ResolvedSubNetwork> {
+        self.sub_networks.iter().find(|sub_network| sub_network.name == name)
+    }
+
+    /// Look up a sub-network that a definition refers to, reporting it if it does not exist.
+    ///
+    /// Returns `None` both when it does not exist and when it failed to resolve.
+    fn referred_sub_network(
+        &self,
+        definition: &str,
+        name: &str,
+        problems: &mut Vec<ProjectManifestProblem>,
+    ) -> Option<&ResolvedSubNetwork> {
+        let sub_network = self.sub_network(name);
+        if sub_network.is_none() && !self.unresolved_sub_networks.contains(name) {
+            problems.push(ProjectManifestProblem::SubNetworkNotFound {
+                definition: definition.to_string(),
+                sub_network: name.to_string(),
+            });
+        }
+        sub_network
     }
 }
 
 /// A network fragment selected by a definition, before composition.
 #[derive(Clone)]
 struct SelectedFile<'a> {
-    set: &'a ResolvedNetworkSet,
     file: &'a ResolvedNetworkFile,
+    /// The network set the file was selected from; `None` for a sub-network's base network.
+    set: Option<&'a ResolvedNetworkSet>,
     position_offset: Option<PositionOffset>,
-    /// The network definition whose `include` selected this file, if any.
+    /// The network definition that selected this file, if any.
     network: Option<&'a str>,
 }
 
@@ -389,59 +533,111 @@ impl SelectedFile<'_> {
             position_offset: self.position_offset,
             source: ProvenanceSource {
                 file: self.file.source.clone(),
-                network_set: Some(self.set.name.clone()),
+                network_set: self.set.map(|set| set.set_name.clone()),
+                sub_network: self.file.sub_network.clone(),
                 network: self.network.map(str::to_string),
+            },
+            context: LoadContext {
+                data_dir: self.file.data_dir.clone(),
             },
         }
     }
 }
 
-/// Remove files reached by more than one route, keeping the first occurrence.
-fn dedup_files(files: &mut Vec<SelectedFile<'_>>) {
-    let mut seen = HashSet::new();
-    files.retain(|selected| seen.insert(&selected.file.path));
+/// The result of expanding a network definition.
+#[derive(Clone, Default)]
+struct Expansion<'a> {
+    /// The selected files, in merge order.
+    files: Vec<SelectedFile<'a>>,
+    /// Sub-networks made active by the `base` of a network definition in the expansion.
+    active_sub_networks: Vec<&'a str>,
+}
+
+impl<'a> Expansion<'a> {
+    fn extend(&mut self, other: Expansion<'a>) {
+        self.files.extend(other.files);
+        self.active_sub_networks.extend(other.active_sub_networks);
+    }
+
+    /// Remove files reached by more than one route, keeping the first occurrence.
+    fn dedup(&mut self) {
+        let mut seen = HashSet::new();
+        self.files.retain(|selected| seen.insert(&selected.file.path));
+        let mut seen = HashSet::new();
+        self.active_sub_networks.retain(|name| seen.insert(*name));
+    }
+}
+
+/// Report each network set selected from a sub-network that the expansion does not activate.
+fn check_active(definition: &str, expansion: &Expansion<'_>, problems: &mut Vec<ProjectManifestProblem>) {
+    let mut reported = HashSet::new();
+    for set in expansion.files.iter().filter_map(|selected| selected.set) {
+        if let Some(sub_network) = &set.sub_network
+            && !expansion.active_sub_networks.contains(&sub_network.as_str())
+            && reported.insert(&set.name)
+        {
+            problems.push(ProjectManifestProblem::SubNetworkNotActive {
+                definition: definition.to_string(),
+                set: set.name.clone(),
+                sub_network: sub_network.clone(),
+            });
+        }
+    }
 }
 
 /// Expands network definitions into their selected files, remembering each expansion so that a
 /// definition's problems are reported once however many definitions refer to it.
 struct NetworkExpander<'a> {
     manifest: &'a ProjectManifest,
-    sets: &'a ResolvedSets,
-    expanded: HashMap<&'a str, Vec<SelectedFile<'a>>>,
+    project: &'a ResolvedProject,
+    expanded: HashMap<&'a str, Expansion<'a>>,
     /// The definitions currently being expanded, outermost first, used to detect cycles.
     stack: Vec<&'a str>,
 }
 
 impl<'a> NetworkExpander<'a> {
-    fn new(manifest: &'a ProjectManifest, sets: &'a ResolvedSets) -> Self {
+    fn new(manifest: &'a ProjectManifest, project: &'a ResolvedProject) -> Self {
         Self {
             manifest,
-            sets,
+            project,
             expanded: HashMap::new(),
             stack: Vec::new(),
         }
     }
 
-    /// The files selected by the network definition `name`, in merge order: those of each
-    /// definition it extends, then its own selections.
+    /// Expand the network definition `name` into its files, in merge order: its base
+    /// sub-network's base network, those of each definition it extends, then its own selections.
     ///
-    /// The caller must check that `name` exists; a missing name expands to no files.
-    fn expand(&mut self, name: &str, problems: &mut Vec<ProjectManifestProblem>) -> Vec<SelectedFile<'a>> {
-        if let Some(files) = self.expanded.get(name) {
-            return files.clone();
+    /// The caller must check that `name` exists; a missing name expands to nothing.
+    fn expand(&mut self, name: &str, problems: &mut Vec<ProjectManifestProblem>) -> Expansion<'a> {
+        if let Some(expansion) = self.expanded.get(name) {
+            return expansion.clone();
         }
         if let Some(start) = self.stack.iter().position(|entry| *entry == name) {
             let mut cycle: Vec<String> = self.stack[start..].iter().map(|entry| entry.to_string()).collect();
             cycle.push(name.to_string());
             problems.push(ProjectManifestProblem::NetworkCycle { cycle });
-            return Vec::new();
+            return Expansion::default();
         }
         let Some(network) = self.manifest.find_network(name) else {
-            return Vec::new();
+            return Expansion::default();
         };
 
         self.stack.push(&network.name);
-        let mut files = Vec::new();
+        let mut expansion = Expansion::default();
+        if let Some(base) = &network.base
+            && let Some(sub_network) = self.project.referred_sub_network(&network.name, base, problems)
+        {
+            expansion.active_sub_networks.push(&sub_network.name);
+            if let Some(file) = &sub_network.base_network {
+                expansion.files.push(SelectedFile {
+                    file,
+                    set: None,
+                    position_offset: None,
+                    network: Some(&network.name),
+                });
+            }
+        }
         for parent in &network.extends {
             if self.manifest.find_network(parent).is_none() {
                 problems.push(ProjectManifestProblem::NetworkNotFound {
@@ -449,20 +645,21 @@ impl<'a> NetworkExpander<'a> {
                     network: parent.clone(),
                 });
             }
-            files.extend(self.expand(parent, problems));
+            let parent = self.expand(parent, problems);
+            expansion.extend(parent);
         }
-        files.extend(resolve_includes(
+        expansion.files.extend(resolve_includes(
             &network.name,
             Some(&network.name),
             &network.include,
-            self.sets,
+            self.project,
             problems,
         ));
         self.stack.pop();
 
-        dedup_files(&mut files);
-        self.expanded.insert(&network.name, files.clone());
-        files
+        expansion.dedup();
+        self.expanded.insert(&network.name, expansion.clone());
+        expansion
     }
 }
 
@@ -473,7 +670,7 @@ fn resolve_includes<'a>(
     definition: &str,
     network: Option<&'a str>,
     include: &'a [DefinitionSelection],
-    sets: &'a ResolvedSets,
+    project: &'a ResolvedProject,
     problems: &mut Vec<ProjectManifestProblem>,
 ) -> Vec<SelectedFile<'a>> {
     let mut files = Vec::new();
@@ -491,8 +688,8 @@ fn resolve_includes<'a>(
             }
             continue;
         }
-        let Some(set) = sets.get(&selection.set) else {
-            if !sets.unresolved.contains(&selection.set) {
+        let Some(set) = project.set(&selection.set) else {
+            if !project.unresolved_sets.contains(&selection.set) {
                 problems.push(ProjectManifestProblem::SetNotFound {
                     definition: definition.to_string(),
                     set: selection.set.clone(),
@@ -517,8 +714,8 @@ fn resolve_includes<'a>(
                 .and_then(|name| selection.file_meta.as_ref()?.get(name))
                 .and_then(|meta| meta.position_offset.clone());
             SelectedFile {
-                set,
                 file,
+                set: Some(set),
                 position_offset: position_offset.map(PositionOffset::from),
                 network,
             }
@@ -539,9 +736,29 @@ impl From<ProjectManifestProblem> for ComposeModelError {
             ProjectManifestProblem::DuplicateNetworkDefinition { network, .. } => {
                 Self::DuplicateNetworkDefinition { network }
             }
+            ProjectManifestProblem::DuplicateSubNetwork { sub_network, .. } => {
+                Self::DuplicateSubNetwork { sub_network }
+            }
+            ProjectManifestProblem::InvalidName { kind, name } => Self::InvalidName { kind, name },
             ProjectManifestProblem::NetworkNotFound { definition, network } => {
                 Self::NetworkNotFound { definition, network }
             }
+            ProjectManifestProblem::SubNetworkNotFound {
+                definition,
+                sub_network,
+            } => Self::SubNetworkNotFound {
+                definition,
+                sub_network,
+            },
+            ProjectManifestProblem::SubNetworkNotActive {
+                definition,
+                set,
+                sub_network,
+            } => Self::SubNetworkNotActive {
+                definition,
+                set,
+                sub_network,
+            },
             ProjectManifestProblem::NetworkCycle { cycle } => Self::NetworkCycle { cycle },
             ProjectManifestProblem::BaseModelMissing { definition } => Self::BaseModelMissing { definition },
             ProjectManifestProblem::DuplicateSet { set, .. } => Self::DuplicateSelection { set },
@@ -589,6 +806,26 @@ impl From<ProjectManifestProblem> for ComposeModelError {
     }
 }
 
+/// A directory holding the base network and network sets for part of a wider model.
+#[derive(Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SubNetwork {
+    pub name: String,
+    /// Directory containing the sub-network (relative to root). Default: the sub-network's name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dir: Option<String>,
+    /// Path (relative to the sub-network directory) to the base NetworkSchema JSON.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base_network: Option<String>,
+    /// Directory (relative to the sub-network directory) that the data paths in the sub-network's
+    /// files are relative to. Default: the sub-network directory.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub data_dir: Option<String>,
+    /// Named sets of NetworkSchema fragments, with directories relative to the sub-network directory.
+    #[serde(default)]
+    pub network_sets: Vec<NetworkSet>,
+}
+
 /// A named, reusable composition of network fragments that resolves to a `NetworkSchema`.
 #[derive(Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -596,7 +833,10 @@ pub struct NetworkDefinition {
     pub name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
-    /// Other network definitions to include first, in order.
+    /// A sub-network whose base network is the starting point. This also activates the sub-network.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base: Option<String>,
+    /// Other network definitions to include next, in order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub extends: Vec<String>,
     /// Per-network-set selections for this network definition.
@@ -612,6 +852,10 @@ pub struct ModelDefinition {
     /// Path (relative to root) to the base ModelSchema JSON, overriding the project's `base_model`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub base_model: Option<String>,
+    /// Sub-networks to activate. Their base networks are included after the base model, in the
+    /// order the sub-networks are declared.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sub_networks: Vec<String>,
     /// Network definitions to include after the base model, in order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub networks: Vec<String>,
@@ -659,7 +903,26 @@ impl ModelDefinition {
             }
         };
 
-        let mut files = Vec::new();
+        let project = networks.project;
+        let mut expansion = Expansion::default();
+        for name in &self.sub_networks {
+            if let Some(sub_network) = project.referred_sub_network(&self.name, name, problems) {
+                expansion.active_sub_networks.push(&sub_network.name);
+            }
+        }
+        // The base networks of the sub-networks activated here come straight after the base model.
+        for sub_network in &project.sub_networks {
+            if let Some(file) = &sub_network.base_network
+                && expansion.active_sub_networks.contains(&sub_network.name.as_str())
+            {
+                expansion.files.push(SelectedFile {
+                    file,
+                    set: None,
+                    position_offset: None,
+                    network: None,
+                });
+            }
+        }
         for network in &self.networks {
             if networks.manifest.find_network(network).is_none() {
                 problems.push(ProjectManifestProblem::NetworkNotFound {
@@ -667,26 +930,33 @@ impl ModelDefinition {
                     network: network.clone(),
                 });
             }
-            files.extend(networks.expand(network, problems));
+            expansion.extend(networks.expand(network, problems));
         }
-        files.extend(resolve_includes(
-            &self.name,
-            None,
-            &self.include,
-            networks.sets,
-            problems,
-        ));
-        dedup_files(&mut files);
+        expansion
+            .files
+            .extend(resolve_includes(&self.name, None, &self.include, project, problems));
+        expansion.dedup();
+        check_active(&self.name, &expansion, problems);
 
-        // Set constraints apply to the whole model: every file selected from a set, by any route.
-        for set in &networks.sets.sets {
-            let count = files.iter().filter(|selected| std::ptr::eq(selected.set, set)).count();
+        // Set constraints apply to everything the model selects from a set, by any route. A
+        // sub-network's sets are only constrained when the sub-network is active.
+        for set in &project.sets {
+            if let Some(sub_network) = &set.sub_network
+                && !expansion.active_sub_networks.contains(&sub_network.as_str())
+            {
+                continue;
+            }
+            let count = expansion
+                .files
+                .iter()
+                .filter(|selected| selected.set.is_some_and(|selected_set| std::ptr::eq(selected_set, set)))
+                .count();
             validate_constraints(&self.name, set, count, problems);
         }
 
         ResolvedModel {
             base_model,
-            includes: files.into_iter().map(SelectedFile::into_composed).collect(),
+            includes: expansion.files.into_iter().map(SelectedFile::into_composed).collect(),
         }
     }
 }
@@ -747,7 +1017,11 @@ pub struct NetworkSet {
 }
 
 struct ResolvedNetworkSet {
+    /// The set's name as definitions refer to it, qualified with its sub-network's name if any.
     name: String,
+    /// The set's name within its sub-network or project, as recorded in provenance.
+    set_name: String,
+    sub_network: Option<String>,
     min_files: Option<usize>,
     max_files: Option<usize>,
     files: Vec<ResolvedNetworkFile>,
@@ -756,7 +1030,29 @@ struct ResolvedNetworkSet {
 struct ResolvedNetworkFile {
     name: OsString,
     path: PathBuf,
+    /// The file's path relative to the project root.
     source: RelativePathBuf,
+    /// The sub-network the file belongs to, if any.
+    sub_network: Option<String>,
+    /// Directory, relative to the project root, that the file's relative data paths are relative
+    /// to, or `None` if they are already relative to the project root.
+    data_dir: Option<RelativePathBuf>,
+}
+
+struct ResolvedSubNetwork {
+    name: String,
+    base_network: Option<ResolvedNetworkFile>,
+}
+
+/// Where a sub-network's files live, used to resolve its network sets.
+struct SubNetworkScope {
+    name: String,
+    /// The sub-network directory relative to the project root.
+    dir: RelativePathBuf,
+    /// The canonical path of the sub-network directory.
+    root: PathBuf,
+    /// The sub-network's data directory relative to the project root.
+    data_dir: RelativePathBuf,
 }
 
 fn resolve_selection<'a>(
@@ -853,53 +1149,148 @@ fn resolve_base_model(root: &Path, base_model: &str) -> Result<(PathBuf, Relativ
     Ok((path, file))
 }
 
-fn resolve_network_set(root: &Path, set: &NetworkSet) -> Result<ResolvedNetworkSet, ManifestResolutionError> {
+/// Resolve a sub-network's directory and base network.
+fn resolve_sub_network(
+    root: &Path,
+    sub_network: &SubNetwork,
+) -> Result<(ResolvedSubNetwork, SubNetworkScope), ManifestResolutionError> {
+    let name = &sub_network.name;
+    let field = format!("sub-network '{name}' directory");
+    let dir = strict_relative_path(&field, sub_network.dir.as_deref().unwrap_or(name))?;
+    let candidate = dir.to_path(root);
+    if !candidate.exists() {
+        return Err(ManifestResolutionError::SubNetworkDirectoryNotFound {
+            sub_network: name.clone(),
+            path: candidate,
+        });
+    }
+    let sub_root = canonicalize_contained(root, &candidate, &field)?;
+    if !sub_root.is_dir() {
+        return Err(ManifestResolutionError::SubNetworkNotADirectory {
+            sub_network: name.clone(),
+            path: sub_root,
+        });
+    }
+    let data_dir = match &sub_network.data_dir {
+        Some(data_dir) => dir.join(strict_relative_path(
+            &format!("sub-network '{name}' data directory"),
+            data_dir,
+        )?),
+        None => dir.clone(),
+    };
+
+    let base_network = match &sub_network.base_network {
+        Some(base_network) => {
+            let field = format!("sub-network '{name}' base network");
+            let file = strict_relative_path(&field, base_network)?;
+            let candidate = file.to_path(&sub_root);
+            if !candidate.exists() {
+                return Err(ManifestResolutionError::BaseNetworkNotFound {
+                    sub_network: name.clone(),
+                    path: candidate,
+                });
+            }
+            let path = canonicalize_contained(&sub_root, &candidate, &field)?;
+            if !path.is_file() {
+                return Err(ManifestResolutionError::BaseNetworkNotAFile {
+                    sub_network: name.clone(),
+                    path,
+                });
+            }
+            Some(ResolvedNetworkFile {
+                name: OsString::from(file.file_name().unwrap_or_default()),
+                path,
+                source: dir.join(&file),
+                sub_network: Some(name.clone()),
+                data_dir: Some(data_dir.clone()),
+            })
+        }
+        None => None,
+    };
+
+    Ok((
+        ResolvedSubNetwork {
+            name: name.clone(),
+            base_network,
+        },
+        SubNetworkScope {
+            name: name.clone(),
+            dir,
+            root: sub_root,
+            data_dir,
+        },
+    ))
+}
+
+/// Resolve a network set's directory under `root` and list its files.
+///
+/// `name` is the set's name as definitions refer to it. `scope` is the sub-network the set
+/// belongs to, if any, in which case `root` is the sub-network directory.
+fn resolve_network_set(
+    root: &Path,
+    name: &str,
+    set: &NetworkSet,
+    scope: Option<&SubNetworkScope>,
+) -> Result<ResolvedNetworkSet, ManifestResolutionError> {
     let dir = strict_relative_path(
-        &format!("network set '{}' directory", set.name),
+        &format!("network set '{name}' directory"),
         set.dir.as_deref().unwrap_or(&set.name),
     )?;
     let candidate = dir.to_path(root);
     if !candidate.exists() {
         return Err(ManifestResolutionError::DirectoryNotFound {
-            set: set.name.clone(),
+            set: name.to_string(),
             path: candidate,
         });
     }
-    let root = canonicalize_contained(root, &candidate, &format!("network set '{}' directory", set.name))?;
+    let root = canonicalize_contained(root, &candidate, &format!("network set '{name}' directory"))?;
     if !root.is_dir() {
         return Err(ManifestResolutionError::NotADirectory {
-            set: set.name.clone(),
+            set: name.to_string(),
             path: root,
         });
     }
+    // The directory relative to the project root, for provenance.
+    let source_dir = match scope {
+        Some(scope) => scope.dir.join(&dir),
+        None => dir,
+    };
     let mut files = Vec::new();
     let entries = std::fs::read_dir(&root).map_err(|source| ManifestResolutionError::DirectoryRead {
-        set: set.name.clone(),
+        set: name.to_string(),
         path: root.clone(),
         source,
     })?;
     for entry in entries {
         let entry = entry.map_err(|source| ManifestResolutionError::DirectoryRead {
-            set: set.name.clone(),
+            set: name.to_string(),
             path: root.clone(),
             source,
         })?;
-        let name = entry.file_name();
-        if Path::new(&name).extension() != Some(OsStr::new("json")) || !entry.path().is_file() {
+        let file_name = entry.file_name();
+        if Path::new(&file_name).extension() != Some(OsStr::new("json")) || !entry.path().is_file() {
             continue;
         }
-        let path = canonicalize_contained(&root, &entry.path(), &format!("network set '{}' file", set.name))?;
-        let filename =
-            RelativePath::from_path(Path::new(&name)).map_err(|_| ManifestResolutionError::InvalidRelativePath {
-                field: format!("network set '{}' file", set.name),
+        let path = canonicalize_contained(&root, &entry.path(), &format!("network set '{name}' file"))?;
+        let source = RelativePath::from_path(Path::new(&file_name))
+            .map(|filename| source_dir.join(filename))
+            .map_err(|_| ManifestResolutionError::InvalidRelativePath {
+                field: format!("network set '{name}' file"),
                 path: entry.path(),
             })?;
-        let source = dir.join(filename);
-        files.push(ResolvedNetworkFile { name, path, source });
+        files.push(ResolvedNetworkFile {
+            name: file_name,
+            path,
+            source,
+            sub_network: scope.map(|scope| scope.name.clone()),
+            data_dir: scope.map(|scope| scope.data_dir.clone()),
+        });
     }
     files.sort_by(|left, right| left.name.cmp(&right.name));
     Ok(ResolvedNetworkSet {
-        name: set.name.clone(),
+        name: name.to_string(),
+        set_name: set.name.clone(),
+        sub_network: scope.map(|scope| scope.name.clone()),
         min_files: set.min_files,
         max_files: set.max_files,
         files,
@@ -1024,6 +1415,7 @@ mod test {
     fn manifest(base_model: &str, network_sets: Vec<NetworkSet>, include: Vec<DefinitionSelection>) -> ProjectManifest {
         ProjectManifest {
             base_model: Some(base_model.to_string()),
+            sub_networks: vec![],
             network_sets,
             networks: vec![],
             models: vec![model("test", include)],
@@ -1033,6 +1425,7 @@ mod test {
         ModelDefinition {
             name: name.to_string(),
             base_model: None,
+            sub_networks: vec![],
             networks: vec![],
             include,
             overrides: None,
@@ -1224,16 +1617,19 @@ mod test {
         let base_source = ProvenanceSource {
             file: "base.json".into(),
             network_set: None,
+            sub_network: None,
             network: None,
         };
         let a_source = ProvenanceSource {
             file: "nets/a.json".into(),
             network_set: Some("nets".into()),
+            sub_network: None,
             network: None,
         };
         let b_source = ProvenanceSource {
             file: "nets/b.json".into(),
             network_set: Some("nets".into()),
+            sub_network: None,
             network: None,
         };
         assert_eq!(
@@ -1413,6 +1809,7 @@ mod test {
         NetworkDefinition {
             name: name.to_string(),
             description: None,
+            base: None,
             extends: extends.into_iter().map(str::to_string).collect(),
             include,
         }
@@ -1455,6 +1852,7 @@ mod test {
         let root = project_with_nets();
         let manifest = ProjectManifest {
             base_model: Some("base.json".to_string()),
+            sub_networks: vec![],
             network_sets: vec![set("nets", None, None, None)],
             networks: vec![
                 network("baseline", vec![], vec![selection("nets", Some(vec!["a.json"]), false)]),
@@ -1508,6 +1906,7 @@ mod test {
         let root = project_with_nets();
         let manifest = ProjectManifest {
             base_model: Some("base.json".to_string()),
+            sub_networks: vec![],
             network_sets: vec![set("nets", None, None, None)],
             networks: vec![
                 network("left", vec![], vec![selection("nets", Some(vec!["a.json"]), false)]),
@@ -1536,6 +1935,7 @@ mod test {
         let root = project_with_nets();
         let manifest = ProjectManifest {
             base_model: Some("base.json".to_string()),
+            sub_networks: vec![],
             network_sets: vec![set("nets", None, None, Some(1))],
             networks: vec![
                 network("left", vec![], vec![selection("nets", Some(vec!["a.json"]), false)]),
@@ -1559,6 +1959,7 @@ mod test {
         let root = project_with_nets();
         let manifest = ProjectManifest {
             base_model: Some("base.json".to_string()),
+            sub_networks: vec![],
             network_sets: vec![set("nets", None, None, None)],
             networks: vec![
                 network("first", vec!["second"], vec![]),
@@ -1586,6 +1987,7 @@ mod test {
         let root = project_with_nets();
         let manifest = ProjectManifest {
             base_model: Some("base.json".to_string()),
+            sub_networks: vec![],
             network_sets: vec![set("nets", None, None, None)],
             networks: vec![network("child", vec!["gone"], vec![])],
             models: vec![uses_networks(model("test", vec![]), vec!["nope"])],
@@ -1613,6 +2015,7 @@ mod test {
         let root = project_with_nets();
         let manifest = ProjectManifest {
             base_model: Some("base.json".to_string()),
+            sub_networks: vec![],
             network_sets: vec![set("nets", None, None, None)],
             networks: vec![network(
                 "shared",
@@ -1638,6 +2041,7 @@ mod test {
         with_base.base_model = Some("other.json".to_string());
         let manifest = ProjectManifest {
             base_model: None,
+            sub_networks: vec![],
             network_sets: vec![set("nets", None, None, None)],
             networks: vec![network("all", vec![], vec![selection("nets", None, true)])],
             models: vec![with_base, model("without-base", vec![])],
@@ -1683,6 +2087,266 @@ mod test {
             )
             .is_err()
         );
+    }
+
+    fn write_json(path: &Path, value: serde_json::Value) {
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, serde_json::to_vec(&value).unwrap()).unwrap();
+    }
+
+    fn input_network(name: &str) -> serde_json::Value {
+        serde_json::json!({"nodes": [{"type": "Input", "meta": {"name": name}}], "edges": []})
+    }
+
+    fn sub_network(name: &str, base_network: Option<&str>, network_sets: Vec<NetworkSet>) -> SubNetwork {
+        SubNetwork {
+            name: name.to_string(),
+            dir: None,
+            base_network: base_network.map(str::to_string),
+            data_dir: None,
+            network_sets,
+        }
+    }
+
+    /// A project root with `base.json` and two sub-networks, `upper` and `lower`, each with a base
+    /// network. `upper` also has an `options` set holding `x.json`.
+    fn project_with_sub_networks() -> tempfile::TempDir {
+        let root = tempdir().unwrap();
+        write_json(
+            &root.path().join("base.json"),
+            serde_json::to_value(pywr_schema::ModelSchema::default()).unwrap(),
+        );
+        write_json(&root.path().join("upper/base.json"), input_network("upper"));
+        write_json(&root.path().join("upper/options/x.json"), input_network("x"));
+        write_json(&root.path().join("lower/base.json"), input_network("lower"));
+        root
+    }
+
+    fn sub_network_manifest(models: Vec<ModelDefinition>, networks: Vec<NetworkDefinition>) -> ProjectManifest {
+        ProjectManifest {
+            base_model: Some("base.json".to_string()),
+            sub_networks: vec![
+                sub_network("upper", Some("base.json"), vec![set("options", None, None, None)]),
+                sub_network("lower", Some("base.json"), vec![]),
+            ],
+            network_sets: vec![],
+            networks,
+            models,
+        }
+    }
+
+    fn with_sub_networks(mut model: ModelDefinition, sub_networks: Vec<&str>) -> ModelDefinition {
+        model.sub_networks = sub_networks.into_iter().map(str::to_string).collect();
+        model
+    }
+
+    #[test]
+    fn active_sub_network_bases_follow_the_base_model_in_declaration_order() {
+        let root = project_with_sub_networks();
+        let manifest = sub_network_manifest(
+            vec![with_sub_networks(
+                model("test", vec![selection("upper::options", Some(vec!["x.json"]), false)]),
+                vec!["lower", "upper"],
+            )],
+            vec![],
+        );
+        assert!(manifest.validate(root.path()).is_ok());
+
+        let composed = manifest.compose_model(root.path(), "test").unwrap();
+        assert_eq!(
+            composed.all_paths(),
+            net_paths(
+                root.path(),
+                &[
+                    "base.json",
+                    "upper/base.json",
+                    "lower/base.json",
+                    "upper/options/x.json"
+                ]
+            )
+        );
+
+        let schema = composed.load().unwrap().into_model_schema(&Default::default()).unwrap();
+        let origin = |node: &str| {
+            schema
+                .network
+                .get_node_by_name(node)
+                .unwrap()
+                .meta()
+                .provenance()
+                .unwrap()
+                .origin
+                .clone()
+        };
+        assert_eq!(
+            origin("x"),
+            ProvenanceSource {
+                file: "upper/options/x.json".into(),
+                network_set: Some("options".into()),
+                sub_network: Some("upper".into()),
+                network: None,
+            }
+        );
+        assert_eq!(
+            origin("lower"),
+            ProvenanceSource {
+                file: "lower/base.json".into(),
+                network_set: None,
+                sub_network: Some("lower".into()),
+                network: None,
+            }
+        );
+    }
+
+    #[test]
+    fn sub_networks_are_inactive_unless_listed_or_used_as_a_base() {
+        let root = project_with_sub_networks();
+        let upper_x = || selection("upper::options", Some(vec!["x.json"]), false);
+        let manifest = sub_network_manifest(
+            vec![
+                model("inactive", vec![upper_x()]),
+                uses_networks(model("via-base", vec![]), vec!["with-base"]),
+            ],
+            vec![
+                network("upper-x", vec![], vec![upper_x()]),
+                NetworkDefinition {
+                    base: Some("upper".to_string()),
+                    ..network("with-base", vec![], vec![upper_x()])
+                },
+            ],
+        );
+
+        assert!(matches!(
+            manifest.validate(root.path()).unwrap_err().problems.as_slice(),
+            [ProjectManifestProblem::SubNetworkNotActive { definition, set, sub_network }]
+                if definition == "inactive" && set == "upper::options" && sub_network == "upper"
+        ));
+        assert!(matches!(
+            manifest.compose_model(root.path(), "inactive"),
+            Err(ComposeModelError::SubNetworkNotActive { .. })
+        ));
+        assert_eq!(
+            manifest.compose_model(root.path(), "via-base").unwrap().all_paths(),
+            net_paths(root.path(), &["base.json", "upper/base.json", "upper/options/x.json"])
+        );
+        assert!(manifest.validate_network(root.path(), "with-base").is_ok());
+        assert!(matches!(
+            manifest.compose_network(root.path(), "upper-x"),
+            Err(ComposeModelError::SubNetworkNotActive { .. })
+        ));
+    }
+
+    #[test]
+    fn sub_network_set_constraints_apply_only_when_active() {
+        let root = project_with_sub_networks();
+        let mut manifest = sub_network_manifest(
+            vec![
+                model("without-upper", vec![]),
+                with_sub_networks(model("with-upper", vec![]), vec!["upper"]),
+            ],
+            vec![],
+        );
+        manifest.sub_networks[0].network_sets[0].min_files = Some(1);
+
+        assert!(manifest.validate_model(root.path(), "without-upper").is_ok());
+        assert!(matches!(
+            manifest.validate_model(root.path(), "with-upper").unwrap_err().problems.as_slice(),
+            [ProjectManifestProblem::MinFilesNotMet { set, actual_files: 0, .. }] if set == "upper::options"
+        ));
+    }
+
+    #[test]
+    fn sub_network_data_paths_are_rebased_but_output_paths_are_not() {
+        let root = project_with_sub_networks();
+        write_json(
+            &root.path().join("upper/base.json"),
+            serde_json::json!({
+                "nodes": [{"type": "Input", "meta": {"name": "upper"}}],
+                "edges": [],
+                "time_series": [{"type": "Polars", "meta": {"name": "flows"}, "path": "flows.csv"}],
+                "outputs": [{"type": "HDF5", "meta": {"name": "out"}, "filename": "out.h5", "metric_set": "all"}]
+            }),
+        );
+        let mut manifest = sub_network_manifest(vec![], vec![]);
+        manifest.sub_networks[0].data_dir = Some("data".to_string());
+        manifest.networks = vec![NetworkDefinition {
+            base: Some("upper".to_string()),
+            ..network("upper", vec![], vec![])
+        }];
+
+        let schema = manifest
+            .compose_network(root.path(), "upper")
+            .unwrap()
+            .load()
+            .unwrap()
+            .into_network_schema(&Default::default())
+            .unwrap();
+        let time_series = &schema.time_series.as_ref().unwrap()[0];
+        let pywr_schema::time_series::TimeSeries::Polars(time_series) = time_series else {
+            panic!("expected a Polars time series");
+        };
+        assert_eq!(time_series.path, Path::new("upper/data/flows.csv"));
+        let pywr_schema::outputs::Output::HDF5(output) = &schema.outputs.as_ref().unwrap()[0] else {
+            panic!("expected an HDF5 output");
+        };
+        assert_eq!(output.filename, Path::new("out.h5"));
+    }
+
+    #[test]
+    fn unresolved_placeholders_fail_model_composition() {
+        let root = project_with_nets();
+        let mut base = serde_json::to_value(pywr_schema::ModelSchema::default()).unwrap();
+        base["network"]["nodes"] = serde_json::json!([{"type": "Placeholder", "meta": {"name": "missing"}}]);
+        write_json(&root.path().join("base.json"), base);
+        let manifest = manifest("base.json", vec![set("nets", None, None, None)], vec![]);
+        let Err(error) = manifest
+            .compose_model(root.path(), "test")
+            .unwrap()
+            .load()
+            .unwrap()
+            .into_model_schema(&Default::default())
+        else {
+            panic!("expected unresolved placeholders");
+        };
+        assert_eq!(
+            error.to_string(),
+            "The composed model has unresolved placeholders: node `missing` (from `base.json`)."
+        );
+    }
+
+    #[test]
+    fn missing_sub_network_is_reported_once_with_its_sets() {
+        let root = project_with_sub_networks();
+        let mut manifest = sub_network_manifest(
+            vec![with_sub_networks(
+                model("test", vec![selection("gone::options", None, true)]),
+                vec!["gone", "nowhere"],
+            )],
+            vec![],
+        );
+        manifest
+            .sub_networks
+            .push(sub_network("gone", None, vec![set("options", None, None, None)]));
+
+        let report = manifest.validate(root.path()).unwrap_err();
+        assert!(matches!(
+            report.problems.as_slice(),
+            [
+                ProjectManifestProblem::Resolution(ManifestResolutionError::SubNetworkDirectoryNotFound { sub_network, .. }),
+                ProjectManifestProblem::SubNetworkNotFound { sub_network: missing, .. },
+            ] if sub_network == "gone" && missing == "nowhere"
+        ));
+    }
+
+    #[test]
+    fn names_must_not_contain_the_separator() {
+        let root = project_with_sub_networks();
+        let mut manifest = sub_network_manifest(vec![], vec![]);
+        manifest.network_sets.push(set("a::b", Some("upper"), None, None));
+        assert!(matches!(
+            manifest.validate(root.path()).unwrap_err().problems.as_slice(),
+            [ProjectManifestProblem::InvalidName { kind: "network set", name }] if name == "a::b"
+        ));
     }
 
     #[test]
@@ -1854,6 +2518,7 @@ mod test {
         std::fs::create_dir(root.path().join("nets")).unwrap();
         let manifest = ProjectManifest {
             base_model: Some("base.json".to_string()),
+            sub_networks: vec![],
             network_sets: vec![set("nets", None, Some(2), Some(1)), set("nets", None, None, None)],
             networks: vec![],
             models: vec![model("test", vec![]), model("test", vec![])],
