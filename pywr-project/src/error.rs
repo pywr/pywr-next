@@ -32,6 +32,8 @@ pub enum ComposeToSchemaError {
     NetworkRead(#[from] NetworkSchemaReadError),
     #[error("The network schemas could not be merged.")]
     NetworkMerge(#[from] NetworkMergeError),
+    #[error("The composed model has unresolved placeholders: {}.", .placeholders.join(", "))]
+    UnresolvedPlaceholders { placeholders: Vec<String> },
 }
 
 /// Errors that may occur during validation of a project manifest, or during resolution of a
@@ -62,6 +64,14 @@ pub enum ManifestResolutionError {
         #[source]
         source: io::Error,
     },
+    #[error("The directory `{}` for sub-network `{sub_network}` was not found.", .path.display())]
+    SubNetworkDirectoryNotFound { sub_network: String, path: PathBuf },
+    #[error("The path `{}` for sub-network `{sub_network}` is not a directory.", .path.display())]
+    SubNetworkNotADirectory { sub_network: String, path: PathBuf },
+    #[error("The base network `{}` for sub-network `{sub_network}` was not found.", .path.display())]
+    BaseNetworkNotFound { sub_network: String, path: PathBuf },
+    #[error("The base network `{}` for sub-network `{sub_network}` is not a regular file.", .path.display())]
+    BaseNetworkNotAFile { sub_network: String, path: PathBuf },
     #[error("The path `{}` for {field} could not be canonicalized.", .path.display())]
     UnableToCanonicalizePath {
         field: String,
@@ -80,6 +90,20 @@ pub enum ComposeModelError {
     NetworkDefinitionNotFound { network: String },
     #[error("The network set `{set}` was not found in the project manifest.")]
     SetNotFound { set: String },
+    #[error("The name `{sub_network}` is used by more than one sub-network, but each name must be unique.")]
+    DuplicateSubNetwork { sub_network: String },
+    #[error("The {kind} name `{name}` must not contain `::`.")]
+    InvalidName { kind: &'static str, name: String },
+    #[error("The definition `{definition}` refers to the sub-network `{sub_network}`, which does not exist.")]
+    SubNetworkNotFound { definition: String, sub_network: String },
+    #[error(
+        "The definition `{definition}` selects the network set `{set}`, but its sub-network `{sub_network}` is not active."
+    )]
+    SubNetworkNotActive {
+        definition: String,
+        set: String,
+        sub_network: String,
+    },
     #[error("The name `{set}` is used by more than one network set, but each name must be unique.")]
     DuplicateNetworkSet { set: String },
     #[error("The name `{definition}` is used by more than one model definition, but each name must be unique.")]

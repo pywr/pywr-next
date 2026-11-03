@@ -10,27 +10,33 @@ my-model/
 ├── pywr-project.json      # the project manifest
 ├── models/
 │   └── base.json          # base model: time domain, demand, outputs
-├── catchments/            # network set: one catchment inflow per model
-│   ├── historical.json
-│   └── stochastic.json
+├── catchment/             # sub-network
+│   └── inflows/           # network set `catchment::inflows`: one inflow per model
+│       ├── historical.json
+│       └── stochastic.json
 └── options/               # network set: optional supply schemes
     ├── option1.json
     └── option2.json
 ```
 
 The base model has a `Placeholder` node, `supply1`, for the catchment inflow. Each file in
-`catchments/` defines `supply1` as a real node, which replaces the placeholder when the files
-are merged. The option files work the same way in reverse: each declares a placeholder for
-the base model node it connects to (`demand1` or `link1`) and adds a new supply node.
+`catchment/inflows/` defines `supply1` as a real node, which replaces the placeholder when the
+files are merged. The option files work the same way in reverse: each declares a placeholder
+for the base model node it connects to (`demand1` or `link1`) and adds a new supply node.
 
 ## Manifest
 
-The manifest has three parts:
+The manifest has four parts:
 
-- **`network_sets`** name the directories of fragments. `catchments` sets `min` and `max` to 1,
-  so every model must select exactly one catchment.
-- **`networks`** are reusable network definitions. Each selects files from the network sets,
-  and `option12` extends `option1` and `option2` to combine them.
+- **`sub_networks`** declare directories that hold part of the model, each with its own network
+  sets. The `catchment` sub-network has one set, `inflows`, referred to as `catchment::inflows`.
+  It sets `min` and `max` to 1, so every model that uses the catchment must select exactly one
+  inflow.
+- **`network_sets`** name the project's own directories of fragments.
+- **`networks`** are reusable network definitions. Each selects files from the network sets.
+  `historical` and `stochastic` name `catchment` as their `base`, which activates the
+  sub-network; a model cannot select from a sub-network's sets unless it is active. `option12`
+  extends `option1` and `option2` to combine them.
 - **`models`** are the runnable model definitions. Each starts from `base_model` and merges the
   networks it lists, in order.
 

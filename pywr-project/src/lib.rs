@@ -5,7 +5,7 @@ mod project;
 
 pub use composition::{
     ComposedModel, ComposedModelBuilder, ComposedModelNetworkSchema, ComposedModelSchemas, ComposedNetwork,
-    ComposedNetworkPath, ComposedNetworkSchemas, PositionOffset,
+    ComposedNetworkPath, ComposedNetworkSchemas, LoadContext, PositionOffset,
 };
 pub use error::{
     ComposeModelError, ComposeToSchemaError, ManifestResolutionError, ProjectError, ProjectManifestReadError,
