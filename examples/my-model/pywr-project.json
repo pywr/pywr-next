@@ -1,11 +1,13 @@
 {
   "format": "v1",
   "base_model": "models/base.json",
-  "sub_networks": [
+  "dependencies": [
     {
       "name": "neighbour",
-      "base_network": "base.json"
-    },
+      "manifest": "../neighbour/pywr-project.json"
+    }
+  ],
+  "sub_networks": [
     {
       "name": "catchment",
       "network_sets": [
@@ -74,11 +76,6 @@
       ]
     },
     {
-      "name": "neighbour",
-      "description": "A neighbouring supply system.",
-      "base": "neighbour"
-    },
-    {
       "name": "option12",
       "description": "Both supply options.",
       "extends": [
@@ -138,7 +135,7 @@
         {
           "name": "neighbour",
           "network": {
-            "network": "neighbour"
+            "network": "neighbour::neighbour"
           },
           "transfers": [
             {

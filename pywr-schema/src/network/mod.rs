@@ -1003,6 +1003,7 @@ mod tests {
             file: "sets/network.json".into(),
             network_set: Some("sets".into()),
             sub_network: None,
+            project: None,
             network: None,
         };
         assert!(
