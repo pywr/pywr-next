@@ -156,7 +156,7 @@ fn load_includes(includes: &[ComposedNetworkPath]) -> Result<Vec<ComposedModelNe
         .map(|network| {
             let mut network_schema = NetworkSchema::from_path(&network.path)?;
             if let Some(data_dir) = &network.context.data_dir {
-                rebase_data_paths(&mut network_schema, &data_dir.to_path(Path::new("")));
+                rebase_data_paths(&mut network_schema, data_dir);
             }
             Ok(ComposedModelNetworkSchema {
                 network_schema,
@@ -216,14 +216,14 @@ impl ComposedNetworkSchemas {
 pub struct ComposedNetwork {
     name: String,
     /// A model definition's base model, whose network is the starting point.
-    base_model: Option<(PathBuf, ProvenanceSource)>,
+    base_model: Option<ComposedNetworkPath>,
     includes: Vec<ComposedNetworkPath>,
 }
 
 impl ComposedNetwork {
     pub(crate) fn new(
         name: String,
-        base_model: Option<(PathBuf, ProvenanceSource)>,
+        base_model: Option<ComposedNetworkPath>,
         includes: Vec<ComposedNetworkPath>,
     ) -> Self {
         Self {
@@ -240,9 +240,12 @@ impl ComposedNetwork {
     /// Deserialize the included networks from their paths, returning a [`ComposedNetworkSchemas`] instance.
     pub fn load(&self) -> Result<ComposedNetworkSchemas, ComposeToSchemaError> {
         let base_network = match &self.base_model {
-            Some((path, source)) => {
-                let mut network = ModelSchema::from_path(path)?.network;
-                network.set_provenance(source.clone());
+            Some(base_model) => {
+                let mut network = ModelSchema::from_path(&base_model.path)?.network;
+                if let Some(data_dir) = &base_model.context.data_dir {
+                    rebase_data_paths(&mut network, data_dir);
+                }
+                network.set_provenance(base_model.source.clone());
                 Some(network)
             }
             None => None,
@@ -257,7 +260,7 @@ impl ComposedNetwork {
     pub fn all_paths(&self) -> Vec<PathBuf> {
         self.base_model
             .iter()
-            .map(|(path, _)| path.clone())
+            .map(|base_model| base_model.path.clone())
             .chain(self.includes.iter().map(|n| n.path.clone()))
             .collect()
     }
@@ -460,10 +463,11 @@ pub enum Composed {
 /// How an included network is adjusted as it is loaded.
 #[derive(Clone, Debug, Default)]
 pub struct LoadContext {
-    /// Directory, relative to the project root, that the network's relative data paths are
-    /// relative to. They are rewritten to be relative to the project root. `None` leaves them as
-    /// they are.
-    pub data_dir: Option<RelativePathBuf>,
+    /// Directory that the network's relative data paths are relative to. They are rewritten to
+    /// be relative to the root project's directory instead. The directory is itself relative to
+    /// the root project's directory, possibly through `..`, or absolute when no relative path
+    /// exists. `None` leaves the paths as they are.
+    pub data_dir: Option<PathBuf>,
 }
 
 pub struct ComposedNetworkPath {
@@ -522,6 +526,7 @@ impl ComposedModelBuilder {
             file: base_file,
             network_set: None,
             sub_network: None,
+            project: None,
             network: None,
         };
         Self {
