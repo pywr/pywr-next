@@ -1002,6 +1002,7 @@ mod tests {
         let source = ProvenanceSource {
             file: "sets/network.json".into(),
             network_set: Some("sets".into()),
+            network: None,
         };
         assert!(
             serde_json::to_value(&network).unwrap()["nodes"][0]["meta"]
