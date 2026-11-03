@@ -74,14 +74,24 @@ pub enum ManifestResolutionError {
 /// Errors that may occur during composition of a [`ComposeModel`] from a project manifest.
 #[derive(Error, Debug)]
 pub enum ComposeModelError {
-    #[error("The definition `{definition}` was not found in the project manifest.")]
+    #[error("The model definition `{definition}` was not found in the project manifest.")]
     DefinitionNotFound { definition: String },
+    #[error("The network definition `{network}` was not found in the project manifest.")]
+    NetworkDefinitionNotFound { network: String },
     #[error("The network set `{set}` was not found in the project manifest.")]
     SetNotFound { set: String },
     #[error("The name `{set}` is used by more than one network set, but each name must be unique.")]
     DuplicateNetworkSet { set: String },
-    #[error("The name `{definition}` is used by more than one definition, but each name must be unique.")]
+    #[error("The name `{definition}` is used by more than one model definition, but each name must be unique.")]
     DuplicateDefinition { definition: String },
+    #[error("The name `{network}` is used by more than one network definition, but each name must be unique.")]
+    DuplicateNetworkDefinition { network: String },
+    #[error("The definition `{definition}` refers to the network definition `{network}`, which does not exist.")]
+    NetworkNotFound { definition: String, network: String },
+    #[error("The network definitions extend each other in a cycle: {}.", .cycle.join(" -> "))]
+    NetworkCycle { cycle: Vec<String> },
+    #[error("The model definition `{definition}` has no base model.")]
+    BaseModelMissing { definition: String },
     #[error("The network set `{set}` is selected more than once, but each set may be selected at most once.")]
     DuplicateSelection { set: String },
     #[error("The network set `{set}` has `min_files` {min_files}, which exceeds `max_files` {max_files}.")]

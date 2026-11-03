@@ -1,6 +1,6 @@
 use crate::error::ComposeModelError;
 use crate::manifest::ProjectManifest;
-use crate::{ComposedModel, ProjectError};
+use crate::{ComposedModel, ComposedNetwork, ProjectError};
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
@@ -69,6 +69,11 @@ impl Project {
     pub fn compose_model(&self, definition_name: &str) -> Result<ComposedModel, ComposeModelError> {
         self.manifest.compose(&self.root, definition_name)
     }
+
+    /// Compose a network from the project manifest and a network definition name.
+    pub fn compose_network(&self, network_name: &str) -> Result<ComposedNetwork, ComposeModelError> {
+        self.manifest.compose_network(&self.root, network_name)
+    }
 }
 
 #[cfg(test)]
@@ -81,9 +86,10 @@ mod tests {
     #[test]
     fn test_open_project() {
         let manifest = ProjectManifest::V1(v1::ProjectManifest {
-            base_model: "base_model.json".to_string(),
+            base_model: Some("base_model.json".to_string()),
             network_sets: vec![],
-            definitions: vec![],
+            networks: vec![],
+            models: vec![],
         });
 
         let tmp_dir = tempdir().unwrap();
