@@ -11,5 +11,7 @@ pub use composition::{
 pub use error::{
     ComposeModelError, ComposeToSchemaError, ManifestResolutionError, ProjectError, ProjectManifestReadError,
 };
-pub use manifest::{DefinitionOverrides, ProjectManifest, ProjectManifestValidationError, v1};
+pub use manifest::{
+    DefinitionOverrides, DependencyPolicy, ProjectManifest, ProjectManifestValidationError, ResolveOptions, v1,
+};
 pub use project::Project;

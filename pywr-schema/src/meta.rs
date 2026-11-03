@@ -14,6 +14,10 @@ pub struct ProvenanceSource {
     /// The sub-network the component's file belongs to, if any.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sub_network: Option<String>,
+    /// The dependency the component's file belongs to, as a path of dependency names such as
+    /// `org::shared`, if it is not from the root project. `file` is relative to that project's root.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project: Option<String>,
     /// The network definition through which the component was included, if any.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub network: Option<String>,
