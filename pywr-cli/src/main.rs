@@ -149,7 +149,7 @@ enum Commands {
     RunProject {
         /// Path to Pywr project JSON.
         project: PathBuf,
-        /// Name of the definition to build.
+        /// Name of the model or multi-model definition to build.
         #[arg(short = 'd', long = "definition")]
         definition: String,
         /// Solver to use.
@@ -593,6 +593,107 @@ fn run_server(mode: RunServerMode, socket_name: &str) -> Result<()> {
     Ok(())
 }
 
+/// Run `$model`, a `Model` or `MultiNetworkModel`, with the given solver settings.
+macro_rules! run_with_solver {
+    ($model:expr, $solver:expr, $threads:expr, $ignore_feature_requirements:expr) => {
+        match *$solver {
+            Solver::Clp => {
+                let mut settings_builder = ClpSolverSettingsBuilder::default();
+                if $threads > 1 {
+                    settings_builder = settings_builder.parallel();
+                    settings_builder = settings_builder.threads($threads);
+                }
+                if $ignore_feature_requirements {
+                    settings_builder = settings_builder.ignore_feature_requirements();
+                }
+                let settings = settings_builder.build();
+                $model.run(&settings)
+            }
+            #[cfg(feature = "cbc")]
+            Solver::Cbc => {
+                let mut settings_builder = CbcSolverSettingsBuilder::default();
+                if $threads > 1 {
+                    settings_builder = settings_builder.parallel();
+                    settings_builder = settings_builder.threads($threads);
+                }
+                if $ignore_feature_requirements {
+                    settings_builder = settings_builder.ignore_feature_requirements();
+                }
+                let settings = settings_builder.build();
+                $model.run(&settings)
+            }
+            #[cfg(feature = "highs")]
+            Solver::Highs => {
+                let mut settings_builder = HighsSolverSettingsBuilder::default();
+                if $threads > 1 {
+                    settings_builder = settings_builder.parallel();
+                    settings_builder = settings_builder.threads($threads);
+                }
+                if $ignore_feature_requirements {
+                    settings_builder = settings_builder.ignore_feature_requirements();
+                }
+                let settings = settings_builder.build();
+                $model.run(&settings)
+            }
+            #[cfg(feature = "ipm-ocl")]
+            Solver::CLIPMF32 => {
+                let mut settings_builder = ClIpmF32SettingsBuilder::default();
+                if $threads > 1 {
+                    settings_builder = settings_builder.parallel();
+                    settings_builder = settings_builder.threads($threads);
+                }
+                if $ignore_feature_requirements {
+                    settings_builder = settings_builder.ignore_feature_requirements();
+                }
+
+                let settings = settings_builder.build();
+                $model.run_multi_scenario(&settings)
+            }
+            #[cfg(feature = "ipm-ocl")]
+            Solver::CLIPMF64 => {
+                let mut settings_builder = ClIpmF64SettingsBuilder::default();
+                if $threads > 1 {
+                    settings_builder = settings_builder.parallel();
+                    settings_builder = settings_builder.threads($threads);
+                }
+                if $ignore_feature_requirements {
+                    settings_builder = settings_builder.ignore_feature_requirements();
+                }
+
+                let settings = settings_builder.build();
+                $model.run_multi_scenario(&settings)
+            }
+            #[cfg(feature = "ipm-simd")]
+            Solver::IpmSimd => {
+                let mut settings_builder = SimdIpmSolverSettingsBuilder::default();
+                if $threads > 1 {
+                    settings_builder = settings_builder.parallel();
+                    settings_builder = settings_builder.threads($threads);
+                }
+                if $ignore_feature_requirements {
+                    settings_builder = settings_builder.ignore_feature_requirements();
+                }
+
+                let settings = settings_builder.build();
+                $model.run_multi_scenario(&settings)
+            }
+            #[cfg(feature = "microlp")]
+            Solver::Microlp => {
+                let mut settings_builder = MicroLpSolverSettingsBuilder::default();
+                if $threads > 1 {
+                    settings_builder = settings_builder.parallel();
+                    settings_builder = settings_builder.threads($threads);
+                }
+                if $ignore_feature_requirements {
+                    settings_builder = settings_builder.ignore_feature_requirements();
+                }
+                let settings = settings_builder.build();
+                $model.run(&settings)
+            }
+        }
+    };
+}
+
 fn run_project(
     path: &Path,
     definition: &str,
@@ -604,120 +705,43 @@ fn run_project(
 ) -> Result<()> {
     let project = pywr_project::Project::open(path).with_context(|| format!("Failed to open project: {path:?}"))?;
     let data_path = data_path.or_else(|| path.parent());
-
-    let composed_model = project
-        .compose_model(definition)
-        .with_context(|| format!("Failed to compose model definition `{definition}`"))?;
-    let composed_schemas = composed_model
-        .load()
-        .with_context(|| format!("Failed to load the schemas of model definition `{definition}`"))?;
     let options = pywr_schema::NetworkMergeOptions::default();
-    let schema_v2 = composed_schemas
-        .into_model_schema(&options)
-        .with_context(|| format!("Failed to merge the networks of model definition `{definition}`"))?;
-    check_schema(schema_v2.validate())?;
-    let model_builder = schema_v2
-        .create_model_builder(&FileSystem, data_path, output_path)
-        .context("Failed to create the model from its schema")
-        .map_err(with_network_report)?;
-    let model = model_builder.build().context("Failed to build the model")?;
 
-    match *solver {
-        Solver::Clp => {
-            let mut settings_builder = ClpSolverSettingsBuilder::default();
-            if threads > 1 {
-                settings_builder = settings_builder.parallel();
-                settings_builder = settings_builder.threads(threads);
-            }
-            if ignore_feature_requirements {
-                settings_builder = settings_builder.ignore_feature_requirements();
-            }
-            let settings = settings_builder.build();
-            model.run(&settings)
+    let composed = project
+        .compose(definition)
+        .with_context(|| format!("Failed to compose definition `{definition}`"))?;
+    match composed {
+        pywr_project::Composed::Model(composed) => {
+            let schema = composed
+                .load()
+                .with_context(|| format!("Failed to load the schemas of model definition `{definition}`"))?
+                .into_model_schema(&options)
+                .with_context(|| format!("Failed to merge the networks of model definition `{definition}`"))?;
+            check_schema(schema.validate())?;
+            let model = schema
+                .create_model_builder(&FileSystem, data_path, output_path)
+                .context("Failed to create the model from its schema")
+                .map_err(with_network_report)?
+                .build()
+                .context("Failed to build the model")?;
+            run_with_solver!(model, solver, threads, ignore_feature_requirements).context("Failed to run the model")?;
         }
-        #[cfg(feature = "cbc")]
-        Solver::Cbc => {
-            let mut settings_builder = CbcSolverSettingsBuilder::default();
-            if threads > 1 {
-                settings_builder = settings_builder.parallel();
-                settings_builder = settings_builder.threads(threads);
-            }
-            if ignore_feature_requirements {
-                settings_builder = settings_builder.ignore_feature_requirements();
-            }
-            let settings = settings_builder.build();
-            model.run(&settings)
-        }
-        #[cfg(feature = "highs")]
-        Solver::Highs => {
-            let mut settings_builder = HighsSolverSettingsBuilder::default();
-            if threads > 1 {
-                settings_builder = settings_builder.parallel();
-                settings_builder = settings_builder.threads(threads);
-            }
-            if ignore_feature_requirements {
-                settings_builder = settings_builder.ignore_feature_requirements();
-            }
-            let settings = settings_builder.build();
-            model.run(&settings)
-        }
-        #[cfg(feature = "ipm-ocl")]
-        Solver::CLIPMF32 => {
-            let mut settings_builder = ClIpmF32SettingsBuilder::default();
-            if threads > 1 {
-                settings_builder = settings_builder.parallel();
-                settings_builder = settings_builder.threads(threads);
-            }
-            if ignore_feature_requirements {
-                settings_builder = settings_builder.ignore_feature_requirements();
-            }
-
-            let settings = settings_builder.build();
-            model.run_multi_scenario(&settings)
-        }
-        #[cfg(feature = "ipm-ocl")]
-        Solver::CLIPMF64 => {
-            let mut settings_builder = ClIpmF64SettingsBuilder::default();
-            if threads > 1 {
-                settings_builder = settings_builder.parallel();
-                settings_builder = settings_builder.threads(threads);
-            }
-            if ignore_feature_requirements {
-                settings_builder = settings_builder.ignore_feature_requirements();
-            }
-
-            let settings = settings_builder.build();
-            model.run_multi_scenario(&settings)
-        }
-        #[cfg(feature = "ipm-simd")]
-        Solver::IpmSimd => {
-            let mut settings_builder = SimdIpmSolverSettingsBuilder::default();
-            if threads > 1 {
-                settings_builder = settings_builder.parallel();
-                settings_builder = settings_builder.threads(threads);
-            }
-            if ignore_feature_requirements {
-                settings_builder = settings_builder.ignore_feature_requirements();
-            }
-
-            let settings = settings_builder.build();
-            model.run_multi_scenario(&settings)
-        }
-        #[cfg(feature = "microlp")]
-        Solver::Microlp => {
-            let mut settings_builder = MicroLpSolverSettingsBuilder::default();
-            if threads > 1 {
-                settings_builder = settings_builder.parallel();
-                settings_builder = settings_builder.threads(threads);
-            }
-            if ignore_feature_requirements {
-                settings_builder = settings_builder.ignore_feature_requirements();
-            }
-            let settings = settings_builder.build();
-            model.run(&settings)
+        pywr_project::Composed::MultiModel(composed) => {
+            let schema = composed
+                .load()
+                .with_context(|| format!("Failed to load the schemas of multi-model definition `{definition}`"))?
+                .into_multi_model_schema(&options)
+                .with_context(|| format!("Failed to merge the networks of multi-model definition `{definition}`"))?;
+            check_schema(schema.validate())?;
+            let model = schema
+                .create_model_builder(&FileSystem, data_path, output_path)
+                .context("Failed to create the model from its schema")
+                .map_err(with_network_report)?
+                .build()
+                .context("Failed to build the model")?;
+            run_with_solver!(model, solver, threads, ignore_feature_requirements).context("Failed to run the model")?;
         }
     }
-    .context("Failed to run the model")?;
 
     Ok(())
 }
