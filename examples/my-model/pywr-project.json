@@ -3,6 +3,10 @@
   "base_model": "models/base.json",
   "sub_networks": [
     {
+      "name": "neighbour",
+      "base_network": "base.json"
+    },
+    {
       "name": "catchment",
       "network_sets": [
         {
@@ -70,6 +74,11 @@
       ]
     },
     {
+      "name": "neighbour",
+      "description": "A neighbouring supply system.",
+      "base": "neighbour"
+    },
+    {
       "name": "option12",
       "description": "Both supply options.",
       "extends": [
@@ -110,6 +119,39 @@
       "networks": [
         "historical",
         "option12"
+      ]
+    }
+  ],
+  "multi_models": [
+    {
+      "name": "joint-historical",
+      "domain": {
+        "model": "baseline-historical"
+      },
+      "networks": [
+        {
+          "name": "company",
+          "network": {
+            "model": "baseline-historical"
+          }
+        },
+        {
+          "name": "neighbour",
+          "network": {
+            "network": "neighbour"
+          },
+          "transfers": [
+            {
+              "from_network": "company",
+              "metric": {
+                "type": "Node",
+                "name": "link1"
+              },
+              "name": "company-link1-flow",
+              "initial_value": 0.0
+            }
+          ]
+        }
       ]
     }
   ]

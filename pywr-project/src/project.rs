@@ -1,6 +1,6 @@
 use crate::error::ComposeModelError;
 use crate::manifest::ProjectManifest;
-use crate::{ComposedModel, ComposedNetwork, ProjectError};
+use crate::{Composed, ComposedModel, ComposedMultiModel, ComposedNetwork, ProjectError};
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
@@ -67,7 +67,17 @@ impl Project {
 
     /// Compose a model from the project manifest and a definition name.
     pub fn compose_model(&self, definition_name: &str) -> Result<ComposedModel, ComposeModelError> {
+        self.manifest.compose_model(&self.root, definition_name)
+    }
+
+    /// Compose a model or multi-model from the project manifest and a definition name.
+    pub fn compose(&self, definition_name: &str) -> Result<Composed, ComposeModelError> {
         self.manifest.compose(&self.root, definition_name)
+    }
+
+    /// Compose a multi-network model from the project manifest and a multi-model definition name.
+    pub fn compose_multi_model(&self, definition_name: &str) -> Result<ComposedMultiModel, ComposeModelError> {
+        self.manifest.compose_multi_model(&self.root, definition_name)
     }
 
     /// Compose a network from the project manifest and a network definition name.
@@ -88,6 +98,7 @@ mod tests {
         let manifest = ProjectManifest::V1(v1::ProjectManifest {
             base_model: Some("base_model.json".to_string()),
             sub_networks: vec![],
+            multi_models: vec![],
             network_sets: vec![],
             networks: vec![],
             models: vec![],
