@@ -1,4 +1,4 @@
-use crate::composition::{ComposedModel, ComposedModelBuilder, ComposedNetworkPath, PositionOffset};
+use crate::composition::{ComposedModel, ComposedModelBuilder, ComposedNetwork, ComposedNetworkPath, PositionOffset};
 use crate::error::{ComposeModelError, ManifestResolutionError};
 use crate::manifest::DefinitionOverrides;
 use pywr_schema::meta::ProvenanceSource;
@@ -58,12 +58,24 @@ impl std::error::Error for ProjectManifestValidationError {}
 
 #[derive(Error, Debug)]
 pub enum ProjectManifestProblem {
-    #[error("The definition `{definition}` was not found in the project manifest.")]
+    #[error("The model definition `{definition}` was not found in the project manifest.")]
     DefinitionNotFound { definition: String },
+    #[error("The network definition `{network}` was not found in the project manifest.")]
+    NetworkDefinitionNotFound { network: String },
     #[error("The name `{set}` is used by {count} network sets, but each name must be unique.")]
     DuplicateNetworkSet { set: String, count: usize },
-    #[error("The name `{definition}` is used by {count} definitions, but each name must be unique.")]
+    #[error("The name `{definition}` is used by {count} model definitions, but each name must be unique.")]
     DuplicateDefinition { definition: String, count: usize },
+    #[error("The name `{network}` is used by {count} network definitions, but each name must be unique.")]
+    DuplicateNetworkDefinition { network: String, count: usize },
+    #[error("The definition `{definition}` refers to the network definition `{network}`, which does not exist.")]
+    NetworkNotFound { definition: String, network: String },
+    #[error("The network definitions extend each other in a cycle: {}.", .cycle.join(" -> "))]
+    NetworkCycle { cycle: Vec<String> },
+    #[error(
+        "The model definition `{definition}` has no base model; give one in the definition or at the top of the manifest."
+    )]
+    BaseModelMissing { definition: String },
     #[error(
         "The definition `{definition}` selects the network set `{set}` {count} times, but it may select each set at most once."
     )]
@@ -134,85 +146,145 @@ pub enum ProjectManifestProblem {
 #[derive(Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ProjectManifest {
-    /// Path (relative to root) to the base ModelSchema JSON.
-    pub base_model: String,
+    /// Path (relative to root) to the base ModelSchema JSON used by model definitions that do not
+    /// give their own.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base_model: Option<String>,
     /// Named sets of NetworkSchema fragments.
     #[serde(default)]
     pub network_sets: Vec<NetworkSet>,
-    /// Multiple named definitions (scenarios).
+    /// Named, reusable compositions of network fragments.
     #[serde(default)]
-    pub definitions: Vec<Definition>,
+    pub networks: Vec<NetworkDefinition>,
+    /// Named model definitions.
+    #[serde(default)]
+    pub models: Vec<ModelDefinition>,
 }
 
 impl ProjectManifest {
     /// Validate the project manifest and return a report of all structural problems found.
     pub fn validate(&self, root: &Path) -> Result<(), ProjectManifestValidationError> {
         let mut problems = self.manifest_problems();
-        let resolved = self.resolve(root, &mut problems);
-        for definition in &self.definitions {
-            definition.resolve(&resolved, &mut problems);
+        let base_model = self.resolve_base_model(root, &mut problems);
+        let sets = self.resolve_sets(root, &mut problems);
+        let mut networks = NetworkExpander::new(self, &sets);
+        for model in &self.models {
+            model.resolve(root, &base_model, &mut networks, &mut problems);
+        }
+        // Network definitions that no model uses are still validated; each is reported once.
+        for network in &self.networks {
+            networks.expand(&network.name, &mut problems);
         }
         into_result(problems)
     }
 
-    /// Validate a definition against the project manifest.
+    /// Validate a model definition against the project manifest.
     pub fn validate_model(&self, root: &Path, definition_name: &str) -> Result<(), ProjectManifestValidationError> {
-        let Some(definition) = self.find_definition(definition_name) else {
+        let Some(model) = self.find_model(definition_name) else {
             return into_result(vec![ProjectManifestProblem::DefinitionNotFound {
                 definition: definition_name.to_string(),
             }]);
         };
         let mut problems = self.manifest_problems();
-        let resolved = self.resolve(root, &mut problems);
-        definition.resolve(&resolved, &mut problems);
+        let base_model = self.resolve_base_model(root, &mut problems);
+        let sets = self.resolve_sets(root, &mut problems);
+        model.resolve(root, &base_model, &mut NetworkExpander::new(self, &sets), &mut problems);
         into_result(problems)
     }
 
-    /// Compose a model from the base model and the specified definition.
+    /// Validate a network definition against the project manifest.
+    pub fn validate_network(&self, root: &Path, network_name: &str) -> Result<(), ProjectManifestValidationError> {
+        if self.find_network(network_name).is_none() {
+            return into_result(vec![ProjectManifestProblem::NetworkDefinitionNotFound {
+                network: network_name.to_string(),
+            }]);
+        }
+        let mut problems = self.manifest_problems();
+        let sets = self.resolve_sets(root, &mut problems);
+        NetworkExpander::new(self, &sets).expand(network_name, &mut problems);
+        into_result(problems)
+    }
+
+    /// Compose a model from its base model and the specified model definition.
     ///
     /// This resolves the manifest in the same way as [`Self::validate_model`], and returns the
     /// first problem found as an error.
     pub fn compose_model(&self, root: &Path, definition_name: &str) -> Result<ComposedModel, ComposeModelError> {
         let mut problems = self.manifest_problems();
-        let Some(definition) = self.find_definition(definition_name) else {
+        let Some(model) = self.find_model(definition_name) else {
             problems.push(ProjectManifestProblem::DefinitionNotFound {
                 definition: definition_name.to_string(),
             });
             return Err(problems.swap_remove(0).into());
         };
-        let resolved = self.resolve(root, &mut problems);
-        let includes = definition.resolve(&resolved, &mut problems);
+        let base_model = self.resolve_base_model(root, &mut problems);
+        let sets = self.resolve_sets(root, &mut problems);
+        let resolved = model.resolve(root, &base_model, &mut NetworkExpander::new(self, &sets), &mut problems);
 
         match (problems.into_iter().next(), resolved.base_model) {
             (Some(problem), _) => Err(problem.into()),
             (None, Some((base_model, base_file))) => {
-                let mut builder = ComposedModelBuilder::new(definition.name.clone(), base_model, base_file);
-                for include in includes {
+                let mut builder = ComposedModelBuilder::new(model.name.clone(), base_model, base_file);
+                for include in resolved.includes {
                     builder.add_include(include);
                 }
-                if let Some(overrides) = &definition.overrides {
+                if let Some(overrides) = &model.overrides {
                     builder.overrides(overrides.clone());
                 }
                 Ok(builder.build())
             }
-            (None, None) => unreachable!("a base model that fails to resolve is always reported as a problem"),
+            (None, None) => unreachable!("a missing or unresolved base model is always reported as a problem"),
         }
     }
 
-    fn find_definition(&self, name: &str) -> Option<&Definition> {
-        self.definitions.iter().find(|definition| definition.name == name)
+    /// Compose a network from the specified network definition.
+    ///
+    /// This resolves the manifest in the same way as [`Self::validate_network`], and returns the
+    /// first problem found as an error.
+    pub fn compose_network(&self, root: &Path, network_name: &str) -> Result<ComposedNetwork, ComposeModelError> {
+        let mut problems = self.manifest_problems();
+        if self.find_network(network_name).is_none() {
+            problems.push(ProjectManifestProblem::NetworkDefinitionNotFound {
+                network: network_name.to_string(),
+            });
+            return Err(problems.swap_remove(0).into());
+        }
+        let sets = self.resolve_sets(root, &mut problems);
+        let files = NetworkExpander::new(self, &sets).expand(network_name, &mut problems);
+
+        match problems.into_iter().next() {
+            Some(problem) => Err(problem.into()),
+            None => Ok(ComposedNetwork::new(
+                network_name.to_string(),
+                files.into_iter().map(SelectedFile::into_composed).collect(),
+            )),
+        }
+    }
+
+    fn find_model(&self, name: &str) -> Option<&ModelDefinition> {
+        self.models.iter().find(|model| model.name == name)
+    }
+
+    fn find_network(&self, name: &str) -> Option<&NetworkDefinition> {
+        self.networks.iter().find(|network| network.name == name)
     }
 
     /// Problems in the manifest itself, found without touching the filesystem.
     fn manifest_problems(&self) -> Vec<ProjectManifestProblem> {
         let mut problems = Vec::new();
         add_duplicate_problems(
-            &self.definitions,
-            |definition| &definition.name,
+            &self.models,
+            |model| &model.name,
             |name, count| ProjectManifestProblem::DuplicateDefinition {
                 definition: name,
                 count,
             },
+            &mut problems,
+        );
+        add_duplicate_problems(
+            &self.networks,
+            |network| &network.name,
+            |name, count| ProjectManifestProblem::DuplicateNetworkDefinition { network: name, count },
             &mut problems,
         );
         add_duplicate_problems(
@@ -235,33 +307,34 @@ impl ProjectManifest {
         problems
     }
 
-    /// Resolve the base model and network sets against the filesystem, appending any problems found.
-    fn resolve(&self, root: &Path, problems: &mut Vec<ProjectManifestProblem>) -> ResolvedManifest {
-        let base_model = match resolve_base_model(root, &self.base_model) {
-            Ok(base_model) => Some(base_model),
+    /// Resolve the project-level base model, appending a problem if it is given but cannot be resolved.
+    fn resolve_base_model(&self, root: &Path, problems: &mut Vec<ProjectManifestProblem>) -> ProjectBaseModel {
+        let Some(base_model) = &self.base_model else {
+            return ProjectBaseModel::NotGiven;
+        };
+        match resolve_base_model(root, base_model) {
+            Ok(base_model) => ProjectBaseModel::Resolved(base_model),
             Err(error) => {
                 problems.push(error.into());
-                None
+                ProjectBaseModel::Unresolved
             }
-        };
+        }
+    }
 
+    /// Resolve the network sets against the filesystem, appending any problems found.
+    fn resolve_sets(&self, root: &Path, problems: &mut Vec<ProjectManifestProblem>) -> ResolvedSets {
         let mut sets = Vec::new();
-        let mut unresolved_sets = HashSet::new();
+        let mut unresolved = HashSet::new();
         for set in &self.network_sets {
             match resolve_network_set(root, set) {
                 Ok(resolved) => sets.push(resolved),
                 Err(error) => {
                     problems.push(error.into());
-                    unresolved_sets.insert(set.name.clone());
+                    unresolved.insert(set.name.clone());
                 }
             }
         }
-
-        ResolvedManifest {
-            base_model,
-            sets,
-            unresolved_sets,
-        }
+        ResolvedSets { sets, unresolved }
     }
 }
 
@@ -273,29 +346,204 @@ fn into_result(problems: Vec<ProjectManifestProblem>) -> Result<(), ProjectManif
     }
 }
 
-/// The parts of a manifest resolved against the filesystem, shared by every definition.
-struct ResolvedManifest {
-    /// The canonical path of the base model and its path relative to the project root.
-    base_model: Option<(PathBuf, RelativePathBuf)>,
+/// The canonical path of a base model and its path relative to the project root.
+type ResolvedBaseModel = (PathBuf, RelativePathBuf);
+
+/// The outcome of resolving the project-level base model.
+enum ProjectBaseModel {
+    NotGiven,
+    /// The base model was given but could not be resolved; the problem is already reported.
+    Unresolved,
+    Resolved(ResolvedBaseModel),
+}
+
+/// The network sets of a manifest resolved against the filesystem, shared by every definition.
+struct ResolvedSets {
     /// Network sets that resolved, in declaration order.
     sets: Vec<ResolvedNetworkSet>,
     /// Names of network sets that failed to resolve. Their problems are already reported, so
     /// selections of them are not reported again as missing sets.
-    unresolved_sets: HashSet<String>,
+    unresolved: HashSet<String>,
 }
 
-impl ResolvedManifest {
-    fn set(&self, name: &str) -> Option<&ResolvedNetworkSet> {
+impl ResolvedSets {
+    fn get(&self, name: &str) -> Option<&ResolvedNetworkSet> {
         self.sets.iter().find(|set| set.name == name)
     }
+}
+
+/// A network fragment selected by a definition, before composition.
+#[derive(Clone)]
+struct SelectedFile<'a> {
+    set: &'a ResolvedNetworkSet,
+    file: &'a ResolvedNetworkFile,
+    position_offset: Option<PositionOffset>,
+    /// The network definition whose `include` selected this file, if any.
+    network: Option<&'a str>,
+}
+
+impl SelectedFile<'_> {
+    fn into_composed(self) -> ComposedNetworkPath {
+        ComposedNetworkPath {
+            path: self.file.path.clone(),
+            position_offset: self.position_offset,
+            source: ProvenanceSource {
+                file: self.file.source.clone(),
+                network_set: Some(self.set.name.clone()),
+                network: self.network.map(str::to_string),
+            },
+        }
+    }
+}
+
+/// Remove files reached by more than one route, keeping the first occurrence.
+fn dedup_files(files: &mut Vec<SelectedFile<'_>>) {
+    let mut seen = HashSet::new();
+    files.retain(|selected| seen.insert(&selected.file.path));
+}
+
+/// Expands network definitions into their selected files, remembering each expansion so that a
+/// definition's problems are reported once however many definitions refer to it.
+struct NetworkExpander<'a> {
+    manifest: &'a ProjectManifest,
+    sets: &'a ResolvedSets,
+    expanded: HashMap<&'a str, Vec<SelectedFile<'a>>>,
+    /// The definitions currently being expanded, outermost first, used to detect cycles.
+    stack: Vec<&'a str>,
+}
+
+impl<'a> NetworkExpander<'a> {
+    fn new(manifest: &'a ProjectManifest, sets: &'a ResolvedSets) -> Self {
+        Self {
+            manifest,
+            sets,
+            expanded: HashMap::new(),
+            stack: Vec::new(),
+        }
+    }
+
+    /// The files selected by the network definition `name`, in merge order: those of each
+    /// definition it extends, then its own selections.
+    ///
+    /// The caller must check that `name` exists; a missing name expands to no files.
+    fn expand(&mut self, name: &str, problems: &mut Vec<ProjectManifestProblem>) -> Vec<SelectedFile<'a>> {
+        if let Some(files) = self.expanded.get(name) {
+            return files.clone();
+        }
+        if let Some(start) = self.stack.iter().position(|entry| *entry == name) {
+            let mut cycle: Vec<String> = self.stack[start..].iter().map(|entry| entry.to_string()).collect();
+            cycle.push(name.to_string());
+            problems.push(ProjectManifestProblem::NetworkCycle { cycle });
+            return Vec::new();
+        }
+        let Some(network) = self.manifest.find_network(name) else {
+            return Vec::new();
+        };
+
+        self.stack.push(&network.name);
+        let mut files = Vec::new();
+        for parent in &network.extends {
+            if self.manifest.find_network(parent).is_none() {
+                problems.push(ProjectManifestProblem::NetworkNotFound {
+                    definition: network.name.clone(),
+                    network: parent.clone(),
+                });
+            }
+            files.extend(self.expand(parent, problems));
+        }
+        files.extend(resolve_includes(
+            &network.name,
+            Some(&network.name),
+            &network.include,
+            self.sets,
+            problems,
+        ));
+        self.stack.pop();
+
+        dedup_files(&mut files);
+        self.expanded.insert(&network.name, files.clone());
+        files
+    }
+}
+
+/// Resolve a definition's own `include` list, appending problems attributed to `definition`.
+///
+/// Returns the files selected, in selection order.
+fn resolve_includes<'a>(
+    definition: &str,
+    network: Option<&'a str>,
+    include: &'a [DefinitionSelection],
+    sets: &'a ResolvedSets,
+    problems: &mut Vec<ProjectManifestProblem>,
+) -> Vec<SelectedFile<'a>> {
+    let mut files = Vec::new();
+    let mut selected_sets = HashSet::new();
+    let mut duplicate_sets = HashSet::new();
+    for selection in include {
+        if !selected_sets.insert(selection.set.as_str()) {
+            // Report each duplicated set once; only its first selection is resolved.
+            if duplicate_sets.insert(selection.set.as_str()) {
+                problems.push(ProjectManifestProblem::DuplicateSet {
+                    definition: definition.to_string(),
+                    set: selection.set.clone(),
+                    count: include.iter().filter(|other| other.set == selection.set).count(),
+                });
+            }
+            continue;
+        }
+        let Some(set) = sets.get(&selection.set) else {
+            if !sets.unresolved.contains(&selection.set) {
+                problems.push(ProjectManifestProblem::SetNotFound {
+                    definition: definition.to_string(),
+                    set: selection.set.clone(),
+                });
+            }
+            continue;
+        };
+
+        let selected = resolve_selection(definition, selection, set, problems);
+        for file in unused_file_meta_keys(selection, &selected) {
+            problems.push(ProjectManifestProblem::UnusedFileMeta {
+                definition: definition.to_string(),
+                set: set.name.clone(),
+                file: file.to_string(),
+            });
+        }
+
+        files.extend(selected.into_iter().map(|file| {
+            let position_offset = file
+                .name
+                .to_str()
+                .and_then(|name| selection.file_meta.as_ref()?.get(name))
+                .and_then(|meta| meta.position_offset.clone());
+            SelectedFile {
+                set,
+                file,
+                position_offset: position_offset.map(PositionOffset::from),
+                network,
+            }
+        }));
+    }
+    files
 }
 
 impl From<ProjectManifestProblem> for ComposeModelError {
     fn from(problem: ProjectManifestProblem) -> Self {
         match problem {
             ProjectManifestProblem::DefinitionNotFound { definition } => Self::DefinitionNotFound { definition },
+            ProjectManifestProblem::NetworkDefinitionNotFound { network } => {
+                Self::NetworkDefinitionNotFound { network }
+            }
             ProjectManifestProblem::DuplicateNetworkSet { set, .. } => Self::DuplicateNetworkSet { set },
             ProjectManifestProblem::DuplicateDefinition { definition, .. } => Self::DuplicateDefinition { definition },
+            ProjectManifestProblem::DuplicateNetworkDefinition { network, .. } => {
+                Self::DuplicateNetworkDefinition { network }
+            }
+            ProjectManifestProblem::NetworkNotFound { definition, network } => {
+                Self::NetworkNotFound { definition, network }
+            }
+            ProjectManifestProblem::NetworkCycle { cycle } => Self::NetworkCycle { cycle },
+            ProjectManifestProblem::BaseModelMissing { definition } => Self::BaseModelMissing { definition },
             ProjectManifestProblem::DuplicateSet { set, .. } => Self::DuplicateSelection { set },
             ProjectManifestProblem::SetNotFound { set, .. } => Self::SetNotFound { set },
             ProjectManifestProblem::FileNotFound { set, file, .. } => Self::FileNotFound { set, file },
@@ -341,85 +589,105 @@ impl From<ProjectManifestProblem> for ComposeModelError {
     }
 }
 
+/// A named, reusable composition of network fragments that resolves to a `NetworkSchema`.
 #[derive(Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
-pub struct Definition {
+pub struct NetworkDefinition {
     pub name: String,
-    /// Per-network-set selections for this definition.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    /// Other network definitions to include first, in order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub extends: Vec<String>,
+    /// Per-network-set selections for this network definition.
+    #[serde(default)]
+    pub include: Vec<DefinitionSelection>,
+}
+
+/// A named model, composed from a base model, network definitions and further selections.
+#[derive(Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ModelDefinition {
+    pub name: String,
+    /// Path (relative to root) to the base ModelSchema JSON, overriding the project's `base_model`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base_model: Option<String>,
+    /// Network definitions to include after the base model, in order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub networks: Vec<String>,
+    /// Per-network-set selections for this definition, included after its networks.
+    #[serde(default)]
     pub include: Vec<DefinitionSelection>,
     /// Optional overrides to base model.
     #[serde(default)]
     pub overrides: Option<DefinitionOverrides>,
 }
 
-impl Definition {
-    /// Resolve this definition's selections, returning the networks to include in merge order.
-    ///
-    /// Problems are appended in selection order, so the first one is the error that composition reports.
-    fn resolve(
-        &self,
-        manifest: &ResolvedManifest,
-        problems: &mut Vec<ProjectManifestProblem>,
-    ) -> Vec<ComposedNetworkPath> {
-        let mut includes = Vec::new();
-        let mut selected_sets = HashSet::new();
-        let mut duplicate_sets = HashSet::new();
-        for selection in &self.include {
-            if !selected_sets.insert(selection.set.as_str()) {
-                // Report each duplicated set once; only its first selection is resolved.
-                if duplicate_sets.insert(selection.set.as_str()) {
-                    problems.push(ProjectManifestProblem::DuplicateSet {
-                        definition: self.name.clone(),
-                        set: selection.set.clone(),
-                        count: self.include.iter().filter(|other| other.set == selection.set).count(),
-                    });
-                }
-                continue;
-            }
-            let Some(set) = manifest.set(&selection.set) else {
-                if !manifest.unresolved_sets.contains(&selection.set) {
-                    problems.push(ProjectManifestProblem::SetNotFound {
-                        definition: self.name.clone(),
-                        set: selection.set.clone(),
-                    });
-                }
-                continue;
-            };
+/// A model definition resolved into its base model and the networks to include in merge order.
+struct ResolvedModel {
+    base_model: Option<ResolvedBaseModel>,
+    includes: Vec<ComposedNetworkPath>,
+}
 
-            let files = resolve_selection(self, selection, set, problems);
-            for file in unused_file_meta_keys(selection, &files) {
-                problems.push(ProjectManifestProblem::UnusedFileMeta {
+impl ModelDefinition {
+    /// Resolve this definition's base model and selections.
+    ///
+    /// Problems are appended in the order the definition is composed, so the first one is the
+    /// error that composition reports.
+    fn resolve<'a>(
+        &'a self,
+        root: &Path,
+        project_base_model: &ProjectBaseModel,
+        networks: &mut NetworkExpander<'a>,
+        problems: &mut Vec<ProjectManifestProblem>,
+    ) -> ResolvedModel {
+        let base_model = match (&self.base_model, project_base_model) {
+            (Some(base_model), _) => match resolve_base_model(root, base_model) {
+                Ok(base_model) => Some(base_model),
+                Err(error) => {
+                    problems.push(error.into());
+                    None
+                }
+            },
+            (None, ProjectBaseModel::Resolved(base_model)) => Some(base_model.clone()),
+            (None, ProjectBaseModel::Unresolved) => None,
+            (None, ProjectBaseModel::NotGiven) => {
+                problems.push(ProjectManifestProblem::BaseModelMissing {
                     definition: self.name.clone(),
-                    set: set.name.clone(),
-                    file: file.to_string(),
+                });
+                None
+            }
+        };
+
+        let mut files = Vec::new();
+        for network in &self.networks {
+            if networks.manifest.find_network(network).is_none() {
+                problems.push(ProjectManifestProblem::NetworkNotFound {
+                    definition: self.name.clone(),
+                    network: network.clone(),
                 });
             }
-            validate_constraints(self, set, files.len(), problems);
-
-            includes.extend(files.into_iter().map(|file| {
-                let position_offset = file
-                    .name
-                    .to_str()
-                    .and_then(|name| selection.file_meta.as_ref()?.get(name))
-                    .and_then(|meta| meta.position_offset.clone());
-
-                ComposedNetworkPath {
-                    path: file.path.clone(),
-                    position_offset: position_offset.map(PositionOffset::from),
-                    source: ProvenanceSource {
-                        file: file.source.clone(),
-                        network_set: Some(set.name.clone()),
-                    },
-                }
-            }));
+            files.extend(networks.expand(network, problems));
         }
-        // Constraints also apply to sets omitted by this definition.
-        for set in &manifest.sets {
-            if !selected_sets.contains(set.name.as_str()) {
-                validate_constraints(self, set, 0, problems);
-            }
+        files.extend(resolve_includes(
+            &self.name,
+            None,
+            &self.include,
+            networks.sets,
+            problems,
+        ));
+        dedup_files(&mut files);
+
+        // Set constraints apply to the whole model: every file selected from a set, by any route.
+        for set in &networks.sets.sets {
+            let count = files.iter().filter(|selected| std::ptr::eq(selected.set, set)).count();
+            validate_constraints(&self.name, set, count, problems);
         }
-        includes
+
+        ResolvedModel {
+            base_model,
+            includes: files.into_iter().map(SelectedFile::into_composed).collect(),
+        }
     }
 }
 
@@ -492,7 +760,7 @@ struct ResolvedNetworkFile {
 }
 
 fn resolve_selection<'a>(
-    definition: &Definition,
+    definition: &str,
     selection: &DefinitionSelection,
     set: &'a ResolvedNetworkSet,
     errors: &mut Vec<ProjectManifestProblem>,
@@ -505,13 +773,13 @@ fn resolve_selection<'a>(
     for file in selection.files.as_deref().unwrap_or_default() {
         if !is_filename(file) {
             errors.push(ProjectManifestProblem::InvalidFilePath {
-                definition: definition.name.clone(),
+                definition: definition.to_string(),
                 set: set.name.clone(),
                 file: file.clone(),
             });
         } else if !names.insert(file) {
             errors.push(ProjectManifestProblem::DuplicateFile {
-                definition: definition.name.clone(),
+                definition: definition.to_string(),
                 set: set.name.clone(),
                 file: file.clone(),
             });
@@ -519,7 +787,7 @@ fn resolve_selection<'a>(
             result.push(resolved);
         } else {
             errors.push(ProjectManifestProblem::FileNotFound {
-                definition: definition.name.clone(),
+                definition: definition.to_string(),
                 set: set.name.clone(),
                 file: file.clone(),
             });
@@ -544,7 +812,7 @@ fn unused_file_meta_keys<'a>(
 }
 
 fn validate_constraints(
-    definition: &Definition,
+    definition: &str,
     set: &ResolvedNetworkSet,
     count: usize,
     errors: &mut Vec<ProjectManifestProblem>,
@@ -553,7 +821,7 @@ fn validate_constraints(
         && count < min_files
     {
         errors.push(ProjectManifestProblem::MinFilesNotMet {
-            definition: definition.name.clone(),
+            definition: definition.to_string(),
             set: set.name.clone(),
             min_files,
             actual_files: count,
@@ -563,7 +831,7 @@ fn validate_constraints(
         && count > max_files
     {
         errors.push(ProjectManifestProblem::MaxFilesExceeded {
-            definition: definition.name.clone(),
+            definition: definition.to_string(),
             set: set.name.clone(),
             max_files,
             actual_files: count,
@@ -755,13 +1023,19 @@ mod test {
 
     fn manifest(base_model: &str, network_sets: Vec<NetworkSet>, include: Vec<DefinitionSelection>) -> ProjectManifest {
         ProjectManifest {
-            base_model: base_model.to_string(),
+            base_model: Some(base_model.to_string()),
             network_sets,
-            definitions: vec![Definition {
-                name: "test".to_string(),
-                include,
-                overrides: None,
-            }],
+            networks: vec![],
+            models: vec![model("test", include)],
+        }
+    }
+    fn model(name: &str, include: Vec<DefinitionSelection>) -> ModelDefinition {
+        ModelDefinition {
+            name: name.to_string(),
+            base_model: None,
+            networks: vec![],
+            include,
+            overrides: None,
         }
     }
     fn set(name: &str, dir: Option<&str>, min_files: Option<usize>, max_files: Option<usize>) -> NetworkSet {
@@ -950,14 +1224,17 @@ mod test {
         let base_source = ProvenanceSource {
             file: "base.json".into(),
             network_set: None,
+            network: None,
         };
         let a_source = ProvenanceSource {
             file: "nets/a.json".into(),
             network_set: Some("nets".into()),
+            network: None,
         };
         let b_source = ProvenanceSource {
             file: "nets/b.json".into(),
             network_set: Some("nets".into()),
+            network: None,
         };
         assert_eq!(
             composed
@@ -1132,6 +1409,282 @@ mod test {
         ));
     }
 
+    fn network(name: &str, extends: Vec<&str>, include: Vec<DefinitionSelection>) -> NetworkDefinition {
+        NetworkDefinition {
+            name: name.to_string(),
+            description: None,
+            extends: extends.into_iter().map(str::to_string).collect(),
+            include,
+        }
+    }
+
+    fn uses_networks(mut model: ModelDefinition, networks: Vec<&str>) -> ModelDefinition {
+        model.networks = networks.into_iter().map(str::to_string).collect();
+        model
+    }
+
+    /// A project root with `base.json` and a `nets` set holding `a.json`, `b.json` and `c.json`,
+    /// each defining one node named after the file.
+    fn project_with_nets() -> tempfile::TempDir {
+        let root = tempdir().unwrap();
+        std::fs::write(
+            root.path().join("base.json"),
+            serde_json::to_vec(&pywr_schema::ModelSchema::default()).unwrap(),
+        )
+        .unwrap();
+        std::fs::create_dir(root.path().join("nets")).unwrap();
+        for name in ["a", "b", "c"] {
+            std::fs::write(
+                root.path().join(format!("nets/{name}.json")),
+                format!(r#"{{"nodes":[{{"type":"Input","meta":{{"name":"{name}"}}}}],"edges":[]}}"#),
+            )
+            .unwrap();
+        }
+        root
+    }
+
+    fn net_paths(root: &Path, names: &[&str]) -> Vec<PathBuf> {
+        names
+            .iter()
+            .map(|name| root.join(name).canonicalize().unwrap())
+            .collect()
+    }
+
+    #[test]
+    fn network_definitions_compose_in_extension_order_and_record_provenance() {
+        let root = project_with_nets();
+        let manifest = ProjectManifest {
+            base_model: Some("base.json".to_string()),
+            network_sets: vec![set("nets", None, None, None)],
+            networks: vec![
+                network("baseline", vec![], vec![selection("nets", Some(vec!["a.json"]), false)]),
+                network(
+                    "upgraded",
+                    vec!["baseline"],
+                    vec![selection("nets", Some(vec!["b.json"]), false)],
+                ),
+            ],
+            models: vec![uses_networks(
+                model("test", vec![selection("nets", Some(vec!["c.json"]), false)]),
+                vec!["upgraded"],
+            )],
+        };
+        assert!(manifest.validate(root.path()).is_ok());
+
+        let composed = manifest.compose_model(root.path(), "test").unwrap();
+        assert_eq!(
+            composed.all_paths(),
+            net_paths(root.path(), &["base.json", "nets/a.json", "nets/b.json", "nets/c.json"])
+        );
+
+        let schema = composed.load().unwrap().into_model_schema(&Default::default()).unwrap();
+        for (node, network) in [("a", Some("baseline")), ("b", Some("upgraded")), ("c", None)] {
+            let origin = &schema
+                .network
+                .get_node_by_name(node)
+                .unwrap()
+                .meta()
+                .provenance()
+                .unwrap()
+                .origin;
+            assert_eq!(origin.network.as_deref(), network, "node {node}");
+        }
+
+        let network = manifest.compose_network(root.path(), "upgraded").unwrap();
+        assert_eq!(
+            network.all_paths(),
+            net_paths(root.path(), &["nets/a.json", "nets/b.json"])
+        );
+        let schema = network
+            .load()
+            .unwrap()
+            .into_network_schema(&Default::default())
+            .unwrap();
+        assert_eq!(schema.nodes.len(), 2);
+    }
+
+    #[test]
+    fn files_reached_by_several_routes_are_included_once() {
+        let root = project_with_nets();
+        let manifest = ProjectManifest {
+            base_model: Some("base.json".to_string()),
+            network_sets: vec![set("nets", None, None, None)],
+            networks: vec![
+                network("left", vec![], vec![selection("nets", Some(vec!["a.json"]), false)]),
+                network(
+                    "right",
+                    vec![],
+                    vec![selection("nets", Some(vec!["a.json", "b.json"]), false)],
+                ),
+                network("diamond", vec!["left", "right"], vec![]),
+            ],
+            models: vec![uses_networks(model("test", vec![]), vec!["left", "right"])],
+        };
+        assert!(manifest.validate(root.path()).is_ok());
+        assert_eq!(
+            manifest.compose_model(root.path(), "test").unwrap().all_paths(),
+            net_paths(root.path(), &["base.json", "nets/a.json", "nets/b.json"])
+        );
+        assert_eq!(
+            manifest.compose_network(root.path(), "diamond").unwrap().all_paths(),
+            net_paths(root.path(), &["nets/a.json", "nets/b.json"])
+        );
+    }
+
+    #[test]
+    fn set_constraints_apply_to_the_whole_model_not_each_network() {
+        let root = project_with_nets();
+        let manifest = ProjectManifest {
+            base_model: Some("base.json".to_string()),
+            network_sets: vec![set("nets", None, None, Some(1))],
+            networks: vec![
+                network("left", vec![], vec![selection("nets", Some(vec!["a.json"]), false)]),
+                network("right", vec![], vec![selection("nets", Some(vec!["b.json"]), false)]),
+            ],
+            models: vec![uses_networks(model("test", vec![]), vec!["left", "right"])],
+        };
+        assert!(manifest.validate_network(root.path(), "left").is_ok());
+        assert!(matches!(
+            manifest.validate_model(root.path(), "test").unwrap_err().problems.as_slice(),
+            [ProjectManifestProblem::MaxFilesExceeded { definition, actual_files: 2, .. }] if definition == "test"
+        ));
+        assert!(matches!(
+            manifest.compose_model(root.path(), "test"),
+            Err(ComposeModelError::MaxFilesExceeded { actual_files: 2, .. })
+        ));
+    }
+
+    #[test]
+    fn network_cycles_are_reported_once() {
+        let root = project_with_nets();
+        let manifest = ProjectManifest {
+            base_model: Some("base.json".to_string()),
+            network_sets: vec![set("nets", None, None, None)],
+            networks: vec![
+                network("first", vec!["second"], vec![]),
+                network("second", vec!["first"], vec![]),
+            ],
+            models: vec![uses_networks(model("test", vec![]), vec!["first"])],
+        };
+        let report = manifest.validate(root.path()).unwrap_err();
+        assert!(matches!(
+            report.problems.as_slice(),
+            [ProjectManifestProblem::NetworkCycle { cycle }] if cycle == &["first", "second", "first"]
+        ));
+        assert_eq!(
+            report.problems[0].to_string(),
+            "The network definitions extend each other in a cycle: first -> second -> first."
+        );
+        assert!(matches!(
+            manifest.compose_network(root.path(), "second"),
+            Err(ComposeModelError::NetworkCycle { cycle }) if cycle == ["second", "first", "second"]
+        ));
+    }
+
+    #[test]
+    fn missing_network_references_are_reported_where_they_are_made() {
+        let root = project_with_nets();
+        let manifest = ProjectManifest {
+            base_model: Some("base.json".to_string()),
+            network_sets: vec![set("nets", None, None, None)],
+            networks: vec![network("child", vec!["gone"], vec![])],
+            models: vec![uses_networks(model("test", vec![]), vec!["nope"])],
+        };
+        let report = manifest.validate(root.path()).unwrap_err();
+        let missing: Vec<_> = report
+            .problems
+            .iter()
+            .map(|problem| match problem {
+                ProjectManifestProblem::NetworkNotFound { definition, network } => {
+                    (definition.as_str(), network.as_str())
+                }
+                other => panic!("unexpected problem: {other}"),
+            })
+            .collect();
+        assert_eq!(missing, [("test", "nope"), ("child", "gone")]);
+        assert!(matches!(
+            manifest.compose_network(root.path(), "unknown"),
+            Err(ComposeModelError::NetworkDefinitionNotFound { network }) if network == "unknown"
+        ));
+    }
+
+    #[test]
+    fn network_problems_are_reported_once_however_many_models_use_them() {
+        let root = project_with_nets();
+        let manifest = ProjectManifest {
+            base_model: Some("base.json".to_string()),
+            network_sets: vec![set("nets", None, None, None)],
+            networks: vec![network(
+                "shared",
+                vec![],
+                vec![selection("nets", Some(vec!["missing.json"]), false)],
+            )],
+            models: vec![
+                uses_networks(model("first", vec![]), vec!["shared"]),
+                uses_networks(model("second", vec![]), vec!["shared"]),
+            ],
+        };
+        assert!(matches!(
+            manifest.validate(root.path()).unwrap_err().problems.as_slice(),
+            [ProjectManifestProblem::FileNotFound { definition, .. }] if definition == "shared"
+        ));
+    }
+
+    #[test]
+    fn base_model_comes_from_the_definition_or_the_project() {
+        let root = project_with_nets();
+        std::fs::copy(root.path().join("base.json"), root.path().join("other.json")).unwrap();
+        let mut with_base = model("with-base", vec![]);
+        with_base.base_model = Some("other.json".to_string());
+        let manifest = ProjectManifest {
+            base_model: None,
+            network_sets: vec![set("nets", None, None, None)],
+            networks: vec![network("all", vec![], vec![selection("nets", None, true)])],
+            models: vec![with_base, model("without-base", vec![])],
+        };
+
+        assert!(matches!(
+            manifest.validate(root.path()).unwrap_err().problems.as_slice(),
+            [ProjectManifestProblem::BaseModelMissing { definition }] if definition == "without-base"
+        ));
+        assert_eq!(
+            manifest.compose_model(root.path(), "with-base").unwrap().all_paths(),
+            net_paths(root.path(), &["other.json"])
+        );
+        assert!(matches!(
+            manifest.compose_model(root.path(), "without-base"),
+            Err(ComposeModelError::BaseModelMissing { definition }) if definition == "without-base"
+        ));
+        assert_eq!(
+            manifest.compose_network(root.path(), "all").unwrap().all_paths().len(),
+            3
+        );
+    }
+
+    #[test]
+    fn manifest_json_uses_models_and_networks() {
+        let manifest: super::super::ProjectManifest = serde_json::from_str(
+            r#"{
+                "format": "v1",
+                "network_sets": [{ "name": "nets" }],
+                "networks": [{ "name": "upgraded", "extends": ["baseline"], "include": [] }],
+                "models": [{ "name": "full", "base_model": "base.json", "networks": ["upgraded"] }]
+            }"#,
+        )
+        .unwrap();
+        let super::super::ProjectManifest::V1(manifest) = manifest;
+        assert!(manifest.base_model.is_none());
+        assert_eq!(manifest.networks[0].extends, ["baseline"]);
+        assert_eq!(manifest.models[0].networks, ["upgraded"]);
+
+        assert!(
+            serde_json::from_str::<super::super::ProjectManifest>(
+                r#"{ "format": "v1", "base_model": "base.json", "definitions": [] }"#
+            )
+            .is_err()
+        );
+    }
+
     #[test]
     fn omitted_set_constraints_are_reported_in_declaration_order() {
         let root = tempdir().unwrap();
@@ -1300,20 +1853,10 @@ mod test {
         touch(&root.path().join("base.json"));
         std::fs::create_dir(root.path().join("nets")).unwrap();
         let manifest = ProjectManifest {
-            base_model: "base.json".to_string(),
+            base_model: Some("base.json".to_string()),
             network_sets: vec![set("nets", None, Some(2), Some(1)), set("nets", None, None, None)],
-            definitions: vec![
-                Definition {
-                    name: "test".to_string(),
-                    include: vec![],
-                    overrides: None,
-                },
-                Definition {
-                    name: "test".to_string(),
-                    include: vec![],
-                    overrides: None,
-                },
-            ],
+            networks: vec![],
+            models: vec![model("test", vec![]), model("test", vec![])],
         };
         let report = manifest.validate(root.path()).unwrap_err();
         assert!(

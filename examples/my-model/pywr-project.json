@@ -11,9 +11,10 @@
       "max": 1
     }
   ],
-  "definitions": [
+  "networks": [
     {
-      "name": "baseline-historical",
+      "name": "historical",
+      "description": "Historical catchment inflows.",
       "include": [
         {
           "set": "catchments",
@@ -24,7 +25,8 @@
       ]
     },
     {
-      "name": "baseline-stochastic",
+      "name": "stochastic",
+      "description": "Stochastic catchment inflows.",
       "include": [
         {
           "set": "catchments",
@@ -35,14 +37,9 @@
       ]
     },
     {
-      "name": "baseline-option1",
+      "name": "option1",
+      "description": "Supply option 1, feeding the demand directly.",
       "include": [
-        {
-          "set": "catchments",
-          "files": [
-            "historical.json"
-          ]
-        },
         {
           "set": "options",
           "files": [
@@ -52,14 +49,9 @@
       ]
     },
     {
-      "name": "baseline-option2",
+      "name": "option2",
+      "description": "Supply option 2, feeding the link.",
       "include": [
-        {
-          "set": "catchments",
-          "files": [
-            "historical.json"
-          ]
-        },
         {
           "set": "options",
           "files": [
@@ -69,21 +61,46 @@
       ]
     },
     {
+      "name": "option12",
+      "description": "Both supply options.",
+      "extends": [
+        "option1",
+        "option2"
+      ]
+    }
+  ],
+  "models": [
+    {
+      "name": "baseline-historical",
+      "networks": [
+        "historical"
+      ]
+    },
+    {
+      "name": "baseline-stochastic",
+      "networks": [
+        "stochastic"
+      ]
+    },
+    {
+      "name": "baseline-option1",
+      "networks": [
+        "historical",
+        "option1"
+      ]
+    },
+    {
+      "name": "baseline-option2",
+      "networks": [
+        "historical",
+        "option2"
+      ]
+    },
+    {
       "name": "baseline-option12",
-      "include": [
-        {
-          "set": "catchments",
-          "files": [
-            "historical.json"
-          ]
-        },
-        {
-          "set": "options",
-          "files": [
-            "option1.json",
-            "option2.json"
-          ]
-        }
+      "networks": [
+        "historical",
+        "option12"
       ]
     }
   ]

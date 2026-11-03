@@ -25,20 +25,22 @@ the base model node it connects to (`demand1` or `link1`) and adds a new supply 
 
 ## Manifest
 
-The manifest has two parts:
+The manifest has three parts:
 
 - **`network_sets`** name the directories of fragments. `catchments` sets `min` and `max` to 1,
   so every model must select exactly one catchment.
-- **`definitions`** are the runnable model definitions. Each starts from `base_model` and merges
-  the files it selects from each network set, in order.
+- **`networks`** are reusable network definitions. Each selects files from the network sets,
+  and `option12` extends `option1` and `option2` to combine them.
+- **`models`** are the runnable model definitions. Each starts from `base_model` and merges the
+  networks it lists, in order.
 
-| Definition            | Catchment         | Options                        | Description                    |
-|-----------------------|-------------------|--------------------------------|--------------------------------|
-| `baseline-historical` | `historical.json` |                                | Historical inflows, no options |
-| `baseline-stochastic` | `stochastic.json` |                                | Stochastic inflows, no options |
-| `baseline-option1`    | `historical.json` | `option1.json`                 | Adds supply option 1           |
-| `baseline-option2`    | `historical.json` | `option2.json`                 | Adds supply option 2           |
-| `baseline-option12`   | `historical.json` | `option1.json`, `option2.json` | Adds both supply options       |
+| Model                 | Networks                 | Description                    |
+|-----------------------|--------------------------|--------------------------------|
+| `baseline-historical` | `historical`             | Historical inflows, no options |
+| `baseline-stochastic` | `stochastic`             | Stochastic inflows, no options |
+| `baseline-option1`    | `historical`, `option1`  | Adds supply option 1           |
+| `baseline-option2`    | `historical`, `option2`  | Adds supply option 2           |
+| `baseline-option12`   | `historical`, `option12` | Adds both supply options       |
 
 ## Running
 
