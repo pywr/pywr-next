@@ -1,0 +1,15 @@
+{
+  "nodes": [
+    {
+      "type": "Input",
+      "meta": {
+        "name": "supply1"
+      },
+      "max_flow": {
+        "type": "Literal",
+        "value": 20.0
+      }
+    }
+  ],
+  "edges": []
+}
