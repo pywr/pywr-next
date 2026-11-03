@@ -1,0 +1,164 @@
+{
+  "metadata": {
+    "title": "Demand node attributes",
+    "description": "Test of the Inflow, MaxFlow, MinFlow and Deficit attributes of a Demand node, and the MaxFlow and MinFlow attributes of an Output node.",
+    "minimum_version": "0.1"
+  },
+  "time": {
+    "start": "2015-01-01",
+    "end": "2015-01-03",
+    "timestep": {
+      "type": "Days",
+      "days": 1
+    }
+  },
+  "network": {
+    "nodes": [
+      {
+        "meta": {
+          "name": "supply1"
+        },
+        "type": "Input",
+        "max_flow": {
+          "type": "Literal",
+          "value": 15.0
+        }
+      },
+      {
+        "meta": {
+          "name": "demand1"
+        },
+        "type": "Demand",
+        "max_flow": {
+          "type": "Literal",
+          "value": 10.0
+        },
+        "min_flow": {
+          "type": "Literal",
+          "value": 2.0
+        },
+        "cost": {
+          "type": "Literal",
+          "value": -10
+        }
+      },
+      {
+        "meta": {
+          "name": "demand2"
+        },
+        "type": "Demand",
+        "max_flow": {
+          "type": "Literal",
+          "value": 8.0
+        },
+        "cost": {
+          "type": "Literal",
+          "value": -5
+        }
+      },
+      {
+        "meta": {
+          "name": "output1"
+        },
+        "type": "Output",
+        "max_flow": {
+          "type": "Literal",
+          "value": 5.0
+        },
+        "cost": {
+          "type": "Literal",
+          "value": -1
+        }
+      }
+    ],
+    "edges": [
+      {
+        "from_node": "supply1",
+        "to_node": "demand1"
+      },
+      {
+        "from_node": "supply1",
+        "to_node": "demand2"
+      },
+      {
+        "from_node": "supply1",
+        "to_node": "output1"
+      }
+    ],
+    "metric_sets": [
+      {
+        "meta": {
+          "name": "attributes"
+        },
+        "metrics": [
+          {
+            "type": "Node",
+            "name": "demand1",
+            "attribute": "Inflow"
+          },
+          {
+            "type": "Node",
+            "name": "demand1",
+            "attribute": "MaxFlow"
+          },
+          {
+            "type": "Node",
+            "name": "demand1",
+            "attribute": "MinFlow"
+          },
+          {
+            "type": "Node",
+            "name": "demand1",
+            "attribute": "Deficit"
+          },
+          {
+            "type": "Node",
+            "name": "demand2",
+            "attribute": "Inflow"
+          },
+          {
+            "type": "Node",
+            "name": "demand2",
+            "attribute": "MaxFlow"
+          },
+          {
+            "type": "Node",
+            "name": "demand2",
+            "attribute": "MinFlow"
+          },
+          {
+            "type": "Node",
+            "name": "demand2",
+            "attribute": "Deficit"
+          },
+          {
+            "type": "Node",
+            "name": "output1",
+            "attribute": "Inflow"
+          },
+          {
+            "type": "Node",
+            "name": "output1",
+            "attribute": "MaxFlow"
+          },
+          {
+            "type": "Node",
+            "name": "output1",
+            "attribute": "MinFlow"
+          }
+        ]
+      }
+    ],
+    "outputs": [
+      {
+        "meta": {
+          "name": "attributes"
+        },
+        "type": "CSV",
+        "format": "Long",
+        "filename": "demand-attributes1-expected.csv",
+        "metric_set": "attributes"
+      }
+    ]
+  }
+}
