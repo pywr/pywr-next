@@ -1002,6 +1002,7 @@ mod tests {
         let source = ProvenanceSource {
             file: "sets/network.json".into(),
             network_set: Some("sets".into()),
+            sub_network: None,
             network: None,
         };
         assert!(

@@ -11,6 +11,9 @@ pub struct ProvenanceSource {
     pub file: RelativePathBuf,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub network_set: Option<String>,
+    /// The sub-network the component's file belongs to, if any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sub_network: Option<String>,
     /// The network definition through which the component was included, if any.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub network: Option<String>,
