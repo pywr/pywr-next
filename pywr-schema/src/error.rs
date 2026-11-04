@@ -105,6 +105,14 @@ pub enum SchemaError {
     PlaceholderParameterNotAllowed { name: String },
     #[error("Placeholder output `{name}` cannot be added to a model.")]
     PlaceholderOutputNotAllowed { name: String },
+    #[error("Network variable config builder error: {0}")]
+    #[cfg(feature = "core")]
+    CoreNetworkVariableConfigBuilderError(
+        #[from] pywr_core::network_variable_config::NetworkVariableConfigBuilderError,
+    ),
+    #[error("Problem build error: {0}")]
+    #[cfg(feature = "core")]
+    CoreModelProblemBuildError(#[from] pywr_core::problem::ModelProblemBuildError),
     #[error("Node cannot be used in a flow constraint.")]
     NodeNotAllowedInFlowConstraint,
     #[error("Node cannot be used in a storage constraint.")]

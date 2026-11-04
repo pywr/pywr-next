@@ -2077,6 +2077,7 @@ dependencies = [
  "pywr-runner-service",
  "pywr-schema",
  "pywr-v1-schema",
+ "rayon",
  "schemars",
  "serde_json",
 ]
