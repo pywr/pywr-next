@@ -1,9 +1,14 @@
+import json
+from pathlib import Path
+
 import pyarrow as pa
+import pyarrow.parquet as pq
 import pytest
 from pywr import (
     METRIC_EXTENSION_NAME,
     MetricColumnExtensionType,
     MetricColumnMetadata,
+    ModelSchema,
     ScenarioGroupMetadata,
     ScenarioMetadata,
     get_scenario_groups,
@@ -127,3 +132,75 @@ def test_scenario_metadata_requires_schema_entries():
         get_scenarios(pa.schema([]))
     with pytest.raises(ValueError, match="missing PYWR_SCENARIO_GROUPS"):
         get_scenario_groups(pa.schema([]))
+
+
+def test_parquet_output_reads_as_the_arrow_stream_table(tmp_path: Path):
+    output = {"metric_set": "nodes", "batch_size": 2}
+    schema_data = {
+        "metadata": {"title": "Arrow and Parquet outputs", "minimum_version": "0.1"},
+        "scenarios": {
+            "groups": [{"name": "case", "size": 2, "labels": ["dry", "wet"]}]
+        },
+        "time": {
+            "start": "2015-01-01",
+            "end": "2015-01-05",
+            "timestep": {"type": "Days", "days": 1},
+        },
+        "network": {
+            "nodes": [
+                {
+                    "meta": {"name": "supply"},
+                    "type": "Input",
+                    "max_flow": {"type": "Literal", "value": 15},
+                },
+                {
+                    "meta": {"name": "demand"},
+                    "type": "Output",
+                    "max_flow": {"type": "Literal", "value": 10},
+                },
+            ],
+            "edges": [{"from_node": "supply", "to_node": "demand"}],
+            "metric_sets": [
+                {
+                    "meta": {"name": "nodes"},
+                    "metrics": [
+                        {"type": "Node", "name": "demand"},
+                        {"type": "Node", "name": "supply"},
+                    ],
+                }
+            ],
+            "outputs": [
+                {
+                    "meta": {"name": "stream"},
+                    "type": "ArrowStream",
+                    "filename": "outputs.arrow",
+                    **output,
+                },
+                {
+                    "meta": {"name": "parquet"},
+                    "type": "Parquet",
+                    "filename": "outputs.parquet",
+                    **output,
+                },
+            ],
+        },
+    }
+    model = ModelSchema.from_json_string(json.dumps(schema_data)).build(
+        data_path=tmp_path, output_path=tmp_path
+    )
+    model.run("clp")
+
+    with pa.ipc.open_stream(tmp_path / "outputs.arrow") as reader:
+        stream_table = reader.read_all()
+    parquet_table = pq.read_table(tmp_path / "outputs.parquet")
+
+    assert parquet_table.schema.equals(stream_table.schema, check_metadata=True)
+    assert isinstance(parquet_table.schema.field(2).type, MetricColumnExtensionType)
+    assert parquet_table.equals(stream_table)
+    assert get_scenarios(parquet_table.schema) == get_scenarios(stream_table.schema)
+    assert get_scenario_groups(parquet_table.schema) == [
+        ScenarioGroupMetadata("case", 2)
+    ]
+    assert scenario_to_pandas(parquet_table, 1).equals(
+        scenario_to_pandas(stream_table, 1)
+    )
