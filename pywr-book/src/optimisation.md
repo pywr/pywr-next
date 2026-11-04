@@ -51,6 +51,25 @@ variable.
 Most variable values are floats. The day of the year of an `RbfProfile`'s points are integers,
 and are given separately from the float values.
 
+### Multi-network models
+
+A problem can also be defined for a [multi-network model](./multi_models.md). Each variable,
+objective and constraint must then give the `network` it belongs to, and `network` must not be
+given for a single-network model. The variable values are still split between the parameters in
+the order they are listed, regardless of which network they belong to.
+
+The example below makes the demand of each of two networks variable, where the second network is
+supplied by the flow delivered by the first. Its objectives are to maximise the mean delivered flow
+of each network.
+
+```json
+{{#include ../../pywr-schema/tests/multi-problem1/problem.json}}
+```
+
+In Python, the problem is built with `MultiNetworkModelSchema.build_problem`, which returns a
+`MultiNetworkModelProblem`. This has the same methods as a `ModelProblem`, and also gives the
+network of each objective and constraint (`objective_networks` and `constraint_networks`).
+
 ## Evaluating a problem in Python
 
 A problem is built from a model schema and a `ProblemConfig`:

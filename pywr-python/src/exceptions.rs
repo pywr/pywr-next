@@ -4,7 +4,7 @@ use anyhow::anyhow;
 use pyo3::exceptions::PyException;
 use pyo3::{PyErr, create_exception};
 use pywr_core::models::{ModelBuilderError, ModelRunError, MultiNetworkModelBuilderError, MultiNetworkModelRunError};
-use pywr_core::problem::ModelProblemEvaluateError;
+use pywr_core::problem::{ModelProblemEvaluateError, MultiNetworkModelProblemEvaluateError};
 use pywr_core::recorders::RecorderAggregationError;
 use pywr_schema::{ModelSchemaBuildError, ModelSchemaReadError, MultiNetworkModelSchemaBuildError, SchemaError};
 
@@ -227,6 +227,26 @@ impl From<PyModelProblemEvaluateError> for PyErr {
         match error.inner {
             // Errors running the model are raised as the same exceptions as `Model.run`
             ModelProblemEvaluateError::ModelRunError(e) => PyModelRunError::from(e).into(),
+            _ => PyErr::new::<ProblemEvaluateError, _>(format!("{:?}", anyhow!(error.inner))),
+        }
+    }
+}
+
+pub(crate) struct PyMultiNetworkModelProblemEvaluateError {
+    inner: MultiNetworkModelProblemEvaluateError,
+}
+
+impl From<MultiNetworkModelProblemEvaluateError> for PyMultiNetworkModelProblemEvaluateError {
+    fn from(error: MultiNetworkModelProblemEvaluateError) -> Self {
+        PyMultiNetworkModelProblemEvaluateError { inner: error }
+    }
+}
+
+impl From<PyMultiNetworkModelProblemEvaluateError> for PyErr {
+    fn from(error: PyMultiNetworkModelProblemEvaluateError) -> Self {
+        match error.inner {
+            // Errors running the model are raised as the same exceptions as `MultiNetworkModel.run`
+            MultiNetworkModelProblemEvaluateError::ModelRunError(e) => PyMultiNetworkModelRunError::from(e).into(),
             _ => PyErr::new::<ProblemEvaluateError, _>(format!("{:?}", anyhow!(error.inner))),
         }
     }
