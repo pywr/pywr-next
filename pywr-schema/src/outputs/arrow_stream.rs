@@ -18,6 +18,7 @@ use std::path::PathBuf;
 /// Scenario identities and groups are stored once as JSON in the `PYWR_SCENARIOS`
 /// and `PYWR_SCENARIO_GROUPS` schema metadata.
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitPaths)]
+#[serde(deny_unknown_fields)]
 pub struct ArrowStreamOutput {
     pub meta: NamedMeta,
     pub filename: PathBuf,

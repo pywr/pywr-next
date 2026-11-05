@@ -32,7 +32,7 @@ pub enum ChecksumError {
 /// commonly used to ensure the correct version of a file has been downloaded, or to verify that a
 /// file has not been corrupted.
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
-#[serde(tag = "type")]
+#[serde(tag = "type", deny_unknown_fields)]
 pub enum Checksum {
     MD5 { hash: String },
     SHA256 { hash: String },
