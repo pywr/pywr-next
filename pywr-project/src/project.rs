@@ -87,6 +87,7 @@ mod tests {
     fn test_open_project() {
         let manifest = ProjectManifest::V1(v1::ProjectManifest {
             base_model: Some("base_model.json".to_string()),
+            sub_networks: vec![],
             network_sets: vec![],
             networks: vec![],
             models: vec![],

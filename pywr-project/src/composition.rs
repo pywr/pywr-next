@@ -1,9 +1,9 @@
 use crate::error::ComposeToSchemaError;
 use crate::manifest::DefinitionOverrides;
-use pywr_schema::meta::ProvenanceSource;
-use pywr_schema::{ModelSchema, NetworkMergeOptions, NetworkSchema, NetworkSchemaReadError};
+use pywr_schema::meta::{ComponentMeta, ProvenanceSource};
+use pywr_schema::{ModelSchema, NetworkMergeOptions, NetworkSchema, NetworkSchemaReadError, VisitPaths};
 use relative_path::RelativePathBuf;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[derive(Clone, Copy, Debug)]
 pub struct PositionOffset {
@@ -60,8 +60,54 @@ impl ComposedModelSchemas {
 
         model_schema.metadata.title = self.name;
 
+        let placeholders = unresolved_placeholders(&model_schema.network);
+        if !placeholders.is_empty() {
+            return Err(ComposeToSchemaError::UnresolvedPlaceholders { placeholders });
+        }
+
         Ok(model_schema)
     }
+}
+
+/// Describe each placeholder left in `network`, with the file it came from if known.
+fn unresolved_placeholders(network: &NetworkSchema) -> Vec<String> {
+    fn describe(kind: &str, name: &str, meta: &dyn ComponentMeta) -> String {
+        match meta.provenance() {
+            Some(provenance) => format!("{kind} `{name}` (from `{}`)", provenance.origin.file),
+            None => format!("{kind} `{name}`"),
+        }
+    }
+
+    let mut placeholders = Vec::new();
+    for node in network.nodes.iter().filter(|node| node.is_placeholder()) {
+        placeholders.push(describe("node", node.name(), node.meta()));
+    }
+    for node in network
+        .virtual_nodes
+        .iter()
+        .flatten()
+        .filter(|node| node.is_placeholder())
+    {
+        placeholders.push(describe("virtual node", node.name(), node.meta()));
+    }
+    for parameter in network.parameters.iter().flatten().filter(|p| p.is_placeholder()) {
+        placeholders.push(describe("parameter", parameter.name(), parameter.meta()));
+    }
+    for table in network.tables.iter().flatten().filter(|table| table.is_placeholder()) {
+        placeholders.push(describe("table", table.name(), table.meta()));
+    }
+    for time_series in network.time_series.iter().flatten().filter(|ts| ts.is_placeholder()) {
+        placeholders.push(describe("time series", time_series.name(), time_series.meta()));
+    }
+    for output in network
+        .outputs
+        .iter()
+        .flatten()
+        .filter(|output| output.is_placeholder())
+    {
+        placeholders.push(describe("output", output.name(), output.meta()));
+    }
+    placeholders
 }
 
 /// Merge each included network into `network` in order, applying its position offset.
@@ -99,12 +145,15 @@ fn merge_includes(
     Ok(())
 }
 
-/// Read each included network from its path.
+/// Read each included network from its path, applying its load context.
 fn load_includes(includes: &[ComposedNetworkPath]) -> Result<Vec<ComposedModelNetworkSchema>, NetworkSchemaReadError> {
     includes
         .iter()
         .map(|network| {
-            let network_schema = NetworkSchema::from_path(&network.path)?;
+            let mut network_schema = NetworkSchema::from_path(&network.path)?;
+            if let Some(data_dir) = &network.context.data_dir {
+                rebase_data_paths(&mut network_schema, &data_dir.to_path(Path::new("")));
+            }
             Ok(ComposedModelNetworkSchema {
                 network_schema,
                 position_offset: network.position_offset,
@@ -112,6 +161,24 @@ fn load_includes(includes: &[ComposedNetworkPath]) -> Result<Vec<ComposedModelNe
             })
         })
         .collect()
+}
+
+/// Prefix the relative data paths in `network` with `data_dir`.
+///
+/// Output paths are left unchanged, because they are relative to the output directory rather
+/// than the data directory.
+fn rebase_data_paths(network: &mut NetworkSchema, data_dir: &Path) {
+    let mut rebase = |path: &mut PathBuf| {
+        if path.is_relative() {
+            *path = data_dir.join(&*path);
+        }
+    };
+    network.nodes.visit_paths_mut(&mut rebase);
+    network.virtual_nodes.visit_paths_mut(&mut rebase);
+    network.parameters.visit_paths_mut(&mut rebase);
+    network.tables.visit_paths_mut(&mut rebase);
+    network.time_series.visit_paths_mut(&mut rebase);
+    network.metric_sets.visit_paths_mut(&mut rebase);
 }
 
 /// A composed network that combines the networks selected by a network definition.
@@ -165,10 +232,20 @@ impl ComposedNetwork {
     }
 }
 
+/// How an included network is adjusted as it is loaded.
+#[derive(Clone, Debug, Default)]
+pub struct LoadContext {
+    /// Directory, relative to the project root, that the network's relative data paths are
+    /// relative to. They are rewritten to be relative to the project root. `None` leaves them as
+    /// they are.
+    pub data_dir: Option<RelativePathBuf>,
+}
+
 pub struct ComposedNetworkPath {
     pub path: PathBuf,
     pub position_offset: Option<PositionOffset>,
     pub source: ProvenanceSource,
+    pub context: LoadContext,
 }
 
 /// A composed model that combines a base model with additional networks and metadata overrides.
@@ -219,6 +296,7 @@ impl ComposedModelBuilder {
         let base_source = ProvenanceSource {
             file: base_file,
             network_set: None,
+            sub_network: None,
             network: None,
         };
         Self {
