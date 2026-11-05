@@ -1,9 +1,11 @@
 use crate::composition::{
-    ComposedModel, ComposedModelBuilder, ComposedNetwork, ComposedNetworkPath, LoadContext, PositionOffset,
+    Composed, ComposedDomain, ComposedModel, ComposedModelBuilder, ComposedMultiModel, ComposedMultiModelNetwork,
+    ComposedNetwork, ComposedNetworkPath, LoadContext, PositionOffset,
 };
 use crate::error::{ComposeModelError, ManifestResolutionError};
 use crate::manifest::DefinitionOverrides;
 use pywr_schema::meta::ProvenanceSource;
+use pywr_schema::model::{MultiNetworkTransfer, ScenarioDomain, TimeDomain};
 use relative_path::{RelativePath, RelativePathBuf};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -92,6 +94,28 @@ pub enum ProjectManifestProblem {
         "The model definition `{definition}` has no base model; give one in the definition or at the top of the manifest."
     )]
     BaseModelMissing { definition: String },
+    #[error("The definition `{definition}` refers to the model definition `{model}`, which does not exist.")]
+    ModelNotFound { definition: String, model: String },
+    #[error("The multi-model `{definition}` has {count} networks named `{network}`, but each name must be unique.")]
+    DuplicateMultiModelNetwork {
+        definition: String,
+        network: String,
+        count: usize,
+    },
+    #[error("The transfer `{transfer}` into `{network}` is from the network `{from_network}`, which does not exist.")]
+    TransferSourceNotFound {
+        network: String,
+        transfer: String,
+        from_network: String,
+    },
+    #[error("The transfer `{transfer}` into `{network}` is from the same network.")]
+    TransferFromSameNetwork { network: String, transfer: String },
+    #[error("The name `{transfer}` is used by {count} transfers into `{network}`, but each name must be unique.")]
+    DuplicateTransfer {
+        network: String,
+        transfer: String,
+        count: usize,
+    },
     #[error(
         "The definition `{definition}` selects the network set `{set}` {count} times, but it may select each set at most once."
     )]
@@ -178,6 +202,9 @@ pub struct ProjectManifest {
     /// Named model definitions.
     #[serde(default)]
     pub models: Vec<ModelDefinition>,
+    /// Named multi-network model definitions.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub multi_models: Vec<MultiModelDefinition>,
 }
 
 impl ProjectManifest {
@@ -186,34 +213,39 @@ impl ProjectManifest {
         let mut problems = self.manifest_problems();
         let base_model = self.resolve_base_model(root, &mut problems);
         let project = self.resolve_project(root, &mut problems);
-        let mut networks = NetworkExpander::new(self, &project);
+        let mut resolver = Resolver::new(self, &project, root, &base_model);
         for model in &self.models {
-            model.resolve(root, &base_model, &mut networks, &mut problems);
+            resolver.resolve_model(model, &mut problems);
+        }
+        for multi_model in &self.multi_models {
+            multi_model.resolve(&mut resolver, &mut problems);
         }
         // Network definitions that no model uses are still validated; each is reported once.
         // Sub-network activation is not checked here, because a model may activate it instead.
         for network in &self.networks {
-            networks.expand(&network.name, &mut problems);
+            resolver.expand(&network.name, &mut problems);
         }
         into_result(problems)
     }
 
-    /// Validate a model definition against the project manifest.
+    /// Validate a model or multi-model definition against the project manifest.
     pub fn validate_model(&self, root: &Path, definition_name: &str) -> Result<(), ProjectManifestValidationError> {
-        let Some(model) = self.find_model(definition_name) else {
+        let model = self.find_model(definition_name);
+        let multi_model = self.find_multi_model(definition_name);
+        if model.is_none() && multi_model.is_none() {
             return into_result(vec![ProjectManifestProblem::DefinitionNotFound {
                 definition: definition_name.to_string(),
             }]);
-        };
+        }
         let mut problems = self.manifest_problems();
         let base_model = self.resolve_base_model(root, &mut problems);
         let project = self.resolve_project(root, &mut problems);
-        model.resolve(
-            root,
-            &base_model,
-            &mut NetworkExpander::new(self, &project),
-            &mut problems,
-        );
+        let mut resolver = Resolver::new(self, &project, root, &base_model);
+        if let Some(model) = model {
+            resolver.resolve_model(model, &mut problems);
+        } else if let Some(multi_model) = multi_model {
+            multi_model.resolve(&mut resolver, &mut problems);
+        }
         into_result(problems)
     }
 
@@ -226,9 +258,20 @@ impl ProjectManifest {
         }
         let mut problems = self.manifest_problems();
         let project = self.resolve_project(root, &mut problems);
-        let expansion = NetworkExpander::new(self, &project).expand(network_name, &mut problems);
+        let expansion =
+            Resolver::new(self, &project, root, &ProjectBaseModel::NotGiven).expand(network_name, &mut problems);
         check_active(network_name, &expansion, &mut problems);
         into_result(problems)
+    }
+
+    /// Compose the model or multi-model definition `definition_name`.
+    pub fn compose(&self, root: &Path, definition_name: &str) -> Result<Composed, ComposeModelError> {
+        if self.find_multi_model(definition_name).is_some() {
+            self.compose_multi_model(root, definition_name)
+                .map(Composed::MultiModel)
+        } else {
+            self.compose_model(root, definition_name).map(Composed::Model)
+        }
     }
 
     /// Compose a model from its base model and the specified model definition.
@@ -245,12 +288,7 @@ impl ProjectManifest {
         };
         let base_model = self.resolve_base_model(root, &mut problems);
         let project = self.resolve_project(root, &mut problems);
-        let resolved = model.resolve(
-            root,
-            &base_model,
-            &mut NetworkExpander::new(self, &project),
-            &mut problems,
-        );
+        let resolved = Resolver::new(self, &project, root, &base_model).resolve_model(model, &mut problems);
 
         match (problems.into_iter().next(), resolved.base_model) {
             (Some(problem), _) => Err(problem.into()),
@@ -268,6 +306,38 @@ impl ProjectManifest {
         }
     }
 
+    /// Compose a multi-network model from the specified multi-model definition.
+    ///
+    /// This resolves the manifest in the same way as [`Self::validate_model`], and returns the
+    /// first problem found as an error.
+    pub fn compose_multi_model(
+        &self,
+        root: &Path,
+        definition_name: &str,
+    ) -> Result<ComposedMultiModel, ComposeModelError> {
+        let mut problems = self.manifest_problems();
+        let Some(multi_model) = self.find_multi_model(definition_name) else {
+            problems.push(ProjectManifestProblem::DefinitionNotFound {
+                definition: definition_name.to_string(),
+            });
+            return Err(problems.swap_remove(0).into());
+        };
+        let base_model = self.resolve_base_model(root, &mut problems);
+        let project = self.resolve_project(root, &mut problems);
+        let resolved = multi_model.resolve(&mut Resolver::new(self, &project, root, &base_model), &mut problems);
+
+        match (problems.into_iter().next(), resolved.domain) {
+            (Some(problem), _) => Err(problem.into()),
+            (None, Some(domain)) => Ok(ComposedMultiModel::new(
+                multi_model.name.clone(),
+                domain,
+                resolved.overrides,
+                resolved.networks,
+            )),
+            (None, None) => unreachable!("a domain that fails to resolve is always reported as a problem"),
+        }
+    }
+
     /// Compose a network from the specified network definition.
     ///
     /// This resolves the manifest in the same way as [`Self::validate_network`], and returns the
@@ -281,13 +351,15 @@ impl ProjectManifest {
             return Err(problems.swap_remove(0).into());
         }
         let project = self.resolve_project(root, &mut problems);
-        let expansion = NetworkExpander::new(self, &project).expand(network_name, &mut problems);
+        let expansion =
+            Resolver::new(self, &project, root, &ProjectBaseModel::NotGiven).expand(network_name, &mut problems);
         check_active(network_name, &expansion, &mut problems);
 
         match problems.into_iter().next() {
             Some(problem) => Err(problem.into()),
             None => Ok(ComposedNetwork::new(
                 network_name.to_string(),
+                None,
                 expansion.files.into_iter().map(SelectedFile::into_composed).collect(),
             )),
         }
@@ -301,12 +373,23 @@ impl ProjectManifest {
         self.networks.iter().find(|network| network.name == name)
     }
 
+    fn find_multi_model(&self, name: &str) -> Option<&MultiModelDefinition> {
+        self.multi_models.iter().find(|multi_model| multi_model.name == name)
+    }
+
     /// Problems in the manifest itself, found without touching the filesystem.
     fn manifest_problems(&self) -> Vec<ProjectManifestProblem> {
         let mut problems = Vec::new();
+        // Models and multi-models share one namespace, so a definition name says what to run.
+        let definitions: Vec<&String> = self
+            .models
+            .iter()
+            .map(|model| &model.name)
+            .chain(self.multi_models.iter().map(|multi_model| &multi_model.name))
+            .collect();
         add_duplicate_problems(
-            &self.models,
-            |model| &model.name,
+            &definitions,
+            |name| name,
             |name, count| ProjectManifestProblem::DuplicateDefinition {
                 definition: name,
                 count,
@@ -361,6 +444,11 @@ impl ProjectManifest {
             .models
             .iter()
             .map(|model| ("model definition", &model.name))
+            .chain(
+                self.multi_models
+                    .iter()
+                    .map(|multi_model| ("multi-model definition", &multi_model.name)),
+            )
             .chain(
                 self.networks
                     .iter()
@@ -585,24 +673,130 @@ fn check_active(definition: &str, expansion: &Expansion<'_>, problems: &mut Vec<
     }
 }
 
-/// Expands network definitions into their selected files, remembering each expansion so that a
-/// definition's problems are reported once however many definitions refer to it.
-struct NetworkExpander<'a> {
+/// Resolves model and network definitions into their selected files, remembering each result
+/// so that a definition's problems are reported once however many definitions refer to it.
+struct Resolver<'a> {
     manifest: &'a ProjectManifest,
     project: &'a ResolvedProject,
+    root: &'a Path,
+    project_base_model: &'a ProjectBaseModel,
     expanded: HashMap<&'a str, Expansion<'a>>,
-    /// The definitions currently being expanded, outermost first, used to detect cycles.
+    expanded_models: HashMap<&'a str, Expansion<'a>>,
+    model_base_models: HashMap<&'a str, Option<ResolvedBaseModel>>,
+    /// The network definitions currently being expanded, outermost first, used to detect cycles.
     stack: Vec<&'a str>,
 }
 
-impl<'a> NetworkExpander<'a> {
-    fn new(manifest: &'a ProjectManifest, project: &'a ResolvedProject) -> Self {
+impl<'a> Resolver<'a> {
+    fn new(
+        manifest: &'a ProjectManifest,
+        project: &'a ResolvedProject,
+        root: &'a Path,
+        project_base_model: &'a ProjectBaseModel,
+    ) -> Self {
         Self {
             manifest,
             project,
+            root,
+            project_base_model,
             expanded: HashMap::new(),
+            expanded_models: HashMap::new(),
+            model_base_models: HashMap::new(),
             stack: Vec::new(),
         }
+    }
+
+    /// Resolve a model definition's base model and files, checking them as a whole model.
+    fn resolve_model(
+        &mut self,
+        model: &'a ModelDefinition,
+        problems: &mut Vec<ProjectManifestProblem>,
+    ) -> ResolvedModel {
+        let base_model = self.model_base_model(model, problems);
+        let expansion = self.expand_model(model, problems);
+        check_composition(&model.name, &expansion, self.project, problems);
+        ResolvedModel {
+            base_model,
+            includes: expansion.files.into_iter().map(SelectedFile::into_composed).collect(),
+        }
+    }
+
+    /// The base model of a model definition: its own, or else the project's.
+    fn model_base_model(
+        &mut self,
+        model: &'a ModelDefinition,
+        problems: &mut Vec<ProjectManifestProblem>,
+    ) -> Option<ResolvedBaseModel> {
+        if let Some(base_model) = self.model_base_models.get(model.name.as_str()) {
+            return base_model.clone();
+        }
+        let base_model = match (&model.base_model, self.project_base_model) {
+            (Some(base_model), _) => match resolve_base_model(self.root, base_model) {
+                Ok(base_model) => Some(base_model),
+                Err(error) => {
+                    problems.push(error.into());
+                    None
+                }
+            },
+            (None, ProjectBaseModel::Resolved(base_model)) => Some(base_model.clone()),
+            (None, ProjectBaseModel::Unresolved) => None,
+            (None, ProjectBaseModel::NotGiven) => {
+                problems.push(ProjectManifestProblem::BaseModelMissing {
+                    definition: model.name.clone(),
+                });
+                None
+            }
+        };
+        self.model_base_models.insert(&model.name, base_model.clone());
+        base_model
+    }
+
+    /// Expand a model definition into the files merged after its base model, in merge order:
+    /// the base networks of the sub-networks it activates, its networks, then its own selections.
+    fn expand_model(
+        &mut self,
+        model: &'a ModelDefinition,
+        problems: &mut Vec<ProjectManifestProblem>,
+    ) -> Expansion<'a> {
+        if let Some(expansion) = self.expanded_models.get(model.name.as_str()) {
+            return expansion.clone();
+        }
+        let project = self.project;
+        let mut expansion = Expansion::default();
+        for name in &model.sub_networks {
+            if let Some(sub_network) = project.referred_sub_network(&model.name, name, problems) {
+                expansion.active_sub_networks.push(&sub_network.name);
+            }
+        }
+        // The base networks of the sub-networks activated here come straight after the base model.
+        for sub_network in &project.sub_networks {
+            if let Some(file) = &sub_network.base_network
+                && expansion.active_sub_networks.contains(&sub_network.name.as_str())
+            {
+                expansion.files.push(SelectedFile {
+                    file,
+                    set: None,
+                    position_offset: None,
+                    network: None,
+                });
+            }
+        }
+        for network in &model.networks {
+            if self.manifest.find_network(network).is_none() {
+                problems.push(ProjectManifestProblem::NetworkNotFound {
+                    definition: model.name.clone(),
+                    network: network.clone(),
+                });
+            }
+            let network = self.expand(network, problems);
+            expansion.extend(network);
+        }
+        expansion
+            .files
+            .extend(resolve_includes(&model.name, None, &model.include, project, problems));
+        expansion.dedup();
+        self.expanded_models.insert(&model.name, expansion.clone());
+        expansion
     }
 
     /// Expand the network definition `name` into its files, in merge order: its base
@@ -761,6 +955,25 @@ impl From<ProjectManifestProblem> for ComposeModelError {
             },
             ProjectManifestProblem::NetworkCycle { cycle } => Self::NetworkCycle { cycle },
             ProjectManifestProblem::BaseModelMissing { definition } => Self::BaseModelMissing { definition },
+            ProjectManifestProblem::ModelNotFound { definition, model } => Self::ModelNotFound { definition, model },
+            ProjectManifestProblem::DuplicateMultiModelNetwork {
+                definition, network, ..
+            } => Self::DuplicateMultiModelNetwork { definition, network },
+            ProjectManifestProblem::TransferSourceNotFound {
+                network,
+                transfer,
+                from_network,
+            } => Self::TransferSourceNotFound {
+                network,
+                transfer,
+                from_network,
+            },
+            ProjectManifestProblem::TransferFromSameNetwork { network, transfer } => {
+                Self::TransferFromSameNetwork { network, transfer }
+            }
+            ProjectManifestProblem::DuplicateTransfer { network, transfer, .. } => {
+                Self::DuplicateTransfer { network, transfer }
+            }
             ProjectManifestProblem::DuplicateSet { set, .. } => Self::DuplicateSelection { set },
             ProjectManifestProblem::SetNotFound { set, .. } => Self::SetNotFound { set },
             ProjectManifestProblem::FileNotFound { set, file, .. } => Self::FileNotFound { set, file },
@@ -873,92 +1086,324 @@ struct ResolvedModel {
     includes: Vec<ComposedNetworkPath>,
 }
 
-impl ModelDefinition {
-    /// Resolve this definition's base model and selections.
+/// Check an expansion as the complete network of `definition`: every sub-network it selects
+/// from must be active, and every network set's limits must hold.
+fn check_composition(
+    definition: &str,
+    expansion: &Expansion<'_>,
+    project: &ResolvedProject,
+    problems: &mut Vec<ProjectManifestProblem>,
+) {
+    check_active(definition, expansion, problems);
+
+    // Set constraints apply to everything selected from a set, by any route. A sub-network's
+    // sets are only constrained when the sub-network is active.
+    for set in &project.sets {
+        if let Some(sub_network) = &set.sub_network
+            && !expansion.active_sub_networks.contains(&sub_network.as_str())
+        {
+            continue;
+        }
+        let count = expansion
+            .files
+            .iter()
+            .filter(|selected| selected.set.is_some_and(|selected_set| std::ptr::eq(selected_set, set)))
+            .count();
+        validate_constraints(definition, set, count, problems);
+    }
+}
+
+/// A named multi-network model: several networks, linked by transfers, that share a time domain
+/// and scenarios.
+#[derive(Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct MultiModelDefinition {
+    pub name: String,
+    /// Where the time domain, scenarios and metadata come from.
+    pub domain: MultiModelDomain,
+    /// Optional overrides to the domain.
+    #[serde(default)]
+    pub overrides: Option<DefinitionOverrides>,
+    /// The networks of the model, each with the transfers into it.
+    pub networks: Vec<MultiModelNetwork>,
+}
+
+/// Where a multi-model takes its time domain, scenarios and metadata from.
+#[derive(Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(untagged)]
+pub enum MultiModelDomain {
+    /// A local model definition's base model, with that definition's overrides applied.
+    Model(ModelDomain),
+    /// A ModelSchema JSON file, whose network is ignored.
+    BaseModel(BaseModelDomain),
+    /// A time domain and scenarios given inline.
+    Inline(InlineDomain),
+}
+
+#[derive(Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ModelDomain {
+    pub model: String,
+}
+
+#[derive(Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct BaseModelDomain {
+    /// Path (relative to root) to the ModelSchema JSON.
+    pub base_model: String,
+}
+
+#[derive(Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct InlineDomain {
+    pub time: TimeDomain,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scenarios: Option<ScenarioDomain>,
+}
+
+/// One network of a multi-model.
+#[derive(Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct MultiModelNetwork {
+    pub name: String,
+    /// The definition the network starts from. Without one, the network holds only `include`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub network: Option<MultiModelNetworkSource>,
+    /// Per-network-set selections, included after the network's source.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub include: Vec<DefinitionSelection>,
+    /// Transfers into this network from other networks of the multi-model.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub transfers: Vec<MultiNetworkTransfer>,
+    /// Path (relative to root) to a JSON list of further transfers into this network.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transfers_file: Option<String>,
+}
+
+/// The definition a multi-model network starts from.
+#[derive(Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(untagged)]
+pub enum MultiModelNetworkSource {
+    /// A network definition.
+    Network(NetworkSource),
+    /// The network part of a model definition: its base model's network and everything merged
+    /// into it. The model's time domain, scenarios and overrides are not used.
+    Model(ModelSource),
+}
+
+#[derive(Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct NetworkSource {
+    pub network: String,
+}
+
+#[derive(Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ModelSource {
+    pub model: String,
+}
+
+/// A multi-model definition resolved into its domain and networks.
+struct ResolvedMultiModel {
+    domain: Option<ComposedDomain>,
+    overrides: Vec<DefinitionOverrides>,
+    networks: Vec<ComposedMultiModelNetwork>,
+}
+
+impl MultiModelDefinition {
+    /// Resolve this definition's domain and networks.
     ///
     /// Problems are appended in the order the definition is composed, so the first one is the
     /// error that composition reports.
     fn resolve<'a>(
         &'a self,
-        root: &Path,
-        project_base_model: &ProjectBaseModel,
-        networks: &mut NetworkExpander<'a>,
+        resolver: &mut Resolver<'a>,
         problems: &mut Vec<ProjectManifestProblem>,
-    ) -> ResolvedModel {
-        let base_model = match (&self.base_model, project_base_model) {
-            (Some(base_model), _) => match resolve_base_model(root, base_model) {
-                Ok(base_model) => Some(base_model),
-                Err(error) => {
-                    problems.push(error.into());
+    ) -> ResolvedMultiModel {
+        let mut overrides = Vec::new();
+        let domain = match &self.domain {
+            MultiModelDomain::Model(ModelDomain { model }) => match resolver.manifest.find_model(model) {
+                Some(definition) => {
+                    overrides.extend(definition.overrides.clone());
+                    resolver
+                        .model_base_model(definition, problems)
+                        .map(|(path, _)| ComposedDomain::BaseModel(path))
+                }
+                None => {
+                    problems.push(ProjectManifestProblem::ModelNotFound {
+                        definition: self.name.clone(),
+                        model: model.clone(),
+                    });
                     None
                 }
             },
-            (None, ProjectBaseModel::Resolved(base_model)) => Some(base_model.clone()),
-            (None, ProjectBaseModel::Unresolved) => None,
-            (None, ProjectBaseModel::NotGiven) => {
-                problems.push(ProjectManifestProblem::BaseModelMissing {
-                    definition: self.name.clone(),
-                });
-                None
+            MultiModelDomain::BaseModel(BaseModelDomain { base_model }) => {
+                match resolve_base_model(resolver.root, base_model) {
+                    Ok((path, _)) => Some(ComposedDomain::BaseModel(path)),
+                    Err(error) => {
+                        problems.push(error.into());
+                        None
+                    }
+                }
             }
+            MultiModelDomain::Inline(InlineDomain { time, scenarios }) => Some(ComposedDomain::Inline {
+                time: time.clone(),
+                scenarios: scenarios.clone(),
+            }),
         };
+        overrides.extend(self.overrides.clone());
 
-        let project = networks.project;
-        let mut expansion = Expansion::default();
-        for name in &self.sub_networks {
-            if let Some(sub_network) = project.referred_sub_network(&self.name, name, problems) {
-                expansion.active_sub_networks.push(&sub_network.name);
-            }
-        }
-        // The base networks of the sub-networks activated here come straight after the base model.
-        for sub_network in &project.sub_networks {
-            if let Some(file) = &sub_network.base_network
-                && expansion.active_sub_networks.contains(&sub_network.name.as_str())
-            {
-                expansion.files.push(SelectedFile {
-                    file,
-                    set: None,
-                    position_offset: None,
-                    network: None,
-                });
-            }
-        }
-        for network in &self.networks {
-            if networks.manifest.find_network(network).is_none() {
-                problems.push(ProjectManifestProblem::NetworkNotFound {
-                    definition: self.name.clone(),
-                    network: network.clone(),
-                });
-            }
-            expansion.extend(networks.expand(network, problems));
-        }
-        expansion
-            .files
-            .extend(resolve_includes(&self.name, None, &self.include, project, problems));
-        expansion.dedup();
-        check_active(&self.name, &expansion, problems);
+        add_duplicate_problems(
+            &self.networks,
+            |network| &network.name,
+            |name, count| ProjectManifestProblem::DuplicateMultiModelNetwork {
+                definition: self.name.clone(),
+                network: name,
+                count,
+            },
+            problems,
+        );
+        let networks = self
+            .networks
+            .iter()
+            .map(|network| network.resolve(self, resolver, problems))
+            .collect();
 
-        // Set constraints apply to everything the model selects from a set, by any route. A
-        // sub-network's sets are only constrained when the sub-network is active.
-        for set in &project.sets {
-            if let Some(sub_network) = &set.sub_network
-                && !expansion.active_sub_networks.contains(&sub_network.as_str())
-            {
-                continue;
-            }
-            let count = expansion
-                .files
-                .iter()
-                .filter(|selected| selected.set.is_some_and(|selected_set| std::ptr::eq(selected_set, set)))
-                .count();
-            validate_constraints(&self.name, set, count, problems);
-        }
-
-        ResolvedModel {
-            base_model,
-            includes: expansion.files.into_iter().map(SelectedFile::into_composed).collect(),
+        ResolvedMultiModel {
+            domain,
+            overrides,
+            networks,
         }
     }
+}
+
+impl MultiModelNetwork {
+    fn resolve<'a>(
+        &'a self,
+        multi_model: &MultiModelDefinition,
+        resolver: &mut Resolver<'a>,
+        problems: &mut Vec<ProjectManifestProblem>,
+    ) -> ComposedMultiModelNetwork {
+        // Problems in this network are reported against `<multi-model>/<network>`.
+        let label = format!("{}/{}", multi_model.name, self.name);
+        let mut base_model = None;
+        let mut expansion = Expansion::default();
+        match &self.network {
+            Some(MultiModelNetworkSource::Network(NetworkSource { network })) => {
+                if resolver.manifest.find_network(network).is_none() {
+                    problems.push(ProjectManifestProblem::NetworkNotFound {
+                        definition: label.clone(),
+                        network: network.clone(),
+                    });
+                }
+                expansion.extend(resolver.expand(network, problems));
+            }
+            Some(MultiModelNetworkSource::Model(ModelSource { model })) => match resolver.manifest.find_model(model) {
+                Some(definition) => {
+                    base_model = resolver.model_base_model(definition, problems);
+                    expansion.extend(resolver.expand_model(definition, problems));
+                }
+                None => problems.push(ProjectManifestProblem::ModelNotFound {
+                    definition: label.clone(),
+                    model: model.clone(),
+                }),
+            },
+            None => {}
+        }
+        expansion.files.extend(resolve_includes(
+            &label,
+            None,
+            &self.include,
+            resolver.project,
+            problems,
+        ));
+        expansion.dedup();
+        check_composition(&label, &expansion, resolver.project, problems);
+
+        let transfers = self.resolve_transfers(multi_model, resolver.root, problems);
+        let base_model = base_model.map(|(path, file)| {
+            let source = ProvenanceSource {
+                file,
+                network_set: None,
+                sub_network: None,
+                network: None,
+            };
+            (path, source)
+        });
+        ComposedMultiModelNetwork {
+            network: ComposedNetwork::new(
+                self.name.clone(),
+                base_model,
+                expansion.files.into_iter().map(SelectedFile::into_composed).collect(),
+            ),
+            transfers,
+        }
+    }
+
+    /// The transfers into this network, given inline and in `transfers_file`, checked against
+    /// the other networks of `multi_model`.
+    fn resolve_transfers(
+        &self,
+        multi_model: &MultiModelDefinition,
+        root: &Path,
+        problems: &mut Vec<ProjectManifestProblem>,
+    ) -> Vec<MultiNetworkTransfer> {
+        let mut transfers = self.transfers.clone();
+        if let Some(transfers_file) = &self.transfers_file {
+            match read_transfers(root, transfers_file) {
+                Ok(from_file) => transfers.extend(from_file),
+                Err(error) => problems.push(error.into()),
+            }
+        }
+
+        let network = format!("{}/{}", multi_model.name, self.name);
+        for transfer in &transfers {
+            if transfer.from_network == self.name {
+                problems.push(ProjectManifestProblem::TransferFromSameNetwork {
+                    network: network.clone(),
+                    transfer: transfer.name.clone(),
+                });
+            } else if !multi_model
+                .networks
+                .iter()
+                .any(|other| other.name == transfer.from_network)
+            {
+                problems.push(ProjectManifestProblem::TransferSourceNotFound {
+                    network: network.clone(),
+                    transfer: transfer.name.clone(),
+                    from_network: transfer.from_network.clone(),
+                });
+            }
+        }
+        add_duplicate_problems(
+            &transfers,
+            |transfer| &transfer.name,
+            |name, count| ProjectManifestProblem::DuplicateTransfer {
+                network: network.clone(),
+                transfer: name,
+                count,
+            },
+            problems,
+        );
+        transfers
+    }
+}
+
+/// Read a JSON list of transfers from `transfers_file`, relative to `root`.
+fn read_transfers(root: &Path, transfers_file: &str) -> Result<Vec<MultiNetworkTransfer>, ManifestResolutionError> {
+    let candidate = strict_relative_path("transfers file", transfers_file)?.to_path(root);
+    if !candidate.exists() {
+        return Err(ManifestResolutionError::TransfersFileNotFound { path: candidate });
+    }
+    let path = canonicalize_contained(root, &candidate, "transfers file")?;
+    let data = std::fs::read_to_string(&path).map_err(|source| ManifestResolutionError::TransfersFileRead {
+        path: candidate.clone(),
+        source,
+    })?;
+    serde_json::from_str(&data).map_err(|source| ManifestResolutionError::TransfersFileJson {
+        path: candidate,
+        source,
+    })
 }
 
 #[derive(Clone, Serialize, Deserialize, JsonSchema)]
@@ -1414,6 +1859,7 @@ mod test {
 
     fn manifest(base_model: &str, network_sets: Vec<NetworkSet>, include: Vec<DefinitionSelection>) -> ProjectManifest {
         ProjectManifest {
+            multi_models: vec![],
             base_model: Some(base_model.to_string()),
             sub_networks: vec![],
             network_sets,
@@ -1851,6 +2297,7 @@ mod test {
     fn network_definitions_compose_in_extension_order_and_record_provenance() {
         let root = project_with_nets();
         let manifest = ProjectManifest {
+            multi_models: vec![],
             base_model: Some("base.json".to_string()),
             sub_networks: vec![],
             network_sets: vec![set("nets", None, None, None)],
@@ -1905,6 +2352,7 @@ mod test {
     fn files_reached_by_several_routes_are_included_once() {
         let root = project_with_nets();
         let manifest = ProjectManifest {
+            multi_models: vec![],
             base_model: Some("base.json".to_string()),
             sub_networks: vec![],
             network_sets: vec![set("nets", None, None, None)],
@@ -1934,6 +2382,7 @@ mod test {
     fn set_constraints_apply_to_the_whole_model_not_each_network() {
         let root = project_with_nets();
         let manifest = ProjectManifest {
+            multi_models: vec![],
             base_model: Some("base.json".to_string()),
             sub_networks: vec![],
             network_sets: vec![set("nets", None, None, Some(1))],
@@ -1958,6 +2407,7 @@ mod test {
     fn network_cycles_are_reported_once() {
         let root = project_with_nets();
         let manifest = ProjectManifest {
+            multi_models: vec![],
             base_model: Some("base.json".to_string()),
             sub_networks: vec![],
             network_sets: vec![set("nets", None, None, None)],
@@ -1986,6 +2436,7 @@ mod test {
     fn missing_network_references_are_reported_where_they_are_made() {
         let root = project_with_nets();
         let manifest = ProjectManifest {
+            multi_models: vec![],
             base_model: Some("base.json".to_string()),
             sub_networks: vec![],
             network_sets: vec![set("nets", None, None, None)],
@@ -2014,6 +2465,7 @@ mod test {
     fn network_problems_are_reported_once_however_many_models_use_them() {
         let root = project_with_nets();
         let manifest = ProjectManifest {
+            multi_models: vec![],
             base_model: Some("base.json".to_string()),
             sub_networks: vec![],
             network_sets: vec![set("nets", None, None, None)],
@@ -2040,6 +2492,7 @@ mod test {
         let mut with_base = model("with-base", vec![]);
         with_base.base_model = Some("other.json".to_string());
         let manifest = ProjectManifest {
+            multi_models: vec![],
             base_model: None,
             sub_networks: vec![],
             network_sets: vec![set("nets", None, None, None)],
@@ -2124,6 +2577,7 @@ mod test {
 
     fn sub_network_manifest(models: Vec<ModelDefinition>, networks: Vec<NetworkDefinition>) -> ProjectManifest {
         ProjectManifest {
+            multi_models: vec![],
             base_model: Some("base.json".to_string()),
             sub_networks: vec![
                 sub_network("upper", Some("base.json"), vec![set("options", None, None, None)]),
@@ -2349,6 +2803,289 @@ mod test {
         ));
     }
 
+    fn transfer(from_network: &str, node: &str, name: &str) -> MultiNetworkTransfer {
+        serde_json::from_value(serde_json::json!({
+            "from_network": from_network,
+            "metric": {"type": "Node", "name": node},
+            "name": name,
+        }))
+        .unwrap()
+    }
+
+    fn multi_network(name: &str, network: Option<MultiModelNetworkSource>) -> MultiModelNetwork {
+        MultiModelNetwork {
+            name: name.to_string(),
+            network,
+            include: vec![],
+            transfers: vec![],
+            transfers_file: None,
+        }
+    }
+
+    fn from_model(model: &str) -> Option<MultiModelNetworkSource> {
+        Some(MultiModelNetworkSource::Model(ModelSource {
+            model: model.to_string(),
+        }))
+    }
+
+    fn from_network(network: &str) -> Option<MultiModelNetworkSource> {
+        Some(MultiModelNetworkSource::Network(NetworkSource {
+            network: network.to_string(),
+        }))
+    }
+
+    /// A manifest over `project_with_nets` with a model `company` (base model plus `a.json`), a
+    /// network definition `river` (`b.json`) and a multi-model `joint` that links them.
+    fn multi_model_manifest(networks: Vec<MultiModelNetwork>) -> ProjectManifest {
+        ProjectManifest {
+            multi_models: vec![MultiModelDefinition {
+                name: "joint".to_string(),
+                domain: MultiModelDomain::Model(ModelDomain {
+                    model: "company".to_string(),
+                }),
+                overrides: None,
+                networks,
+            }],
+            base_model: Some("base.json".to_string()),
+            sub_networks: vec![],
+            network_sets: vec![set("nets", None, None, None)],
+            networks: vec![network(
+                "river",
+                vec![],
+                vec![selection("nets", Some(vec!["b.json"]), false)],
+            )],
+            models: vec![model("company", vec![selection("nets", Some(vec!["a.json"]), false)])],
+        }
+    }
+
+    fn joint_networks() -> Vec<MultiModelNetwork> {
+        let mut river = multi_network("river", from_network("river"));
+        river.include = vec![selection("nets", Some(vec!["c.json"]), false)];
+        river.transfers = vec![transfer("company", "a", "company-a")];
+        vec![multi_network("company", from_model("company")), river]
+    }
+
+    #[test]
+    fn multi_model_networks_come_from_models_and_network_definitions() {
+        let root = project_with_nets();
+        let manifest = multi_model_manifest(joint_networks());
+        assert!(manifest.validate(root.path()).is_ok());
+
+        let composed = manifest.compose_multi_model(root.path(), "joint").unwrap();
+        let paths: Vec<_> = composed
+            .networks()
+            .iter()
+            .map(|network| network.network.all_paths())
+            .collect();
+        assert_eq!(
+            paths,
+            [
+                net_paths(root.path(), &["base.json", "nets/a.json"]),
+                net_paths(root.path(), &["nets/b.json", "nets/c.json"]),
+            ]
+        );
+
+        let schema = composed
+            .load()
+            .unwrap()
+            .into_multi_model_schema(&Default::default())
+            .unwrap();
+        assert_eq!(schema.metadata.title, "joint");
+        let names: Vec<_> = schema.networks.iter().map(|entry| entry.name.as_str()).collect();
+        assert_eq!(names, ["company", "river"]);
+        let pywr_schema::NetworkSchemaRef::Inline(river) = &schema.networks[1].network else {
+            panic!("expected an inline network");
+        };
+        assert_eq!(river.nodes.len(), 2);
+        assert_eq!(schema.networks[1].transfers[0].name, "company-a");
+
+        assert!(matches!(
+            manifest.compose(root.path(), "joint"),
+            Ok(crate::Composed::MultiModel(_))
+        ));
+        assert!(matches!(
+            manifest.compose(root.path(), "company"),
+            Ok(crate::Composed::Model(_))
+        ));
+    }
+
+    #[test]
+    fn multi_model_domain_overrides_apply_in_order() {
+        let root = project_with_nets();
+        let time = |end: &str| -> pywr_schema::model::TimeDomain {
+            serde_json::from_value(serde_json::json!({
+                "start": "2020-01-01T00:00:00", "end": end, "timestep": {"type": "Days", "days": 1}
+            }))
+            .unwrap()
+        };
+        let overrides = |end: &str| DefinitionOverrides {
+            time: Some(time(end)),
+            scenarios: None,
+        };
+        let mut manifest = multi_model_manifest(joint_networks());
+        manifest.models[0].overrides = Some(overrides("2020-02-01T00:00:00"));
+        let domain_end = |manifest: &ProjectManifest| {
+            let schema = manifest
+                .compose_multi_model(root.path(), "joint")
+                .unwrap()
+                .load()
+                .unwrap()
+                .into_multi_model_schema(&Default::default())
+                .unwrap();
+            serde_json::to_value(schema.time).unwrap()["end"].clone()
+        };
+        assert_eq!(domain_end(&manifest), "2020-02-01T00:00:00");
+
+        manifest.multi_models[0].overrides = Some(overrides("2020-03-01T00:00:00"));
+        assert_eq!(domain_end(&manifest), "2020-03-01T00:00:00");
+
+        manifest.multi_models[0].domain = MultiModelDomain::Inline(InlineDomain {
+            time: time("2020-04-01T00:00:00"),
+            scenarios: None,
+        });
+        manifest.multi_models[0].overrides = None;
+        assert_eq!(domain_end(&manifest), "2020-04-01T00:00:00");
+    }
+
+    #[test]
+    fn transfers_must_come_from_another_network_and_have_unique_names() {
+        let root = project_with_nets();
+        let mut networks = joint_networks();
+        networks[1].transfers = vec![
+            transfer("river", "b", "own"),
+            transfer("nowhere", "a", "lost"),
+            transfer("company", "a", "twice"),
+            transfer("company", "a", "twice"),
+        ];
+        let manifest = multi_model_manifest(networks);
+        let report = manifest.validate(root.path()).unwrap_err();
+        let messages: Vec<_> = report.problems.iter().map(ToString::to_string).collect();
+        assert_eq!(
+            messages,
+            [
+                "The transfer `own` into `joint/river` is from the same network.",
+                "The transfer `lost` into `joint/river` is from the network `nowhere`, which does not exist.",
+                "The name `twice` is used by 2 transfers into `joint/river`, but each name must be unique.",
+            ]
+        );
+    }
+
+    #[test]
+    fn transfers_are_read_from_a_transfers_file() {
+        let root = project_with_nets();
+        write_json(
+            &root.path().join("links/transfers.json"),
+            serde_json::json!([{"from_network": "company", "metric": {"type": "Node", "name": "a"}, "name": "from-file"}]),
+        );
+        let mut networks = joint_networks();
+        networks[1].transfers_file = Some("links/transfers.json".to_string());
+        let manifest = multi_model_manifest(networks);
+        let composed = manifest.compose_multi_model(root.path(), "joint").unwrap();
+        let names: Vec<_> = composed.networks()[1]
+            .transfers
+            .iter()
+            .map(|transfer| transfer.name.as_str())
+            .collect();
+        assert_eq!(names, ["company-a", "from-file"]);
+
+        let mut networks = joint_networks();
+        networks[1].transfers_file = Some("links/missing.json".to_string());
+        assert!(matches!(
+            multi_model_manifest(networks).compose_multi_model(root.path(), "joint"),
+            Err(ComposeModelError::Resolution(
+                ManifestResolutionError::TransfersFileNotFound { .. }
+            ))
+        ));
+    }
+
+    #[test]
+    fn transfers_must_read_components_of_their_source_network() {
+        let root = project_with_nets();
+        let mut networks = joint_networks();
+        networks[1].transfers = vec![transfer("company", "missing", "company-missing")];
+        let Err(error) = multi_model_manifest(networks)
+            .compose_multi_model(root.path(), "joint")
+            .unwrap()
+            .load()
+            .unwrap()
+            .into_multi_model_schema(&Default::default())
+        else {
+            panic!("expected a missing transfer component");
+        };
+        assert_eq!(
+            error.to_string(),
+            "The transfer `company-missing` into `river` reads the node `missing` from `company`, which does not exist there."
+        );
+    }
+
+    #[test]
+    fn multi_model_problems_are_attributed_to_the_network() {
+        let root = project_with_nets();
+        let mut networks = joint_networks();
+        networks[0].network = from_model("absent");
+        networks[1].include = vec![selection("nets", Some(vec!["missing.json"]), false)];
+        networks.push(multi_network("company", None));
+        let report = multi_model_manifest(networks).validate(root.path()).unwrap_err();
+        let messages: Vec<_> = report.problems.iter().map(ToString::to_string).collect();
+        assert_eq!(
+            messages,
+            [
+                "The multi-model `joint` has 2 networks named `company`, but each name must be unique.",
+                "The definition `joint/company` refers to the model definition `absent`, which does not exist.",
+                "The definition `joint/river` selects the file `missing.json`, which was not found in network set `nets`.",
+            ]
+        );
+    }
+
+    #[test]
+    fn models_and_multi_models_share_names() {
+        let root = project_with_nets();
+        let mut manifest = multi_model_manifest(joint_networks());
+        manifest.multi_models[0].name = "company".to_string();
+        assert!(matches!(
+            manifest.validate(root.path()).unwrap_err().problems.as_slice(),
+            [ProjectManifestProblem::DuplicateDefinition { definition, count: 2 }, ..] if definition == "company"
+        ));
+    }
+
+    #[test]
+    fn multi_model_json_accepts_each_domain_and_network_source() {
+        let manifest: super::super::ProjectManifest = serde_json::from_str(
+            r#"{
+                "format": "v1",
+                "multi_models": [
+                    {
+                        "name": "from-model",
+                        "domain": { "model": "full" },
+                        "networks": [
+                            { "name": "a", "network": { "model": "full" } },
+                            { "name": "b", "network": { "network": "upgraded" }, "transfers_file": "links.json" }
+                        ]
+                    },
+                    { "name": "from-file", "domain": { "base_model": "base.json" }, "networks": [] },
+                    {
+                        "name": "inline",
+                        "domain": { "time": { "start": "2020-01-01T00:00:00", "end": "2020-12-31T00:00:00", "timestep": { "type": "Days", "days": 1 } } },
+                        "networks": [{ "name": "c", "include": [{ "set": "nets", "include_all": true }] }]
+                    }
+                ]
+            }"#,
+        )
+        .unwrap();
+        let super::super::ProjectManifest::V1(manifest) = manifest;
+        let [from_model, from_file, inline] = manifest.multi_models.as_slice() else {
+            panic!("expected three multi-models");
+        };
+        assert!(matches!(from_model.domain, MultiModelDomain::Model(_)));
+        assert!(matches!(
+            from_model.networks[1].network,
+            Some(MultiModelNetworkSource::Network(_))
+        ));
+        assert!(matches!(from_file.domain, MultiModelDomain::BaseModel(_)));
+        assert!(matches!(inline.domain, MultiModelDomain::Inline(_)));
+        assert!(inline.networks[0].network.is_none());
+    }
+
     #[test]
     fn omitted_set_constraints_are_reported_in_declaration_order() {
         let root = tempdir().unwrap();
@@ -2517,6 +3254,7 @@ mod test {
         touch(&root.path().join("base.json"));
         std::fs::create_dir(root.path().join("nets")).unwrap();
         let manifest = ProjectManifest {
+            multi_models: vec![],
             base_model: Some("base.json".to_string()),
             sub_networks: vec![],
             network_sets: vec![set("nets", None, Some(2), Some(1)), set("nets", None, None, None)],

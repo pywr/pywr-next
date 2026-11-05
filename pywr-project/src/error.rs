@@ -34,6 +34,15 @@ pub enum ComposeToSchemaError {
     NetworkMerge(#[from] NetworkMergeError),
     #[error("The composed model has unresolved placeholders: {}.", .placeholders.join(", "))]
     UnresolvedPlaceholders { placeholders: Vec<String> },
+    #[error(
+        "The transfer `{transfer}` into `{network}` reads {component} from `{from_network}`, which does not exist there."
+    )]
+    TransferComponentNotFound {
+        network: String,
+        transfer: String,
+        from_network: String,
+        component: String,
+    },
 }
 
 /// Errors that may occur during validation of a project manifest, or during resolution of a
@@ -72,6 +81,20 @@ pub enum ManifestResolutionError {
     BaseNetworkNotFound { sub_network: String, path: PathBuf },
     #[error("The base network `{}` for sub-network `{sub_network}` is not a regular file.", .path.display())]
     BaseNetworkNotAFile { sub_network: String, path: PathBuf },
+    #[error("The transfers file `{}` was not found.", .path.display())]
+    TransfersFileNotFound { path: PathBuf },
+    #[error("The transfers file `{}` could not be read.", .path.display())]
+    TransfersFileRead {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
+    #[error("The transfers file `{}` does not contain a valid list of transfers.", .path.display())]
+    TransfersFileJson {
+        path: PathBuf,
+        #[source]
+        source: serde_json::Error,
+    },
     #[error("The path `{}` for {field} could not be canonicalized.", .path.display())]
     UnableToCanonicalizePath {
         field: String,
@@ -116,6 +139,20 @@ pub enum ComposeModelError {
     NetworkCycle { cycle: Vec<String> },
     #[error("The model definition `{definition}` has no base model.")]
     BaseModelMissing { definition: String },
+    #[error("The definition `{definition}` refers to the model definition `{model}`, which does not exist.")]
+    ModelNotFound { definition: String, model: String },
+    #[error("The multi-model `{definition}` has more than one network named `{network}`.")]
+    DuplicateMultiModelNetwork { definition: String, network: String },
+    #[error("The transfer `{transfer}` into `{network}` is from the network `{from_network}`, which does not exist.")]
+    TransferSourceNotFound {
+        network: String,
+        transfer: String,
+        from_network: String,
+    },
+    #[error("The transfer `{transfer}` into `{network}` is from the same network.")]
+    TransferFromSameNetwork { network: String, transfer: String },
+    #[error("The name `{transfer}` is used by more than one transfer into `{network}`.")]
+    DuplicateTransfer { network: String, transfer: String },
     #[error("The network set `{set}` is selected more than once, but each set may be selected at most once.")]
     DuplicateSelection { set: String },
     #[error("The network set `{set}` has `min_files` {min_files}, which exceeds `max_files` {max_files}.")]
