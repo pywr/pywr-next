@@ -1,14 +1,19 @@
 use pywr_project::{Project, ProjectManifest};
 use std::path::Path;
 
-/// The example project in `examples/my-model` must stay valid as the manifest format changes.
+/// The example projects in `examples/` must stay valid as the manifest format changes.
 #[test]
 fn example_project_validates_and_every_model_composes() {
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../examples/my-model/pywr-project.json");
     let project = Project::open(&path).unwrap();
     let ProjectManifest::V1(manifest) = project.manifest();
 
-    if let Err(error) = manifest.validate(project.root()) {
+    if let Err(error) = project.validate() {
+        panic!("{}", error.report());
+    }
+    // The project depends on the `neighbour` project, which must be valid on its own too.
+    let neighbour = Project::open(path.parent().unwrap().join("../neighbour/pywr-project.json")).unwrap();
+    if let Err(error) = neighbour.validate() {
         panic!("{}", error.report());
     }
     assert!(!manifest.models.is_empty());

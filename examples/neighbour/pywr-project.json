@@ -1,0 +1,26 @@
+{
+  "format": "v1",
+  "network_sets": [
+    {
+      "name": "supply",
+      "min": 1
+    }
+  ],
+  "networks": [
+    {
+      "name": "neighbour",
+      "description": "The neighbouring supply system, importing water from another network.",
+      "include": [
+        {
+          "set": "supply",
+          "include_all": true
+        }
+      ]
+    }
+  ],
+  "exports": {
+    "networks": [
+      "neighbour"
+    ]
+  }
+}

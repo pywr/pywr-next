@@ -95,6 +95,39 @@ pub enum ManifestResolutionError {
         #[source]
         source: serde_json::Error,
     },
+    #[error("The manifest path `{path}` for dependency `{dependency}` must be a non-empty relative path.")]
+    InvalidDependencyPath { dependency: String, path: String },
+    #[error("The manifest `{}` for dependency `{dependency}` was not found.", .path.display())]
+    DependencyManifestNotFound { dependency: String, path: PathBuf },
+    #[error("The manifest `{}` for dependency `{dependency}` is not a regular file.", .path.display())]
+    DependencyManifestNotAFile { dependency: String, path: PathBuf },
+    #[error("The manifest `{}` for dependency `{dependency}` could not be read.", .path.display())]
+    DependencyManifestRead {
+        dependency: String,
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
+    #[error("The manifest `{}` for dependency `{dependency}` is not a valid project manifest.", .path.display())]
+    DependencyManifestInvalid {
+        dependency: String,
+        path: PathBuf,
+        #[source]
+        source: serde_json::Error,
+    },
+    #[error(
+        "The manifest `{}` for dependency `{dependency}` has SHA-256 hash `{actual}`, but `{expected}` was expected.", .path.display()
+    )]
+    DependencyHashMismatch {
+        dependency: String,
+        path: PathBuf,
+        expected: String,
+        actual: String,
+    },
+    #[error(
+        "The manifest `{}` for dependency `{dependency}` is not allowed by the project's dependency policy.", .path.display()
+    )]
+    DependencyNotAllowed { dependency: String, path: PathBuf },
     #[error("The path `{}` for {field} could not be canonicalized.", .path.display())]
     UnableToCanonicalizePath {
         field: String,
@@ -139,6 +172,28 @@ pub enum ComposeModelError {
     NetworkCycle { cycle: Vec<String> },
     #[error("The model definition `{definition}` has no base model.")]
     BaseModelMissing { definition: String },
+    #[error("The name `{dependency}` is used by more than one dependency, but each name must be unique.")]
+    DuplicateDependency { dependency: String },
+    #[error("The dependency name `{dependency}` is also the name of a sub-network.")]
+    DependencyNameTaken { dependency: String },
+    #[error("The project dependencies form a cycle: {}.", .cycle.iter().map(|path| path.display().to_string()).collect::<Vec<_>>().join(" -> "))]
+    DependencyCycle { cycle: Vec<PathBuf> },
+    #[error(
+        "The definition `{definition}` refers to the {kind} `{item}`, which the dependency `{project}` does not export."
+    )]
+    NotExported {
+        definition: String,
+        project: String,
+        kind: &'static str,
+        item: String,
+    },
+    #[error("The project exports the {kind} `{name}`, which does not exist.")]
+    ExportNotFound { kind: &'static str, name: String },
+    #[error("In the dependency `{dependency}`: {error}")]
+    InDependency {
+        dependency: String,
+        error: Box<ComposeModelError>,
+    },
     #[error("The definition `{definition}` refers to the model definition `{model}`, which does not exist.")]
     ModelNotFound { definition: String, model: String },
     #[error("The multi-model `{definition}` has more than one network named `{network}`.")]

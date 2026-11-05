@@ -16,8 +16,12 @@
         "name": "demand2"
       },
       "max_flow": {
-        "type": "Literal",
-        "value": 5.0
+        "type": "TimeSeries",
+        "name": "demand",
+        "columns": {
+          "type": "Column",
+          "name": "demand"
+        }
       },
       "cost": {
         "type": "Literal",
@@ -29,6 +33,17 @@
     {
       "from_node": "import",
       "to_node": "demand2"
+    }
+  ],
+  "time_series": [
+    {
+      "meta": {
+        "name": "demand"
+      },
+      "type": "Arrow",
+      "format": "CSV",
+      "time_col": "date",
+      "path": "data/demand.csv"
     }
   ]
 }
