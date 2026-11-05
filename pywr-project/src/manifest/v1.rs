@@ -148,84 +148,64 @@ impl ProjectManifest {
     /// Validate the project manifest and return a report of all structural problems found.
     pub fn validate(&self, root: &Path) -> Result<(), ProjectManifestValidationError> {
         let mut problems = self.manifest_problems();
-        let sets = self.resolve_network_sets(root, &mut problems);
-        let base_model = self.resolve_base_model(root, &mut problems);
-
+        let resolved = self.resolve(root, &mut problems);
         for definition in &self.definitions {
-            definition.validate(&sets, &mut problems);
+            definition.resolve(&resolved, &mut problems);
         }
-
-        // Resolving here exercises the same path policy used by composition even if there are no definitions.
-        let _ = base_model;
-        if !problems.is_empty() {
-            Err(ProjectManifestValidationError { problems })
-        } else {
-            Ok(())
-        }
+        into_result(problems)
     }
 
     /// Validate a definition against the project manifest.
     pub fn validate_model(&self, root: &Path, definition_name: &str) -> Result<(), ProjectManifestValidationError> {
-        let problems = match self.definitions.iter().find(|d| d.name == definition_name) {
-            Some(definition) => {
-                let mut problems = self.manifest_problems();
-                let sets = self.resolve_network_sets(root, &mut problems);
-                self.resolve_base_model(root, &mut problems);
-                definition.validate(&sets, &mut problems);
-                problems
-            }
-            None => {
-                vec![ProjectManifestProblem::DefinitionNotFound {
-                    definition: definition_name.to_string(),
-                }]
-            }
+        let Some(definition) = self.find_definition(definition_name) else {
+            return into_result(vec![ProjectManifestProblem::DefinitionNotFound {
+                definition: definition_name.to_string(),
+            }]);
         };
-
-        if !problems.is_empty() {
-            Err(ProjectManifestValidationError { problems })
-        } else {
-            Ok(())
-        }
+        let mut problems = self.manifest_problems();
+        let resolved = self.resolve(root, &mut problems);
+        definition.resolve(&resolved, &mut problems);
+        into_result(problems)
     }
 
     /// Compose a model from the base model and the specified definition.
+    ///
+    /// This resolves the manifest in the same way as [`Self::validate_model`], and returns the
+    /// first problem found as an error.
     pub fn compose_model(&self, root: &Path, definition_name: &str) -> Result<ComposedModel, ComposeModelError> {
-        ensure_unique(
-            &self.definitions,
-            |definition| &definition.name,
-            |name| ComposeModelError::DuplicateDefinition { definition: name },
-        )?;
-        ensure_unique(
-            &self.network_sets,
-            |network_set| &network_set.name,
-            |name| ComposeModelError::DuplicateNetworkSet { set: name },
-        )?;
-
-        let definition = self
-            .definitions
-            .iter()
-            .find(|d| d.name == definition_name)
-            .ok_or_else(|| ComposeModelError::DefinitionNotFound {
+        let mut problems = self.manifest_problems();
+        let Some(definition) = self.find_definition(definition_name) else {
+            problems.push(ProjectManifestProblem::DefinitionNotFound {
                 definition: definition_name.to_string(),
-            })?;
-        let base_model = resolve_base_model(root, &self.base_model)?;
-        let sets = self
-            .network_sets
-            .iter()
-            .map(|set| Ok((set.name.clone(), resolve_network_set(root, set)?)))
-            .collect::<Result<HashMap<_, _>, ComposeModelError>>()?;
-        let base_file = strict_relative_path("base model", &self.base_model)?;
-        definition.compose_model(base_model, base_file, &sets)
+            });
+            return Err(problems.swap_remove(0).into());
+        };
+        let resolved = self.resolve(root, &mut problems);
+        let includes = definition.resolve(&resolved, &mut problems);
+
+        match (problems.into_iter().next(), resolved.base_model) {
+            (Some(problem), _) => Err(problem.into()),
+            (None, Some((base_model, base_file))) => {
+                let mut builder = ComposedModelBuilder::new(definition.name.clone(), base_model, base_file);
+                for include in includes {
+                    builder.add_include(include);
+                }
+                if let Some(overrides) = &definition.overrides {
+                    builder.overrides(overrides.clone());
+                }
+                Ok(builder.build())
+            }
+            (None, None) => unreachable!("a base model that fails to resolve is always reported as a problem"),
+        }
     }
 
+    fn find_definition(&self, name: &str) -> Option<&Definition> {
+        self.definitions.iter().find(|definition| definition.name == name)
+    }
+
+    /// Problems in the manifest itself, found without touching the filesystem.
     fn manifest_problems(&self) -> Vec<ProjectManifestProblem> {
         let mut problems = Vec::new();
-        add_duplicate_problems(
-            &self.network_sets,
-            |set| &set.name,
-            |name, count| ProjectManifestProblem::DuplicateNetworkSet { set: name, count },
-            &mut problems,
-        );
         add_duplicate_problems(
             &self.definitions,
             |definition| &definition.name,
@@ -233,6 +213,12 @@ impl ProjectManifest {
                 definition: name,
                 count,
             },
+            &mut problems,
+        );
+        add_duplicate_problems(
+            &self.network_sets,
+            |set| &set.name,
+            |name, count| ProjectManifestProblem::DuplicateNetworkSet { set: name, count },
             &mut problems,
         );
         for set in &self.network_sets {
@@ -249,31 +235,109 @@ impl ProjectManifest {
         problems
     }
 
-    fn resolve_base_model(&self, root: &Path, problems: &mut Vec<ProjectManifestProblem>) -> Option<PathBuf> {
-        match resolve_base_model(root, &self.base_model) {
-            Ok(path) => Some(path),
+    /// Resolve the base model and network sets against the filesystem, appending any problems found.
+    fn resolve(&self, root: &Path, problems: &mut Vec<ProjectManifestProblem>) -> ResolvedManifest {
+        let base_model = match resolve_base_model(root, &self.base_model) {
+            Ok(base_model) => Some(base_model),
             Err(error) => {
                 problems.push(error.into());
                 None
             }
-        }
-    }
+        };
 
-    fn resolve_network_sets(
-        &self,
-        root: &Path,
-        problems: &mut Vec<ProjectManifestProblem>,
-    ) -> HashMap<String, ResolvedNetworkSet> {
-        let mut resolved = HashMap::new();
+        let mut sets = Vec::new();
+        let mut unresolved_sets = HashSet::new();
         for set in &self.network_sets {
             match resolve_network_set(root, set) {
-                Ok(value) => {
-                    resolved.entry(set.name.clone()).or_insert(value);
+                Ok(resolved) => sets.push(resolved),
+                Err(error) => {
+                    problems.push(error.into());
+                    unresolved_sets.insert(set.name.clone());
                 }
-                Err(error) => problems.push(error.into()),
             }
         }
-        resolved
+
+        ResolvedManifest {
+            base_model,
+            sets,
+            unresolved_sets,
+        }
+    }
+}
+
+fn into_result(problems: Vec<ProjectManifestProblem>) -> Result<(), ProjectManifestValidationError> {
+    if problems.is_empty() {
+        Ok(())
+    } else {
+        Err(ProjectManifestValidationError { problems })
+    }
+}
+
+/// The parts of a manifest resolved against the filesystem, shared by every definition.
+struct ResolvedManifest {
+    /// The canonical path of the base model and its path relative to the project root.
+    base_model: Option<(PathBuf, RelativePathBuf)>,
+    /// Network sets that resolved, in declaration order.
+    sets: Vec<ResolvedNetworkSet>,
+    /// Names of network sets that failed to resolve. Their problems are already reported, so
+    /// selections of them are not reported again as missing sets.
+    unresolved_sets: HashSet<String>,
+}
+
+impl ResolvedManifest {
+    fn set(&self, name: &str) -> Option<&ResolvedNetworkSet> {
+        self.sets.iter().find(|set| set.name == name)
+    }
+}
+
+impl From<ProjectManifestProblem> for ComposeModelError {
+    fn from(problem: ProjectManifestProblem) -> Self {
+        match problem {
+            ProjectManifestProblem::DefinitionNotFound { definition } => Self::DefinitionNotFound { definition },
+            ProjectManifestProblem::DuplicateNetworkSet { set, .. } => Self::DuplicateNetworkSet { set },
+            ProjectManifestProblem::DuplicateDefinition { definition, .. } => Self::DuplicateDefinition { definition },
+            ProjectManifestProblem::DuplicateSet { set, .. } => Self::DuplicateSelection { set },
+            ProjectManifestProblem::SetNotFound { set, .. } => Self::SetNotFound { set },
+            ProjectManifestProblem::FileNotFound { set, file, .. } => Self::FileNotFound { set, file },
+            ProjectManifestProblem::DuplicateFile { set, file, .. } => Self::DuplicateFile { set, file },
+            ProjectManifestProblem::UnusedFileMeta { set, file, .. } => Self::UnusedFileMeta { set, file },
+            ProjectManifestProblem::InvalidFilePath { set, file, .. } => {
+                Self::Resolution(ManifestResolutionError::InvalidRelativePath {
+                    field: format!("selected file in network set '{set}'"),
+                    path: PathBuf::from(file),
+                })
+            }
+            ProjectManifestProblem::MinFilesNotMet {
+                set,
+                min_files,
+                actual_files,
+                ..
+            } => Self::MinFilesNotMet {
+                set,
+                min_files,
+                actual_files,
+            },
+            ProjectManifestProblem::MaxFilesExceeded {
+                set,
+                max_files,
+                actual_files,
+                ..
+            } => Self::MaxFilesExceeded {
+                set,
+                max_files,
+                actual_files,
+            },
+            ProjectManifestProblem::InvalidFileConstraints {
+                set,
+                min_files,
+                max_files,
+            } => Self::InvalidFileConstraints {
+                set,
+                min_files,
+                max_files,
+            },
+            ProjectManifestProblem::Resolution(error) => Self::Resolution(error),
+        }
     }
 }
 
@@ -289,139 +353,73 @@ pub struct Definition {
 }
 
 impl Definition {
-    fn validate(&self, sets: &HashMap<String, ResolvedNetworkSet>, problems: &mut Vec<ProjectManifestProblem>) {
-        let mut counts = HashMap::new();
-        for selection in &self.include {
-            *counts.entry(selection.set.clone()).or_insert(0) += 1;
-        }
-
-        let mut duplicate_sets: Vec<_> = counts.into_iter().filter(|(_, count)| *count > 1).collect();
-        duplicate_sets.sort_by(|(set_a, _), (set_b, _)| set_a.cmp(set_b));
-
-        problems.extend(
-            duplicate_sets
-                .into_iter()
-                .map(|(set, count)| ProjectManifestProblem::DuplicateSet {
-                    definition: self.name.clone(),
-                    set: set.clone(),
-                    count,
-                }),
-        );
-
-        for set in sets.values() {
-            let selected = match self.include.iter().find(|selection| selection.set == set.name) {
-                Some(selection) => {
-                    let selected = resolve_selection(self, selection, set, problems);
-                    for file in unused_file_meta_keys(selection, &selected) {
-                        problems.push(ProjectManifestProblem::UnusedFileMeta {
-                            definition: self.name.clone(),
-                            set: set.name.clone(),
-                            file: file.to_string(),
-                        });
-                    }
-                    selected
-                }
-                None => Vec::new(),
-            };
-            validate_constraints(self, set, selected.len(), problems);
-        }
-        for selection in &self.include {
-            if !sets.contains_key(&selection.set) {
-                problems.push(ProjectManifestProblem::SetNotFound {
-                    definition: self.name.clone(),
-                    set: selection.set.clone(),
-                });
-            }
-        }
-    }
-
-    fn compose_model(
+    /// Resolve this definition's selections, returning the networks to include in merge order.
+    ///
+    /// Problems are appended in selection order, so the first one is the error that composition reports.
+    fn resolve(
         &self,
-        base_model: PathBuf,
-        base_file: RelativePathBuf,
-        sets: &HashMap<String, ResolvedNetworkSet>,
-    ) -> Result<ComposedModel, ComposeModelError> {
+        manifest: &ResolvedManifest,
+        problems: &mut Vec<ProjectManifestProblem>,
+    ) -> Vec<ComposedNetworkPath> {
+        let mut includes = Vec::new();
         let mut selected_sets = HashSet::new();
-        let mut builder = ComposedModelBuilder::new(self.name.clone(), base_model, base_file);
+        let mut duplicate_sets = HashSet::new();
         for selection in &self.include {
-            if !selected_sets.insert(&selection.set) {
-                return Err(ComposeModelError::DuplicateSelection {
-                    set: selection.set.clone(),
-                });
+            if !selected_sets.insert(selection.set.as_str()) {
+                // Report each duplicated set once; only its first selection is resolved.
+                if duplicate_sets.insert(selection.set.as_str()) {
+                    problems.push(ProjectManifestProblem::DuplicateSet {
+                        definition: self.name.clone(),
+                        set: selection.set.clone(),
+                        count: self.include.iter().filter(|other| other.set == selection.set).count(),
+                    });
+                }
+                continue;
             }
-            let set = sets.get(&selection.set).ok_or_else(|| ComposeModelError::SetNotFound {
-                set: selection.set.clone(),
-            })?;
-            if let (Some(min_files), Some(max_files)) = (set.min_files, set.max_files)
-                && min_files > max_files
-            {
-                return Err(ComposeModelError::InvalidFileConstraints {
-                    set: set.name.clone(),
-                    min_files,
-                    max_files,
-                });
-            }
-            let files = resolve_selection_for_composition(selection, set)?;
-            if let Some(file) = unused_file_meta_keys(selection, &files).into_iter().next() {
-                return Err(ComposeModelError::UnusedFileMeta {
+            let Some(set) = manifest.set(&selection.set) else {
+                if !manifest.unresolved_sets.contains(&selection.set) {
+                    problems.push(ProjectManifestProblem::SetNotFound {
+                        definition: self.name.clone(),
+                        set: selection.set.clone(),
+                    });
+                }
+                continue;
+            };
+
+            let files = resolve_selection(self, selection, set, problems);
+            for file in unused_file_meta_keys(selection, &files) {
+                problems.push(ProjectManifestProblem::UnusedFileMeta {
+                    definition: self.name.clone(),
                     set: set.name.clone(),
                     file: file.to_string(),
                 });
             }
-            if let Some(min_files) = set.min_files
-                && files.len() < min_files
-            {
-                return Err(ComposeModelError::MinFilesNotMet {
-                    set: set.name.clone(),
-                    min_files,
-                    actual_files: files.len(),
-                });
-            }
-            if let Some(max_files) = set.max_files
-                && files.len() > max_files
-            {
-                return Err(ComposeModelError::MaxFilesExceeded {
-                    set: set.name.clone(),
-                    max_files,
-                    actual_files: files.len(),
-                });
-            }
+            validate_constraints(self, set, files.len(), problems);
 
-            for file in files {
+            includes.extend(files.into_iter().map(|file| {
                 let position_offset = file
                     .name
                     .to_str()
                     .and_then(|name| selection.file_meta.as_ref()?.get(name))
                     .and_then(|meta| meta.position_offset.clone());
 
-                let composed_path = ComposedNetworkPath {
+                ComposedNetworkPath {
                     path: file.path.clone(),
                     position_offset: position_offset.map(PositionOffset::from),
                     source: ProvenanceSource {
                         file: file.source.clone(),
                         network_set: Some(set.name.clone()),
                     },
-                };
-                builder.add_include(composed_path);
-            }
+                }
+            }));
         }
         // Constraints also apply to sets omitted by this definition.
-        for set in sets.values() {
-            if !selected_sets.contains(&set.name)
-                && let Some(min_files) = set.min_files
-                && min_files > 0
-            {
-                return Err(ComposeModelError::MinFilesNotMet {
-                    set: set.name.clone(),
-                    min_files,
-                    actual_files: 0,
-                });
+        for set in &manifest.sets {
+            if !selected_sets.contains(set.name.as_str()) {
+                validate_constraints(self, set, 0, problems);
             }
         }
-        if let Some(overrides) = &self.overrides {
-            builder.overrides(overrides.clone());
-        }
-        Ok(builder.build())
+        includes
     }
 }
 
@@ -530,41 +528,6 @@ fn resolve_selection<'a>(
     result
 }
 
-fn resolve_selection_for_composition<'a>(
-    selection: &DefinitionSelection,
-    set: &'a ResolvedNetworkSet,
-) -> Result<Vec<&'a ResolvedNetworkFile>, ComposeModelError> {
-    if selection.include_all.unwrap_or(false) {
-        return Ok(set.files.iter().collect());
-    }
-    let mut result = Vec::new();
-    let mut names = HashSet::new();
-    for file in selection.files.as_deref().unwrap_or_default() {
-        if !is_filename(file) {
-            Err(ManifestResolutionError::InvalidRelativePath {
-                field: format!("selected file in network set '{}'", set.name),
-                path: PathBuf::from(file),
-            })?;
-        }
-        if !names.insert(file) {
-            return Err(ComposeModelError::DuplicateFile {
-                set: set.name.clone(),
-                file: file.clone(),
-            });
-        }
-        let resolved = set
-            .files
-            .iter()
-            .find(|candidate| candidate.name == OsStr::new(file))
-            .ok_or_else(|| ComposeModelError::FileNotFound {
-                set: set.name.clone(),
-                file: file.clone(),
-            })?;
-        result.push(resolved);
-    }
-    Ok(result)
-}
-
 fn unused_file_meta_keys<'a>(
     selection: &'a DefinitionSelection,
     resolved_files: &[&ResolvedNetworkFile],
@@ -608,9 +571,10 @@ fn validate_constraints(
     }
 }
 
-fn resolve_base_model(root: &Path, base_model: &str) -> Result<PathBuf, ManifestResolutionError> {
-    let candidate = strict_relative_path("base model", base_model)?;
-    let candidate = candidate.to_path(root);
+/// Resolve the base model, returning its canonical path and its path relative to `root`.
+fn resolve_base_model(root: &Path, base_model: &str) -> Result<(PathBuf, RelativePathBuf), ManifestResolutionError> {
+    let file = strict_relative_path("base model", base_model)?;
+    let candidate = file.to_path(root);
     if !candidate.exists() {
         return Err(ManifestResolutionError::BaseModelNotFound { path: candidate });
     }
@@ -618,7 +582,7 @@ fn resolve_base_model(root: &Path, base_model: &str) -> Result<PathBuf, Manifest
     if !path.is_file() {
         return Err(ManifestResolutionError::BaseModelNotAFile { path });
     }
-    Ok(path)
+    Ok((path, file))
 }
 
 fn resolve_network_set(root: &Path, set: &NetworkSet) -> Result<ResolvedNetworkSet, ManifestResolutionError> {
@@ -724,21 +688,6 @@ fn canonicalize_contained(root: &Path, candidate: &Path, field: &str) -> Result<
         });
     }
     Ok(resolved_path)
-}
-
-fn ensure_unique<T, F, E>(items: &[T], key: F, error: E) -> Result<(), ComposeModelError>
-where
-    F: Fn(&T) -> &String,
-    E: Fn(String) -> ComposeModelError,
-{
-    let mut seen = HashSet::new();
-    for item in items {
-        let name = key(item);
-        if !seen.insert(name) {
-            return Err(error(name.clone()));
-        }
-    }
-    Ok(())
 }
 
 fn add_duplicate_problems<T, F, P>(items: &[T], key: F, problem: P, problems: &mut Vec<ProjectManifestProblem>)
@@ -1148,6 +1097,84 @@ mod test {
                 ProjectManifestProblem::FileNotFound { .. },
                 ProjectManifestProblem::MinFilesNotMet { actual_files: 0, .. }
             ]
+        ));
+    }
+
+    #[test]
+    fn composition_reports_the_first_problem_found_by_validation() {
+        let root = tempdir().unwrap();
+        touch(&root.path().join("base.json"));
+        for dir in ["a", "b"] {
+            std::fs::create_dir(root.path().join(dir)).unwrap();
+            touch(&root.path().join(dir).join("x.json"));
+        }
+        let manifest = manifest(
+            "base.json",
+            vec![set("a", None, None, None), set("b", None, None, None)],
+            vec![
+                selection("b", Some(vec!["missing.json"]), false),
+                selection("a", None, true),
+                selection("a", Some(vec!["x.json"]), false),
+            ],
+        );
+
+        let report = manifest.validate_model(root.path(), "test").unwrap_err();
+        assert!(matches!(
+            report.problems.as_slice(),
+            [
+                ProjectManifestProblem::FileNotFound { set, .. },
+                ProjectManifestProblem::DuplicateSet { count: 2, .. }
+            ] if set == "b"
+        ));
+        assert!(matches!(
+            manifest.compose_model(root.path(), "test"),
+            Err(ComposeModelError::FileNotFound { set, file }) if set == "b" && file == "missing.json"
+        ));
+    }
+
+    #[test]
+    fn omitted_set_constraints_are_reported_in_declaration_order() {
+        let root = tempdir().unwrap();
+        touch(&root.path().join("base.json"));
+        for dir in ["z", "a"] {
+            std::fs::create_dir(root.path().join(dir)).unwrap();
+        }
+        let manifest = manifest(
+            "base.json",
+            vec![set("z", None, Some(1), None), set("a", None, Some(1), None)],
+            vec![],
+        );
+
+        let report = manifest.validate(root.path()).unwrap_err();
+        let sets: Vec<_> = report
+            .problems
+            .iter()
+            .map(|problem| match problem {
+                ProjectManifestProblem::MinFilesNotMet {
+                    set, actual_files: 0, ..
+                } => set.as_str(),
+                other => panic!("unexpected problem: {other}"),
+            })
+            .collect();
+        assert_eq!(sets, ["z", "a"]);
+    }
+
+    #[test]
+    fn unresolved_set_is_not_also_reported_as_missing() {
+        let root = tempdir().unwrap();
+        touch(&root.path().join("base.json"));
+        let manifest = manifest(
+            "base.json",
+            vec![set("nets", None, None, None)],
+            vec![selection("nets", None, true)],
+        );
+
+        let report = manifest.validate(root.path()).unwrap_err();
+        assert!(matches!(
+            report.problems.as_slice(),
+            [ProjectManifestProblem::Resolution(
+                ManifestResolutionError::DirectoryNotFound { .. }
+            )]
         ));
     }
 
