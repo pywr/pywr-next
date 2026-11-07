@@ -12,6 +12,12 @@ pub use arrow_stream::ArrowStreamOutput;
 pub use hdf::Hdf5Output;
 pub use memory::{MemoryAggregation, MemoryAggregationOrder, MemoryOutput};
 pub use placeholder::PlaceholderOutput;
+#[cfg(feature = "core")]
+pub use pywr_output_metadata::MetricColumnExtension;
+pub use pywr_output_metadata::{
+    METRIC_EXTENSION_NAME, MetricColumnMetadata, SCENARIO_GROUPS_KEY, SCENARIOS_KEY, ScenarioGroupMetadata,
+    ScenarioMetadata, VERSION_KEY,
+};
 use pywr_schema_macros::{PywrVisitPaths, PywrVisitReferences};
 use schemars::JsonSchema;
 #[cfg(feature = "core")]

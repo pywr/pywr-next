@@ -46,6 +46,7 @@ ndarray = { workspace = true }
 num = { workspace = true }
 ocl = { workspace = true, optional = true }
 pyo3 = { workspace = true, features = ["jiff-02", "macros"], optional = true }
+pywr-output-metadata = { path = "../pywr-output-metadata", features = ["arrow"] }
 rand = { workspace = true }
 rand_chacha = { workspace = true }
 rand_distr = { workspace = true }
