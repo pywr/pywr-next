@@ -55,6 +55,7 @@ model_tests! {
     test_deficit_agg1: ("deficit-agg1.json", vec![("deficit-agg1-expected.csv", ResultsShape::Long)], vec![], vec![]),
     test_deficit_agg2: ("deficit-agg2.json", vec![("deficit-agg2-expected.csv", ResultsShape::Long)], vec![], vec![]),
     test_deficit_agg3: ("deficit-agg3.json", vec![("deficit-agg3-expected.csv", ResultsShape::Long)], vec![], vec![]),
+    test_demand_attributes1: ("demand-attributes1.json", vec![("demand-attributes1-expected.csv", ResultsShape::Long)], vec![], vec![]),
     test_flow_agg1: ("flow-agg1.json", vec![("flow-agg1-expected.csv", ResultsShape::Long)], vec![], vec![]),
     test_hdf1: ("hdf1.json", vec![], vec![], vec![]), // TODO asserting h5 results not possible with this framework
     test_memory1: ("memory1.json", vec![], vec![], vec![]),  // TODO asserting memory results not possible with this framework

@@ -31,6 +31,12 @@ pub enum SchemaError {
     CoreNodeNotFound { name: String, sub_name: Option<String> },
     #[error("Attribute `{attr}` not supported.")]
     NodeAttributeNotSupported { attr: NodeAttribute },
+    #[error("The following attribute `{attr}` on node `{name}` is not enabled. {requires}")]
+    NodeAttributeNotEnabled {
+        attr: NodeAttribute,
+        name: String,
+        requires: String,
+    },
     #[error("Component `{attr}` not supported.")]
     NodeComponentNotSupported { attr: NodeComponent },
     #[error("Input slot `{slot}` not supported.")]
