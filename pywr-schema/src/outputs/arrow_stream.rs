@@ -13,8 +13,10 @@ use std::path::PathBuf;
 
 /// Output one metric set as a batched Arrow IPC stream.
 ///
-/// Each record batch contains up to `batch_size` model timesteps. Metric columns
-/// are stored as fixed-size lists of `Float64` values in scenario order.
+/// The stream has a row for each reporting period of the metric set: each model timestep, or
+/// each completed aggregation period for an aggregated metric set. Each record batch contains up
+/// to `batch_size` rows. Metric columns are stored as fixed-size lists of `Float64` values in
+/// scenario order.
 /// Scenario identities and groups are stored once as JSON in the `PYWR_SCENARIOS`
 /// and `PYWR_SCENARIO_GROUPS` schema metadata.
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitPaths)]
@@ -23,7 +25,7 @@ pub struct ArrowStreamOutput {
     pub filename: PathBuf,
     /// The metric set to write.
     pub metric_set: String,
-    /// Number of model timesteps to accumulate in each Arrow record batch.
+    /// Number of rows to accumulate in each Arrow record batch.
     pub batch_size: NonZeroUsize,
 }
 

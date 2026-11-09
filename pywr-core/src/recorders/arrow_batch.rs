@@ -1,5 +1,6 @@
 //! The Arrow table written by the [`ArrowStreamOutput`](super::ArrowStreamOutput) and
-//! [`ParquetOutput`](super::ParquetOutput) outputs: one row per timestep, and one
+//! [`ParquetOutput`](super::ParquetOutput) outputs: one row per reporting period of the metric
+//! set (each timestep, or each completed aggregation period for an aggregated metric set), and one
 //! `FixedSizeList<Float64>` column per metric holding its value in each scenario.
 use super::{MetricSetState, OutputMetric, jiff_datetime_to_arrow_timestamp_ms};
 use crate::network::MetricSetIndex;
@@ -47,7 +48,6 @@ pub(super) struct MetricSetRow {
 #[derive(Debug, Default)]
 pub(super) struct PendingBatch {
     pub(super) rows: Vec<MetricSetRow>,
-    pub(super) timestep_count: usize,
 }
 
 impl PendingBatch {
@@ -256,10 +256,9 @@ pub(super) mod tests {
         ]))
     }
 
-    /// Two timesteps of [`two_metric_schema`]'s metrics, the first missing its second scenario.
+    /// Two rows of [`two_metric_schema`]'s metrics, the first missing its second scenario.
     pub(in crate::recorders) fn two_row_batch() -> PendingBatch {
         PendingBatch {
-            timestep_count: 2,
             rows: vec![
                 MetricSetRow {
                     time_start: 0,

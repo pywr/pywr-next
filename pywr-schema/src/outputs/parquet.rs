@@ -49,12 +49,13 @@ impl From<ParquetCompression> for parquet::basic::Compression {
 /// Output one metric set to a Parquet file.
 ///
 /// The file holds the same table as an [`ArrowStreamOutput`](super::ArrowStreamOutput): a row
-/// for each model timestep, and a column for each metric storing a fixed-size list of `Float64`
-/// values in scenario order. The Arrow schema is stored in the file, so Arrow readers get the
+/// for each reporting period of the metric set (each model timestep, or each completed
+/// aggregation period for an aggregated metric set), and a column for each metric storing a
+/// fixed-size list of `Float64` values in scenario order. The Arrow schema is stored in the file, so Arrow readers get the
 /// same column types and the `PYWR_SCENARIOS` and `PYWR_SCENARIO_GROUPS` metadata. That metadata
 /// is also written as plain Parquet key-value metadata.
 ///
-/// Each row group contains up to `batch_size` model timesteps. The file is only complete once
+/// Each row group contains up to `batch_size` rows. The file is only complete once
 /// the model run finishes.
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitPaths)]
 pub struct ParquetOutput {
@@ -62,7 +63,7 @@ pub struct ParquetOutput {
     pub filename: PathBuf,
     /// The metric set to write.
     pub metric_set: String,
-    /// Number of model timesteps to write in each Parquet row group.
+    /// Number of rows to write in each Parquet row group.
     pub batch_size: NonZeroUsize,
     /// The codec used to compress the file's pages. Defaults to Zstandard.
     #[serde(default)]
@@ -181,5 +182,59 @@ mod tests {
         let parquet_table = concat_batches(&parquet_batches[0].schema(), &parquet_batches).unwrap();
         assert_eq!(stream_table.num_rows(), 5);
         assert_eq!(stream_table.columns(), parquet_table.columns());
+    }
+
+    /// A daily model writing a monthly-aggregated metric set, so the batches fill far more slowly
+    /// than the timesteps pass.
+    const AGGREGATED_MODEL: &str = r#"
+    {
+      "metadata": { "title": "Aggregated Parquet output", "minimum_version": "0.1" },
+      "time": { "start": "2015-01-01", "end": "2015-06-30", "timestep": { "type": "Days", "days": 1 } },
+      "network": {
+        "nodes": [
+          { "meta": { "name": "supply" }, "type": "Input", "max_flow": { "type": "Literal", "value": 15 } },
+          { "meta": { "name": "demand" }, "type": "Output", "max_flow": { "type": "Literal", "value": 10 } }
+        ],
+        "edges": [{ "from_node": "supply", "to_node": "demand" }],
+        "metric_sets": [{
+          "meta": { "name": "monthly" },
+          "aggregator": { "freq": { "type": "Monthly" }, "func": { "type": "Mean" } },
+          "metrics": [{ "type": "Node", "name": "demand" }]
+        }],
+        "outputs": [
+          { "meta": { "name": "arrow-output" }, "type": "ArrowStream", "filename": "outputs.arrow", "metric_set": "monthly", "batch_size": 2 },
+          { "meta": { "name": "parquet-output" }, "type": "Parquet", "filename": "outputs.parquet", "metric_set": "monthly", "batch_size": 2 }
+        ]
+      }
+    }
+    "#;
+
+    #[test]
+    #[cfg(feature = "core")]
+    fn batch_size_counts_rows_of_an_aggregated_metric_set() {
+        let schema = ModelSchema::from_str(AGGREGATED_MODEL).unwrap();
+        let output_directory = TempDir::new().unwrap();
+        let model = schema
+            .create_model_builder(&FileSystem, None, Some(output_directory.path()))
+            .unwrap()
+            .build()
+            .unwrap();
+        model.run(&ClpSolverSettings::default()).unwrap();
+
+        // Six monthly rows in batches of two, not one row per batch.
+        let stream = StreamReader::try_new_buffered(
+            std::fs::File::open(output_directory.path().join("outputs.arrow")).unwrap(),
+            None,
+        )
+        .unwrap();
+        let stream_rows: Vec<usize> = stream.map(|batch| batch.unwrap().num_rows()).collect();
+        assert_eq!(stream_rows, vec![2, 2, 2]);
+
+        let builder = ParquetRecordBatchReaderBuilder::try_new(
+            std::fs::File::open(output_directory.path().join("outputs.parquet")).unwrap(),
+        )
+        .unwrap();
+        let row_group_rows: Vec<i64> = builder.metadata().row_groups().iter().map(|rg| rg.num_rows()).collect();
+        assert_eq!(row_group_rows, vec![2, 2, 2]);
     }
 }

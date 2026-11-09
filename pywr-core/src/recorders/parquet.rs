@@ -106,7 +106,7 @@ impl Internal {
 ///
 /// The file holds the same Arrow table as an [`ArrowStreamOutput`](super::ArrowStreamOutput),
 /// with the Arrow schema stored in the file so Arrow readers restore it, including the
-/// `org.pywr.metric` columns and scenario metadata. Each batch of timesteps is one row group.
+/// `org.pywr.metric` columns and scenario metadata. Each batch of `batch_size` rows is one row group.
 /// The schema's metadata is also written as plain Parquet key-value metadata, for readers that
 /// don't decode the Arrow schema.
 ///
@@ -154,7 +154,7 @@ impl ParquetOutput {
     }
 
     fn queue_pending(&self, internal: &mut Internal, force: bool) -> Result<(), ParquetOutputError> {
-        if internal.pending.rows.is_empty() || (!force && internal.pending.timestep_count < self.batch_size.get()) {
+        if internal.pending.rows.is_empty() || (!force && internal.pending.rows.len() < self.batch_size.get()) {
             return Ok(());
         }
         let pending = std::mem::take(&mut internal.pending);
@@ -219,7 +219,6 @@ impl Recorder for ParquetOutput {
     ) -> Result<(), RecorderSaveError> {
         let internal = downcast_internal_state_mut::<Internal>(internal_state);
         self.append(metric_set_states, internal)?;
-        internal.pending.timestep_count += 1;
         self.queue_pending(internal, false)?;
         Ok(())
     }
@@ -251,7 +250,7 @@ pub struct ParquetOutputBuilder {
 }
 
 impl ParquetOutputBuilder {
-    /// A builder writing `metric_set` to `filename`, `batch_size` timesteps to each row group,
+    /// A builder writing `metric_set` to `filename`, `batch_size` rows to each row group,
     /// compressed with Zstandard.
     pub fn new(name: &str, filename: &Path, metric_set: &str, batch_size: NonZeroUsize) -> Self {
         Self {

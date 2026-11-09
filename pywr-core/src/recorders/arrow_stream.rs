@@ -27,7 +27,7 @@ pub struct ArrowStreamCommit {
     pub name: String,
     /// Zero-based record batch sequence number.
     pub batch_index: u64,
-    /// Number of timestep rows in this record batch.
+    /// Number of rows in this record batch.
     pub row_count: usize,
     /// Exclusive byte offset of the flushed data in the IPC stream.
     pub byte_offset: u64,
@@ -313,7 +313,7 @@ impl ArrowStreamOutput {
     }
 
     fn queue_pending(&self, internal: &mut Internal, force: bool) -> Result<(), ArrowStreamError> {
-        if internal.pending.rows.is_empty() || (!force && internal.pending.timestep_count < self.batch_size.get()) {
+        if internal.pending.rows.is_empty() || (!force && internal.pending.rows.len() < self.batch_size.get()) {
             return Ok(());
         }
         let pending = std::mem::take(&mut internal.pending);
@@ -388,7 +388,6 @@ impl Recorder for ArrowStreamOutput {
                 internal.scenario_count,
             )
             .map_err(ArrowStreamError::from)?;
-        internal.pending.timestep_count += 1;
         self.queue_pending(internal, false)?;
         Ok(())
     }
