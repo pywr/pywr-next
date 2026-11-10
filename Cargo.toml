@@ -65,7 +65,7 @@ jiff = { version = "0.2", features = ["serde"] }
 libc = "0.2"
 log = "0.4"
 md-5 = "0.11"
-microlp = "0.6.0"
+microlp = "0.7.0"
 ndarray = "0.17"
 nalgebra = "0.35"
 nalgebra-sparse = "0.12"
