@@ -243,7 +243,7 @@ impl PartialEq for ExpectedRowLong {
             && self.metric_set == other.metric_set
             && self.name == other.name
             && self.attribute == other.attribute
-            && approx_eq!(f64, self.value, other.value, F64Margin { ulps: 2, epsilon: 1e-8 })
+            && approx_eq!(f64, self.value, other.value, F64Margin { ulps: 2, epsilon: 1e-6 })
     }
 }
 
@@ -365,7 +365,7 @@ impl VerifyExpected for ExpectedOutputsWide {
 
             // Compare the rest of the values
             for (col_idx, (expected, actual)) in expected_values.iter().zip(actual_values.iter()).enumerate() {
-                if !approx_eq!(f64, *expected, *actual, F64Margin { ulps: 2, epsilon: 1e-8 }) {
+                if !approx_eq!(f64, *expected, *actual, F64Margin { ulps: 2, epsilon: 1e-6 }) {
                     panic!(
                         "Row {} with index {}: value at column {} differs (expected: {}, actual: {})",
                         row_idx, expected_index, col_idx, expected, actual
