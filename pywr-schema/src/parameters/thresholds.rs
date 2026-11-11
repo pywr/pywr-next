@@ -220,7 +220,7 @@ impl TryFromV1<ParameterThresholdParameterV1> for ThresholdParameter {
             returned_metrics,
             threshold,
             predicate: v1.predicate.into(),
-            ratchet: false,
+            ratchet: v1.ratchet.unwrap_or(false),
             phase: ParameterPhase::Before,
         };
         Ok(p)
@@ -268,7 +268,7 @@ impl TryFromV1<NodeThresholdParameterV1> for ThresholdParameter {
             returned_metrics,
             threshold,
             predicate: v1.predicate.into(),
-            ratchet: false,
+            ratchet: v1.ratchet.unwrap_or(false),
             phase: ParameterPhase::Before,
         };
         Ok(p)
@@ -316,7 +316,7 @@ impl TryFromV1<StorageThresholdParameterV1> for ThresholdParameter {
             returned_metrics,
             threshold,
             predicate: v1.predicate.into(),
-            ratchet: false,
+            ratchet: v1.ratchet.unwrap_or(false),
             phase: ParameterPhase::Before,
         };
         Ok(p)
@@ -467,7 +467,7 @@ impl TryFromV1<MultiThresholdIndexParameterV1> for MultiThresholdParameter {
             returned_metrics: None,
             thresholds,
             predicate: Predicate::GE, // v1 assumed GE and this was not configurable
-            ratchet: false,
+            ratchet: v1.ratchet.unwrap_or(false),
             phase: ParameterPhase::Before,
         };
         Ok(p)
@@ -498,9 +498,63 @@ impl TryFromV1<MultipleThresholdParameterIndexParameterV1> for MultiThresholdPar
             returned_metrics: None,
             thresholds,
             predicate: Predicate::GE, // v1 assumed GE and this was not configurable
-            ratchet: false,
+            ratchet: v1.ratchet.unwrap_or(false),
             phase: ParameterPhase::Before,
         };
         Ok(p)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_v1_parameter_threshold_ratchet() {
+        let data = r#"
+            {
+                "type": "parameterthreshold",
+                "parameter": "my-param",
+                "threshold": 5.0,
+                "predicate": "GT",
+                "ratchet": true
+            }
+            "#;
+        let v1: ParameterThresholdParameterV1 = serde_json::from_str(data).unwrap();
+        let mut conversion_data = ConversionData::default();
+        let p = ThresholdParameter::try_from_v1(v1, Some("my-node"), &mut conversion_data).unwrap();
+        assert!(p.ratchet);
+    }
+
+    #[test]
+    fn test_v1_storage_threshold_ratchet_default() {
+        let data = r#"
+            {
+                "type": "storagethreshold",
+                "storage_node": "my-storage",
+                "threshold": 5.0,
+                "predicate": "LT"
+            }
+            "#;
+        let v1: StorageThresholdParameterV1 = serde_json::from_str(data).unwrap();
+        let mut conversion_data = ConversionData::default();
+        let p = ThresholdParameter::try_from_v1(v1, Some("my-node"), &mut conversion_data).unwrap();
+        assert!(!p.ratchet);
+    }
+
+    #[test]
+    fn test_v1_multiple_threshold_index_ratchet() {
+        let data = r#"
+            {
+                "type": "multiplethresholdindex",
+                "node": "my-node",
+                "thresholds": [1.0, 2.0],
+                "ratchet": true
+            }
+            "#;
+        let v1: MultiThresholdIndexParameterV1 = serde_json::from_str(data).unwrap();
+        let mut conversion_data = ConversionData::default();
+        let p = MultiThresholdParameter::try_from_v1(v1, Some("my-node"), &mut conversion_data).unwrap();
+        assert!(p.ratchet);
     }
 }
