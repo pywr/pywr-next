@@ -14,6 +14,56 @@ pub use simple::{
 };
 use thiserror::Error;
 
+/// Build the Rayon thread pool used to run scenarios in parallel.
+///
+/// With the `pyo3` feature each worker thread holds a persistent (detached) Python thread state
+/// for its lifetime. Without this every `Python::attach` on a worker creates and destroys a thread
+/// state, which costs tens of microseconds per call and serialises on CPython's runtime lock.
+pub(crate) fn build_thread_pool(num_threads: usize) -> rayon::ThreadPool {
+    let builder = rayon::ThreadPoolBuilder::new().num_threads(num_threads);
+    #[cfg(feature = "pyo3")]
+    let builder = builder
+        .start_handler(|_| py_thread_state::attach())
+        .exit_handler(|_| py_thread_state::release());
+    builder.build().unwrap()
+}
+
+#[cfg(feature = "pyo3")]
+mod py_thread_state {
+    use pyo3::ffi;
+    use std::cell::Cell;
+
+    thread_local! {
+        static STATE: Cell<Option<(ffi::PyGILState_STATE, *mut ffi::PyThreadState)>> = const { Cell::new(None) };
+    }
+
+    /// Create a thread state for this thread and immediately detach it, releasing the GIL.
+    pub(super) fn attach() {
+        // SAFETY: Only called once per worker thread, and only when the interpreter is initialised.
+        unsafe {
+            if ffi::Py_IsInitialized() == 0 {
+                return;
+            }
+            let gil_state = ffi::PyGILState_Ensure();
+            let thread_state = ffi::PyEval_SaveThread();
+            STATE.set(Some((gil_state, thread_state)));
+        }
+    }
+
+    /// Re-attach and destroy the thread state created by [`attach`].
+    pub(super) fn release() {
+        if let Some((gil_state, thread_state)) = STATE.take() {
+            // SAFETY: The thread state was created on this thread by `attach` and is currently detached.
+            unsafe {
+                if ffi::Py_IsInitialized() != 0 {
+                    ffi::PyEval_RestoreThread(thread_state);
+                    ffi::PyGILState_Release(gil_state);
+                }
+            }
+        }
+    }
+}
+
 #[derive(Error, Debug)]
 pub enum ModelDomainError {
     #[error("Error in time domain.")]
