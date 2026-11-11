@@ -21,4 +21,13 @@ fn example_project_validates_and_every_model_composes() {
             .into_model_schema(&Default::default())
             .unwrap();
     }
+    for multi_model in &manifest.multi_models {
+        project
+            .compose_multi_model(&multi_model.name)
+            .unwrap()
+            .load()
+            .unwrap()
+            .into_multi_model_schema(&Default::default())
+            .unwrap();
+    }
 }

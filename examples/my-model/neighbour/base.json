@@ -1,0 +1,34 @@
+{
+  "nodes": [
+    {
+      "type": "Input",
+      "meta": {
+        "name": "import"
+      },
+      "max_flow": {
+        "type": "InterNetworkTransfer",
+        "name": "company-link1-flow"
+      }
+    },
+    {
+      "type": "Output",
+      "meta": {
+        "name": "demand2"
+      },
+      "max_flow": {
+        "type": "Literal",
+        "value": 5.0
+      },
+      "cost": {
+        "type": "Literal",
+        "value": -10.0
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from_node": "import",
+      "to_node": "demand2"
+    }
+  ]
+}
