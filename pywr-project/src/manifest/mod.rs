@@ -5,7 +5,7 @@ use crate::error::{ComposeModelError, ProjectManifestReadError};
 use pywr_schema::model::{ScenarioDomain, TimeDomain};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
 #[derive(Clone, Serialize, Deserialize, JsonSchema)]
@@ -60,22 +60,34 @@ impl ProjectManifest {
         Ok(serde_json::from_str(data.as_str())?)
     }
 
-    pub fn validate(&self, root: &Path) -> Result<(), ProjectManifestValidationError> {
+    pub fn validate(&self, root: &Path, options: &ResolveOptions) -> Result<(), ProjectManifestValidationError> {
         match self {
-            ProjectManifest::V1(manifest) => manifest.validate(root).map_err(ProjectManifestValidationError::V1),
+            ProjectManifest::V1(manifest) => manifest
+                .validate(root, options)
+                .map_err(ProjectManifestValidationError::V1),
         }
     }
 
     /// Compose the model or multi-model definition `definition_name`.
-    pub fn compose(&self, root: &Path, definition_name: &str) -> Result<Composed, ComposeModelError> {
+    pub fn compose(
+        &self,
+        root: &Path,
+        definition_name: &str,
+        options: &ResolveOptions,
+    ) -> Result<Composed, ComposeModelError> {
         match self {
-            ProjectManifest::V1(manifest) => manifest.compose(root, definition_name),
+            ProjectManifest::V1(manifest) => manifest.compose(root, definition_name, options),
         }
     }
 
-    pub fn compose_model(&self, root: &Path, definition_name: &str) -> Result<ComposedModel, ComposeModelError> {
+    pub fn compose_model(
+        &self,
+        root: &Path,
+        definition_name: &str,
+        options: &ResolveOptions,
+    ) -> Result<ComposedModel, ComposeModelError> {
         match self {
-            ProjectManifest::V1(manifest) => manifest.compose_model(root, definition_name),
+            ProjectManifest::V1(manifest) => manifest.compose_model(root, definition_name, options),
         }
     }
 
@@ -83,15 +95,21 @@ impl ProjectManifest {
         &self,
         root: &Path,
         definition_name: &str,
+        options: &ResolveOptions,
     ) -> Result<ComposedMultiModel, ComposeModelError> {
         match self {
-            ProjectManifest::V1(manifest) => manifest.compose_multi_model(root, definition_name),
+            ProjectManifest::V1(manifest) => manifest.compose_multi_model(root, definition_name, options),
         }
     }
 
-    pub fn compose_network(&self, root: &Path, network_name: &str) -> Result<ComposedNetwork, ComposeModelError> {
+    pub fn compose_network(
+        &self,
+        root: &Path,
+        network_name: &str,
+        options: &ResolveOptions,
+    ) -> Result<ComposedNetwork, ComposeModelError> {
         match self {
-            ProjectManifest::V1(manifest) => manifest.compose_network(root, network_name),
+            ProjectManifest::V1(manifest) => manifest.compose_network(root, network_name, options),
         }
     }
 }
@@ -102,6 +120,24 @@ impl FromStr for ProjectManifest {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Ok(serde_json::from_str(s)?)
     }
+}
+
+/// Which external projects a manifest may depend on.
+#[derive(Clone, Debug, Default)]
+pub enum DependencyPolicy {
+    /// Any project the manifest names may be loaded.
+    #[default]
+    Allow,
+    /// No dependencies may be loaded. Use this when resolving manifests that are not trusted.
+    Deny,
+    /// Only projects whose manifests are inside this directory may be loaded.
+    AllowWithin(PathBuf),
+}
+
+/// Options for resolving a project manifest.
+#[derive(Clone, Debug, Default)]
+pub struct ResolveOptions {
+    pub dependency_policy: DependencyPolicy,
 }
 
 #[derive(Clone, Serialize, Deserialize, JsonSchema, Default)]
