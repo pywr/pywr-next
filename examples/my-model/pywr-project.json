@@ -1,23 +1,31 @@
 {
   "format": "v1",
   "base_model": "models/base.json",
+  "sub_networks": [
+    {
+      "name": "catchment",
+      "network_sets": [
+        {
+          "name": "inflows",
+          "min": 1,
+          "max": 1
+        }
+      ]
+    }
+  ],
   "network_sets": [
     {
       "name": "options"
-    },
-    {
-      "name": "catchments",
-      "min": 1,
-      "max": 1
     }
   ],
   "networks": [
     {
       "name": "historical",
       "description": "Historical catchment inflows.",
+      "base": "catchment",
       "include": [
         {
-          "set": "catchments",
+          "set": "catchment::inflows",
           "files": [
             "historical.json"
           ]
@@ -27,9 +35,10 @@
     {
       "name": "stochastic",
       "description": "Stochastic catchment inflows.",
+      "base": "catchment",
       "include": [
         {
-          "set": "catchments",
+          "set": "catchment::inflows",
           "files": [
             "stochastic.json"
           ]
