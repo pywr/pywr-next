@@ -170,16 +170,16 @@ pub struct NodeMeta {
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub tags: HashMap<String, String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub provenance: Option<crate::meta::ComponentProvenance>,
+    pub provenance: Option<Box<crate::meta::ComponentProvenance>>,
 }
 
 impl crate::meta::ComponentMeta for NodeMeta {
     fn provenance(&self) -> Option<&crate::meta::ComponentProvenance> {
-        self.provenance.as_ref()
+        self.provenance.as_deref()
     }
 
     fn set_provenance(&mut self, provenance: crate::meta::ComponentProvenance) {
-        self.provenance = Some(provenance);
+        self.provenance = Some(Box::new(provenance));
     }
 
     fn clear_provenance(&mut self) {
