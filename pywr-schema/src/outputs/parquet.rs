@@ -58,6 +58,7 @@ impl From<ParquetCompression> for parquet::basic::Compression {
 /// Each row group contains up to `batch_size` rows. The file is only complete once
 /// the model run finishes.
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitPaths)]
+#[serde(deny_unknown_fields)]
 pub struct ParquetOutput {
     pub meta: NamedMeta,
     pub filename: PathBuf,
@@ -145,6 +146,21 @@ mod tests {
             panic!("expected a Parquet output");
         };
         assert!(matches!(output.compression, super::ParquetCompression::Zstd));
+    }
+
+    #[test]
+    fn refuses_unknown_keys() {
+        let model = MODEL.replace(
+            r#""batch_size": 2 }
+        ]"#,
+            r#""batch_size": 2, "compresion": "Snappy" }
+        ]"#,
+        );
+        assert_ne!(model, MODEL);
+        let error = serde_json::from_str::<ModelSchema>(&model)
+            .err()
+            .expect("a misspelt key should be refused");
+        assert!(error.to_string().contains("unknown field `compresion`"), "{error}");
     }
 
     #[test]

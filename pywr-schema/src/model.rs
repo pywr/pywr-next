@@ -1249,6 +1249,28 @@ mod tests {
         read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/simple1.json")).unwrap()
     }
 
+    /// A misspelt or stray key is refused at every level of the model, rather than dropped.
+    #[test]
+    fn test_unknown_fields_are_refused() {
+        let model: serde_json::Value = serde_json::from_str(&model_str()).unwrap();
+        for pointer in ["", "/metadata", "/time", "/network/nodes/0/meta", "/network/edges/0"] {
+            let mut model = model.clone();
+            model
+                .pointer_mut(pointer)
+                .and_then(serde_json::Value::as_object_mut)
+                .unwrap_or_else(|| panic!("no object at `{pointer}`"))
+                .insert("not_a_field".to_string(), serde_json::Value::Null);
+
+            let error = serde_json::from_value::<ModelSchema>(model)
+                .err()
+                .unwrap_or_else(|| panic!("a stray key at `{pointer}` was accepted"));
+            assert!(
+                error.to_string().contains("unknown field `not_a_field`"),
+                "{pointer}: {error}"
+            );
+        }
+    }
+
     #[test]
     fn test_simple1_schema() {
         let data = model_str();
