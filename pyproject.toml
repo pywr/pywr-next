@@ -46,8 +46,8 @@ hdf = ["h5py", "tables"]
 [dependency-groups]
 dev = [
     "pytest>=9.1.1",
-    "ruff>=0.17.1",
-    "maturin>=1.15.0,<2.0",
+    "ruff>=0.17.4",
+    "maturin>=1.16.0,<2.0",
 ]
 docs = [
     "json-schema-for-humans>=1.4.1",
@@ -55,7 +55,7 @@ docs = [
 ]
 
 [build-system]
-requires = ["maturin>=1.15.0,<2.0"]
+requires = ["maturin>=1.16.0,<2.0"]
 build-backend = "maturin"
 
 [tool.maturin]

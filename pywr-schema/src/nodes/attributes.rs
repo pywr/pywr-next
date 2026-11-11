@@ -16,6 +16,10 @@ pub enum NodeAttribute {
     ProportionalVolume,
     Loss,
     Deficit,
+    /// The maximum flow constraint.
+    MaxFlow,
+    /// The minimum flow constraint.
+    MinFlow,
     Power,
     /// The compensation flow.
     Compensation,

@@ -13,8 +13,10 @@ use std::path::PathBuf;
 
 /// Output one metric set as a batched Arrow IPC stream.
 ///
-/// Each record batch contains up to `batch_size` model timesteps. Metric columns
-/// are stored as fixed-size lists of `Float64` values in scenario order.
+/// The stream has a row for each reporting period of the metric set: each model timestep, or
+/// each completed aggregation period for an aggregated metric set. Each record batch contains up
+/// to `batch_size` rows. Metric columns are stored as fixed-size lists of `Float64` values in
+/// scenario order.
 /// Scenario identities and groups are stored once as JSON in the `PYWR_SCENARIOS`
 /// and `PYWR_SCENARIO_GROUPS` schema metadata.
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitPaths)]
@@ -24,7 +26,7 @@ pub struct ArrowStreamOutput {
     pub filename: PathBuf,
     /// The metric set to write.
     pub metric_set: String,
-    /// Number of model timesteps to accumulate in each Arrow record batch.
+    /// Number of rows to accumulate in each Arrow record batch.
     pub batch_size: NonZeroUsize,
 }
 
@@ -66,6 +68,10 @@ mod tests {
     #[cfg(feature = "core")]
     use crate::FileSystem;
     use crate::ModelSchema;
+    #[cfg(feature = "core")]
+    use crate::outputs::{
+        METRIC_EXTENSION_NAME, SCENARIO_GROUPS_KEY, SCENARIOS_KEY, ScenarioGroupMetadata, ScenarioMetadata,
+    };
     use crate::visit::{Reference, VisitReferences};
     #[cfg(feature = "core")]
     use arrow::array::{Array, FixedSizeListArray, Float64Array};
@@ -130,14 +136,20 @@ mod tests {
         let first_batch = reader.next().unwrap().unwrap();
         assert_eq!(first_batch.num_rows(), 2);
         assert_eq!(first_batch.schema().fields().len(), 4);
-        let scenarios: serde_json::Value =
-            serde_json::from_str(first_batch.schema().metadata().get("PYWR_SCENARIOS").unwrap()).unwrap();
-        assert_eq!(scenarios.as_array().unwrap().len(), 2);
-        assert_eq!(scenarios[0]["scenario_labels"][0], "dry");
-        assert_eq!(scenarios[1]["scenario_labels"][0], "wet");
-        let groups: serde_json::Value =
-            serde_json::from_str(first_batch.schema().metadata().get("PYWR_SCENARIO_GROUPS").unwrap()).unwrap();
-        assert_eq!(groups, serde_json::json!([{"name": "case", "size": 2}]));
+        let scenarios: Vec<ScenarioMetadata> =
+            serde_json::from_str(first_batch.schema().metadata().get(SCENARIOS_KEY).unwrap()).unwrap();
+        assert_eq!(scenarios.len(), 2);
+        assert_eq!(scenarios[0].scenario_labels, ["dry"]);
+        assert_eq!(scenarios[1].scenario_labels, ["wet"]);
+        let groups: Vec<ScenarioGroupMetadata> =
+            serde_json::from_str(first_batch.schema().metadata().get(SCENARIO_GROUPS_KEY).unwrap()).unwrap();
+        assert_eq!(
+            groups,
+            [ScenarioGroupMetadata {
+                name: "case".to_string(),
+                size: 2
+            }]
+        );
         assert!(
             !first_batch
                 .schema()
@@ -152,7 +164,7 @@ mod tests {
         );
         assert_eq!(
             first_batch.schema().field(2).metadata().get("ARROW:extension:name"),
-            Some(&"org.pywr.metric".to_string())
+            Some(&METRIC_EXTENSION_NAME.to_string())
         );
         for column in first_batch.columns().iter().skip(2) {
             let values = column.as_any().downcast_ref::<FixedSizeListArray>().unwrap();

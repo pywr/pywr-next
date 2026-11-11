@@ -9,6 +9,7 @@ members = [
     "pywr-book/listings/*",
     "pywr-cli",
     "pywr-core",
+    "pywr-output-metadata",
     "pywr-python", "pywr-runner-engine",
     "pywr-runner-protocol", "pywr-runner-service", "pywr-runner-transport",
     "pywr-schema",
@@ -20,6 +21,7 @@ members = [
 default-members = [
     "coin-or-sys",
     "pywr-core",
+    "pywr-output-metadata",
     "pywr-schema",
     "pywr-cli",
     # "pywr-python",
@@ -41,8 +43,8 @@ categories = ["science", "simulation"]
 [workspace.dependencies]
 ahash = "0.8"
 anyhow = "1.0"
-arrow = { version = "60.0" }
-arrow-schema = "60.0"
+arrow = { version = "60.1" }
+arrow-schema = "60.1"
 bytes = "1"
 chrono = { version = "0.4", features = ["serde"] }
 clap = "4.6"
@@ -63,7 +65,7 @@ jiff = { version = "0.2", features = ["serde"] }
 libc = "0.2"
 log = "0.4"
 md-5 = "0.11"
-microlp = "0.6.0"
+microlp = "0.7.0"
 ndarray = "0.17"
 nalgebra = "0.35"
 nalgebra-sparse = "0.12"
