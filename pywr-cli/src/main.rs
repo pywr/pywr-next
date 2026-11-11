@@ -229,20 +229,20 @@ fn main() -> Result<()> {
             output_path.as_deref(),
             *threads,
             *ignore_feature_requirements,
-        ),
+        )?,
         Commands::RunMulti {
             model,
             solver,
             data_path,
             output_path,
             threads: _,
-        } => run_multi(model, solver, data_path.as_deref(), output_path.as_deref()),
+        } => run_multi(model, solver, data_path.as_deref(), output_path.as_deref())?,
         Commands::RunRandom {
             num_systems,
             density,
             num_scenarios,
             solver,
-        } => run_random(*num_systems, *density, *num_scenarios, solver),
+        } => run_random(*num_systems, *density, *num_scenarios, solver)?,
         Commands::ExportSchema { out } => export_schema(out)?,
         Commands::RunServer { mode, socket_name } => {
             run_server(*mode, socket_name)?;
@@ -263,7 +263,7 @@ fn main() -> Result<()> {
             output_path.as_deref(),
             *threads,
             *ignore_feature_requirements,
-        ),
+        )?,
         // Commands::InitProject {
         //     location,
         //     project_filename,
@@ -364,6 +364,13 @@ fn handle_conversion_errors(errors: &[ComponentConversionError], stop_on_error: 
     Ok(())
 }
 
+/// Fail with every problem a model's validation found, one per line.
+///
+/// Building a model validates it too, but its error only gives the number of problems.
+fn check_schema(validation: std::result::Result<(), pywr_schema::ValidationError>) -> Result<()> {
+    validation.map_err(|error| anyhow::anyhow!("{}", error.report()))
+}
+
 fn run(
     path: &Path,
     solver: &Solver,
@@ -371,15 +378,15 @@ fn run(
     output_path: Option<&Path>,
     threads: usize,
     ignore_feature_requirements: bool,
-) {
-    let data = std::fs::read_to_string(path).unwrap();
+) -> Result<()> {
+    let schema_v2 = ModelSchema::from_path(path).with_context(|| format!("Failed to load model: {path:?}"))?;
     let data_path = data_path.or_else(|| path.parent());
-    let schema_v2: ModelSchema = serde_json::from_str(data.as_str()).unwrap();
 
+    check_schema(schema_v2.validate())?;
     let builder = schema_v2
         .create_model_builder(&FileSystem, data_path, output_path)
-        .unwrap();
-    let model = builder.build().unwrap();
+        .context("Failed to create the model from its schema")?;
+    let model = builder.build().context("Failed to build the model")?;
 
     match *solver {
         Solver::Clp => {
@@ -476,19 +483,21 @@ fn run(
             model.run(&settings)
         }
     }
-    .unwrap();
+    .context("Failed to run the model")?;
+
+    Ok(())
 }
 
-fn run_multi(path: &Path, solver: &Solver, data_path: Option<&Path>, output_path: Option<&Path>) {
-    let data = std::fs::read_to_string(path).unwrap();
+fn run_multi(path: &Path, solver: &Solver, data_path: Option<&Path>, output_path: Option<&Path>) -> Result<()> {
+    let schema_v2 =
+        MultiNetworkModelSchema::from_path(path).with_context(|| format!("Failed to load model: {path:?}"))?;
     let data_path = data_path.or_else(|| path.parent());
 
-    let schema_v2: MultiNetworkModelSchema = serde_json::from_str(data.as_str()).unwrap();
-
+    check_schema(schema_v2.validate())?;
     let builder = schema_v2
         .create_model_builder(&FileSystem, data_path, output_path)
-        .unwrap();
-    let model = builder.build().unwrap();
+        .context("Failed to create the model from its schema")?;
+    let model = builder.build().context("Failed to build the model")?;
 
     match *solver {
         Solver::Clp => model.run(&ClpSolverSettings::default()),
@@ -505,13 +514,15 @@ fn run_multi(path: &Path, solver: &Solver, data_path: Option<&Path>, output_path
         #[cfg(feature = "microlp")]
         Solver::Microlp => model.run(&MicroLpSolverSettings::default()),
     }
-    .unwrap();
+    .context("Failed to run the model")?;
+
+    Ok(())
 }
 
-fn run_random(num_systems: usize, density: usize, num_scenarios: usize, solver: &Solver) {
+fn run_random(num_systems: usize, density: usize, num_scenarios: usize, solver: &Solver) -> Result<()> {
     let mut rng = ChaCha8Rng::seed_from_u64(0);
     let builder = make_random_model_builder(num_systems, density, num_scenarios, &mut rng);
-    let model = builder.build().unwrap();
+    let model = builder.build().context("Failed to build the random model")?;
 
     match *solver {
         Solver::Clp => model.run(&ClpSolverSettings::default()),
@@ -528,7 +539,9 @@ fn run_random(num_systems: usize, density: usize, num_scenarios: usize, solver: 
         #[cfg(feature = "microlp")]
         Solver::Microlp => model.run(&MicroLpSolverSettings::default()),
     }
-    .unwrap();
+    .context("Failed to run the model")?;
+
+    Ok(())
 }
 
 fn export_schema(out_path: &Path) -> Result<()> {
@@ -570,18 +583,25 @@ fn run_project(
     output_path: Option<&Path>,
     threads: usize,
     ignore_feature_requirements: bool,
-) {
-    let project = pywr_project::Project::open(path).unwrap();
+) -> Result<()> {
+    let project = pywr_project::Project::open(path).with_context(|| format!("Failed to open project: {path:?}"))?;
     let data_path = data_path.or_else(|| path.parent());
 
-    let composed_model = project.compose_model(definition).unwrap();
-    let composed_schemas = composed_model.load().unwrap();
+    let composed_model = project
+        .compose_model(definition)
+        .with_context(|| format!("Failed to compose model definition `{definition}`"))?;
+    let composed_schemas = composed_model
+        .load()
+        .with_context(|| format!("Failed to load the schemas of model definition `{definition}`"))?;
     let options = pywr_schema::NetworkMergeOptions::default();
-    let schema_v2 = composed_schemas.into_model_schema(&options).unwrap();
+    let schema_v2 = composed_schemas
+        .into_model_schema(&options)
+        .with_context(|| format!("Failed to merge the networks of model definition `{definition}`"))?;
+    check_schema(schema_v2.validate())?;
     let model_builder = schema_v2
         .create_model_builder(&FileSystem, data_path, output_path)
-        .unwrap();
-    let model = model_builder.build().unwrap();
+        .context("Failed to create the model from its schema")?;
+    let model = model_builder.build().context("Failed to build the model")?;
 
     match *solver {
         Solver::Clp => {
@@ -678,7 +698,9 @@ fn run_project(
             model.run(&settings)
         }
     }
-    .unwrap();
+    .context("Failed to run the model")?;
+
+    Ok(())
 }
 
 // fn init_project_cli(
