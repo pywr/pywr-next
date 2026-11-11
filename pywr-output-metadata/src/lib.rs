@@ -1,9 +1,11 @@
 //! Metadata types and key names used in Pywr's Arrow outputs.
 //!
 //! This crate has no dependency on the Pywr solver or file-format libraries, so it can be
-//! used to interpret an Arrow stream written by Pywr without depending on `pywr-core`.
+//! used to interpret an Arrow stream or Parquet file written by Pywr without depending on
+//! `pywr-core`.
 //!
-//! An Arrow stream written by Pywr has two timestamp columns (`time_start` and `time_end`)
+//! A Parquet file written by Pywr stores the same Arrow schema as an Arrow stream, so the
+//! description below applies to both. An Arrow stream written by Pywr has two timestamp columns (`time_start` and `time_end`)
 //! followed by one `FixedSizeList<Float64>` column per metric, with one value per scenario.
 //! Each metric field carries the [`METRIC_EXTENSION_NAME`] Arrow extension type, whose
 //! metadata is a JSON-encoded [`MetricColumnMetadata`]. The schema metadata holds the
