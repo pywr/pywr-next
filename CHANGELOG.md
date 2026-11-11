@@ -4,6 +4,28 @@ This changelog records changes since the v2.0.0 beta series.
 
 The versioned entries below record implementation-level changes.
 
+## [2.0.0-rc2] - 2026-11-11
+
+### 🚀 Features
+
+- *(schema)* Derive JsonSchema for multi-network models (#900)
+- Add Demand node. (#915)
+- Add pywr-output-metadata crate for Arrow output metadata types. (#914)
+- Add a Parquet output writing the Arrow stream's table. (#916)
+- *(schema)* Refuse unknown keys in the remaining schema types (#889)
+
+### 🐛 Bug Fixes
+
+- Increase epsilon when comparing expected test outputs. (#953)
+
+### 🧪 Testing
+
+- Use pytest tmp_path instead of legacy tmpdir. (#919)
+
+### ⚙️ Miscellaneous Tasks
+
+- Specify MSRV toolchain directly to avoid dependabot updating it. (#909)
+
 ## [2.0.0-rc1] - 2026-10-04
 
 ### 🚀 Features
@@ -17,7 +39,6 @@ The versioned entries below record implementation-level changes.
 ### ⚙️ Miscellaneous Tasks
 
 - Drop Python 3.10 support. (#890)
-- *(release)* Prepare v2.0.0-rc1
 
 ## [2.0.0-beta12] - 2026-10-03
 
@@ -29,7 +50,7 @@ The versioned entries below record implementation-level changes.
 - Let a run write several Arrow streams (#882)
 - Let an Arrow stream output write to memory (#884)
 - *(schema)* Add validate_reference and validate_member
-- *(schema)* Include local parameters in a node's validate ()
+- *(schema)* Include local parameters in a node's validate()
 - *(schema)* Refuse a local parameter name used twice in one node
 - *(schema)* Refuse a literal in a metric set's metrics
 - *(schema)* Check a node as an edge end on its own
@@ -270,8 +291,6 @@ The versioned entries below record implementation-level changes.
 - Remove allowing unexpected_cfg lint required for earlier PyO3 versions. (#615)
 - *(pedantic)* Apply clippy::pedantic lints to pywr_core::scenario module. (#616)
 - Update to ubuntu-24.04 runners for Python wheels. (#618)
-- Bump bytes to v1.11.1 (#614)
-- Bump polars to v0.53.
 - Upgrade to latest COIN-OR release. (#619)
 
 ## [2.0.0-beta2] - 2025-12-19
