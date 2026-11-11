@@ -4,7 +4,7 @@ use crate::meta::NamedMeta;
 use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::network::LoadArgs;
-use crate::parameters::{ConstantValue, ParameterPhase, VariableSettings};
+use crate::parameters::{ConstantValue, ParameterPhase};
 #[cfg(feature = "core")]
 use pywr_core::parameters::ParameterName;
 use pywr_schema_macros::{PywrVisitAll, skip_serializing_none};
@@ -19,10 +19,8 @@ use schemars::JsonSchema;
 #[doc = include_str!("doc_examples/offset_simple.json")]
 /// ```
 ///
-/// An example specifying the parameter as a variable and defining the activation function:
-/// ```json
-#[doc = include_str!("doc_examples/offset_variable.json")]
-/// ```
+/// The offset can be made variable by an external variable config (see
+/// [`crate::ProblemConfig`]) using an activation function.
 ///
 #[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitAll)]
@@ -33,14 +31,11 @@ pub struct OffsetParameter {
     pub phase: ParameterPhase,
     /// The offset value applied to the metric.
     ///
-    /// In the simple case this will be the value used by the network. However, if an activation
-    /// function is specified this value will be the `x` value for that activation function.
+    /// This is the offset used by the network, unless the parameter is made variable by an
+    /// external variable config.
     pub offset: ConstantValue<f64>,
     /// The metric from which to apply the offset.
     pub metric: Metric,
-    /// Optional settings for configuring how the value of this parameter can be varied. This
-    /// is used by, for example, external algorithms to optimise the value of the parameter.
-    pub variable: Option<VariableSettings>,
 }
 
 #[cfg(feature = "core")]

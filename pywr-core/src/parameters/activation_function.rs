@@ -1,3 +1,5 @@
+use crate::parameters::{VariableConfig, VariableParameterError, check_variable_bounds};
+
 #[derive(Copy, Clone)]
 pub enum ActivationFunction {
     Unit { min: f64, max: f64 },
@@ -33,6 +35,23 @@ impl ActivationFunction {
         }
     }
 
+    /// Check that the function's values and bounds are finite, and that the bounds are ordered.
+    pub fn validate(&self) -> Result<(), VariableParameterError> {
+        check_variable_bounds(self.lower_bound(), self.upper_bound())?;
+
+        let values = match self {
+            Self::Unit { min, max } => [*min, *max, 0.0],
+            Self::Rectifier { min, max, neg_value } => [*min, *max, *neg_value],
+            Self::BinaryStep { pos_value, neg_value } => [*pos_value, *neg_value, 0.0],
+            Self::Logistic { growth_rate, max } => [*growth_rate, *max, 0.0],
+        };
+
+        match values.into_iter().find(|v| !v.is_finite()) {
+            Some(value) => Err(VariableParameterError::NonFiniteConfigValue { value }),
+            None => Ok(()),
+        }
+    }
+
     pub fn lower_bound(&self) -> f64 {
         match self {
             Self::Unit { min, .. } => *min,
@@ -50,6 +69,8 @@ impl ActivationFunction {
         }
     }
 }
+
+impl VariableConfig for ActivationFunction {}
 
 #[cfg(test)]
 mod tests {
