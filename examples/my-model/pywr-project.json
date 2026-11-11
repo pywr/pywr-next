@@ -1,0 +1,90 @@
+{
+  "format": "v1",
+  "base_model": "models/base.json",
+  "network_sets": [
+    {
+      "name": "options"
+    },
+    {
+      "name": "catchments",
+      "min": 1,
+      "max": 1
+    }
+  ],
+  "definitions": [
+    {
+      "name": "baseline-historical",
+      "include": [
+        {
+          "set": "catchments",
+          "files": [
+            "historical.json"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "baseline-stochastic",
+      "include": [
+        {
+          "set": "catchments",
+          "files": [
+            "stochastic.json"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "baseline-option1",
+      "include": [
+        {
+          "set": "catchments",
+          "files": [
+            "historical.json"
+          ]
+        },
+        {
+          "set": "options",
+          "files": [
+            "option1.json"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "baseline-option2",
+      "include": [
+        {
+          "set": "catchments",
+          "files": [
+            "historical.json"
+          ]
+        },
+        {
+          "set": "options",
+          "files": [
+            "option2.json"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "baseline-option12",
+      "include": [
+        {
+          "set": "catchments",
+          "files": [
+            "historical.json"
+          ]
+        },
+        {
+          "set": "options",
+          "files": [
+            "option1.json",
+            "option2.json"
+          ]
+        }
+      ]
+    }
+  ]
+}
