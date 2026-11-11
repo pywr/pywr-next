@@ -39,6 +39,7 @@ use thiserror::Error;
 
 #[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Clone, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct Metadata {
     pub title: String,
     pub description: Option<String>,
@@ -106,6 +107,7 @@ impl Default for Timestep {
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Clone, Debug, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct TimeDomain {
     pub start: DateTime,
     pub end: DateTime,
@@ -220,6 +222,7 @@ pub enum ScenarioGroupSubset {
 /// See also the examples in the [`ScenarioDomain`] documentation.
 #[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Clone, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct ScenarioGroup {
     pub name: String,
     pub size: usize,
@@ -671,6 +674,7 @@ pub enum ModelSchemaBuildError {
 ///
 #[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Clone, JsonSchema, Default)]
+#[serde(deny_unknown_fields)]
 pub struct ModelSchema {
     pub metadata: Metadata,
     pub time: TimeDomain,
@@ -887,6 +891,7 @@ impl ModelSchema {
 
 #[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Clone, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct MultiNetworkTransfer {
     pub from_network: String,
     pub metric: Metric,
@@ -895,6 +900,7 @@ pub struct MultiNetworkTransfer {
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Clone, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct MultiNetworkEntry {
     pub name: String,
     pub network: NetworkSchemaRef,
@@ -994,6 +1000,7 @@ pub enum MultiNetworkModelSchemaBuildError {
 ///
 #[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Clone, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct MultiNetworkModelSchema {
     pub metadata: Metadata,
     pub time: TimeDomain,
@@ -1240,6 +1247,28 @@ mod tests {
 
     fn model_str() -> String {
         read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/simple1.json")).unwrap()
+    }
+
+    /// A misspelt or stray key is refused at every level of the model, rather than dropped.
+    #[test]
+    fn test_unknown_fields_are_refused() {
+        let model: serde_json::Value = serde_json::from_str(&model_str()).unwrap();
+        for pointer in ["", "/metadata", "/time", "/network/nodes/0/meta", "/network/edges/0"] {
+            let mut model = model.clone();
+            model
+                .pointer_mut(pointer)
+                .and_then(serde_json::Value::as_object_mut)
+                .unwrap_or_else(|| panic!("no object at `{pointer}`"))
+                .insert("not_a_field".to_string(), serde_json::Value::Null);
+
+            let error = serde_json::from_value::<ModelSchema>(model)
+                .err()
+                .unwrap_or_else(|| panic!("a stray key at `{pointer}` was accepted"));
+            assert!(
+                error.to_string().contains("unknown field `not_a_field`"),
+                "{pointer}: {error}"
+            );
+        }
     }
 
     #[test]

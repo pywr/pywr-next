@@ -7,6 +7,7 @@ use schemars::JsonSchema;
 
 #[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema, PywrVisitPaths)]
+#[serde(deny_unknown_fields)]
 pub struct PlaceholderOutput {
     pub meta: NamedMeta,
 }
