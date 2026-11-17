@@ -120,7 +120,14 @@ impl PendingBatch {
     }
 }
 
-pub(super) fn make_schema(metric_set_name: &str, scenario_domain: &ScenarioDomain, metrics: &[OutputMetric]) -> Schema {
+/// The schema of an Arrow output of a metric set. `network_name` is the name of the metric set's
+/// network in a multi-network model, recorded with each metric column.
+pub(super) fn make_schema(
+    metric_set_name: &str,
+    network_name: Option<&str>,
+    scenario_domain: &ScenarioDomain,
+    metrics: &[OutputMetric],
+) -> Schema {
     let mut fields = vec![
         Field::new("time_start", DataType::Timestamp(TimeUnit::Millisecond, None), false),
         Field::new("time_end", DataType::Timestamp(TimeUnit::Millisecond, None), false),
@@ -143,6 +150,7 @@ pub(super) fn make_schema(metric_set_name: &str, scenario_domain: &ScenarioDomai
             attribute: metric.attribute().to_string(),
             ty: metric.ty().to_string(),
             sub_type: metric.sub_type().map(ToString::to_string),
+            network: network_name.map(ToString::to_string),
         };
         fields.push(MetricColumnExtension::new(metadata).field(column_name, scenario_count));
     }
@@ -243,6 +251,7 @@ pub(super) mod tests {
                 attribute: "outflow".to_string(),
                 ty: "node".to_string(),
                 sub_type: None,
+                network: None,
             })
             .field("flow", 2),
             MetricColumnExtension::new(MetricColumnMetadata {
@@ -251,6 +260,7 @@ pub(super) mod tests {
                 attribute: "volume".to_string(),
                 ty: "node".to_string(),
                 sub_type: None,
+                network: None,
             })
             .field("volume", 2),
         ]))

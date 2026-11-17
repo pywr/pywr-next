@@ -45,6 +45,10 @@ pub struct MetricColumnMetadata {
     #[serde(rename = "type")]
     pub ty: String,
     pub sub_type: Option<String>,
+    /// The network the metric belongs to, in a multi-network model; absent for a model with
+    /// a single network.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub network: Option<String>,
 }
 
 /// One simulated scenario, as stored under [`SCENARIOS_KEY`].
@@ -76,9 +80,29 @@ mod tests {
             attribute: "volume".to_string(),
             ty: "node".to_string(),
             sub_type: Some("storage".to_string()),
+            network: None,
         };
         let json = serde_json::to_value(&metadata).unwrap();
         assert_eq!(json["type"], "node");
+        assert_eq!(serde_json::from_value::<MetricColumnMetadata>(json).unwrap(), metadata);
+    }
+
+    #[test]
+    fn metric_column_metadata_names_its_network_only_in_a_multi_network_model() {
+        let mut metadata = MetricColumnMetadata {
+            metric_set: "outputs".to_string(),
+            name: "reservoir".to_string(),
+            attribute: "volume".to_string(),
+            ty: "node".to_string(),
+            sub_type: None,
+            network: None,
+        };
+        let json = serde_json::to_value(&metadata).unwrap();
+        assert!(json.get("network").is_none(), "{json}");
+
+        metadata.network = Some("supply".to_string());
+        let json = serde_json::to_value(&metadata).unwrap();
+        assert_eq!(json["network"], "supply");
         assert_eq!(serde_json::from_value::<MetricColumnMetadata>(json).unwrap(), metadata);
     }
 

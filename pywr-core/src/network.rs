@@ -523,9 +523,19 @@ pub struct Network {
     parameters: ParameterCollection,
     metric_sets: Vec<MetricSet>,
     recorders: Vec<Box<dyn recorders::Recorder>>,
+    name: Option<String>,
 }
 
 impl Network {
+    /// The network's name within a multi-network model, or `None` for a model's only network.
+    pub fn name(&self) -> Option<&str> {
+        self.name.as_deref()
+    }
+
+    pub(crate) fn set_name(&mut self, name: String) {
+        self.name = Some(name);
+    }
+
     pub fn nodes(&self) -> &[Node] {
         &self.nodes
     }
@@ -2206,6 +2216,7 @@ impl NetworkBuilder {
             parameters,
             metric_sets,
             recorders,
+            name: None,
         };
 
         Ok((network, resolution_map))

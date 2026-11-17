@@ -83,7 +83,10 @@ impl TryFrom<v1::InitialiseRequest> for InitialiseRequest {
 
 #[derive(Debug)]
 pub enum ModelDocument {
+    /// A model with a single network, as JSON.
     Json(serde_json::Value),
+    /// A multi-network model, as JSON.
+    MultiNetworkJson(serde_json::Value),
 }
 
 #[allow(clippy::infallible_try_from)]
@@ -93,6 +96,7 @@ impl TryFrom<v1::ModelDocument> for ModelDocument {
     fn try_from(doc: v1::ModelDocument) -> Result<Self, Self::Error> {
         let doc = match doc {
             v1::ModelDocument::Json(json) => ModelDocument::Json(json),
+            v1::ModelDocument::MultiNetworkJson(json) => ModelDocument::MultiNetworkJson(json),
         };
 
         Ok(doc)
@@ -185,6 +189,8 @@ pub struct ArrowStreamOptions {
     pub filename: Option<PathBuf>,
     pub metric_set: String,
     pub batch_size: NonZeroUsize,
+    /// The network whose metric set to write, in a multi-network model.
+    pub network: Option<String>,
 }
 
 #[allow(clippy::infallible_try_from)]
@@ -197,6 +203,7 @@ impl TryFrom<v1::ArrowStreamOptions> for ArrowStreamOptions {
             filename: options.filename,
             metric_set: options.metric_set,
             batch_size: options.batch_size,
+            network: options.network,
         })
     }
 }
