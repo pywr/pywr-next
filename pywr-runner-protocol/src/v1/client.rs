@@ -1,5 +1,6 @@
 use super::server::LogLevel;
 use jiff::civil::DateTime;
+pub use pywr_output_metadata::{ProjectRunMetadata, RunMetadata, SourceFileMetadata};
 use serde::{Deserialize, Serialize};
 use std::num::NonZeroUsize;
 use std::path::PathBuf;
@@ -41,6 +42,11 @@ pub struct InitialiseRequest {
 
     pub solver: SolverConfiguration,
     pub result_options: ResultOptions,
+
+    /// Metadata describing the run, written to its Arrow and Parquet outputs. The run name is
+    /// recorded in it if it does not give one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub run_metadata: Option<RunMetadata>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]

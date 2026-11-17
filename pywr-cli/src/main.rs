@@ -1,6 +1,7 @@
 use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand, ValueEnum};
 use log::info;
+use pywr_core::models::RunMetadata;
 #[cfg(feature = "cbc")]
 use pywr_core::solvers::{CbcSolverSettings, CbcSolverSettingsBuilder};
 #[cfg(feature = "ipm-ocl")]
@@ -108,6 +109,9 @@ enum Commands {
         /// Ignore the feature requirements of a solver.
         #[arg(short, long, default_value_t = false)]
         ignore_feature_requirements: bool,
+        /// Name of the run, recorded in the metadata of the run's outputs.
+        #[arg(long)]
+        run_name: Option<String>,
     },
     RunMulti {
         /// Path to Pywr model JSON.
@@ -122,6 +126,9 @@ enum Commands {
         /// The number of threads to use in parallel simulation.
         #[arg(short, long, default_value_t = 1)]
         threads: usize,
+        /// Name of the run, recorded in the metadata of the run's outputs.
+        #[arg(long)]
+        run_name: Option<String>,
     },
     RunRandom {
         num_systems: usize,
@@ -165,6 +172,9 @@ enum Commands {
         /// Ignore the feature requirements of a solver.
         #[arg(short, long, default_value_t = false)]
         ignore_feature_requirements: bool,
+        /// Name of the run, recorded in the metadata of the run's outputs.
+        #[arg(long)]
+        run_name: Option<String>,
     },
     // InitProject {
     //     /// Location to initialise the project directory.
@@ -222,6 +232,7 @@ fn main() -> Result<()> {
             output_path,
             threads,
             ignore_feature_requirements,
+            run_name,
         } => run(
             model,
             solver,
@@ -229,6 +240,7 @@ fn main() -> Result<()> {
             output_path.as_deref(),
             *threads,
             *ignore_feature_requirements,
+            run_name.clone(),
         ),
         Commands::RunMulti {
             model,
@@ -236,7 +248,14 @@ fn main() -> Result<()> {
             data_path,
             output_path,
             threads: _,
-        } => run_multi(model, solver, data_path.as_deref(), output_path.as_deref()),
+            run_name,
+        } => run_multi(
+            model,
+            solver,
+            data_path.as_deref(),
+            output_path.as_deref(),
+            run_name.clone(),
+        ),
         Commands::RunRandom {
             num_systems,
             density,
@@ -255,6 +274,7 @@ fn main() -> Result<()> {
             output_path,
             threads,
             ignore_feature_requirements,
+            run_name,
         } => run_project(
             project,
             definition,
@@ -263,6 +283,7 @@ fn main() -> Result<()> {
             output_path.as_deref(),
             *threads,
             *ignore_feature_requirements,
+            run_name.clone(),
         ),
         // Commands::InitProject {
         //     location,
@@ -371,14 +392,21 @@ fn run(
     output_path: Option<&Path>,
     threads: usize,
     ignore_feature_requirements: bool,
+    run_name: Option<String>,
 ) {
     let data = std::fs::read_to_string(path).unwrap();
     let data_path = data_path.or_else(|| path.parent());
     let schema_v2: ModelSchema = serde_json::from_str(data.as_str()).unwrap();
 
-    let builder = schema_v2
+    let mut builder = schema_v2
         .create_model_builder(&FileSystem, data_path, output_path)
         .unwrap();
+    if run_name.is_some() {
+        builder.run_metadata(RunMetadata {
+            run_name,
+            ..Default::default()
+        });
+    }
     let model = builder.build().unwrap();
 
     match *solver {
@@ -479,15 +507,27 @@ fn run(
     .unwrap();
 }
 
-fn run_multi(path: &Path, solver: &Solver, data_path: Option<&Path>, output_path: Option<&Path>) {
+fn run_multi(
+    path: &Path,
+    solver: &Solver,
+    data_path: Option<&Path>,
+    output_path: Option<&Path>,
+    run_name: Option<String>,
+) {
     let data = std::fs::read_to_string(path).unwrap();
     let data_path = data_path.or_else(|| path.parent());
 
     let schema_v2: MultiNetworkModelSchema = serde_json::from_str(data.as_str()).unwrap();
 
-    let builder = schema_v2
+    let mut builder = schema_v2
         .create_model_builder(&FileSystem, data_path, output_path)
         .unwrap();
+    if run_name.is_some() {
+        builder.run_metadata(RunMetadata {
+            run_name,
+            ..Default::default()
+        });
+    }
     let model = builder.build().unwrap();
 
     match *solver {
@@ -562,6 +602,7 @@ fn run_server(mode: RunServerMode, socket_name: &str) -> Result<()> {
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn run_project(
     path: &Path,
     definition: &str,
@@ -570,17 +611,25 @@ fn run_project(
     output_path: Option<&Path>,
     threads: usize,
     ignore_feature_requirements: bool,
+    run_name: Option<String>,
 ) {
     let project = pywr_project::Project::open(path).unwrap();
     let data_path = data_path.or_else(|| path.parent());
 
     let composed_model = project.compose_model(definition).unwrap();
+    // Describe the composition before loading it, so the hashes are of the files that are run.
+    let run_metadata = RunMetadata {
+        run_name,
+        project: Some(project.run_metadata(&composed_model).unwrap()),
+        ..Default::default()
+    };
     let composed_schemas = composed_model.load().unwrap();
     let options = pywr_schema::NetworkMergeOptions::default();
     let schema_v2 = composed_schemas.into_model_schema(&options).unwrap();
-    let model_builder = schema_v2
+    let mut model_builder = schema_v2
         .create_model_builder(&FileSystem, data_path, output_path)
         .unwrap();
+    model_builder.run_metadata(run_metadata);
     let model = model_builder.build().unwrap();
 
     match *solver {

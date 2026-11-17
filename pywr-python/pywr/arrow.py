@@ -102,6 +102,93 @@ class ScenarioGroupMetadata:
         return cls(name=value["name"], size=value["size"])
 
 
+@dataclass(frozen=True, slots=True)
+class SourceFileMetadata:
+    """A file a run's model was composed from, with the SHA-256 hash of its contents."""
+
+    path: str
+    sha256: str
+
+    @classmethod
+    def from_dict(cls, value: dict[str, Any]) -> SourceFileMetadata:
+        for field in ("path", "sha256"):
+            if not isinstance(value.get(field), str):
+                raise TypeError(f"Pywr source file field {field!r} must be a string")
+        return cls(path=value["path"], sha256=value["sha256"])
+
+
+@dataclass(frozen=True, slots=True)
+class ProjectRunMetadata:
+    """The project definition a run's model was composed from.
+
+    ``files`` holds the project's manifest followed by every file the model was composed
+    from, in merge order, with paths relative to the project's directory.
+    """
+
+    definition: str
+    files: list[SourceFileMetadata]
+
+    @classmethod
+    def from_dict(cls, value: dict[str, Any]) -> ProjectRunMetadata:
+        if not isinstance(value.get("definition"), str):
+            raise TypeError(
+                "Pywr project run metadata field 'definition' must be a string"
+            )
+        files = value.get("files")
+        if not isinstance(files, list) or any(
+            not isinstance(item, dict) for item in files
+        ):
+            raise TypeError(
+                "Pywr project run metadata field 'files' must be a list of objects"
+            )
+        return cls(
+            definition=value["definition"],
+            files=[SourceFileMetadata.from_dict(item) for item in files],
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class RunMetadata:
+    """Metadata describing the run that wrote an output."""
+
+    run_name: str | None = None
+    project: ProjectRunMetadata | None = None
+    extra: dict[str, Any] | None = None
+
+    @classmethod
+    def from_dict(cls, value: dict[str, Any]) -> RunMetadata:
+        run_name = value.get("run_name")
+        if run_name is not None and not isinstance(run_name, str):
+            raise TypeError(
+                "Pywr run metadata field 'run_name' must be a string or null"
+            )
+        project = value.get("project")
+        if project is not None and not isinstance(project, dict):
+            raise TypeError(
+                "Pywr run metadata field 'project' must be an object or null"
+            )
+        extra = value.get("extra")
+        if extra is not None and not isinstance(extra, dict):
+            raise TypeError("Pywr run metadata field 'extra' must be an object or null")
+        return cls(
+            run_name=run_name,
+            project=ProjectRunMetadata.from_dict(project)
+            if project is not None
+            else None,
+            extra=extra,
+        )
+
+
+def _metadata_json(schema: pa.Schema, key: bytes) -> Any | None:
+    raw = (schema.metadata or {}).get(key)
+    if raw is None:
+        return None
+    try:
+        return json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise ValueError(f"{key.decode()} metadata must be UTF-8 JSON") from error
+
+
 def _metadata_list(schema: pa.Schema, key: bytes) -> list[dict[str, Any]]:
     raw = (schema.metadata or {}).get(key)
     if raw is None:
@@ -226,3 +313,13 @@ def scenario_to_pandas(table: pa.Table, scenario: int):
         )
         frame[name] = pd.Series(matrix[:, scenario], index=frame.index)
     return frame
+
+
+def get_run_metadata(schema: pa.Schema) -> RunMetadata | None:
+    """Read the run metadata from a Pywr Arrow schema, or ``None`` if the run had none."""
+    value = _metadata_json(schema, b"PYWR_RUN")
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise TypeError("PYWR_RUN metadata must be an object")
+    return RunMetadata.from_dict(value)

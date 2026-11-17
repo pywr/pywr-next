@@ -8,6 +8,7 @@ pub use multi::{
     MultiNetworkModelBuilderError, MultiNetworkModelFinaliseError, MultiNetworkModelResult, MultiNetworkModelRunError,
     MultiNetworkModelSetupError, MultiNetworkModelTimings, MultiNetworkTransferBuilder, MultiNetworkTransferIndex,
 };
+pub use pywr_output_metadata::RunMetadata;
 pub use simple::{
     Model, ModelBuilder, ModelBuilderError, ModelFinaliseError, ModelResult, ModelRunError, ModelSetupError,
     ModelState, ModelStepError, ModelTimings,
@@ -26,9 +27,21 @@ pub enum ModelDomainError {
 pub struct ModelDomain {
     time: TimeDomain,
     scenario: ScenarioDomain,
+    /// Metadata describing the run, written to the model's Arrow and Parquet outputs.
+    run_metadata: Option<RunMetadata>,
 }
 
 impl ModelDomain {
+    /// The metadata describing the run, if any was given.
+    pub fn run_metadata(&self) -> Option<&RunMetadata> {
+        self.run_metadata.as_ref()
+    }
+
+    /// Set the metadata describing the run, which the model's Arrow and Parquet outputs record.
+    pub fn set_run_metadata(&mut self, run_metadata: Option<RunMetadata>) {
+        self.run_metadata = run_metadata;
+    }
+
     pub fn time(&self) -> &TimeDomain {
         &self.time
     }
@@ -70,6 +83,10 @@ impl ModelDomainBuilder {
         let time = self.time.build()?;
         let scenario = self.scenario.unwrap_or_default().build()?;
 
-        Ok(ModelDomain { time, scenario })
+        Ok(ModelDomain {
+            time,
+            scenario,
+            run_metadata: None,
+        })
     }
 }
