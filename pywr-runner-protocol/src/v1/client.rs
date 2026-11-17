@@ -82,10 +82,16 @@ pub struct ResultOptions {
     pub arrow_streams: Vec<ArrowStreamOptions>,
 }
 
+/// Capability advertised by a runner that accepts [`ModelDocument::MultiNetworkJson`].
+pub const MULTI_NETWORK_MODEL_CAPABILITY: &str = "model:multi_network";
+
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "type", content = "payload", rename_all = "snake_case")]
 pub enum ModelDocument {
+    /// A model with a single network, as JSON.
     Json(serde_json::Value),
+    /// A multi-network model, as JSON. Each of its Arrow streams must name its network.
+    MultiNetworkJson(serde_json::Value),
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -106,6 +112,10 @@ pub struct ArrowStreamOptions {
     pub filename: Option<PathBuf>,
     pub metric_set: String,
     pub batch_size: NonZeroUsize,
+    /// The network whose metric set to write. Required for a multi-network model, and not
+    /// allowed for a model with a single network.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub network: Option<String>,
 }
 
 #[cfg(test)]
@@ -116,6 +126,18 @@ mod tests {
     fn arrow_stream_options_reject_zero_batch_size() {
         let options = r#"{"name":"results","filename":"results.arrow","metric_set":"nodes","batch_size":0}"#;
         assert!(serde_json::from_str::<ArrowStreamOptions>(options).is_err());
+    }
+
+    #[test]
+    fn arrow_stream_options_name_a_network_only_when_given() {
+        let options = r#"{"name":"results","filename":null,"metric_set":"nodes","batch_size":10}"#;
+        let options: ArrowStreamOptions = serde_json::from_str(options).unwrap();
+        assert!(options.network.is_none());
+        assert!(serde_json::to_value(&options).unwrap().get("network").is_none());
+
+        let options = r#"{"name":"results","filename":null,"metric_set":"nodes","batch_size":10,"network":"supply"}"#;
+        let options: ArrowStreamOptions = serde_json::from_str(options).unwrap();
+        assert_eq!(options.network.as_deref(), Some("supply"));
     }
 
     #[test]

@@ -346,6 +346,7 @@ impl Recorder for ArrowStreamOutput {
 
         let schema = Arc::new(make_schema(
             metric_set.name(),
+            network.name(),
             domain.scenarios(),
             context.run_metadata,
             metric_set.metrics(),

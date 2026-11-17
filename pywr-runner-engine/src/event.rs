@@ -201,6 +201,7 @@ pub struct ArrowStreamDescriptor {
     pub name: String,
     pub filename: Option<PathBuf>,
     pub metric_set: String,
+    pub network: Option<String>,
 }
 
 impl From<ArrowStreamDescriptor> for v1::ArrowStreamDescriptor {
@@ -209,6 +210,7 @@ impl From<ArrowStreamDescriptor> for v1::ArrowStreamDescriptor {
             name: value.name,
             filename: value.filename,
             metric_set: value.metric_set,
+            network: value.network,
         }
     }
 }
