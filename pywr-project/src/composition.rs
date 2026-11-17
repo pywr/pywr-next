@@ -1,4 +1,4 @@
-use crate::error::ComposeToSchemaError;
+use crate::error::{ComposeToSchemaError, PlaceholderKind, UnresolvedPlaceholder};
 use crate::manifest::DefinitionOverrides;
 use pywr_schema::meta::{ComponentMeta, ProvenanceSource};
 use pywr_schema::model::{Metadata, MultiNetworkEntry, MultiNetworkTransfer, ScenarioDomain, TimeDomain};
@@ -73,18 +73,20 @@ impl ComposedModelSchemas {
     }
 }
 
-/// Describe each placeholder left in `network`, with the file it came from if known.
-fn unresolved_placeholders(network: &NetworkSchema) -> Vec<String> {
-    fn describe(kind: &str, name: &str, meta: &dyn ComponentMeta) -> String {
-        match meta.provenance() {
-            Some(provenance) => format!("{kind} `{name}` (from `{}`)", provenance.origin.file),
-            None => format!("{kind} `{name}`"),
+/// List each placeholder left in `network`, with where it came from if known.
+fn unresolved_placeholders(network: &NetworkSchema) -> Vec<UnresolvedPlaceholder> {
+    fn describe(kind: PlaceholderKind, name: &str, meta: &dyn ComponentMeta) -> UnresolvedPlaceholder {
+        UnresolvedPlaceholder {
+            kind,
+            name: name.to_string(),
+            origin: meta.provenance().map(|provenance| provenance.origin.clone()),
+            network: None,
         }
     }
 
     let mut placeholders = Vec::new();
     for node in network.nodes.iter().filter(|node| node.is_placeholder()) {
-        placeholders.push(describe("node", node.name(), node.meta()));
+        placeholders.push(describe(PlaceholderKind::Node, node.name(), node.meta()));
     }
     for node in network
         .virtual_nodes
@@ -92,16 +94,20 @@ fn unresolved_placeholders(network: &NetworkSchema) -> Vec<String> {
         .flatten()
         .filter(|node| node.is_placeholder())
     {
-        placeholders.push(describe("virtual node", node.name(), node.meta()));
+        placeholders.push(describe(PlaceholderKind::VirtualNode, node.name(), node.meta()));
     }
     for parameter in network.parameters.iter().flatten().filter(|p| p.is_placeholder()) {
-        placeholders.push(describe("parameter", parameter.name(), parameter.meta()));
+        placeholders.push(describe(PlaceholderKind::Parameter, parameter.name(), parameter.meta()));
     }
     for table in network.tables.iter().flatten().filter(|table| table.is_placeholder()) {
-        placeholders.push(describe("table", table.name(), table.meta()));
+        placeholders.push(describe(PlaceholderKind::Table, table.name(), table.meta()));
     }
     for time_series in network.time_series.iter().flatten().filter(|ts| ts.is_placeholder()) {
-        placeholders.push(describe("time series", time_series.name(), time_series.meta()));
+        placeholders.push(describe(
+            PlaceholderKind::TimeSeries,
+            time_series.name(),
+            time_series.meta(),
+        ));
     }
     for output in network
         .outputs
@@ -109,7 +115,7 @@ fn unresolved_placeholders(network: &NetworkSchema) -> Vec<String> {
         .flatten()
         .filter(|output| output.is_placeholder())
     {
-        placeholders.push(describe("output", output.name(), output.meta()));
+        placeholders.push(describe(PlaceholderKind::Output, output.name(), output.meta()));
     }
     placeholders
 }
@@ -392,11 +398,12 @@ impl ComposedMultiModelSchemas {
         for (schemas, transfers) in self.networks {
             let name = schemas.name().to_string();
             let network = schemas.into_network_schema(options)?;
-            placeholders.extend(
-                unresolved_placeholders(&network)
-                    .into_iter()
-                    .map(|placeholder| format!("{placeholder} in network `{name}`")),
-            );
+            placeholders.extend(unresolved_placeholders(&network).into_iter().map(|placeholder| {
+                UnresolvedPlaceholder {
+                    network: Some(name.clone()),
+                    ..placeholder
+                }
+            }));
             networks.push(MultiNetworkEntry {
                 name,
                 network: NetworkSchemaRef::Inline(network),
