@@ -1,4 +1,6 @@
+use pywr_schema::meta::ProvenanceSource;
 use pywr_schema::{ModelSchemaReadError, NetworkMergeError, NetworkSchemaReadError};
+use std::fmt;
 use std::io;
 use std::path::PathBuf;
 use thiserror::Error;
@@ -32,8 +34,8 @@ pub enum ComposeToSchemaError {
     NetworkRead(#[from] NetworkSchemaReadError),
     #[error("The network schemas could not be merged.")]
     NetworkMerge(#[from] NetworkMergeError),
-    #[error("The composed model has unresolved placeholders: {}.", .placeholders.join(", "))]
-    UnresolvedPlaceholders { placeholders: Vec<String> },
+    #[error("The composed model has unresolved placeholders: {}.", join(.placeholders))]
+    UnresolvedPlaceholders { placeholders: Vec<UnresolvedPlaceholder> },
     #[error(
         "The transfer `{transfer}` into `{network}` reads {component} from `{from_network}`, which does not exist there."
     )]
@@ -43,6 +45,62 @@ pub enum ComposeToSchemaError {
         from_network: String,
         component: String,
     },
+}
+
+/// The kind of component a placeholder stands in for.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum PlaceholderKind {
+    Node,
+    VirtualNode,
+    Parameter,
+    Table,
+    TimeSeries,
+    Output,
+}
+
+impl fmt::Display for PlaceholderKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Node => "node",
+            Self::VirtualNode => "virtual node",
+            Self::Parameter => "parameter",
+            Self::Table => "table",
+            Self::TimeSeries => "time series",
+            Self::Output => "output",
+        })
+    }
+}
+
+/// A placeholder left in a composed model after every file has been merged.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct UnresolvedPlaceholder {
+    pub kind: PlaceholderKind,
+    pub name: String,
+    /// Where the placeholder came from, if its provenance is known.
+    pub origin: Option<ProvenanceSource>,
+    /// The network of a multi-model that the placeholder is in; `None` for a single model.
+    pub network: Option<String>,
+}
+
+impl fmt::Display for UnresolvedPlaceholder {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} `{}`", self.kind, self.name)?;
+        if let Some(origin) = &self.origin {
+            write!(f, " (from `{}`)", origin.file)?;
+        }
+        if let Some(network) = &self.network {
+            write!(f, " in network `{network}`")?;
+        }
+        Ok(())
+    }
+}
+
+fn join(placeholders: &[UnresolvedPlaceholder]) -> String {
+    placeholders
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 /// Errors that may occur during validation of a project manifest, or during resolution of a
