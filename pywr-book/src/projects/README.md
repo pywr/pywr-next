@@ -162,6 +162,45 @@ network definition and dependency it was included through, where those apply. If
 placeholder that was later replaced, or a metric set was combined from several files, the other files are
 listed as `contributors`.
 
+For example, composing `baseline-option1` from the example project gives these node metadata (positions omitted):
+
+```json
+[
+  {
+    "name": "supply1",
+    "provenance": {
+      "origin": {
+        "file": "catchment/inflows/historical.json",
+        "network": "historical",
+        "network_set": "inflows",
+        "sub_network": "catchment"
+      }
+    }
+  },
+  {
+    "name": "demand1",
+    "provenance": {
+      "origin": { "file": "models/base.json" }
+    }
+  },
+  {
+    "name": "option1",
+    "provenance": {
+      "origin": {
+        "file": "options/option1.json",
+        "network": "option1",
+        "network_set": "options"
+      }
+    }
+  }
+]
+```
+
+`supply1` comes from the `historical.json` file of the `catchment` sub-network's `inflows` set, included
+through the `historical` network definition. `demand1` comes from the base model. `option1.json` also has a
+placeholder for `demand1`, so that its edge can connect to it, but because the real node was merged first the
+placeholder is simply dropped and is not listed as a contributor.
+
 Provenance makes it possible to trace any part of a composed model back to the file to edit. It is written out
 with the model, so it survives saving a composed model to JSON.
 
