@@ -68,3 +68,25 @@ fn composed_model_lists_its_includes_with_provenance() {
         ]
     );
 }
+
+/// A saved manifest leaves out empty lists and unset options, as a hand-written one would.
+#[test]
+fn saved_manifests_omit_empty_and_unset_fields() {
+    let minimal = serde_json::json!({
+        "format": "v1",
+        "base_model": "base.json",
+        "network_sets": [{ "name": "options" }],
+        "networks": [{ "name": "option1", "include": [{ "set": "options", "files": ["option1.json"] }] }],
+        "models": [{ "name": "baseline" }]
+    });
+    let manifest: ProjectManifest = serde_json::from_value(minimal.clone()).unwrap();
+    assert_eq!(serde_json::to_value(&manifest).unwrap(), minimal);
+
+    for example in ["my-model", "neighbour"] {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("../examples/{example}/pywr-project.json"));
+        let project = Project::open(&path).unwrap();
+        let saved = serde_json::to_string(project.manifest()).unwrap();
+        assert!(!saved.contains("null"), "{example}: {saved}");
+        assert!(!saved.contains("[]"), "{example}: {saved}");
+    }
+}
