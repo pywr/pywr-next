@@ -21,6 +21,8 @@ class MetricColumnMetadata:
     attribute: str
     type: str
     sub_type: str | None = None
+    network: str | None = None
+    """The metric's network in a multi-network model; ``None`` for a single network."""
 
     @classmethod
     def from_dict(cls, value: dict[str, Any]) -> MetricColumnMetadata:
@@ -42,12 +44,16 @@ class MetricColumnMetadata:
                     f"Pywr metric metadata field {field!r} must be a string"
                 )
 
-        if value.get("sub_type") is not None and not isinstance(value["sub_type"], str):
-            raise TypeError(
-                "Pywr metric metadata field 'sub_type' must be a string or null"
-            )
+        for field in ("sub_type", "network"):
+            if value.get(field) is not None and not isinstance(value[field], str):
+                raise TypeError(
+                    f"Pywr metric metadata field {field!r} must be a string or null"
+                )
         return cls(
-            **{field: value.get(field) for field in (*required_fields, "sub_type")}
+            **{
+                field: value.get(field)
+                for field in (*required_fields, "sub_type", "network")
+            }
         )
 
 
@@ -246,7 +252,10 @@ class MetricColumnExtensionType(pa.ExtensionType):
         return self._metadata
 
     def __arrow_ext_serialize__(self) -> bytes:
-        return json.dumps(asdict(self._metadata), separators=(",", ":")).encode("utf-8")
+        metadata = asdict(self._metadata)
+        if metadata["network"] is None:
+            del metadata["network"]
+        return json.dumps(metadata, separators=(",", ":")).encode("utf-8")
 
     @classmethod
     def __arrow_ext_deserialize__(

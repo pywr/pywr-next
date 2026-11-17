@@ -121,8 +121,11 @@ impl PendingBatch {
     }
 }
 
+/// The schema of an Arrow output of a metric set. `network_name` is the name of the metric set's
+/// network in a multi-network model, recorded with each metric column.
 pub(super) fn make_schema(
     metric_set_name: &str,
+    network_name: Option<&str>,
     scenario_domain: &ScenarioDomain,
     run_metadata: Option<&RunMetadata>,
     metrics: &[OutputMetric],
@@ -149,6 +152,7 @@ pub(super) fn make_schema(
             attribute: metric.attribute().to_string(),
             ty: metric.ty().to_string(),
             sub_type: metric.sub_type().map(ToString::to_string),
+            network: network_name.map(ToString::to_string),
         };
         fields.push(MetricColumnExtension::new(metadata).field(column_name, scenario_count));
     }
@@ -255,6 +259,7 @@ pub(super) mod tests {
                 attribute: "outflow".to_string(),
                 ty: "node".to_string(),
                 sub_type: None,
+                network: None,
             })
             .field("flow", 2),
             MetricColumnExtension::new(MetricColumnMetadata {
@@ -263,6 +268,7 @@ pub(super) mod tests {
                 attribute: "volume".to_string(),
                 ty: "node".to_string(),
                 sub_type: None,
+                network: None,
             })
             .field("volume", 2),
         ]))
@@ -289,14 +295,14 @@ pub(super) mod tests {
     #[test]
     fn schema_records_run_metadata_only_when_given() {
         let domain = crate::test_utils::default_domain();
-        let schema = make_schema("outputs", domain.scenarios(), None, &[]);
+        let schema = make_schema("outputs", None, domain.scenarios(), None, &[]);
         assert!(!schema.metadata().contains_key(RUN_METADATA_KEY));
 
         let run_metadata = RunMetadata {
             run_name: Some("baseline".to_string()),
             ..Default::default()
         };
-        let schema = make_schema("outputs", domain.scenarios(), Some(&run_metadata), &[]);
+        let schema = make_schema("outputs", None, domain.scenarios(), Some(&run_metadata), &[]);
         let recorded: RunMetadata = serde_json::from_str(&schema.metadata()[RUN_METADATA_KEY]).unwrap();
         assert_eq!(recorded, run_metadata);
     }

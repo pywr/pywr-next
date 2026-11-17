@@ -69,6 +69,9 @@ pub struct ArrowStreamDescriptor {
     pub filename: Option<PathBuf>,
     /// Name of the sole metric set in this stream.
     pub metric_set: String,
+    /// The network of the metric set, in a multi-network model.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub network: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

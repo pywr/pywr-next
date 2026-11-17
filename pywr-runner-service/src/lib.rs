@@ -78,6 +78,7 @@ impl ProtocolRegistry for DefaultProtocolRegistry {
 
 fn supported_capabilities() -> Vec<String> {
     vec![
+        v1::MULTI_NETWORK_MODEL_CAPABILITY.to_owned(),
         #[cfg(feature = "clp")]
         v1::Solver::Clp.capability().to_owned(),
         #[cfg(feature = "cbc")]

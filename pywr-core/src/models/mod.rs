@@ -6,7 +6,8 @@ use crate::timestep::{TimeDomain, TimeDomainBuilder, TimeDomainBuilderError};
 pub use multi::{
     InterNetworkTransferError, MultiNetworkEntryBuilder, MultiNetworkModel, MultiNetworkModelBuilder,
     MultiNetworkModelBuilderError, MultiNetworkModelFinaliseError, MultiNetworkModelResult, MultiNetworkModelRunError,
-    MultiNetworkModelSetupError, MultiNetworkModelTimings, MultiNetworkTransferBuilder, MultiNetworkTransferIndex,
+    MultiNetworkModelSetupError, MultiNetworkModelState, MultiNetworkModelStepError, MultiNetworkModelTimings,
+    MultiNetworkTransferBuilder, MultiNetworkTransferIndex,
 };
 pub use pywr_output_metadata::RunMetadata;
 pub use simple::{

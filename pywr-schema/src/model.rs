@@ -1008,6 +1008,16 @@ pub struct MultiNetworkModelSchema {
     pub networks: Vec<MultiNetworkEntry>,
 }
 
+/// Where a multi-network model reads a network given by `path`: relative to `data_path`, if
+/// there is one.
+#[cfg(feature = "core")]
+fn network_file_path(path: &Path, data_path: Option<&Path>) -> PathBuf {
+    match data_path {
+        Some(data_path) if path.is_relative() => data_path.join(path),
+        _ => path.to_path_buf(),
+    }
+}
+
 impl FromStr for MultiNetworkModelSchema {
     type Err = ModelSchemaReadError;
 
@@ -1076,6 +1086,26 @@ impl MultiNetworkModelSchema {
         .into_result()
     }
 
+    /// Read each network given by path through `files` and put it in the schema inline, so
+    /// its components can be changed before the model is built. Paths are resolved as
+    /// [`Self::create_model_builder`] resolves them.
+    #[cfg(feature = "core")]
+    pub fn inline_network_files(
+        &mut self,
+        files: &dyn FileProvider,
+        data_path: Option<&Path>,
+    ) -> Result<(), MultiNetworkModelSchemaBuildError> {
+        for entry in &mut self.networks {
+            if let NetworkSchemaRef::Path(path) = &entry.network {
+                let path = network_file_path(path, data_path);
+                let network = NetworkSchema::from_files(files, &path)
+                    .map_err(|source| MultiNetworkModelSchemaBuildError::NetworkReadError { path, source })?;
+                entry.network = NetworkSchemaRef::Inline(network);
+            }
+        }
+        Ok(())
+    }
+
     /// Create a [`MultiNetworkModelBuilder`] from the schema, opening its input files and
     /// network files through `files`.
     #[cfg(feature = "core")]
@@ -1110,15 +1140,7 @@ impl MultiNetworkModelSchema {
 
             let (schema, tables, time_series) = match &network_entry.network {
                 NetworkSchemaRef::Path(path) => {
-                    let pth = if let Some(dp) = data_path {
-                        if path.is_relative() {
-                            dp.join(path)
-                        } else {
-                            path.clone()
-                        }
-                    } else {
-                        path.clone()
-                    };
+                    let pth = network_file_path(path, data_path);
 
                     let network_schema = NetworkSchema::from_files(files, &pth)
                         .map_err(|source| MultiNetworkModelSchemaBuildError::NetworkReadError { path: pth, source })?;

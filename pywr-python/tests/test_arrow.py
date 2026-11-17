@@ -107,6 +107,34 @@ def test_metric_extension_serialization_and_validation():
         )
 
 
+def test_metric_extension_records_a_network_only_when_it_has_one():
+    single = MetricColumnMetadata("nodes", "demand", "outflow", "node")
+    serialized = MetricColumnExtensionType(single, 2).__arrow_ext_serialize__()
+    assert "network" not in json.loads(serialized)
+
+    multi = MetricColumnMetadata("nodes", "demand", "outflow", "node", network="supply")
+    extension = MetricColumnExtensionType(multi, 2)
+    serialized = extension.__arrow_ext_serialize__()
+    assert json.loads(serialized)["network"] == "supply"
+    assert (
+        MetricColumnExtensionType.__arrow_ext_deserialize__(
+            extension.storage_type, serialized
+        ).metadata
+        == multi
+    )
+
+    with pytest.raises(TypeError, match="'network' must be a string or null"):
+        MetricColumnMetadata.from_dict(
+            {
+                "metric_set": "nodes",
+                "name": "demand",
+                "attribute": "outflow",
+                "type": "node",
+                "network": 1,
+            }
+        )
+
+
 def test_metric_extension_registration_is_idempotent():
     register_metric_extension_type()
 
