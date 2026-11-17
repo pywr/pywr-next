@@ -228,13 +228,13 @@ pub struct ProjectManifest {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub sub_networks: Vec<SubNetwork>,
     /// Named sets of NetworkSchema fragments.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub network_sets: Vec<NetworkSet>,
     /// Named, reusable compositions of network fragments.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub networks: Vec<NetworkDefinition>,
     /// Named model definitions.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub models: Vec<ModelDefinition>,
     /// Named multi-network model definitions.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -1684,7 +1684,7 @@ pub struct SubNetwork {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub data_dir: Option<String>,
     /// Named sets of NetworkSchema fragments, with directories relative to the sub-network directory.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub network_sets: Vec<NetworkSet>,
 }
 
@@ -1702,7 +1702,7 @@ pub struct NetworkDefinition {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub extends: Vec<String>,
     /// Per-network-set selections for this network definition.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub include: Vec<DefinitionSelection>,
 }
 
@@ -1722,10 +1722,10 @@ pub struct ModelDefinition {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub networks: Vec<String>,
     /// Per-network-set selections for this definition, included after its networks.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub include: Vec<DefinitionSelection>,
     /// Optional overrides to base model.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub overrides: Option<DefinitionOverrides>,
 }
 
@@ -1777,7 +1777,7 @@ pub struct MultiModelDefinition {
     /// Where the time domain, scenarios and metadata come from.
     pub domain: MultiModelDomain,
     /// Optional overrides to the domain.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub overrides: Option<DefinitionOverrides>,
     /// The networks of the model, each with the transfers into it.
     pub networks: Vec<MultiModelNetwork>,
@@ -2100,6 +2100,7 @@ pub struct DefinitionSelection {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub files: Option<Vec<String>>,
     /// If true, include all JSON files in the set directory. Overrides `files` if both are specified.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub include_all: Option<bool>,
     /// Optional metadata for each selected file.
     /// The keys are the filenames, and the values are the metadata for that file.
@@ -2112,12 +2113,13 @@ pub struct DefinitionSelection {
 pub struct NetworkSet {
     pub name: String,
     /// Directory containing NetworkSchema fragments (relative to root).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dir: Option<String>,
     /// Minimum number of files required from this set (inclusive). Default: 0.
-    #[serde(default, alias = "min")]
+    #[serde(default, alias = "min", skip_serializing_if = "Option::is_none")]
     pub min_files: Option<usize>,
     /// Maximum number of files allowed from this set (inclusive). Default: unlimited.
-    #[serde(default, alias = "max")]
+    #[serde(default, alias = "max", skip_serializing_if = "Option::is_none")]
     pub max_files: Option<usize>,
 }
 
