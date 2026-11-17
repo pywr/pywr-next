@@ -68,6 +68,14 @@ impl ProjectManifest {
         }
     }
 
+    /// Resolve the project against the filesystem, returning where its files are together with
+    /// every problem that [`validate`](Self::validate) would report.
+    pub fn layout(&self, root: &Path, options: &ResolveOptions) -> crate::ProjectLayout {
+        match self {
+            ProjectManifest::V1(manifest) => manifest.layout(root, options),
+        }
+    }
+
     /// Compose the model or multi-model definition `definition_name`.
     pub fn compose(
         &self,

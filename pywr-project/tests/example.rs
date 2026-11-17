@@ -90,3 +90,78 @@ fn saved_manifests_omit_empty_and_unset_fields() {
         assert!(!saved.contains("[]"), "{example}: {saved}");
     }
 }
+
+/// A layout lists the projects, sets and sub-networks, and the paths to watch for changes.
+#[test]
+fn example_project_layout_lists_projects_sets_and_watch_paths() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../examples/my-model/pywr-project.json");
+    let project = Project::open(&path).unwrap();
+    let layout = project.layout();
+    assert!(layout.is_valid(), "{:?}", layout.problems);
+
+    let examples = path.parent().unwrap().parent().unwrap().canonicalize().unwrap();
+    let my_model = examples.join("my-model");
+    let neighbour = examples.join("neighbour");
+
+    let projects: Vec<_> = layout
+        .projects
+        .iter()
+        .map(|project| {
+            (
+                project.alias.as_deref(),
+                project.manifest.clone(),
+                project.base_model.clone(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        projects,
+        [
+            (
+                None,
+                Some(my_model.join("pywr-project.json")),
+                Some(my_model.join("models/base.json"))
+            ),
+            (Some("neighbour"), Some(neighbour.join("pywr-project.json")), None),
+        ]
+    );
+
+    let sets: Vec<_> = layout
+        .network_sets
+        .iter()
+        .map(|set| (set.name.as_str(), set.dir.clone(), set.files.len()))
+        .collect();
+    assert_eq!(
+        sets,
+        [
+            ("options", my_model.join("options"), 2),
+            ("catchment::inflows", my_model.join("catchment/inflows"), 2),
+            ("neighbour::supply", neighbour.join("supply"), 1),
+        ]
+    );
+    let file = &layout.network_sets[1].files[0];
+    assert_eq!(file.source.file.as_str(), "catchment/inflows/historical.json");
+    assert_eq!(file.source.network_set.as_deref(), Some("inflows"));
+    assert_eq!(file.source.sub_network.as_deref(), Some("catchment"));
+
+    let sub_networks: Vec<_> = layout
+        .sub_networks
+        .iter()
+        .map(|sub_network| (sub_network.name.as_str(), sub_network.dir.clone()))
+        .collect();
+    assert_eq!(sub_networks, [("catchment", my_model.join("catchment"))]);
+
+    let watch = layout.watch_paths();
+    for expected in [
+        my_model.join("pywr-project.json"),
+        neighbour.join("pywr-project.json"),
+        my_model.join("models/base.json"),
+        my_model.join("catchment"),
+        my_model.join("options"),
+        my_model.join("options/option1.json"),
+        neighbour.join("supply/base.json"),
+    ] {
+        assert!(watch.contains(&expected), "{expected:?} not in {watch:?}");
+    }
+    assert_eq!(watch.len(), 12, "{watch:#?}");
+}
