@@ -237,6 +237,16 @@ impl ComposedNetwork {
         &self.name
     }
 
+    /// The model definition's base model, whose network is the starting point, if any.
+    pub fn base_model(&self) -> Option<&ComposedNetworkPath> {
+        self.base_model.as_ref()
+    }
+
+    /// The network files to merge, in merge order, each with its provenance.
+    pub fn includes(&self) -> &[ComposedNetworkPath] {
+        &self.includes
+    }
+
     /// Deserialize the included networks from their paths, returning a [`ComposedNetworkSchemas`] instance.
     pub fn load(&self) -> Result<ComposedNetworkSchemas, ComposeToSchemaError> {
         let base_network = match &self.base_model {
@@ -470,6 +480,8 @@ pub struct LoadContext {
     pub data_dir: Option<PathBuf>,
 }
 
+/// A network file to merge into a composed model or network, with where it came from.
+#[derive(Clone, Debug)]
 pub struct ComposedNetworkPath {
     pub path: PathBuf,
     pub position_offset: Option<PositionOffset>,
@@ -489,6 +501,26 @@ pub struct ComposedModel {
 impl ComposedModel {
     pub fn name(&self) -> &str {
         &self.name
+    }
+
+    /// The path of the base model file.
+    pub fn base_model_path(&self) -> &Path {
+        &self.base_model
+    }
+
+    /// The provenance recorded for components of the base model.
+    pub fn base_source(&self) -> &ProvenanceSource {
+        &self.base_source
+    }
+
+    /// The network files to merge into the base model, in merge order, each with its provenance.
+    pub fn includes(&self) -> &[ComposedNetworkPath] {
+        &self.includes
+    }
+
+    /// The overrides applied to the base model's time and scenario domains, if any.
+    pub fn overrides(&self) -> Option<&DefinitionOverrides> {
+        self.overrides.as_ref()
     }
     /// Deserialize the composed model from the specified paths, returning a [`ComposedModelSchemas`] instance.
     pub fn load(&self) -> Result<ComposedModelSchemas, ComposeToSchemaError> {

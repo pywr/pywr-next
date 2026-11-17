@@ -36,3 +36,35 @@ fn example_project_validates_and_every_model_composes() {
             .unwrap();
     }
 }
+
+/// A composition lists the files it will merge, with their provenance, before any are read.
+#[test]
+fn composed_model_lists_its_includes_with_provenance() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../examples/my-model/pywr-project.json");
+    let project = Project::open(&path).unwrap();
+    let composed = project.compose_model("baseline-option1").unwrap();
+
+    assert_eq!(composed.base_source().file.as_str(), "models/base.json");
+    let sources: Vec<_> = composed
+        .includes()
+        .iter()
+        .map(|include| {
+            (
+                include.source.file.as_str(),
+                include.source.network.as_deref(),
+                include.source.sub_network.as_deref(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        sources,
+        [
+            (
+                "catchment/inflows/historical.json",
+                Some("historical"),
+                Some("catchment")
+            ),
+            ("options/option1.json", Some("option1"), None),
+        ]
+    );
+}
