@@ -3,6 +3,7 @@ use crate::composition::{
     ComposedNetwork, ComposedNetworkPath, LoadContext, PositionOffset,
 };
 use crate::error::{ComposeModelError, DefinitionKind, DefinitionRef, ManifestResolutionError};
+use crate::layout::{NetworkFileLayout, NetworkSetLayout, ProjectLayout, ProjectLocation, SubNetworkLayout};
 use crate::manifest::{DefinitionOverrides, DependencyPolicy, ResolveOptions};
 use pywr_schema::meta::ProvenanceSource;
 use pywr_schema::model::{MultiNetworkTransfer, ScenarioDomain, TimeDomain};
@@ -294,26 +295,143 @@ impl ProjectManifest {
     /// this project uses them.
     pub fn validate(&self, root: &Path, options: &ResolveOptions) -> Result<(), ProjectManifestValidationError> {
         let mut problems = self.manifest_problems();
-        let mut graph = self.load_graph(root, options, true, &mut problems);
-        // Every dependency's problems are reported, whether or not anything uses it.
+        let graph = self.load_whole_graph(root, options, &mut problems);
+        let mut resolver = Resolver::new(&graph);
+        self.resolve_all(&mut resolver, &mut problems);
+        into_result(problems)
+    }
+
+    /// Load the project graph for checking the whole project, reporting every dependency's
+    /// problems whether or not anything uses it.
+    fn load_whole_graph(
+        &self,
+        root: &Path,
+        options: &ResolveOptions,
+        problems: &mut Vec<ProjectManifestProblem>,
+    ) -> ProjectGraph<'_> {
+        let mut graph = self.load_graph(root, options, true, problems);
         problems.extend(
             std::mem::take(&mut graph.load_problems)
                 .into_iter()
                 .map(|found| found.problem),
         );
+        graph
+    }
+
+    /// Resolve the project against the filesystem, returning where its files are together with
+    /// every problem that [`validate`](Self::validate) would report.
+    pub fn layout(&self, root: &Path, options: &ResolveOptions) -> ProjectLayout {
+        let mut problems = self.manifest_problems();
+        let graph = self.load_whole_graph(root, options, &mut problems);
         let mut resolver = Resolver::new(&graph);
+        self.resolve_all(&mut resolver, &mut problems);
+
+        let projects = graph
+            .projects
+            .iter()
+            .map(|project| ProjectLocation {
+                alias: project.scope.alias.clone(),
+                root: project.root.clone(),
+                manifest: project.manifest_path.clone(),
+                base_model: match &project.base_model {
+                    ProjectBaseModel::Resolved((path, _)) => Some(path.clone()),
+                    _ => None,
+                },
+            })
+            .collect();
+        let network_sets = graph
+            .projects
+            .iter()
+            .flat_map(|project| &project.resolved.sets)
+            .map(|set| NetworkSetLayout {
+                name: set.label.clone(),
+                project: set.alias.clone(),
+                sub_network: set.sub_network.clone(),
+                set: set.set_name.clone(),
+                dir: set.dir.clone(),
+                min_files: set.min_files,
+                max_files: set.max_files,
+                files: set.files.iter().map(|file| file.layout(Some(set))).collect(),
+            })
+            .collect();
+        let sub_networks = graph
+            .projects
+            .iter()
+            .flat_map(|project| {
+                project
+                    .resolved
+                    .sub_networks
+                    .iter()
+                    .map(|sub_network| SubNetworkLayout {
+                        name: project.label(&sub_network.name),
+                        project: project.scope.alias.clone(),
+                        dir: sub_network.dir.clone(),
+                        base_network: sub_network.base_network.as_ref().map(|file| file.layout(None)),
+                    })
+            })
+            .collect();
+
+        // Base models given by definitions, in a stable order, then the root project's
+        // multi-model base models and transfers files.
+        let mut definition_files: Vec<_> = resolver
+            .model_base_models
+            .values()
+            .flatten()
+            .map(|(path, _)| path.clone())
+            .filter(|path| {
+                graph.projects.iter().all(
+                    |project| !matches!(&project.base_model, ProjectBaseModel::Resolved((base, _)) if base == path),
+                )
+            })
+            .collect();
+        definition_files.sort();
+        definition_files.dedup();
+        let mut add = |path: PathBuf| {
+            if !definition_files.contains(&path) {
+                definition_files.push(path);
+            }
+        };
+        for multi_model in &self.multi_models {
+            if let MultiModelDomain::BaseModel(BaseModelDomain { path: base_model }) = &multi_model.domain
+                && let Ok((path, _)) = resolve_base_model(root, base_model)
+            {
+                add(path);
+            }
+            for network in &multi_model.networks {
+                if let Some(path) = network
+                    .transfers_file
+                    .as_deref()
+                    .and_then(|file| transfers_path(root, file).ok())
+                {
+                    add(path);
+                }
+            }
+        }
+
+        ProjectLayout {
+            projects,
+            network_sets,
+            sub_networks,
+            definition_files,
+            problems: into_result(problems)
+                .err()
+                .map(crate::ProjectManifestValidationError::V1),
+        }
+    }
+
+    /// Resolve every definition, appending the problems found.
+    fn resolve_all<'a>(&'a self, resolver: &mut Resolver<'a>, problems: &mut Vec<ProjectManifestProblem>) {
         for model in &self.models {
-            resolver.resolve_model(model, &mut problems);
+            resolver.resolve_model(model, problems);
         }
         for multi_model in &self.multi_models {
-            multi_model.resolve(&mut resolver, &mut problems);
+            multi_model.resolve(resolver, problems);
         }
         // Network definitions that no model uses are still validated; each is reported once.
         // Sub-network activation is not checked here, because a model may activate it instead.
         for network in &self.networks {
-            resolver.expand(ROOT, &network.name, &mut problems);
+            resolver.expand(ROOT, &network.name, problems);
         }
-        into_result(problems)
     }
 
     /// Validate a model or multi-model definition against the project manifest.
@@ -523,6 +641,7 @@ impl ProjectManifest {
         let mut graph = ProjectGraph {
             projects: vec![LoadedProject {
                 manifest: Cow::Borrowed(self),
+                manifest_path: None,
                 root: root.to_path_buf(),
                 scope,
                 base_model,
@@ -1118,6 +1237,9 @@ struct Reached {
 /// A project in a [`ProjectGraph`], resolved against the filesystem.
 struct LoadedProject<'m> {
     manifest: Cow<'m, ProjectManifest>,
+    /// The canonical path of the project's manifest; `None` for the root project, whose
+    /// manifest may not have been read from a file.
+    manifest_path: Option<PathBuf>,
     /// The project's directory.
     root: PathBuf,
     scope: ProjectScope,
@@ -1276,6 +1398,7 @@ impl DependencyLoader<'_> {
         let resolved = manifest.resolve_project(&dependency_root, &scope, problems);
         graph.projects.push(LoadedProject {
             manifest: Cow::Owned(manifest),
+            manifest_path: Some(path.clone()),
             root: dependency_root,
             scope,
             base_model,
@@ -2460,6 +2583,15 @@ impl MultiModelNetwork {
     }
 }
 
+/// The canonical path of `transfers_file`, relative to `root`.
+fn transfers_path(root: &Path, transfers_file: &str) -> Result<PathBuf, ManifestResolutionError> {
+    let candidate = strict_relative_path("transfers file", transfers_file)?.to_path(root);
+    if !candidate.exists() {
+        return Err(ManifestResolutionError::TransfersFileNotFound { path: candidate });
+    }
+    canonicalize_contained(root, &candidate, "transfers file")
+}
+
 /// Read a JSON list of transfers from `transfers_file`, relative to `root`, returning the file's
 /// canonical path with the transfers.
 fn read_transfers(
@@ -2467,10 +2599,7 @@ fn read_transfers(
     transfers_file: &str,
 ) -> Result<(PathBuf, Vec<MultiNetworkTransfer>), ManifestResolutionError> {
     let candidate = strict_relative_path("transfers file", transfers_file)?.to_path(root);
-    if !candidate.exists() {
-        return Err(ManifestResolutionError::TransfersFileNotFound { path: candidate });
-    }
-    let path = canonicalize_contained(root, &candidate, "transfers file")?;
+    let path = transfers_path(root, transfers_file)?;
     let data = std::fs::read_to_string(&path).map_err(|source| ManifestResolutionError::TransfersFileRead {
         path: candidate.clone(),
         source,
@@ -2571,6 +2700,22 @@ struct ResolvedNetworkFile {
     /// Directory, relative to the root project's directory, that the file's relative data paths
     /// are relative to, or `None` if they are already relative to the root project's directory.
     data_dir: Option<PathBuf>,
+}
+
+impl ResolvedNetworkFile {
+    /// This file as listed in a [`ProjectLayout`], from `set` if it is in one.
+    fn layout(&self, set: Option<&ResolvedNetworkSet>) -> NetworkFileLayout {
+        NetworkFileLayout {
+            path: self.path.clone(),
+            source: ProvenanceSource {
+                file: self.source.clone(),
+                network_set: set.map(|set| set.set_name.clone()),
+                sub_network: self.sub_network.clone(),
+                project: self.project.clone(),
+                network: None,
+            },
+        }
+    }
 }
 
 struct ResolvedSubNetwork {
@@ -3797,6 +3942,55 @@ mod test {
                 ("network definition `twice`".to_string(), "a"),
             ]
         );
+    }
+
+    #[test]
+    fn layout_reports_the_problems_of_every_dependency() {
+        let workspace = workspace();
+        let root = workspace.path().join("main");
+        let mut manifest = main_manifest(vec![]);
+        manifest.dependencies = vec![dependency("absent", "../absent/pywr-project.json")];
+        let layout = manifest.layout(&root, OPTIONS);
+        let problems = layout.problems.expect("the missing dependency was not reported");
+        assert!(
+            problems.report().to_string().contains("absent"),
+            "{}",
+            problems.report()
+        );
+    }
+
+    #[test]
+    fn layout_lists_what_resolved_alongside_the_problems() {
+        let root = project_with_nets();
+        let manifest = ProjectManifest {
+            network_sets: vec![set("nets", None, None, None), set("missing", None, None, None)],
+            ..manifest(
+                "base.json",
+                vec![],
+                vec![selection("nets", Some(vec!["a.json"]), false)],
+            )
+        };
+        let layout = manifest.layout(root.path(), OPTIONS);
+
+        let sets: Vec<_> = layout.network_sets.iter().map(|set| set.name.as_str()).collect();
+        assert_eq!(sets, ["nets"]);
+        assert_eq!(layout.projects[0].manifest, None);
+        assert_eq!(
+            layout.projects[0].base_model,
+            Some(root.path().canonicalize().unwrap().join("base.json"))
+        );
+        let Some(crate::ProjectManifestValidationError::V1(error)) = &layout.problems else {
+            panic!("expected problems");
+        };
+        assert_eq!(
+            error.to_string(),
+            manifest.validate(root.path(), OPTIONS).unwrap_err().to_string()
+        );
+        assert!(matches!(
+            error.problems.as_slice(),
+            [ProjectManifestProblem::Resolution(ManifestResolutionError::DirectoryNotFound { set, .. })]
+                if set == "missing"
+        ));
     }
 
     #[test]

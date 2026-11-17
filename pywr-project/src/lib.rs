@@ -1,5 +1,6 @@
 mod composition;
 mod error;
+mod layout;
 mod manifest;
 mod project;
 
@@ -12,6 +13,7 @@ pub use error::{
     ComposeModelError, ComposeToSchemaError, DefinitionKind, DefinitionRef, ManifestResolutionError, PlaceholderKind,
     ProjectError, ProjectManifestReadError, UnresolvedPlaceholder,
 };
+pub use layout::{NetworkFileLayout, NetworkSetLayout, ProjectLayout, ProjectLocation, SubNetworkLayout};
 pub use manifest::{
     DefinitionOverrides, DependencyPolicy, ProjectManifest, ProjectManifestValidationError, ResolveOptions, v1,
 };

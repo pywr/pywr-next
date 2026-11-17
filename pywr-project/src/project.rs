@@ -1,7 +1,8 @@
 use crate::error::ComposeModelError;
 use crate::manifest::{ProjectManifest, ResolveOptions};
 use crate::{
-    Composed, ComposedModel, ComposedMultiModel, ComposedNetwork, ProjectError, ProjectManifestValidationError,
+    Composed, ComposedModel, ComposedMultiModel, ComposedNetwork, ProjectError, ProjectLayout,
+    ProjectManifestValidationError,
 };
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
@@ -78,6 +79,17 @@ impl Project {
     /// Validate the project manifest and return a report of all structural problems found.
     pub fn validate(&self) -> Result<(), ProjectManifestValidationError> {
         self.manifest.validate(&self.root, &self.options)
+    }
+
+    /// Resolve the project against the filesystem, returning where its own and its
+    /// dependencies' files are, together with every problem that [`validate`](Self::validate)
+    /// would report.
+    pub fn layout(&self) -> ProjectLayout {
+        let mut layout = self.manifest.layout(&self.root, &self.options);
+        if let Some(root) = layout.projects.first_mut() {
+            root.manifest = Some(self.root.join(&self.manifest_filename));
+        }
+        layout
     }
 
     /// Compose a model from the project manifest and a definition name.
