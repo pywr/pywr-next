@@ -3492,6 +3492,16 @@ mod test {
             error.to_string(),
             "The composed model has unresolved placeholders: node `missing` (from `base.json`)."
         );
+        let crate::ComposeToSchemaError::UnresolvedPlaceholders { placeholders } = error else {
+            panic!("expected unresolved placeholders");
+        };
+        let [placeholder] = placeholders.as_slice() else {
+            panic!("expected one placeholder");
+        };
+        assert_eq!(placeholder.kind, crate::PlaceholderKind::Node);
+        assert_eq!(placeholder.name, "missing");
+        assert_eq!(placeholder.origin.as_ref().unwrap().file.as_str(), "base.json");
+        assert_eq!(placeholder.network, None);
     }
 
     #[test]

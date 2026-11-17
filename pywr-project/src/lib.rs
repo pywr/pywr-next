@@ -9,7 +9,8 @@ pub use composition::{
     ComposedNetworkSchemas, LoadContext, PositionOffset,
 };
 pub use error::{
-    ComposeModelError, ComposeToSchemaError, ManifestResolutionError, ProjectError, ProjectManifestReadError,
+    ComposeModelError, ComposeToSchemaError, ManifestResolutionError, PlaceholderKind, ProjectError,
+    ProjectManifestReadError, UnresolvedPlaceholder,
 };
 pub use manifest::{
     DefinitionOverrides, DependencyPolicy, ProjectManifest, ProjectManifestValidationError, ResolveOptions, v1,
