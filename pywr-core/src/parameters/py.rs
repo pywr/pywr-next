@@ -205,7 +205,13 @@ impl PyCommon {
     ) -> Result<(), GeneralCalculationError> {
         for (k, m) in self.metrics.iter() {
             let value = m.get_value(network, state)?;
-            values.insert(k.clone(), value);
+            // Avoid cloning the key on every call once the entry exists.
+            match values.get_mut(k) {
+                Some(v) => *v = value,
+                None => {
+                    values.insert(k.clone(), value);
+                }
+            }
         }
 
         Ok(())
@@ -219,9 +225,73 @@ impl PyCommon {
     ) -> Result<(), GeneralCalculationError> {
         for (k, m) in self.indices.iter() {
             let value = m.get_value(network, state)?;
-            values.insert(k.clone(), value);
+            match values.get_mut(k) {
+                Some(v) => *v = value,
+                None => {
+                    values.insert(k.clone(), value);
+                }
+            }
         }
 
+        Ok(())
+    }
+
+    fn python_error(&self, object: &Py<PyAny>, py_error: PyErr) -> GeneralCalculationError {
+        GeneralCalculationError::PythonError {
+            name: self.meta.name.to_string(),
+            object: object.to_string(),
+            py_error: Box::new(py_error),
+        }
+    }
+}
+
+/// Python objects created once per scenario and reused for every call.
+struct PyCallState {
+    info: Py<ParameterInfo>,
+    /// Positional arguments for each call; the first is always `info`.
+    args: Py<PyTuple>,
+}
+
+impl PyCallState {
+    fn new(
+        py: Python<'_>,
+        timestep: &Timestep,
+        scenario_index: &ScenarioIndex,
+        extra_args: Option<&Bound<'_, PyTuple>>,
+    ) -> PyResult<Self> {
+        let info = Bound::new(
+            py,
+            ParameterInfo {
+                timestep: *timestep,
+                scenario_index: Arc::new(scenario_index.clone()),
+                metric_values: HashMap::default(),
+                index_values: HashMap::default(),
+            },
+        )?;
+
+        let mut args = vec![info.clone().into_any()];
+        if let Some(extra_args) = extra_args {
+            args.extend(extra_args.iter());
+        }
+        let args = PyTuple::new(py, args)?;
+
+        Ok(Self {
+            info: info.unbind(),
+            args: args.unbind(),
+        })
+    }
+
+    /// Update `info` for the current call. The scenario index is fixed for the lifetime of this state.
+    fn update(
+        &self,
+        py: Python<'_>,
+        common: &PyCommon,
+        ctx: &GeneralParameterContext<'_>,
+    ) -> Result<(), GeneralCalculationError> {
+        let mut info = self.info.bind(py).borrow_mut();
+        info.timestep = *ctx.timestep;
+        common.update_metrics(ctx.network, ctx.state, &mut info.metric_values)?;
+        common.update_indices(ctx.network, ctx.state, &mut info.index_values)?;
         Ok(())
     }
 }
@@ -269,50 +339,43 @@ pub struct PyClassParameter {
 }
 
 struct InternalObj {
-    /// The user-defined Python object that implements the parameter logic.
-    user_obj: Py<PyAny>,
-    info_obj: Option<Py<ParameterInfo>>,
+    /// The user object's bound methods, looked up once at setup.
+    before: Option<Py<PyAny>>,
+    after: Option<Py<PyAny>>,
+    after_hook: Option<Py<PyAny>>,
+    call: Option<PyCallState>,
 }
 
 impl InternalObj {
     fn into_boxed_any(self) -> Box<dyn ParameterState> {
         Box::new(self)
     }
-}
 
-/// Ensure that `info_obj` is populated with a `ParameterInfo`.
-fn ensure_parameter_info(
-    info_obj: &mut Option<Py<ParameterInfo>>,
-    timestep: &Timestep,
-    scenario_index: &ScenarioIndex,
-) -> Result<(), PyErr> {
-    if info_obj.is_none() {
-        let obj = Python::attach(|py| {
-            Py::new(
-                py,
-                ParameterInfo {
-                    timestep: *timestep,
-                    scenario_index: Arc::new(scenario_index.clone()),
-                    metric_values: HashMap::default(),
-                    index_values: HashMap::default(),
-                },
-            )
-        })?;
-
-        *info_obj = Some(obj);
+    fn method(&self, name: &str) -> Option<&Py<PyAny>> {
+        match name {
+            "before" => self.before.as_ref(),
+            "after" => self.after.as_ref(),
+            "after_hook" => self.after_hook.as_ref(),
+            _ => None,
+        }
     }
-
-    Ok(())
 }
 
 impl PyClassParameter {
     fn setup(&self) -> Result<Option<Box<dyn ParameterState>>, ParameterSetupError> {
         Python::initialize();
 
-        let user_obj: Py<PyAny> = Python::attach(|py| -> PyResult<_> {
+        let internal = Python::attach(|py| -> PyResult<_> {
             let args = self.common.args.bind(py);
             let kwargs = self.common.kwargs.bind(py);
-            self.class.call(py, args, Some(kwargs))
+            let user_obj = self.class.call(py, args, Some(kwargs))?;
+
+            Ok(InternalObj {
+                before: user_obj.getattr(py, "before").ok(),
+                after: user_obj.getattr(py, "after").ok(),
+                after_hook: user_obj.getattr(py, "after_hook").ok(),
+                call: None,
+            })
         })
         .map_err(|py_error| ParameterSetupError::PythonError {
             name: self.common.meta.name.to_string(),
@@ -320,12 +383,38 @@ impl PyClassParameter {
             py_error: Box::new(py_error),
         })?;
 
-        let internal = InternalObj {
-            user_obj,
-            info_obj: None,
+        Ok(Some(internal.into_boxed_any()))
+    }
+
+    /// Call the user object's `method` and return its result.
+    fn call<'py>(
+        &self,
+        py: Python<'py>,
+        method: &str,
+        ctx: &GeneralParameterContext<'_>,
+        internal: &mut InternalObj,
+    ) -> Result<Bound<'py, PyAny>, GeneralCalculationError> {
+        if internal.call.is_none() {
+            let call = PyCallState::new(py, ctx.timestep, ctx.scenario_index, None)
+                .map_err(|py_error| self.common.python_error(&self.class, py_error))?;
+            internal.call = Some(call);
+        }
+
+        let Some(func) = internal.method(method) else {
+            return Err(GeneralCalculationError::PhaseNotEnabled {
+                ty: "PyClassParameter".to_string(),
+                phase: method.to_string(), // This is the method name, which corresponds to the phase (before/after)
+                message: format!("The method `{method}` is not implemented in the Python class."),
+            });
         };
 
-        Ok(Some(internal.into_boxed_any()))
+        // Safe to unwrap as we just ensured it is Some.
+        let call = internal.call.as_ref().unwrap();
+        call.update(py, &self.common, ctx)?;
+
+        func.bind(py)
+            .call1(call.args.bind(py))
+            .map_err(|py_error| self.common.python_error(&self.class, py_error))
     }
 
     fn call_method<T>(
@@ -339,61 +428,11 @@ impl PyClassParameter {
     {
         let internal = downcast_internal_state_mut::<InternalObj>(internal_state);
 
-        ensure_parameter_info(&mut internal.info_obj, ctx.timestep, ctx.scenario_index).map_err(|py_error| {
-            GeneralCalculationError::PythonError {
-                name: self.common.meta.name.to_string(),
-                object: self.class.to_string(),
-                py_error: Box::new(py_error),
-            }
-        })?;
-
-        // Safe to unwrap as we just ensured it is Some.
-        let info = internal.info_obj.as_ref().unwrap();
-
-        let value: T = Python::attach(|py| {
-            if internal.user_obj.getattr(py, method).is_ok() {
-                let info_bind = info.bind(py);
-                {
-                    let mut info_mut = info_bind.borrow_mut();
-                    info_mut.timestep = *ctx.timestep;
-                    info_mut.scenario_index = Arc::new(ctx.scenario_index.clone());
-                    self.common
-                        .update_metrics(ctx.network, ctx.state, &mut info_mut.metric_values)?;
-
-                    self.common
-                        .update_indices(ctx.network, ctx.state, &mut info_mut.index_values)?;
-                }
-
-                let args = PyTuple::new(py, [info_bind]).map_err(|py_error| GeneralCalculationError::PythonError {
-                    name: self.common.meta.name.to_string(),
-                    object: self.class.to_string(),
-                    py_error: Box::new(py_error),
-                })?;
-
-                internal
-                    .user_obj
-                    .call_method1(py, method, args)
-                    .map_err(|py_error| GeneralCalculationError::PythonError {
-                        name: self.common.meta.name.to_string(),
-                        object: self.class.to_string(),
-                        py_error: Box::new(py_error),
-                    })?
-                    .extract::<T>(py)
-                    .map_err(|py_error| GeneralCalculationError::PythonError {
-                        name: self.common.meta.name.to_string(),
-                        object: self.class.to_string(),
-                        py_error: Box::new(py_error.into()),
-                    })
-            } else {
-                Err(GeneralCalculationError::PhaseNotEnabled {
-                    ty: "PyClassParameter".to_string(),
-                    phase: method.to_string(), // This is the method name, which corresponds to the phase (before/after)
-                    message: format!("The method `{method}` is not implemented in the Python class."),
-                })
-            }
-        })?;
-
-        Ok(value)
+        Python::attach(|py| {
+            self.call(py, method, &ctx, internal)?
+                .extract::<T>()
+                .map_err(|py_error| self.common.python_error(&self.class, py_error.into()))
+        })
     }
 
     fn call_method_no_return(
@@ -404,66 +443,18 @@ impl PyClassParameter {
     ) -> Result<(), GeneralCalculationError> {
         let internal = downcast_internal_state_mut::<InternalObj>(internal_state);
 
-        ensure_parameter_info(&mut internal.info_obj, ctx.timestep, ctx.scenario_index).map_err(|py_error| {
-            GeneralCalculationError::PythonError {
-                name: self.common.meta.name.to_string(),
-                object: self.class.to_string(),
-                py_error: Box::new(py_error),
-            }
-        })?;
-
-        // Safe to unwrap as we just ensured it is Some.
-        let info = internal.info_obj.as_ref().unwrap();
-
         Python::attach(|py| {
-            if internal.user_obj.getattr(py, method).is_ok() {
-                let info_bind = info.bind(py);
-                {
-                    let mut info_mut = info_bind.borrow_mut();
-                    info_mut.timestep = *ctx.timestep;
-                    info_mut.scenario_index = Arc::new(ctx.scenario_index.clone());
-                    self.common
-                        .update_metrics(ctx.network, ctx.state, &mut info_mut.metric_values)?;
-
-                    self.common
-                        .update_indices(ctx.network, ctx.state, &mut info_mut.index_values)?;
-                }
-
-                let args = PyTuple::new(py, [info_bind]).map_err(|py_error| GeneralCalculationError::PythonError {
-                    name: self.common.meta.name.to_string(),
-                    object: self.class.to_string(),
-                    py_error: Box::new(py_error),
-                })?;
-
-                let py_return = internal.user_obj.call_method1(py, method, args).map_err(|py_error| {
-                    GeneralCalculationError::PythonError {
-                        name: self.common.meta.name.to_string(),
-                        object: self.class.to_string(),
-                        py_error: Box::new(py_error),
-                    }
-                })?;
-
-                if py_return.is_none(py) {
-                    Ok(())
-                } else {
-                    Err(GeneralCalculationError::PythonError {
-                        name: self.common.meta.name.to_string(),
-                        object: self.class.to_string(),
-                        py_error: Box::new(pyo3::exceptions::PyTypeError::new_err(format!(
-                            "The method `{method}` should return None, but returned a value."
-                        ))),
-                    })
-                }
+            if self.call(py, method, &ctx, internal)?.is_none() {
+                Ok(())
             } else {
-                Err(GeneralCalculationError::PhaseNotEnabled {
-                    ty: "PyClassParameter".to_string(),
-                    phase: method.to_string(), // This is the method name, which corresponds to the phase (before/after)
-                    message: format!("The method `{method}` is not implemented in the Python class."),
-                })
+                Err(self.common.python_error(
+                    &self.class,
+                    pyo3::exceptions::PyTypeError::new_err(format!(
+                        "The method `{method}` should return None, but returned a value."
+                    )),
+                ))
             }
-        })?;
-
-        Ok(())
+        })
     }
 }
 
@@ -759,7 +750,7 @@ impl PartialEq for PyFuncParameter {
 }
 
 struct InternalInfo {
-    info_obj: Option<Py<ParameterInfo>>,
+    call: Option<PyCallState>,
 }
 
 impl InternalInfo {
@@ -772,7 +763,7 @@ impl PyFuncParameter {
     fn setup(&self) -> Result<Option<Box<dyn ParameterState>>, ParameterSetupError> {
         Python::initialize();
 
-        let internal = InternalInfo { info_obj: None };
+        let internal = InternalInfo { call: None };
 
         Ok(Some(internal.into_boxed_any()))
     }
@@ -787,72 +778,28 @@ impl PyFuncParameter {
     {
         let internal = downcast_internal_state_mut::<InternalInfo>(internal_state);
 
-        ensure_parameter_info(&mut internal.info_obj, ctx.timestep, ctx.scenario_index).map_err(|py_error| {
-            GeneralCalculationError::PythonError {
-                name: self.common.meta.name.to_string(),
-                object: self.function.to_string(),
-                py_error: Box::new(py_error),
-            }
-        })?;
-
-        // Safe to unwrap as we just ensured it is Some.
-        let info = internal.info_obj.as_ref().unwrap();
-
-        let value: T = Python::attach(|py| {
-            let info_bind = info.bind(py);
-            {
-                let mut info_mut = info_bind.borrow_mut();
-                info_mut.timestep = *ctx.timestep;
-                info_mut.scenario_index = Arc::new(ctx.scenario_index.clone());
-                self.common
-                    .update_metrics(ctx.network, ctx.state, &mut info_mut.metric_values)?;
-
-                self.common
-                    .update_indices(ctx.network, ctx.state, &mut info_mut.index_values)?;
+        Python::attach(|py| {
+            if internal.call.is_none() {
+                // The info arg followed by the user defined args.
+                let call = PyCallState::new(py, ctx.timestep, ctx.scenario_index, Some(self.common.args.bind(py)))
+                    .map_err(|py_error| self.common.python_error(&self.function, py_error))?;
+                internal.call = Some(call);
             }
 
-            let args = PyTuple::new(py, [info_bind]).map_err(|py_error| GeneralCalculationError::PythonError {
-                name: self.common.meta.name.to_string(),
-                object: self.function.to_string(),
-                py_error: Box::new(py_error),
-            })?;
-
-            // Concatenate the user defined args with the info arg.
-            let args = args
-                .into_sequence()
-                .concat(self.common.args.bind(py).as_sequence())
-                .map_err(|py_error| GeneralCalculationError::PythonError {
-                    name: self.common.meta.name.to_string(),
-                    object: self.function.to_string(),
-                    py_error: Box::new(py_error),
-                })?;
-            let args = args
-                .to_tuple()
-                .map_err(|py_error| GeneralCalculationError::PythonError {
-                    name: self.common.meta.name.to_string(),
-                    object: self.function.to_string(),
-                    py_error: Box::new(py_error),
-                })?;
+            // Safe to unwrap as we just ensured it is Some.
+            let call = internal.call.as_ref().unwrap();
+            call.update(py, &self.common, &ctx)?;
 
             let kwargs = self.common.kwargs.bind(py);
+            let kwargs = (!kwargs.is_empty()).then_some(kwargs);
 
             self.function
-                .call(py, args, Some(kwargs))
-                .map_err(|py_error| GeneralCalculationError::PythonError {
-                    name: self.common.meta.name.to_string(),
-                    object: self.function.to_string(),
-                    py_error: Box::new(py_error),
-                })?
-                .extract(py)
-                .map_err(Into::into)
-                .map_err(|py_error| GeneralCalculationError::PythonError {
-                    name: self.common.meta.name.to_string(),
-                    object: self.function.to_string(),
-                    py_error: Box::new(py_error),
-                })
-        })?;
-
-        Ok(value)
+                .bind(py)
+                .call(call.args.bind(py), kwargs)
+                .map_err(|py_error| self.common.python_error(&self.function, py_error))?
+                .extract::<T>()
+                .map_err(|py_error| self.common.python_error(&self.function, py_error.into()))
+        })
     }
 }
 
