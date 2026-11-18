@@ -4,6 +4,14 @@ This changelog records changes since the v2.0.0 beta series.
 
 The versioned entries below record implementation-level changes.
 
+## [2.0.0-rc3] - 2026-11-18
+
+v2.0.0-rc2 was tagged but never published to PyPI because its release pipeline failed the cargo-deny check; this release supersedes it.
+
+### 🐛 Bug Fixes
+
+- *(deps)* Update libz-sys and ignore the chrono unmaintained advisory. (#961)
+
 ## [2.0.0-rc2] - 2026-11-11
 
 ### 🚀 Features
