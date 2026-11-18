@@ -1,0 +1,47 @@
+{
+  "variables": [
+    {
+      "name": "demand",
+      "network": "network2",
+      "config": {
+        "type": "ActivationFunction",
+        "activation": {
+          "type": "Unit",
+          "min": 0.0,
+          "max": 30.0
+        }
+      }
+    },
+    {
+      "name": "demand",
+      "network": "network1",
+      "config": {
+        "type": "ActivationFunction",
+        "activation": {
+          "type": "Unit",
+          "min": 0.0,
+          "max": 20.0
+        }
+      }
+    }
+  ],
+  "objectives": [
+    {
+      "output": "mean-delivered",
+      "network": "network1",
+      "sense": "Maximise"
+    },
+    {
+      "output": "mean-delivered",
+      "network": "network2",
+      "sense": "Maximise"
+    }
+  ],
+  "constraints": [
+    {
+      "output": "mean-delivered",
+      "network": "network2",
+      "lower_bound": 5.0
+    }
+  ]
+}

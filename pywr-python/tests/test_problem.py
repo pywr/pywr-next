@@ -6,6 +6,8 @@ from pywr import (
     Evaluation,
     ModelProblem,
     ModelSchema,
+    MultiNetworkModelProblem,
+    MultiNetworkModelSchema,
     ProblemBuildError,
     ProblemConfig,
     SetupError,
@@ -92,3 +94,65 @@ def test_build_problem_missing_output(problem_dir: Path):
 
     with pytest.raises(ProblemBuildError):
         schema.build_problem(config, data_path=problem_dir)
+
+
+@pytest.fixture()
+def multi_problem_dir() -> Path:
+    return Path(__file__).parent / "models" / "multi-problem"
+
+
+@pytest.fixture()
+def multi_problem(multi_problem_dir: Path) -> MultiNetworkModelProblem:
+    schema = MultiNetworkModelSchema.from_path(multi_problem_dir / "model.json")
+    config = ProblemConfig.from_path(multi_problem_dir / "problem.json")
+    return schema.build_problem(config, data_path=multi_problem_dir)
+
+
+def test_multi_network_problem_definition(multi_problem: MultiNetworkModelProblem):
+    """Test the variables, objectives and constraints of a multi-network problem."""
+    # The variables are in the order they are listed: the demand of network2, then network1
+    assert multi_problem.size == (2, 0)
+    assert multi_problem.lower_bounds() == ([0.0, 0.0], [])
+    assert multi_problem.upper_bounds() == ([30.0, 20.0], [])
+
+    assert multi_problem.objective_names == ["mean-delivered", "mean-delivered"]
+    assert multi_problem.objective_networks == ["network1", "network2"]
+    assert multi_problem.objective_senses == ["Maximise", "Maximise"]
+    assert multi_problem.constraint_names == ["mean-delivered"]
+    assert multi_problem.constraint_networks == ["network2"]
+    assert multi_problem.constraint_bounds == [(5.0, None)]
+
+
+def test_multi_network_evaluate(multi_problem: MultiNetworkModelProblem):
+    """Test evaluating a multi-network problem, where network2 is supplied by network1."""
+    # network1 delivers its demand of 10.0, of which network2 takes its demand of 8.0
+    evaluation = multi_problem.evaluate([8.0, 10.0])
+    assert evaluation.objectives == pytest.approx([10.0, 8.0])
+    assert evaluation.is_feasible
+
+    # network1 delivers only 4.0, which limits network2 to below its minimum of 5.0
+    evaluation = multi_problem.evaluate([12.0, 4.0])
+    assert evaluation.objectives == pytest.approx([4.0, 4.0])
+    assert evaluation.constraint_violations == pytest.approx([1.0])
+    assert not evaluation.is_feasible
+
+    evaluations = multi_problem.evaluate_batch([[8.0, 10.0], [12.0, 4.0]])
+    assert [e.objectives for e in evaluations] == [
+        pytest.approx([10.0, 8.0]),
+        pytest.approx([4.0, 4.0]),
+    ]
+
+
+def test_multi_network_build_problem_network_required(multi_problem_dir: Path):
+    schema = MultiNetworkModelSchema.from_path(multi_problem_dir / "model.json")
+    config = ProblemConfig.from_json_string(
+        json.dumps(
+            {
+                "variables": [],
+                "objectives": [{"output": "mean-delivered", "sense": "Maximise"}],
+            }
+        )
+    )
+
+    with pytest.raises(ProblemBuildError):
+        schema.build_problem(config, data_path=multi_problem_dir)
