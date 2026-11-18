@@ -47,33 +47,7 @@ impl ComposedModelSchemas {
     pub fn into_model_schema(self, options: &NetworkMergeOptions) -> Result<ModelSchema, ComposeToSchemaError> {
         let mut model_schema = self.base_model;
         model_schema.network.set_provenance(self.base_source);
-
-        for network in self.includes {
-            let mut included_schema = network.network_schema;
-            included_schema.set_provenance(network.source);
-            // Clone the options and apply any position offsets from the network
-            let mut network_options = options.clone();
-            if let Some(offset) = network.position_offset {
-                if let Some(offset) = offset.schematic {
-                    if let Some(existing_offset) = &mut network_options.schematic_position_offset {
-                        existing_offset.0 += offset.0;
-                        existing_offset.1 += offset.1;
-                    } else {
-                        network_options.schematic_position_offset = Some(offset);
-                    }
-                }
-                if let Some(offset) = offset.geographic {
-                    if let Some(existing_offset) = &mut network_options.geographic_position_offset {
-                        existing_offset.0 += offset.0;
-                        existing_offset.1 += offset.1;
-                    } else {
-                        network_options.geographic_position_offset = Some(offset);
-                    }
-                }
-            }
-
-            model_schema.network.merge(included_schema, &network_options)?;
-        }
+        merge_includes(&mut model_schema.network, self.includes, options)?;
 
         if let Some(overrides) = self.overrides {
             if let Some(time) = overrides.time {
@@ -87,6 +61,107 @@ impl ComposedModelSchemas {
         model_schema.metadata.title = self.name;
 
         Ok(model_schema)
+    }
+}
+
+/// Merge each included network into `network` in order, applying its position offset.
+fn merge_includes(
+    network: &mut NetworkSchema,
+    includes: Vec<ComposedModelNetworkSchema>,
+    options: &NetworkMergeOptions,
+) -> Result<(), ComposeToSchemaError> {
+    for include in includes {
+        let mut included_schema = include.network_schema;
+        included_schema.set_provenance(include.source);
+        // Clone the options and apply any position offsets from the network
+        let mut network_options = options.clone();
+        if let Some(offset) = include.position_offset {
+            if let Some(offset) = offset.schematic {
+                if let Some(existing_offset) = &mut network_options.schematic_position_offset {
+                    existing_offset.0 += offset.0;
+                    existing_offset.1 += offset.1;
+                } else {
+                    network_options.schematic_position_offset = Some(offset);
+                }
+            }
+            if let Some(offset) = offset.geographic {
+                if let Some(existing_offset) = &mut network_options.geographic_position_offset {
+                    existing_offset.0 += offset.0;
+                    existing_offset.1 += offset.1;
+                } else {
+                    network_options.geographic_position_offset = Some(offset);
+                }
+            }
+        }
+
+        network.merge(included_schema, &network_options)?;
+    }
+    Ok(())
+}
+
+/// Read each included network from its path.
+fn load_includes(includes: &[ComposedNetworkPath]) -> Result<Vec<ComposedModelNetworkSchema>, NetworkSchemaReadError> {
+    includes
+        .iter()
+        .map(|network| {
+            let network_schema = NetworkSchema::from_path(&network.path)?;
+            Ok(ComposedModelNetworkSchema {
+                network_schema,
+                position_offset: network.position_offset,
+                source: network.source.clone(),
+            })
+        })
+        .collect()
+}
+
+/// A composed network that combines the networks selected by a network definition.
+pub struct ComposedNetworkSchemas {
+    name: String,
+    includes: Vec<ComposedModelNetworkSchema>,
+}
+
+impl ComposedNetworkSchemas {
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn includes(&self) -> &[ComposedModelNetworkSchema] {
+        &self.includes
+    }
+
+    /// Merge the included networks in order, starting from an empty network.
+    pub fn into_network_schema(self, options: &NetworkMergeOptions) -> Result<NetworkSchema, ComposeToSchemaError> {
+        let mut network = NetworkSchema::default();
+        merge_includes(&mut network, self.includes, options)?;
+        Ok(network)
+    }
+}
+
+/// A composed network that combines the networks selected by a network definition.
+pub struct ComposedNetwork {
+    name: String,
+    includes: Vec<ComposedNetworkPath>,
+}
+
+impl ComposedNetwork {
+    pub(crate) fn new(name: String, includes: Vec<ComposedNetworkPath>) -> Self {
+        Self { name, includes }
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// Deserialize the included networks from their paths, returning a [`ComposedNetworkSchemas`] instance.
+    pub fn load(&self) -> Result<ComposedNetworkSchemas, ComposeToSchemaError> {
+        Ok(ComposedNetworkSchemas {
+            name: self.name.clone(),
+            includes: load_includes(&self.includes)?,
+        })
+    }
+
+    pub fn all_paths(&self) -> Vec<PathBuf> {
+        self.includes.iter().map(|n| n.path.clone()).collect()
     }
 }
 
@@ -113,18 +188,7 @@ impl ComposedModel {
     pub fn load(&self) -> Result<ComposedModelSchemas, ComposeToSchemaError> {
         let base_schema = ModelSchema::from_path(&self.base_model)?;
 
-        let includes: Vec<ComposedModelNetworkSchema> = self
-            .includes
-            .iter()
-            .map(|network| {
-                let network_schema = NetworkSchema::from_path(&network.path)?;
-                Ok(ComposedModelNetworkSchema {
-                    network_schema,
-                    position_offset: network.position_offset,
-                    source: network.source.clone(),
-                })
-            })
-            .collect::<Result<Vec<_>, NetworkSchemaReadError>>()?;
+        let includes = load_includes(&self.includes)?;
 
         Ok(ComposedModelSchemas {
             name: self.name.clone(),
@@ -155,6 +219,7 @@ impl ComposedModelBuilder {
         let base_source = ProvenanceSource {
             file: base_file,
             network_set: None,
+            network: None,
         };
         Self {
             name,

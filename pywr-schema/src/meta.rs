@@ -11,6 +11,9 @@ pub struct ProvenanceSource {
     pub file: RelativePathBuf,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub network_set: Option<String>,
+    /// The network definition through which the component was included, if any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub network: Option<String>,
 }
 
 /// Origin of a definition and any sources subsequently merged into it.
@@ -61,16 +64,16 @@ pub struct NamedMeta {
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub tags: HashMap<String, String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub provenance: Option<ComponentProvenance>,
+    pub provenance: Option<Box<ComponentProvenance>>,
 }
 
 impl ComponentMeta for NamedMeta {
     fn provenance(&self) -> Option<&ComponentProvenance> {
-        self.provenance.as_ref()
+        self.provenance.as_deref()
     }
 
     fn set_provenance(&mut self, provenance: ComponentProvenance) {
-        self.provenance = Some(provenance);
+        self.provenance = Some(Box::new(provenance));
     }
 
     fn clear_provenance(&mut self) {
