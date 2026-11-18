@@ -4,8 +4,9 @@ use anyhow::anyhow;
 use pyo3::exceptions::PyException;
 use pyo3::{PyErr, create_exception};
 use pywr_core::models::{ModelBuilderError, ModelRunError, MultiNetworkModelBuilderError, MultiNetworkModelRunError};
+use pywr_core::problem::ModelProblemEvaluateError;
 use pywr_core::recorders::RecorderAggregationError;
-use pywr_schema::{ModelSchemaBuildError, ModelSchemaReadError, MultiNetworkModelSchemaBuildError};
+use pywr_schema::{ModelSchemaBuildError, ModelSchemaReadError, MultiNetworkModelSchemaBuildError, SchemaError};
 
 // Base exception for all Pywr errors
 create_exception!(pywr, PywrError, PyException);
@@ -187,6 +188,46 @@ impl From<PyRecorderAggregationError> for PyErr {
             RecorderAggregationError::AggregationError { .. } => {
                 PyErr::new::<AggregationError, _>(format!("{:?}", anyhow!(error.inner)))
             }
+        }
+    }
+}
+
+pub(crate) struct PyModelProblemBuildError {
+    inner: SchemaError,
+}
+
+impl From<SchemaError> for PyModelProblemBuildError {
+    fn from(error: SchemaError) -> Self {
+        PyModelProblemBuildError { inner: error }
+    }
+}
+
+create_exception!(pywr, ProblemBuildError, PywrError);
+
+impl From<PyModelProblemBuildError> for PyErr {
+    fn from(error: PyModelProblemBuildError) -> Self {
+        PyErr::new::<ProblemBuildError, _>(format!("{:?}", anyhow!(error.inner)))
+    }
+}
+
+pub(crate) struct PyModelProblemEvaluateError {
+    inner: ModelProblemEvaluateError,
+}
+
+impl From<ModelProblemEvaluateError> for PyModelProblemEvaluateError {
+    fn from(error: ModelProblemEvaluateError) -> Self {
+        PyModelProblemEvaluateError { inner: error }
+    }
+}
+
+create_exception!(pywr, ProblemEvaluateError, PywrError);
+
+impl From<PyModelProblemEvaluateError> for PyErr {
+    fn from(error: PyModelProblemEvaluateError) -> Self {
+        match error.inner {
+            // Errors running the model are raised as the same exceptions as `Model.run`
+            ModelProblemEvaluateError::ModelRunError(e) => PyModelRunError::from(e).into(),
+            _ => PyErr::new::<ProblemEvaluateError, _>(format!("{:?}", anyhow!(error.inner))),
         }
     }
 }

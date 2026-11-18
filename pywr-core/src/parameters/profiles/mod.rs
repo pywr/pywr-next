@@ -7,7 +7,9 @@ mod weekly;
 
 pub use daily::{DailyProfileParameter, DailyProfileParameterBuilder};
 pub use diurnal::{DiurnalProfileParameter, DiurnalProfileParameterBuilder};
-pub use monthly::{MonthlyInterpDay, MonthlyProfileParameter, MonthlyProfileParameterBuilder};
+pub use monthly::{
+    MonthlyInterpDay, MonthlyProfileParameter, MonthlyProfileParameterBuilder, MonthlyProfileVariableConfig,
+};
 pub use rbf::{RadialBasisFunction, RbfProfileParameter, RbfProfileParameterBuilder, RbfProfileVariableConfig};
 pub use uniform_drawdown::{UniformDrawdownProfileParameter, UniformDrawdownProfileParameterBuilder};
 pub use weekly::{

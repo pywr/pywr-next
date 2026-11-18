@@ -2015,7 +2015,6 @@ mod core_tests {
                         provenance: None,
                     },
                     value: 10.0.into(),
-                    variable: None,
                 }),
                 Parameter::Aggregated(AggregatedParameter {
                     meta: NamedMeta {
@@ -2085,7 +2084,6 @@ mod core_tests {
                         provenance: None,
                     },
                     value: 10.0.into(),
-                    variable: None,
                 }),
                 Parameter::Constant(ConstantParameter {
                     meta: NamedMeta {
@@ -2095,7 +2093,6 @@ mod core_tests {
                         provenance: None,
                     },
                     value: 10.0.into(),
-                    variable: None,
                 }),
             ]);
         }
