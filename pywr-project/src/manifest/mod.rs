@@ -1,6 +1,6 @@
 pub mod v1;
 
-use crate::composition::{ComposedModel, ComposedNetwork};
+use crate::composition::{Composed, ComposedModel, ComposedMultiModel, ComposedNetwork};
 use crate::error::{ComposeModelError, ProjectManifestReadError};
 use pywr_schema::model::{ScenarioDomain, TimeDomain};
 use schemars::JsonSchema;
@@ -66,9 +66,26 @@ impl ProjectManifest {
         }
     }
 
-    pub fn compose(&self, root: &Path, definition_name: &str) -> Result<ComposedModel, ComposeModelError> {
+    /// Compose the model or multi-model definition `definition_name`.
+    pub fn compose(&self, root: &Path, definition_name: &str) -> Result<Composed, ComposeModelError> {
+        match self {
+            ProjectManifest::V1(manifest) => manifest.compose(root, definition_name),
+        }
+    }
+
+    pub fn compose_model(&self, root: &Path, definition_name: &str) -> Result<ComposedModel, ComposeModelError> {
         match self {
             ProjectManifest::V1(manifest) => manifest.compose_model(root, definition_name),
+        }
+    }
+
+    pub fn compose_multi_model(
+        &self,
+        root: &Path,
+        definition_name: &str,
+    ) -> Result<ComposedMultiModel, ComposeModelError> {
+        match self {
+            ProjectManifest::V1(manifest) => manifest.compose_multi_model(root, definition_name),
         }
     }
 
