@@ -1,0 +1,38 @@
+{
+  "nodes": [
+    {
+      "type": "Input",
+      "meta": {
+        "name": "option2",
+        "position": {
+          "schematic": [
+            -4020.0,
+            590.0
+          ]
+        }
+      },
+      "max_flow": {
+        "type": "Literal",
+        "value": 15.0
+      }
+    },
+    {
+      "type": "Placeholder",
+      "meta": {
+        "name": "link1",
+        "position": {
+          "schematic": [
+            -1966.5625,
+            -860.0
+          ]
+        }
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from_node": "option2",
+      "to_node": "link1"
+    }
+  ]
+}
