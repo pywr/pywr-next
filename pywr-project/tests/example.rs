@@ -1,14 +1,19 @@
 use pywr_project::{Project, ProjectManifest};
 use std::path::Path;
 
-/// The example project in `examples/my-model` must stay valid as the manifest format changes.
+/// The example projects in `examples/` must stay valid as the manifest format changes.
 #[test]
 fn example_project_validates_and_every_model_composes() {
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../examples/my-model/pywr-project.json");
     let project = Project::open(&path).unwrap();
     let ProjectManifest::V1(manifest) = project.manifest();
 
-    if let Err(error) = manifest.validate(project.root()) {
+    if let Err(error) = project.validate() {
+        panic!("{}", error.report());
+    }
+    // The project depends on the `neighbour` project, which must be valid on its own too.
+    let neighbour = Project::open(path.parent().unwrap().join("../neighbour/pywr-project.json")).unwrap();
+    if let Err(error) = neighbour.validate() {
         panic!("{}", error.report());
     }
     assert!(!manifest.models.is_empty());
@@ -29,5 +34,59 @@ fn example_project_validates_and_every_model_composes() {
             .unwrap()
             .into_multi_model_schema(&Default::default())
             .unwrap();
+    }
+}
+
+/// A composition lists the files it will merge, with their provenance, before any are read.
+#[test]
+fn composed_model_lists_its_includes_with_provenance() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../examples/my-model/pywr-project.json");
+    let project = Project::open(&path).unwrap();
+    let composed = project.compose_model("baseline-option1").unwrap();
+
+    assert_eq!(composed.base_source().file.as_str(), "models/base.json");
+    let sources: Vec<_> = composed
+        .includes()
+        .iter()
+        .map(|include| {
+            (
+                include.source.file.as_str(),
+                include.source.network.as_deref(),
+                include.source.sub_network.as_deref(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        sources,
+        [
+            (
+                "catchment/inflows/historical.json",
+                Some("historical"),
+                Some("catchment")
+            ),
+            ("options/option1.json", Some("option1"), None),
+        ]
+    );
+}
+
+/// A saved manifest leaves out empty lists and unset options, as a hand-written one would.
+#[test]
+fn saved_manifests_omit_empty_and_unset_fields() {
+    let minimal = serde_json::json!({
+        "format": "v1",
+        "base_model": "base.json",
+        "network_sets": [{ "name": "options" }],
+        "networks": [{ "name": "option1", "include": [{ "set": "options", "files": ["option1.json"] }] }],
+        "models": [{ "name": "baseline" }]
+    });
+    let manifest: ProjectManifest = serde_json::from_value(minimal.clone()).unwrap();
+    assert_eq!(serde_json::to_value(&manifest).unwrap(), minimal);
+
+    for example in ["my-model", "neighbour"] {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("../examples/{example}/pywr-project.json"));
+        let project = Project::open(&path).unwrap();
+        let saved = serde_json::to_string(project.manifest()).unwrap();
+        assert!(!saved.contains("null"), "{example}: {saved}");
+        assert!(!saved.contains("[]"), "{example}: {saved}");
     }
 }

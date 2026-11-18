@@ -1,4 +1,4 @@
-use crate::error::ComposeToSchemaError;
+use crate::error::{ComposeToSchemaError, PlaceholderKind, UnresolvedPlaceholder};
 use crate::manifest::DefinitionOverrides;
 use pywr_schema::meta::{ComponentMeta, ProvenanceSource};
 use pywr_schema::model::{Metadata, MultiNetworkEntry, MultiNetworkTransfer, ScenarioDomain, TimeDomain};
@@ -73,18 +73,20 @@ impl ComposedModelSchemas {
     }
 }
 
-/// Describe each placeholder left in `network`, with the file it came from if known.
-fn unresolved_placeholders(network: &NetworkSchema) -> Vec<String> {
-    fn describe(kind: &str, name: &str, meta: &dyn ComponentMeta) -> String {
-        match meta.provenance() {
-            Some(provenance) => format!("{kind} `{name}` (from `{}`)", provenance.origin.file),
-            None => format!("{kind} `{name}`"),
+/// List each placeholder left in `network`, with where it came from if known.
+fn unresolved_placeholders(network: &NetworkSchema) -> Vec<UnresolvedPlaceholder> {
+    fn describe(kind: PlaceholderKind, name: &str, meta: &dyn ComponentMeta) -> UnresolvedPlaceholder {
+        UnresolvedPlaceholder {
+            kind,
+            name: name.to_string(),
+            origin: meta.provenance().map(|provenance| provenance.origin.clone()),
+            network: None,
         }
     }
 
     let mut placeholders = Vec::new();
     for node in network.nodes.iter().filter(|node| node.is_placeholder()) {
-        placeholders.push(describe("node", node.name(), node.meta()));
+        placeholders.push(describe(PlaceholderKind::Node, node.name(), node.meta()));
     }
     for node in network
         .virtual_nodes
@@ -92,16 +94,20 @@ fn unresolved_placeholders(network: &NetworkSchema) -> Vec<String> {
         .flatten()
         .filter(|node| node.is_placeholder())
     {
-        placeholders.push(describe("virtual node", node.name(), node.meta()));
+        placeholders.push(describe(PlaceholderKind::VirtualNode, node.name(), node.meta()));
     }
     for parameter in network.parameters.iter().flatten().filter(|p| p.is_placeholder()) {
-        placeholders.push(describe("parameter", parameter.name(), parameter.meta()));
+        placeholders.push(describe(PlaceholderKind::Parameter, parameter.name(), parameter.meta()));
     }
     for table in network.tables.iter().flatten().filter(|table| table.is_placeholder()) {
-        placeholders.push(describe("table", table.name(), table.meta()));
+        placeholders.push(describe(PlaceholderKind::Table, table.name(), table.meta()));
     }
     for time_series in network.time_series.iter().flatten().filter(|ts| ts.is_placeholder()) {
-        placeholders.push(describe("time series", time_series.name(), time_series.meta()));
+        placeholders.push(describe(
+            PlaceholderKind::TimeSeries,
+            time_series.name(),
+            time_series.meta(),
+        ));
     }
     for output in network
         .outputs
@@ -109,7 +115,7 @@ fn unresolved_placeholders(network: &NetworkSchema) -> Vec<String> {
         .flatten()
         .filter(|output| output.is_placeholder())
     {
-        placeholders.push(describe("output", output.name(), output.meta()));
+        placeholders.push(describe(PlaceholderKind::Output, output.name(), output.meta()));
     }
     placeholders
 }
@@ -156,7 +162,7 @@ fn load_includes(includes: &[ComposedNetworkPath]) -> Result<Vec<ComposedModelNe
         .map(|network| {
             let mut network_schema = NetworkSchema::from_path(&network.path)?;
             if let Some(data_dir) = &network.context.data_dir {
-                rebase_data_paths(&mut network_schema, &data_dir.to_path(Path::new("")));
+                rebase_data_paths(&mut network_schema, data_dir);
             }
             Ok(ComposedModelNetworkSchema {
                 network_schema,
@@ -216,14 +222,14 @@ impl ComposedNetworkSchemas {
 pub struct ComposedNetwork {
     name: String,
     /// A model definition's base model, whose network is the starting point.
-    base_model: Option<(PathBuf, ProvenanceSource)>,
+    base_model: Option<ComposedNetworkPath>,
     includes: Vec<ComposedNetworkPath>,
 }
 
 impl ComposedNetwork {
     pub(crate) fn new(
         name: String,
-        base_model: Option<(PathBuf, ProvenanceSource)>,
+        base_model: Option<ComposedNetworkPath>,
         includes: Vec<ComposedNetworkPath>,
     ) -> Self {
         Self {
@@ -237,12 +243,25 @@ impl ComposedNetwork {
         &self.name
     }
 
+    /// The model definition's base model, whose network is the starting point, if any.
+    pub fn base_model(&self) -> Option<&ComposedNetworkPath> {
+        self.base_model.as_ref()
+    }
+
+    /// The network files to merge, in merge order, each with its provenance.
+    pub fn includes(&self) -> &[ComposedNetworkPath] {
+        &self.includes
+    }
+
     /// Deserialize the included networks from their paths, returning a [`ComposedNetworkSchemas`] instance.
     pub fn load(&self) -> Result<ComposedNetworkSchemas, ComposeToSchemaError> {
         let base_network = match &self.base_model {
-            Some((path, source)) => {
-                let mut network = ModelSchema::from_path(path)?.network;
-                network.set_provenance(source.clone());
+            Some(base_model) => {
+                let mut network = ModelSchema::from_path(&base_model.path)?.network;
+                if let Some(data_dir) = &base_model.context.data_dir {
+                    rebase_data_paths(&mut network, data_dir);
+                }
+                network.set_provenance(base_model.source.clone());
                 Some(network)
             }
             None => None,
@@ -257,7 +276,7 @@ impl ComposedNetwork {
     pub fn all_paths(&self) -> Vec<PathBuf> {
         self.base_model
             .iter()
-            .map(|(path, _)| path.clone())
+            .map(|base_model| base_model.path.clone())
             .chain(self.includes.iter().map(|n| n.path.clone()))
             .collect()
     }
@@ -379,11 +398,12 @@ impl ComposedMultiModelSchemas {
         for (schemas, transfers) in self.networks {
             let name = schemas.name().to_string();
             let network = schemas.into_network_schema(options)?;
-            placeholders.extend(
-                unresolved_placeholders(&network)
-                    .into_iter()
-                    .map(|placeholder| format!("{placeholder} in network `{name}`")),
-            );
+            placeholders.extend(unresolved_placeholders(&network).into_iter().map(|placeholder| {
+                UnresolvedPlaceholder {
+                    network: Some(name.clone()),
+                    ..placeholder
+                }
+            }));
             networks.push(MultiNetworkEntry {
                 name,
                 network: NetworkSchemaRef::Inline(network),
@@ -460,12 +480,15 @@ pub enum Composed {
 /// How an included network is adjusted as it is loaded.
 #[derive(Clone, Debug, Default)]
 pub struct LoadContext {
-    /// Directory, relative to the project root, that the network's relative data paths are
-    /// relative to. They are rewritten to be relative to the project root. `None` leaves them as
-    /// they are.
-    pub data_dir: Option<RelativePathBuf>,
+    /// Directory that the network's relative data paths are relative to. They are rewritten to
+    /// be relative to the root project's directory instead. The directory is itself relative to
+    /// the root project's directory, possibly through `..`, or absolute when no relative path
+    /// exists. `None` leaves the paths as they are.
+    pub data_dir: Option<PathBuf>,
 }
 
+/// A network file to merge into a composed model or network, with where it came from.
+#[derive(Clone, Debug)]
 pub struct ComposedNetworkPath {
     pub path: PathBuf,
     pub position_offset: Option<PositionOffset>,
@@ -485,6 +508,26 @@ pub struct ComposedModel {
 impl ComposedModel {
     pub fn name(&self) -> &str {
         &self.name
+    }
+
+    /// The path of the base model file.
+    pub fn base_model_path(&self) -> &Path {
+        &self.base_model
+    }
+
+    /// The provenance recorded for components of the base model.
+    pub fn base_source(&self) -> &ProvenanceSource {
+        &self.base_source
+    }
+
+    /// The network files to merge into the base model, in merge order, each with its provenance.
+    pub fn includes(&self) -> &[ComposedNetworkPath] {
+        &self.includes
+    }
+
+    /// The overrides applied to the base model's time and scenario domains, if any.
+    pub fn overrides(&self) -> Option<&DefinitionOverrides> {
+        self.overrides.as_ref()
     }
     /// Deserialize the composed model from the specified paths, returning a [`ComposedModelSchemas`] instance.
     pub fn load(&self) -> Result<ComposedModelSchemas, ComposeToSchemaError> {
@@ -522,6 +565,7 @@ impl ComposedModelBuilder {
             file: base_file,
             network_set: None,
             sub_network: None,
+            project: None,
             network: None,
         };
         Self {

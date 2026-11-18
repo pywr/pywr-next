@@ -1,4 +1,6 @@
+use pywr_schema::meta::ProvenanceSource;
 use pywr_schema::{ModelSchemaReadError, NetworkMergeError, NetworkSchemaReadError};
+use std::fmt;
 use std::io;
 use std::path::PathBuf;
 use thiserror::Error;
@@ -32,8 +34,8 @@ pub enum ComposeToSchemaError {
     NetworkRead(#[from] NetworkSchemaReadError),
     #[error("The network schemas could not be merged.")]
     NetworkMerge(#[from] NetworkMergeError),
-    #[error("The composed model has unresolved placeholders: {}.", .placeholders.join(", "))]
-    UnresolvedPlaceholders { placeholders: Vec<String> },
+    #[error("The composed model has unresolved placeholders: {}.", join(.placeholders))]
+    UnresolvedPlaceholders { placeholders: Vec<UnresolvedPlaceholder> },
     #[error(
         "The transfer `{transfer}` into `{network}` reads {component} from `{from_network}`, which does not exist there."
     )]
@@ -43,6 +45,62 @@ pub enum ComposeToSchemaError {
         from_network: String,
         component: String,
     },
+}
+
+/// The kind of component a placeholder stands in for.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum PlaceholderKind {
+    Node,
+    VirtualNode,
+    Parameter,
+    Table,
+    TimeSeries,
+    Output,
+}
+
+impl fmt::Display for PlaceholderKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Node => "node",
+            Self::VirtualNode => "virtual node",
+            Self::Parameter => "parameter",
+            Self::Table => "table",
+            Self::TimeSeries => "time series",
+            Self::Output => "output",
+        })
+    }
+}
+
+/// A placeholder left in a composed model after every file has been merged.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct UnresolvedPlaceholder {
+    pub kind: PlaceholderKind,
+    pub name: String,
+    /// Where the placeholder came from, if its provenance is known.
+    pub origin: Option<ProvenanceSource>,
+    /// The network of a multi-model that the placeholder is in; `None` for a single model.
+    pub network: Option<String>,
+}
+
+impl fmt::Display for UnresolvedPlaceholder {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} `{}`", self.kind, self.name)?;
+        if let Some(origin) = &self.origin {
+            write!(f, " (from `{}`)", origin.file)?;
+        }
+        if let Some(network) = &self.network {
+            write!(f, " in network `{network}`")?;
+        }
+        Ok(())
+    }
+}
+
+fn join(placeholders: &[UnresolvedPlaceholder]) -> String {
+    placeholders
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 /// Errors that may occur during validation of a project manifest, or during resolution of a
@@ -95,6 +153,39 @@ pub enum ManifestResolutionError {
         #[source]
         source: serde_json::Error,
     },
+    #[error("The manifest path `{path}` for dependency `{dependency}` must be a non-empty relative path.")]
+    InvalidDependencyPath { dependency: String, path: String },
+    #[error("The manifest `{}` for dependency `{dependency}` was not found.", .path.display())]
+    DependencyManifestNotFound { dependency: String, path: PathBuf },
+    #[error("The manifest `{}` for dependency `{dependency}` is not a regular file.", .path.display())]
+    DependencyManifestNotAFile { dependency: String, path: PathBuf },
+    #[error("The manifest `{}` for dependency `{dependency}` could not be read.", .path.display())]
+    DependencyManifestRead {
+        dependency: String,
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
+    #[error("The manifest `{}` for dependency `{dependency}` is not a valid project manifest.", .path.display())]
+    DependencyManifestInvalid {
+        dependency: String,
+        path: PathBuf,
+        #[source]
+        source: serde_json::Error,
+    },
+    #[error(
+        "The manifest `{}` for dependency `{dependency}` has SHA-256 hash `{actual}`, but `{expected}` was expected.", .path.display()
+    )]
+    DependencyHashMismatch {
+        dependency: String,
+        path: PathBuf,
+        expected: String,
+        actual: String,
+    },
+    #[error(
+        "The manifest `{}` for dependency `{dependency}` is not allowed by the project's dependency policy.", .path.display()
+    )]
+    DependencyNotAllowed { dependency: String, path: PathBuf },
     #[error("The path `{}` for {field} could not be canonicalized.", .path.display())]
     UnableToCanonicalizePath {
         field: String,
@@ -139,6 +230,28 @@ pub enum ComposeModelError {
     NetworkCycle { cycle: Vec<String> },
     #[error("The model definition `{definition}` has no base model.")]
     BaseModelMissing { definition: String },
+    #[error("The name `{dependency}` is used by more than one dependency, but each name must be unique.")]
+    DuplicateDependency { dependency: String },
+    #[error("The dependency name `{dependency}` is also the name of a sub-network.")]
+    DependencyNameTaken { dependency: String },
+    #[error("The project dependencies form a cycle: {}.", .cycle.iter().map(|path| path.display().to_string()).collect::<Vec<_>>().join(" -> "))]
+    DependencyCycle { cycle: Vec<PathBuf> },
+    #[error(
+        "The definition `{definition}` refers to the {kind} `{item}`, which the dependency `{project}` does not export."
+    )]
+    NotExported {
+        definition: String,
+        project: String,
+        kind: &'static str,
+        item: String,
+    },
+    #[error("The project exports the {kind} `{name}`, which does not exist.")]
+    ExportNotFound { kind: &'static str, name: String },
+    #[error("In the dependency `{dependency}`: {error}")]
+    InDependency {
+        dependency: String,
+        error: Box<ComposeModelError>,
+    },
     #[error("The definition `{definition}` refers to the model definition `{model}`, which does not exist.")]
     ModelNotFound { definition: String, model: String },
     #[error("The multi-model `{definition}` has more than one network named `{network}`.")]
