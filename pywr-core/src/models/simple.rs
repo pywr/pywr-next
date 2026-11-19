@@ -1,4 +1,4 @@
-use crate::models::ModelDomain;
+use crate::models::{ModelDomain, RunMetadata};
 use crate::network::{
     Network, NetworkBuildError, NetworkBuilder, NetworkFinaliseError, NetworkRecorderSaveError,
     NetworkRecorderSetupError, NetworkResult, NetworkSetupError, NetworkSolverSetupError, NetworkState,
@@ -584,6 +584,12 @@ impl ModelBuilder {
     /// Get a reference to the [`NetworkBuilder`]
     pub fn network_builder(&mut self) -> &mut NetworkBuilder {
         &mut self.network
+    }
+
+    /// Set the metadata describing the run, which the model's Arrow and Parquet outputs record.
+    pub fn run_metadata(&mut self, run_metadata: RunMetadata) -> &mut Self {
+        self.domain.set_run_metadata(Some(run_metadata));
+        self
     }
 
     pub fn build(self) -> Result<Model, ModelBuilderError> {

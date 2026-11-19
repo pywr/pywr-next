@@ -9,8 +9,12 @@ from pywr import (
     MetricColumnExtensionType,
     MetricColumnMetadata,
     ModelSchema,
+    ProjectRunMetadata,
+    RunMetadata,
     ScenarioGroupMetadata,
     ScenarioMetadata,
+    SourceFileMetadata,
+    get_run_metadata,
     get_scenario_groups,
     get_scenarios,
     register_metric_extension_type,
@@ -204,3 +208,28 @@ def test_parquet_output_reads_as_the_arrow_stream_table(tmp_path: Path):
     assert scenario_to_pandas(parquet_table, 1).equals(
         scenario_to_pandas(stream_table, 1)
     )
+
+
+def test_run_metadata_is_read_when_present():
+    assert get_run_metadata(pa.schema([])) is None
+
+    value = {
+        "run_name": "baseline",
+        "project": {
+            "definition": "with-option",
+            "files": [{"path": "pywr-project.json", "sha256": "ab" * 32}],
+        },
+        "extra": {"analyst": "someone"},
+    }
+    schema = pa.schema([], metadata={b"PYWR_RUN": json.dumps(value).encode()})
+    assert get_run_metadata(schema) == RunMetadata(
+        run_name="baseline",
+        project=ProjectRunMetadata(
+            definition="with-option",
+            files=[SourceFileMetadata(path="pywr-project.json", sha256="ab" * 32)],
+        ),
+        extra={"analyst": "someone"},
+    )
+
+    with pytest.raises(TypeError):
+        get_run_metadata(pa.schema([], metadata={b"PYWR_RUN": b"[]"}))

@@ -343,7 +343,7 @@ impl Recorder for ArrowStreamOutput {
                     index: self.metric_set_idx,
                 })?;
 
-        let schema = Arc::new(make_schema(metric_set.name(), domain.scenarios(), metric_set.metrics()));
+        let schema = Arc::new(make_schema(metric_set.name(), domain, metric_set.metrics()));
         let scenario_count = domain.scenarios().len();
         let writer = match &self.sink {
             ArrowStreamSink::File(filename) => self.spawn_file_writer(filename, schema, scenario_count)?,

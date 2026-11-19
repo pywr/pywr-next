@@ -1,5 +1,5 @@
 use crate::metric::{MetricConsumerPhase, MetricF64, MetricF64Error, MetricF64ResolutionError, UnresolvedMetricF64};
-use crate::models::ModelDomain;
+use crate::models::{ModelDomain, RunMetadata};
 use crate::network::{
     Network, NetworkBuildError, NetworkBuilder, NetworkFinaliseError, NetworkRecorderSaveError,
     NetworkRecorderSetupError, NetworkResult, NetworkSetupError, NetworkSolverSetupError, NetworkState,
@@ -830,6 +830,12 @@ impl MultiNetworkModelBuilder {
             domain,
             networks: Vec::new(),
         }
+    }
+
+    /// Set the metadata describing the run, which the model's Arrow and Parquet outputs record.
+    pub fn run_metadata(&mut self, run_metadata: RunMetadata) -> &mut Self {
+        self.domain.set_run_metadata(Some(run_metadata));
+        self
     }
 
     /// Get a reference to the [`MultiNetworkEntryBuilder`]
