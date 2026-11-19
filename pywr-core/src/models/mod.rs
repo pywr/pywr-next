@@ -6,7 +6,8 @@ use crate::timestep::{TimeDomain, TimeDomainBuilder, TimeDomainBuilderError};
 pub use multi::{
     InterNetworkTransferError, MultiNetworkEntryBuilder, MultiNetworkModel, MultiNetworkModelBuilder,
     MultiNetworkModelBuilderError, MultiNetworkModelFinaliseError, MultiNetworkModelResult, MultiNetworkModelRunError,
-    MultiNetworkModelSetupError, MultiNetworkModelTimings, MultiNetworkTransferBuilder, MultiNetworkTransferIndex,
+    MultiNetworkModelSetupError, MultiNetworkModelState, MultiNetworkModelStepError, MultiNetworkModelTimings,
+    MultiNetworkTransferBuilder, MultiNetworkTransferIndex,
 };
 pub use simple::{
     Model, ModelBuilder, ModelBuilderError, ModelFinaliseError, ModelResult, ModelRunError, ModelSetupError,

@@ -82,6 +82,7 @@ mod tests {
             attribute: "volume".to_string(),
             ty: "node".to_string(),
             sub_type: Some("storage".to_string()),
+            network: Some("supply".to_string()),
         };
         let field = MetricColumnExtension::new(metadata.clone()).field("reservoir", 2);
         assert_eq!(

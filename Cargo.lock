@@ -2063,6 +2063,7 @@ dependencies = [
 name = "pywr-runner-engine"
 version = "2.0.0-rc3"
 dependencies = [
+ "arrow",
  "jiff",
  "log",
  "pywr-core",

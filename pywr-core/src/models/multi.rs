@@ -139,6 +139,13 @@ pub struct MultiNetworkModelState<S> {
     solvers: Vec<S>,
 }
 
+impl<S> MultiNetworkModelState<S> {
+    /// Get the current time-step index of the model state.
+    pub fn current_time_step_idx(&self) -> usize {
+        self.current_time_step_idx
+    }
+}
+
 /// Errors that can occur when setting up a multi-network model.
 #[derive(Debug, Error)]
 pub enum MultiNetworkModelSetupError {
@@ -187,6 +194,12 @@ pub enum MultiNetworkModelStepError {
         #[source]
         source: Box<NetworkRecorderSaveError>,
     },
+    #[error("Error flushing recorder for network `{network}`.")]
+    RecorderFlushError {
+        network: String,
+        #[source]
+        source: Box<NetworkRecorderSaveError>,
+    },
 }
 
 /// Errors that can occur when finalising a multi-network model.
@@ -227,6 +240,20 @@ impl MultiNetworkModelTimings {
         let network_timings = entries
             .iter()
             .map(|e| (e.name.clone(), NetworkTimings::new_with_component_timings(&e.network)))
+            .collect();
+
+        Self {
+            run_duration: RunDuration::start(),
+            network_timings,
+        }
+    }
+
+    /// Timings for each network of `model`, without timings for each component.
+    pub fn new_without_component_timings(model: &MultiNetworkModel) -> Self {
+        let network_timings = model
+            .networks
+            .iter()
+            .map(|e| (e.name.clone(), NetworkTimings::new_without_component_timings()))
             .collect();
 
         Self {
@@ -318,6 +345,25 @@ impl MultiNetworkModel {
     /// Get the index of a network by name.
     pub fn get_network_index_by_name(&self, name: &str) -> Option<usize> {
         self.networks.iter().position(|n| n.name == name)
+    }
+
+    /// The names of the networks, in the order they are solved.
+    pub fn network_names(&self) -> impl Iterator<Item = &str> {
+        self.networks.iter().map(|n| n.name.as_str())
+    }
+
+    /// Wait until asynchronous recorder output saved in previous timesteps has
+    /// been flushed, for every network.
+    pub fn flush_recorders<S>(&self, state: &mut MultiNetworkModelState<S>) -> Result<(), MultiNetworkModelStepError> {
+        for (entry, recorder_states) in self.networks.iter().zip(&mut state.recorder_states) {
+            entry.network.flush_recorders(recorder_states).map_err(|source| {
+                MultiNetworkModelStepError::RecorderFlushError {
+                    network: entry.name.clone(),
+                    source: Box::new(source),
+                }
+            })?;
+        }
+        Ok(())
     }
 
     pub fn setup<C>(
@@ -864,7 +910,7 @@ impl MultiNetworkModelBuilder {
                 transfers_map.insert(transfer_name, idx);
             }
 
-            let (network, resolution_map) =
+            let (mut network, resolution_map) =
                 entry_builder
                     .network
                     .build(&self.domain, &transfers_map)
@@ -872,6 +918,7 @@ impl MultiNetworkModelBuilder {
                         name: name.clone(),
                         source: Box::new(source),
                     })?;
+            network.set_name(name.clone());
 
             networks.push((name.clone(), network, entry_builder.transfers));
             resolution_maps.push(resolution_map);
