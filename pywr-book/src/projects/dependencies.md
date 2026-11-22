@@ -27,13 +27,13 @@ A dependency's items are referred to by qualified names that start with the depe
 way as [sub-networks](./sub-networks.md). Sub-networks and dependencies share these names, so a dependency
 cannot have the same name as a sub-network.
 
-| Item                         | Example                                     | Used in                                       |
-|------------------------------|---------------------------------------------|-----------------------------------------------|
-| Network definition           | `"org::river"`                              | `networks`, `extends`, multi-model `network`  |
-| Network set                  | `{ "set": "org::licences", ... }`           | `include`                                     |
-| Network set of a sub-network | `{ "set": "org::upper::options", ... }`     | `include`                                     |
-| Sub-network                  | `"org::upper"`                              | a network definition's `base`, `sub_networks` |
-| Model definition             | `{ "model": "org::baseline" }`              | a multi-model network's `network`             |
+| Item                         | Example                                        | Used in                                      |
+|------------------------------|------------------------------------------------|----------------------------------------------|
+| Network definition           | `"org::river"`                                 | `networks`, `extends`, multi-model `network` |
+| Network set                  | `{ "set": "org::licences", ... }`              | `include`                                    |
+| Network set of a sub-network | `{ "set": "org::upper::options", ... }`        | `include`                                    |
+| Sub-network                  | `"org::upper"`                                 | `sub_networks`                               |
+| Model definition             | `{ "type": "Model", "name": "org::baseline" }` | a multi-model network's `network`            |
 
 A dependency's items are used as if they were local, with three differences:
 
@@ -70,9 +70,9 @@ Their items can be referred to through both names, such as `org::shared::network
 the middle has no `exports`. A project that needs something from a dependency of an exporting project can
 depend on that project directly.
 
-A project that is reached by more than one route is loaded once, and a file reached by more than one route is
-merged once. Projects that depend on each other in a cycle are reported as an error, with the manifests that
-form it.
+A project that is reached by more than one route is loaded once. A network file must still be reached through
+one network set only, so selecting the same file through the sets of two projects is an error. Projects that
+depend on each other in a cycle are reported as an error, with the manifests that form it.
 
 ## Problems in dependencies
 

@@ -146,12 +146,15 @@ validated as a whole, which reports every problem found:
 - duplicate or invalid names;
 - references to sets, files, network definitions, sub-networks, models or dependencies that do not exist;
 - selections that break a network set's `min_files` or `max_files` limits;
+- network sets or sub-networks whose directories overlap, and data directories that do not exist;
+- a file reached through more than one network set, or given different position offsets;
 - paths that are not plain relative paths, or that lead outside the project directory, including through
   symbolic links;
 - cycles between network definitions or between projects.
 
 Problems that can only be found once the files are read, such as duplicate component names, unresolved
-placeholders, or a transfer reading a node that does not exist, are reported when the composed model is
+placeholders, a transfer reading a node that does not exist, a network reading a transfer that is not
+declared for it, or two networks writing the same output file, are reported when the composed model is
 loaded.
 
 ## Provenance

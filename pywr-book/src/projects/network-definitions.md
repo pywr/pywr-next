@@ -27,13 +27,13 @@ it instead of repeating it.
 ]
 ```
 
-| Field         | Description                                                                         |
-|---------------|-------------------------------------------------------------------------------------|
-| `name`        | The network definition's name.                                                      |
-| `description` | An optional description.                                                            |
-| `base`        | A [sub-network](./sub-networks.md) whose base network is the starting point.        |
-| `extends`     | Other network definitions whose files come next, in order.                          |
-| `include`     | Selections of files from network sets, as in a model definition.                    |
+| Field          | Description                                                                         |
+|----------------|-------------------------------------------------------------------------------------|
+| `name`         | The network definition's name.                                                      |
+| `description`  | An optional description.                                                            |
+| `sub_networks` | [Sub-networks](./sub-networks.md) to activate. Their base networks come first.      |
+| `extends`      | Other network definitions whose files come next, in order.                          |
+| `include`      | Selections of files from network sets, as in a model definition.                    |
 
 A model definition lists the network definitions it uses in `networks`:
 
@@ -48,12 +48,14 @@ A model definition lists the network definitions it uses in `networks`:
 
 A network definition can build on others with `extends`. Its files are, in order:
 
-1. the base network of its `base` sub-network, if it has one;
+1. the base networks of the sub-networks in its `sub_networks`, in the order the sub-networks are declared;
 2. the files of each network definition in `extends`, in order;
 3. its own `include` selections.
 
 Extension can be nested to any depth. A file reached by several routes, for example when two extended
-definitions share a parent, is merged once. A network definition cannot extend itself, directly or through
+definitions share a parent, is merged once, at its first position. If the routes give it different position
+offsets, that is an error, since only one offset can apply. Listing the same definition twice in `extends`, or
+in a model's `networks`, is also an error. A network definition cannot extend itself, directly or through
 others; such a cycle is reported with the chain of definitions that forms it.
 
 ## Limits apply to the whole model

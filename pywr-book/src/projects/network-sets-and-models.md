@@ -43,6 +43,10 @@ model needs exactly one, has both set to 1. A set of optional schemes, where any
 neither. The limits apply to everything a model selects from the set, by whatever route, including through
 [network definitions](./network-definitions.md).
 
+Each set must have its own directory, so that every network file belongs to exactly one set. A set's directory
+may contain another set's directory, since a set holds only the files directly in its directory, but a
+project's own sets may not be inside the directory of one of its [sub-networks](./sub-networks.md).
+
 ## Model definitions
 
 A model definition names a runnable model and says what it is made of.
@@ -114,6 +118,8 @@ The files of a model are merged in this order:
 3. the files of each [network definition](./network-definitions.md) in `networks`, in order;
 4. the files selected in `include`, in order.
 
-A file reached by more than one route is merged once, at its first position. The order matters: it decides the
+A file reached by more than one route is merged once, at its first position. Since a file belongs to one
+network set, the routes can only differ in which definitions select it, and giving it different position
+offsets is an error. The order matters: it decides the
 order of new nodes in the composed network, and which file is recorded as the origin of a component that
 several files contribute to.
