@@ -1,4 +1,5 @@
 use crate::parameters::{ActivationFunction, MonthlyProfileVariableConfig, RbfProfileVariableConfig};
+use pywr_schema_macros::skip_serializing_none;
 use schemars::JsonSchema;
 use strum_macros::{Display, EnumDiscriminants, EnumString, IntoStaticStr, VariantNames};
 
@@ -45,11 +46,15 @@ impl VariableConfig {
 }
 
 /// The variable config for a named parameter.
+#[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Debug, Clone, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct NamedVariableConfig {
     /// The name of the parameter to make variable.
     pub name: String,
+    /// The name of the network the parameter belongs to. This is required for a multi-network
+    /// model, and must not be given for a single-network model.
+    pub network: Option<String>,
     pub config: VariableConfig,
 }
 
