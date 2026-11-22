@@ -2032,6 +2032,7 @@ dependencies = [
 name = "pywr-project"
 version = "2.0.0-rc3"
 dependencies = [
+ "pywr-output-metadata",
  "pywr-schema",
  "relative-path",
  "schemars",
@@ -2064,6 +2065,7 @@ dependencies = [
 name = "pywr-runner-engine"
 version = "2.0.0-rc3"
 dependencies = [
+ "arrow",
  "jiff",
  "log",
  "pywr-core",
@@ -2081,6 +2083,7 @@ name = "pywr-runner-protocol"
 version = "2.0.0-rc3"
 dependencies = [
  "jiff",
+ "pywr-output-metadata",
  "serde",
  "serde_json",
  "strum",

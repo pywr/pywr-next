@@ -1,6 +1,7 @@
 use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand, ValueEnum};
 use log::info;
+use pywr_core::models::RunMetadata;
 #[cfg(feature = "cbc")]
 use pywr_core::solvers::{CbcSolverSettings, CbcSolverSettingsBuilder};
 #[cfg(feature = "ipm-ocl")]
@@ -108,6 +109,9 @@ enum Commands {
         /// Ignore the feature requirements of a solver.
         #[arg(short, long, default_value_t = false)]
         ignore_feature_requirements: bool,
+        /// Name of the run, recorded in the metadata of the run's outputs.
+        #[arg(long)]
+        run_name: Option<String>,
     },
     RunMulti {
         /// Path to Pywr model JSON.
@@ -122,6 +126,9 @@ enum Commands {
         /// The number of threads to use in parallel simulation.
         #[arg(short, long, default_value_t = 1)]
         threads: usize,
+        /// Name of the run, recorded in the metadata of the run's outputs.
+        #[arg(long)]
+        run_name: Option<String>,
     },
     RunRandom {
         num_systems: usize,
@@ -165,6 +172,9 @@ enum Commands {
         /// Ignore the feature requirements of a solver.
         #[arg(short, long, default_value_t = false)]
         ignore_feature_requirements: bool,
+        /// Name of the run, recorded in the metadata of the run's outputs.
+        #[arg(long)]
+        run_name: Option<String>,
     },
     // InitProject {
     //     /// Location to initialise the project directory.
@@ -222,6 +232,7 @@ fn main() -> Result<()> {
             output_path,
             threads,
             ignore_feature_requirements,
+            run_name,
         } => run(
             model,
             solver,
@@ -229,6 +240,7 @@ fn main() -> Result<()> {
             output_path.as_deref(),
             *threads,
             *ignore_feature_requirements,
+            run_name.clone(),
         )?,
         Commands::RunMulti {
             model,
@@ -236,7 +248,14 @@ fn main() -> Result<()> {
             data_path,
             output_path,
             threads: _,
-        } => run_multi(model, solver, data_path.as_deref(), output_path.as_deref())?,
+            run_name,
+        } => run_multi(
+            model,
+            solver,
+            data_path.as_deref(),
+            output_path.as_deref(),
+            run_name.clone(),
+        )?,
         Commands::RunRandom {
             num_systems,
             density,
@@ -255,6 +274,7 @@ fn main() -> Result<()> {
             output_path,
             threads,
             ignore_feature_requirements,
+            run_name,
         } => run_project(
             project,
             definition,
@@ -263,6 +283,7 @@ fn main() -> Result<()> {
             output_path.as_deref(),
             *threads,
             *ignore_feature_requirements,
+            run_name.clone(),
         )?,
         // Commands::InitProject {
         //     location,
@@ -495,16 +516,23 @@ fn run(
     output_path: Option<&Path>,
     threads: usize,
     ignore_feature_requirements: bool,
+    run_name: Option<String>,
 ) -> Result<()> {
     create_output_dir(output_path)?;
     let schema_v2 = ModelSchema::from_path(path).with_context(|| format!("Failed to load model: {path:?}"))?;
     let data_path = data_path.or_else(|| path.parent());
 
     check_schema(schema_v2.validate())?;
-    let builder = schema_v2
+    let mut builder = schema_v2
         .create_model_builder(&FileSystem, data_path, output_path)
         .context("Failed to create the model from its schema")
         .map_err(with_network_report)?;
+    if run_name.is_some() {
+        builder.run_metadata(RunMetadata {
+            run_name,
+            ..Default::default()
+        });
+    }
     let model = builder.build().context("Failed to build the model")?;
 
     run_with_solver!(model, solver, threads, ignore_feature_requirements).context("Failed to run the model")?;
@@ -512,17 +540,29 @@ fn run(
     Ok(())
 }
 
-fn run_multi(path: &Path, solver: &Solver, data_path: Option<&Path>, output_path: Option<&Path>) -> Result<()> {
+fn run_multi(
+    path: &Path,
+    solver: &Solver,
+    data_path: Option<&Path>,
+    output_path: Option<&Path>,
+    run_name: Option<String>,
+) -> Result<()> {
     create_output_dir(output_path)?;
     let schema_v2 =
         MultiNetworkModelSchema::from_path(path).with_context(|| format!("Failed to load model: {path:?}"))?;
     let data_path = data_path.or_else(|| path.parent());
 
     check_schema(schema_v2.validate())?;
-    let builder = schema_v2
+    let mut builder = schema_v2
         .create_model_builder(&FileSystem, data_path, output_path)
         .context("Failed to create the model from its schema")
         .map_err(with_network_report)?;
+    if run_name.is_some() {
+        builder.run_metadata(RunMetadata {
+            run_name,
+            ..Default::default()
+        });
+    }
     let model = builder.build().context("Failed to build the model")?;
 
     match *solver {
@@ -610,6 +650,7 @@ fn run_server(mode: RunServerMode, socket_name: &str) -> Result<()> {
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn run_project(
     path: &Path,
     definition: &str,
@@ -618,6 +659,7 @@ fn run_project(
     output_path: Option<&Path>,
     threads: usize,
     ignore_feature_requirements: bool,
+    run_name: Option<String>,
 ) -> Result<()> {
     create_output_dir(output_path)?;
     let project = pywr_project::Project::open(path).with_context(|| format!("Failed to open project: {path:?}"))?;
@@ -627,6 +669,17 @@ fn run_project(
     let composed = project
         .compose(definition)
         .with_context(|| format!("Failed to compose definition `{definition}`"))?;
+    // Hash the composed files just before loading them. Loading reads them again, so a file
+    // changed in between would not match its recorded hash.
+    let run_metadata = RunMetadata {
+        run_name,
+        project: Some(
+            project
+                .run_metadata(&composed)
+                .context("Failed to hash the project's files for the run metadata")?,
+        ),
+        ..Default::default()
+    };
     match composed {
         pywr_project::Composed::Model(composed) => {
             let schema = composed
@@ -635,12 +688,12 @@ fn run_project(
                 .into_model_schema(&options)
                 .with_context(|| format!("Failed to merge the networks of model definition `{definition}`"))?;
             check_schema(schema.validate())?;
-            let model = schema
+            let mut builder = schema
                 .create_model_builder(&FileSystem, data_path, output_path)
                 .context("Failed to create the model from its schema")
-                .map_err(with_network_report)?
-                .build()
-                .context("Failed to build the model")?;
+                .map_err(with_network_report)?;
+            builder.run_metadata(run_metadata);
+            let model = builder.build().context("Failed to build the model")?;
             run_with_solver!(model, solver, threads, ignore_feature_requirements).context("Failed to run the model")?;
         }
         pywr_project::Composed::MultiModel(composed) => {
@@ -650,12 +703,12 @@ fn run_project(
                 .into_multi_model_schema(&options)
                 .with_context(|| format!("Failed to merge the networks of multi-model definition `{definition}`"))?;
             check_schema(schema.validate())?;
-            let model = schema
+            let mut builder = schema
                 .create_model_builder(&FileSystem, data_path, output_path)
                 .context("Failed to create the model from its schema")
-                .map_err(with_network_report)?
-                .build()
-                .context("Failed to build the model")?;
+                .map_err(with_network_report)?;
+            builder.run_metadata(run_metadata);
+            let model = builder.build().context("Failed to build the model")?;
             run_with_solver!(model, solver, threads, ignore_feature_requirements).context("Failed to run the model")?;
         }
     }

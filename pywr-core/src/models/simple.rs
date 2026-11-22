@@ -1,4 +1,4 @@
-use crate::models::ModelDomain;
+use crate::models::{ModelDomain, RunMetadata};
 use crate::network::{
     Network, NetworkBuildError, NetworkBuilder, NetworkFinaliseError, NetworkRecorderSaveError,
     NetworkRecorderSetupError, NetworkResult, NetworkSetupError, NetworkSolverSetupError, NetworkState,
@@ -171,17 +171,27 @@ pub struct ModelResult {
 pub struct Model {
     domain: ModelDomain,
     network: Network,
+    run_metadata: Option<RunMetadata>,
 }
 
 impl Model {
     /// Construct a new model from a [`ModelDomain`] and [`Network`].
     pub fn new(domain: ModelDomain, network: Network) -> Self {
-        Self { domain, network }
+        Self {
+            domain,
+            network,
+            run_metadata: None,
+        }
     }
 
     /// Get a reference to the [`ModelDomain`]
     pub fn domain(&self) -> &ModelDomain {
         &self.domain
+    }
+
+    /// The metadata describing the run, if any was given.
+    pub fn run_metadata(&self) -> Option<&RunMetadata> {
+        self.run_metadata.as_ref()
     }
 
     pub fn network(&self) -> &Network {
@@ -236,7 +246,7 @@ impl Model {
 
         let recorder_state = self
             .network
-            .setup_recorders(&self.domain)
+            .setup_recorders(&self.domain, self.run_metadata.as_ref())
             .map_err(|source| ModelSetupError::RecorderSetupError(Box::new(source)))?;
         let solvers = self
             .network
@@ -264,7 +274,7 @@ impl Model {
             .map_err(|source| ModelSetupError::NetworkSetupError(Box::new(source)))?;
         let recorder_state = self
             .network
-            .setup_recorders(&self.domain)
+            .setup_recorders(&self.domain, self.run_metadata.as_ref())
             .map_err(|source| ModelSetupError::RecorderSetupError(Box::new(source)))?;
         let solvers = self
             .network
@@ -574,11 +584,16 @@ pub enum ModelBuilderError {
 pub struct ModelBuilder {
     domain: ModelDomain,
     network: NetworkBuilder,
+    run_metadata: Option<RunMetadata>,
 }
 
 impl ModelBuilder {
     pub fn new(domain: ModelDomain, network: NetworkBuilder) -> Self {
-        Self { domain, network }
+        Self {
+            domain,
+            network,
+            run_metadata: None,
+        }
     }
 
     /// Get a reference to the [`NetworkBuilder`]
@@ -586,11 +601,18 @@ impl ModelBuilder {
         &mut self.network
     }
 
+    /// Set the metadata describing the run, which the model's Arrow and Parquet outputs record.
+    pub fn run_metadata(&mut self, run_metadata: RunMetadata) -> &mut Self {
+        self.run_metadata = Some(run_metadata);
+        self
+    }
+
     pub fn build(self) -> Result<Model, ModelBuilderError> {
         let (network, _) = self.network.build(&self.domain, &HashMap::new())?;
         Ok(Model {
             domain: self.domain,
             network,
+            run_metadata: self.run_metadata,
         })
     }
 }

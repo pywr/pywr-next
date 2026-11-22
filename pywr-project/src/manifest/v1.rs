@@ -1549,7 +1549,7 @@ fn check_pin(path: &Path, dependency: &Dependency, actual: &str) -> Result<(), M
 
 /// The path of `target` relative to `base`, through `..` where needed. Both must be absolute
 /// and canonical. Returns `target` itself if there is no relative path, as between drives.
-fn relative_to(base: &Path, target: &Path) -> PathBuf {
+pub(crate) fn relative_to(base: &Path, target: &Path) -> PathBuf {
     let base: Vec<_> = base.components().collect();
     let target_components: Vec<_> = target.components().collect();
     let common = base

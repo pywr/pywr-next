@@ -720,6 +720,7 @@ mod tests {
                 clear_existing_outputs: false,
                 arrow_streams: Vec::new(),
             },
+            run_metadata: None,
         }
     }
 

@@ -62,6 +62,7 @@ pub struct InitialiseRequest {
 
     pub solver: SolverConfiguration,
     pub result_options: ResultOptions,
+    pub run_metadata: Option<v1::RunMetadata>,
 }
 
 #[allow(clippy::infallible_try_from)]
@@ -77,6 +78,7 @@ impl TryFrom<v1::InitialiseRequest> for InitialiseRequest {
             log_level: req.log_level.map(TryInto::try_into).transpose()?,
             solver: req.solver.try_into()?,
             result_options: req.result_options.try_into()?,
+            run_metadata: req.run_metadata,
         })
     }
 }

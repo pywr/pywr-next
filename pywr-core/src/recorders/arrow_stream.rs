@@ -4,8 +4,8 @@ use super::{
     RecorderInternalState, RecorderMeta, RecorderSaveError, RecorderSetupError, Timestep, downcast_internal_state,
     downcast_internal_state_mut,
 };
-use crate::models::ModelDomain;
 use crate::network::{MetricSetIndex, Network, ResolutionMaps};
+use crate::recorders::RecorderSetupContext;
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
 use arrow::datatypes::Schema;
@@ -333,9 +333,10 @@ impl Recorder for ArrowStreamOutput {
 
     fn setup(
         &self,
-        domain: &ModelDomain,
-        network: &Network,
+        context: RecorderSetupContext<'_>,
     ) -> Result<Option<Box<dyn RecorderInternalState>>, RecorderSetupError> {
+        let domain = context.domain;
+        let network = context.network;
         let metric_set =
             network
                 .get_metric_set(self.metric_set_idx)
@@ -343,7 +344,12 @@ impl Recorder for ArrowStreamOutput {
                     index: self.metric_set_idx,
                 })?;
 
-        let schema = Arc::new(make_schema(metric_set.name(), domain.scenarios(), metric_set.metrics()));
+        let schema = Arc::new(make_schema(
+            metric_set.name(),
+            domain.scenarios(),
+            context.run_metadata,
+            metric_set.metrics(),
+        ));
         let scenario_count = domain.scenarios().len();
         let writer = match &self.sink {
             ArrowStreamSink::File(filename) => self.spawn_file_writer(filename, schema, scenario_count)?,

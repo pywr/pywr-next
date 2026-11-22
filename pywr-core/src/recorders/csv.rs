@@ -3,8 +3,8 @@ use super::{
     RecorderInternalState, RecorderMeta, RecorderSaveError, RecorderSetupError, Timestep, downcast_internal_state,
     downcast_internal_state_mut,
 };
-use crate::models::ModelDomain;
 use crate::network::{MetricSetIndex, Network, ResolutionMaps};
+use crate::recorders::RecorderSetupContext;
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
 use jiff::civil::DateTime;
@@ -86,9 +86,10 @@ impl Recorder for CsvWideFmtOutput {
     }
     fn setup(
         &self,
-        domain: &ModelDomain,
-        network: &Network,
+        context: RecorderSetupContext<'_>,
     ) -> Result<Option<Box<dyn RecorderInternalState>>, RecorderSetupError> {
+        let domain = context.domain;
+        let network = context.network;
         let mut writer = csv::Writer::from_path(&self.filename).map_err(|source| CsvError::CSVError {
             path: self.filename.clone(),
             source,
@@ -309,8 +310,7 @@ impl Recorder for CsvLongFmtOutput {
     }
     fn setup(
         &self,
-        _domain: &ModelDomain,
-        _network: &Network,
+        _context: RecorderSetupContext<'_>,
     ) -> Result<Option<Box<dyn RecorderInternalState>>, RecorderSetupError> {
         let writer = csv::Writer::from_path(&self.filename).map_err(|source| CsvError::CSVError {
             path: self.filename.clone(),

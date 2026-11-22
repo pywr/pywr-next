@@ -13,12 +13,10 @@ categories.workspace = true
 
 [features]
 # Adds the `MetricColumnExtension` Arrow extension type.
-arrow = ["dep:arrow-schema", "dep:serde_json"]
+arrow = ["dep:arrow-schema"]
 
 [dependencies]
 arrow-schema = { workspace = true, optional = true }
 serde = { workspace = true }
-serde_json = { workspace = true, optional = true }
-
-[dev-dependencies]
 serde_json = { workspace = true }
+

@@ -1,5 +1,5 @@
 use crate::metric::{MetricConsumerPhase, MetricF64, MetricF64Error, MetricF64ResolutionError, UnresolvedMetricF64};
-use crate::models::ModelDomain;
+use crate::models::{ModelDomain, RunMetadata};
 use crate::network::{
     Network, NetworkBuildError, NetworkBuilder, NetworkFinaliseError, NetworkRecorderSaveError,
     NetworkRecorderSetupError, NetworkResult, NetworkSetupError, NetworkSolverSetupError, NetworkState,
@@ -290,6 +290,7 @@ pub struct MultiNetworkModelResult {
 pub struct MultiNetworkModel {
     domain: ModelDomain,
     networks: Vec<MultiNetworkEntry>,
+    run_metadata: Option<RunMetadata>,
 }
 
 impl MultiNetworkModel {
@@ -297,12 +298,18 @@ impl MultiNetworkModel {
         Self {
             domain,
             networks: Vec::new(),
+            run_metadata: None,
         }
     }
 
     /// Get a reference to the [`ModelDomain`]
     pub fn domain(&self) -> &ModelDomain {
         &self.domain
+    }
+
+    /// The metadata describing the run, if any was given.
+    pub fn run_metadata(&self) -> Option<&RunMetadata> {
+        self.run_metadata.as_ref()
     }
 
     /// Get a reference to a network by index.
@@ -342,12 +349,13 @@ impl MultiNetworkModel {
                     network: entry.name.clone(),
                     source: Box::new(source),
                 })?;
-            let recorder_state = entry.network.setup_recorders(&self.domain).map_err(|source| {
-                MultiNetworkModelSetupError::RecorderSetupError {
+            let recorder_state = entry
+                .network
+                .setup_recorders(&self.domain, self.run_metadata.as_ref())
+                .map_err(|source| MultiNetworkModelSetupError::RecorderSetupError {
                     network: entry.name.clone(),
                     source: Box::new(source),
-                }
-            })?;
+                })?;
             let solver = entry
                 .network
                 .setup_solver(scenario_indices, &state, solver_config)
@@ -392,12 +400,13 @@ impl MultiNetworkModel {
                     source: Box::new(source),
                 })?;
 
-            let recorder_state = entry.network.setup_recorders(&self.domain).map_err(|source| {
-                MultiNetworkModelSetupError::RecorderSetupError {
+            let recorder_state = entry
+                .network
+                .setup_recorders(&self.domain, self.run_metadata.as_ref())
+                .map_err(|source| MultiNetworkModelSetupError::RecorderSetupError {
                     network: entry.name.clone(),
                     source: Box::new(source),
-                }
-            })?;
+                })?;
 
             let solver = entry
                 .network
@@ -822,6 +831,7 @@ pub enum MultiNetworkModelBuilderError {
 pub struct MultiNetworkModelBuilder {
     domain: ModelDomain,
     networks: Vec<MultiNetworkEntryBuilder>,
+    run_metadata: Option<RunMetadata>,
 }
 
 impl MultiNetworkModelBuilder {
@@ -829,7 +839,14 @@ impl MultiNetworkModelBuilder {
         Self {
             domain,
             networks: Vec::new(),
+            run_metadata: None,
         }
+    }
+
+    /// Set the metadata describing the run, which the model's Arrow and Parquet outputs record.
+    pub fn run_metadata(&mut self, run_metadata: RunMetadata) -> &mut Self {
+        self.run_metadata = Some(run_metadata);
+        self
     }
 
     /// Get a reference to the [`MultiNetworkEntryBuilder`]
@@ -935,6 +952,7 @@ impl MultiNetworkModelBuilder {
         Ok(MultiNetworkModel {
             domain: self.domain,
             networks: entries,
+            run_metadata: self.run_metadata,
         })
     }
 }

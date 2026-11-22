@@ -397,6 +397,11 @@ impl RunnerBackend for PywrBackend {
             request.output_path.as_deref(),
         )?;
 
+        // Record the run in the model's outputs, always under the request's run name.
+        let mut run_metadata = request.run_metadata.unwrap_or_default();
+        run_metadata.run_name = Some(request.run_name);
+        model_builder.run_metadata(run_metadata);
+
         let (arrow_streams, arrow_stream_commits) = apply_arrow_stream_recorders_to_model_builder(
             model_builder.network_builder(),
             &request.result_options,
@@ -615,6 +620,7 @@ mod tests {
                 clear_existing_outputs: false,
                 arrow_streams: Vec::new(),
             },
+            run_metadata: None,
         })
     }
 
@@ -679,6 +685,7 @@ mod tests {
                 clear_existing_outputs: false,
                 arrow_streams,
             },
+            run_metadata: None,
         }
     }
 
@@ -708,6 +715,31 @@ mod tests {
             assert_eq!(descriptor.filename.as_deref(), Some(filename.as_path()));
             assert!(filename.is_file());
         }
+    }
+
+    #[test]
+    fn arrow_streams_record_the_run_metadata_under_the_request_run_name() {
+        let output = tempfile::tempdir().unwrap();
+        let mut request = request(output.path(), vec![stream("node-values", "nodes")]);
+        let mut extra = std::collections::BTreeMap::new();
+        extra.insert("analyst".to_string(), serde_json::json!("someone"));
+        request.run_metadata = Some(pywr_runner_protocol::v1::RunMetadata {
+            run_name: Some("ignored".to_string()),
+            extra: extra.clone(),
+            ..Default::default()
+        });
+        let mut backend = PywrBackend::default();
+        let mut initialised = backend.initialise(request).unwrap();
+        backend.step(&mut initialised.runtime, &RunTarget::Step).unwrap();
+        backend.finalise(&mut initialised.runtime).unwrap();
+
+        let file = std::fs::File::open(output.path().join("node-values.arrow")).unwrap();
+        let reader = arrow::ipc::reader::StreamReader::try_new(file, None).unwrap();
+        let schema = reader.schema();
+        let metadata = &schema.metadata()[pywr_core::recorders::RUN_METADATA_KEY];
+        let recorded: pywr_runner_protocol::v1::RunMetadata = serde_json::from_str(metadata).unwrap();
+        assert_eq!(recorded.run_name.as_deref(), Some("test"));
+        assert_eq!(recorded.extra, extra);
     }
 
     #[test]

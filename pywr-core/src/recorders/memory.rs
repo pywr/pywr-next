@@ -1,6 +1,6 @@
 use crate::agg_funcs::{AggFuncError, AggFuncF64};
-use crate::models::ModelDomain;
 use crate::network::{MetricSetIndex, Network, ResolutionMaps};
+use crate::recorders::RecorderSetupContext;
 use crate::recorders::aggregator::PeriodValue;
 use crate::recorders::{
     LongFmtRecord, MetricSetState, Recorder, RecorderAggregationError, RecorderBuilder, RecorderBuilderError,
@@ -281,9 +281,9 @@ impl Recorder for MemoryRecorder {
 
     fn setup(
         &self,
-        domain: &ModelDomain,
-        _network: &Network,
+        context: RecorderSetupContext<'_>,
     ) -> Result<Option<Box<dyn RecorderInternalState>>, RecorderSetupError> {
+        let domain = context.domain;
         let data = InternalState::new(domain.scenarios().len());
 
         Ok(Some(Box::new(data)))

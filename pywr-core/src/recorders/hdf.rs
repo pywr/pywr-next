@@ -3,8 +3,8 @@ use super::{
     RecorderFinaliseError, RecorderInternalState, RecorderMeta, RecorderSaveError, RecorderSetupError, Timestep,
     downcast_internal_state, downcast_internal_state_mut,
 };
-use crate::models::ModelDomain;
 use crate::network::{MetricSetIndex, Network, ResolutionMaps};
+use crate::recorders::RecorderSetupContext;
 use crate::scenario::{ScenarioDomain, ScenarioIndex};
 use crate::state::State;
 use hdf5_metno::types::StringError;
@@ -92,9 +92,10 @@ impl Recorder for HDF5Recorder {
     }
     fn setup(
         &self,
-        domain: &ModelDomain,
-        network: &Network,
+        context: RecorderSetupContext<'_>,
     ) -> Result<Option<Box<dyn RecorderInternalState>>, RecorderSetupError> {
+        let domain = context.domain;
+        let network = context.network;
         let file = hdf5_metno::File::create(&self.filename).map_err(|source| Hdf5Error::HDF5Error {
             path: self.filename.clone(),
             source,
