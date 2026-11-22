@@ -364,235 +364,6 @@ fn handle_conversion_errors(errors: &[ComponentConversionError], stop_on_error: 
     Ok(())
 }
 
-/// Fail with every problem a model's validation found, one per line.
-///
-/// Building a model validates it too, but its error only gives the number of problems.
-fn check_schema(validation: std::result::Result<(), pywr_schema::ValidationError>) -> Result<()> {
-    validation.map_err(|error| anyhow::anyhow!("{}", error.report()))
-}
-
-/// Add every problem of a network that failed validation while the model was created.
-///
-/// [`check_schema`] can't see a network a multi-network model gives by path, as the network is
-/// only read when the model is created, and that error only gives the number of problems.
-fn with_network_report(error: anyhow::Error) -> anyhow::Error {
-    let report = error
-        .chain()
-        .find_map(|cause| cause.downcast_ref::<pywr_schema::NetworkValidationError>())
-        .map(|validation| validation.report().to_string());
-
-    match report {
-        Some(report) => error.context(report),
-        None => error,
-    }
-}
-
-fn run(
-    path: &Path,
-    solver: &Solver,
-    data_path: Option<&Path>,
-    output_path: Option<&Path>,
-    threads: usize,
-    ignore_feature_requirements: bool,
-) -> Result<()> {
-    let schema_v2 = ModelSchema::from_path(path).with_context(|| format!("Failed to load model: {path:?}"))?;
-    let data_path = data_path.or_else(|| path.parent());
-
-    check_schema(schema_v2.validate())?;
-    let builder = schema_v2
-        .create_model_builder(&FileSystem, data_path, output_path)
-        .context("Failed to create the model from its schema")
-        .map_err(with_network_report)?;
-    let model = builder.build().context("Failed to build the model")?;
-
-    match *solver {
-        Solver::Clp => {
-            let mut solver_config_builder = ClpSolverSettingsBuilder::default();
-            if threads > 1 {
-                solver_config_builder = solver_config_builder.parallel();
-                solver_config_builder = solver_config_builder.threads(threads);
-            }
-            if ignore_feature_requirements {
-                solver_config_builder = solver_config_builder.ignore_feature_requirements();
-            }
-            let settings = solver_config_builder.build();
-            model.run(&settings)
-        }
-        #[cfg(feature = "cbc")]
-        Solver::Cbc => {
-            let mut solver_config_builder = CbcSolverSettingsBuilder::default();
-            if threads > 1 {
-                solver_config_builder = solver_config_builder.parallel();
-                solver_config_builder = solver_config_builder.threads(threads);
-            }
-            if ignore_feature_requirements {
-                solver_config_builder = solver_config_builder.ignore_feature_requirements();
-            }
-            let settings = solver_config_builder.build();
-            model.run(&settings)
-        }
-        #[cfg(feature = "highs")]
-        Solver::Highs => {
-            let mut solver_config_builder = HighsSolverSettingsBuilder::default();
-            if threads > 1 {
-                solver_config_builder = solver_config_builder.parallel();
-                solver_config_builder = solver_config_builder.threads(threads);
-            }
-            if ignore_feature_requirements {
-                solver_config_builder = solver_config_builder.ignore_feature_requirements();
-            }
-            let settings = solver_config_builder.build();
-            model.run(&settings)
-        }
-        #[cfg(feature = "ipm-ocl")]
-        Solver::CLIPMF32 => {
-            let mut solver_config_builder = ClIpmF32SettingsBuilder::default();
-            if threads > 1 {
-                solver_config_builder = solver_config_builder.parallel();
-                solver_config_builder = solver_config_builder.threads(threads);
-            }
-            if ignore_feature_requirements {
-                solver_config_builder = solver_config_builder.ignore_feature_requirements();
-            }
-
-            let settings = solver_config_builder.build();
-            model.run_multi_scenario(&settings)
-        }
-        #[cfg(feature = "ipm-ocl")]
-        Solver::CLIPMF64 => {
-            let mut solver_config_builder = ClIpmF64SettingsBuilder::default();
-            if threads > 1 {
-                solver_config_builder = solver_config_builder.parallel();
-                solver_config_builder = solver_config_builder.threads(threads);
-            }
-            if ignore_feature_requirements {
-                solver_config_builder = solver_config_builder.ignore_feature_requirements();
-            }
-
-            let settings = solver_config_builder.build();
-            model.run_multi_scenario(&settings)
-        }
-        #[cfg(feature = "ipm-simd")]
-        Solver::IpmSimd => {
-            let mut solver_config_builder = SimdIpmSolverSettingsBuilder::default();
-            if threads > 1 {
-                solver_config_builder = solver_config_builder.parallel();
-                solver_config_builder = solver_config_builder.threads(threads);
-            }
-            if ignore_feature_requirements {
-                solver_config_builder = solver_config_builder.ignore_feature_requirements();
-            }
-
-            let settings = solver_config_builder.build();
-            model.run_multi_scenario(&settings)
-        }
-        #[cfg(feature = "microlp")]
-        Solver::Microlp => {
-            let mut solver_config_builder = MicroLpSolverSettingsBuilder::default();
-            if threads > 1 {
-                solver_config_builder = solver_config_builder.parallel();
-                solver_config_builder = solver_config_builder.threads(threads);
-            }
-            if ignore_feature_requirements {
-                solver_config_builder = solver_config_builder.ignore_feature_requirements();
-            }
-            let settings = solver_config_builder.build();
-            model.run(&settings)
-        }
-    }
-    .context("Failed to run the model")?;
-
-    Ok(())
-}
-
-fn run_multi(path: &Path, solver: &Solver, data_path: Option<&Path>, output_path: Option<&Path>) -> Result<()> {
-    let schema_v2 =
-        MultiNetworkModelSchema::from_path(path).with_context(|| format!("Failed to load model: {path:?}"))?;
-    let data_path = data_path.or_else(|| path.parent());
-
-    check_schema(schema_v2.validate())?;
-    let builder = schema_v2
-        .create_model_builder(&FileSystem, data_path, output_path)
-        .context("Failed to create the model from its schema")
-        .map_err(with_network_report)?;
-    let model = builder.build().context("Failed to build the model")?;
-
-    match *solver {
-        Solver::Clp => model.run(&ClpSolverSettings::default()),
-        #[cfg(feature = "highs")]
-        Solver::Highs => model.run(&HighsSolverSettings::default()),
-        #[cfg(feature = "cbc")]
-        Solver::Cbc => model.run(&CbcSolverSettings::default()),
-        #[cfg(feature = "ipm-ocl")]
-        Solver::CLIPMF32 => model.run_multi_scenario(&ClIpmF32Settings::default()),
-        #[cfg(feature = "ipm-ocl")]
-        Solver::CLIPMF64 => model.run_multi_scenario(&ClIpmF64Settings::default()),
-        #[cfg(feature = "ipm-simd")]
-        Solver::IpmSimd => model.run_multi_scenario(&SimdIpmSolverSettings::default()),
-        #[cfg(feature = "microlp")]
-        Solver::Microlp => model.run(&MicroLpSolverSettings::default()),
-    }
-    .context("Failed to run the model")?;
-
-    Ok(())
-}
-
-fn run_random(num_systems: usize, density: usize, num_scenarios: usize, solver: &Solver) -> Result<()> {
-    let mut rng = ChaCha8Rng::seed_from_u64(0);
-    let builder = make_random_model_builder(num_systems, density, num_scenarios, &mut rng);
-    let model = builder.build().context("Failed to build the random model")?;
-
-    match *solver {
-        Solver::Clp => model.run(&ClpSolverSettings::default()),
-        #[cfg(feature = "highs")]
-        Solver::Highs => model.run(&HighsSolverSettings::default()),
-        #[cfg(feature = "cbc")]
-        Solver::Cbc => model.run(&CbcSolverSettings::default()),
-        #[cfg(feature = "ipm-ocl")]
-        Solver::CLIPMF32 => model.run_multi_scenario(&ClIpmF32Settings::default()),
-        #[cfg(feature = "ipm-ocl")]
-        Solver::CLIPMF64 => model.run_multi_scenario(&ClIpmF64Settings::default()),
-        #[cfg(feature = "ipm-simd")]
-        Solver::IpmSimd => model.run_multi_scenario(&SimdIpmSolverSettings::default()),
-        #[cfg(feature = "microlp")]
-        Solver::Microlp => model.run(&MicroLpSolverSettings::default()),
-    }
-    .context("Failed to run the model")?;
-
-    Ok(())
-}
-
-fn export_schema(out_path: &Path) -> Result<()> {
-    let schema = schema_for!(ModelSchema);
-    std::fs::write(
-        out_path,
-        serde_json::to_string_pretty(&schema).with_context(|| "Failed serialise Pywr schema".to_string())?,
-    )
-    .with_context(|| format!("Failed to write file: {out_path:?}",))?;
-
-    Ok(())
-}
-
-fn run_server(mode: RunServerMode, socket_name: &str) -> Result<()> {
-    use pywr_runner_service::{RunnerServiceConfigBuilder, run_local_socket_server, run_stdio_server};
-
-    let config: RunnerServiceConfig = RunnerServiceConfigBuilder::new().build();
-
-    match mode {
-        RunServerMode::LocalSocket => {
-            info!("Starting Pywr runner service on socket: {socket_name}");
-            run_local_socket_server(socket_name, config)
-                .with_context(|| "Failed to run Pywr runner service".to_string())?;
-        }
-        RunServerMode::Stdio => {
-            info!("Starting Pywr runner service over standard input/output");
-            run_stdio_server(config).with_context(|| "Failed to run Pywr runner service".to_string())?;
-        }
-    }
-
-    Ok(())
-}
-
 /// Run `$model`, a `Model` or `MultiNetworkModel`, with the given solver settings.
 macro_rules! run_with_solver {
     ($model:expr, $solver:expr, $threads:expr, $ignore_feature_requirements:expr) => {
@@ -692,6 +463,140 @@ macro_rules! run_with_solver {
             }
         }
     };
+}
+
+/// Fail with every problem a model's validation found, one per line.
+///
+/// Building a model validates it too, but its error only gives the number of problems.
+fn check_schema(validation: std::result::Result<(), pywr_schema::ValidationError>) -> Result<()> {
+    validation.map_err(|error| anyhow::anyhow!("{}", error.report()))
+}
+
+/// Add every problem of a network that failed validation while the model was created.
+///
+/// [`check_schema`] can't see a network a multi-network model gives by path, as the network is
+/// only read when the model is created, and that error only gives the number of problems.
+fn with_network_report(error: anyhow::Error) -> anyhow::Error {
+    let report = error
+        .chain()
+        .find_map(|cause| cause.downcast_ref::<pywr_schema::NetworkValidationError>())
+        .map(|validation| validation.report().to_string());
+
+    match report {
+        Some(report) => error.context(report),
+        None => error,
+    }
+}
+
+fn run(
+    path: &Path,
+    solver: &Solver,
+    data_path: Option<&Path>,
+    output_path: Option<&Path>,
+    threads: usize,
+    ignore_feature_requirements: bool,
+) -> Result<()> {
+    let schema_v2 = ModelSchema::from_path(path).with_context(|| format!("Failed to load model: {path:?}"))?;
+    let data_path = data_path.or_else(|| path.parent());
+
+    check_schema(schema_v2.validate())?;
+    let builder = schema_v2
+        .create_model_builder(&FileSystem, data_path, output_path)
+        .context("Failed to create the model from its schema")
+        .map_err(with_network_report)?;
+    let model = builder.build().context("Failed to build the model")?;
+
+    run_with_solver!(model, solver, threads, ignore_feature_requirements).context("Failed to run the model")?;
+
+    Ok(())
+}
+
+fn run_multi(path: &Path, solver: &Solver, data_path: Option<&Path>, output_path: Option<&Path>) -> Result<()> {
+    let schema_v2 =
+        MultiNetworkModelSchema::from_path(path).with_context(|| format!("Failed to load model: {path:?}"))?;
+    let data_path = data_path.or_else(|| path.parent());
+
+    check_schema(schema_v2.validate())?;
+    let builder = schema_v2
+        .create_model_builder(&FileSystem, data_path, output_path)
+        .context("Failed to create the model from its schema")
+        .map_err(with_network_report)?;
+    let model = builder.build().context("Failed to build the model")?;
+
+    match *solver {
+        Solver::Clp => model.run(&ClpSolverSettings::default()),
+        #[cfg(feature = "highs")]
+        Solver::Highs => model.run(&HighsSolverSettings::default()),
+        #[cfg(feature = "cbc")]
+        Solver::Cbc => model.run(&CbcSolverSettings::default()),
+        #[cfg(feature = "ipm-ocl")]
+        Solver::CLIPMF32 => model.run_multi_scenario(&ClIpmF32Settings::default()),
+        #[cfg(feature = "ipm-ocl")]
+        Solver::CLIPMF64 => model.run_multi_scenario(&ClIpmF64Settings::default()),
+        #[cfg(feature = "ipm-simd")]
+        Solver::IpmSimd => model.run_multi_scenario(&SimdIpmSolverSettings::default()),
+        #[cfg(feature = "microlp")]
+        Solver::Microlp => model.run(&MicroLpSolverSettings::default()),
+    }
+    .context("Failed to run the model")?;
+
+    Ok(())
+}
+
+fn run_random(num_systems: usize, density: usize, num_scenarios: usize, solver: &Solver) -> Result<()> {
+    let mut rng = ChaCha8Rng::seed_from_u64(0);
+    let builder = make_random_model_builder(num_systems, density, num_scenarios, &mut rng);
+    let model = builder.build().context("Failed to build the random model")?;
+
+    match *solver {
+        Solver::Clp => model.run(&ClpSolverSettings::default()),
+        #[cfg(feature = "highs")]
+        Solver::Highs => model.run(&HighsSolverSettings::default()),
+        #[cfg(feature = "cbc")]
+        Solver::Cbc => model.run(&CbcSolverSettings::default()),
+        #[cfg(feature = "ipm-ocl")]
+        Solver::CLIPMF32 => model.run_multi_scenario(&ClIpmF32Settings::default()),
+        #[cfg(feature = "ipm-ocl")]
+        Solver::CLIPMF64 => model.run_multi_scenario(&ClIpmF64Settings::default()),
+        #[cfg(feature = "ipm-simd")]
+        Solver::IpmSimd => model.run_multi_scenario(&SimdIpmSolverSettings::default()),
+        #[cfg(feature = "microlp")]
+        Solver::Microlp => model.run(&MicroLpSolverSettings::default()),
+    }
+    .context("Failed to run the model")?;
+
+    Ok(())
+}
+
+fn export_schema(out_path: &Path) -> Result<()> {
+    let schema = schema_for!(ModelSchema);
+    std::fs::write(
+        out_path,
+        serde_json::to_string_pretty(&schema).with_context(|| "Failed serialise Pywr schema".to_string())?,
+    )
+    .with_context(|| format!("Failed to write file: {out_path:?}",))?;
+
+    Ok(())
+}
+
+fn run_server(mode: RunServerMode, socket_name: &str) -> Result<()> {
+    use pywr_runner_service::{RunnerServiceConfigBuilder, run_local_socket_server, run_stdio_server};
+
+    let config: RunnerServiceConfig = RunnerServiceConfigBuilder::new().build();
+
+    match mode {
+        RunServerMode::LocalSocket => {
+            info!("Starting Pywr runner service on socket: {socket_name}");
+            run_local_socket_server(socket_name, config)
+                .with_context(|| "Failed to run Pywr runner service".to_string())?;
+        }
+        RunServerMode::Stdio => {
+            info!("Starting Pywr runner service over standard input/output");
+            run_stdio_server(config).with_context(|| "Failed to run Pywr runner service".to_string())?;
+        }
+    }
+
+    Ok(())
 }
 
 fn run_project(
