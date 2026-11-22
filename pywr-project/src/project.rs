@@ -23,7 +23,7 @@ impl Project {
     }
 
     /// Open a project from a manifest JSON file, resolving it with `options`.
-    pub fn open_with<P: AsRef<Path>>(manifest_path: P, options: ResolveOptions) -> Result<Self, ProjectError> {
+    pub fn open_with<P: AsRef<Path>>(manifest_path: P, mut options: ResolveOptions) -> Result<Self, ProjectError> {
         let manifest_path = manifest_path.as_ref();
         let manifest_path = if manifest_path.is_absolute() {
             manifest_path.to_path_buf()
@@ -47,6 +47,7 @@ impl Project {
             })?
             .to_path_buf();
 
+        options.manifest_path.get_or_insert_with(|| manifest_path.clone());
         let manifest_json = std::fs::read_to_string(&manifest_path)?;
         let manifest: ProjectManifest = serde_json::from_str(&manifest_json)?;
 

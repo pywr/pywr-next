@@ -138,6 +138,10 @@ pub enum DependencyPolicy {
 #[derive(Clone, Debug, Default)]
 pub struct ResolveOptions {
     pub dependency_policy: DependencyPolicy,
+    /// The path of the manifest being resolved, if it was read from a file. A dependency that
+    /// leads back to it is then reported as a cycle straight away, instead of loading the
+    /// project again. [`Project`](crate::Project) sets this.
+    pub manifest_path: Option<PathBuf>,
 }
 
 #[derive(Clone, Serialize, Deserialize, JsonSchema, Default)]
