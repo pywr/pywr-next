@@ -50,7 +50,7 @@ pub use control_curves::{
 };
 pub use core::{
     ActivationFunction, ActivationFunctionType, ConstantParameter, ConstantScenarioParameter, DivisionParameter,
-    MaxParameter, MinParameter, NegativeMaxParameter, NegativeMinParameter, NegativeParameter, VariableSettings,
+    MaxParameter, MinParameter, NegativeMaxParameter, NegativeMinParameter, NegativeParameter,
 };
 pub use delay::{DEFAULT_DELAY, DelayIndexParameter, DelayParameter};
 pub use difference::DifferenceParameter;
@@ -62,9 +62,9 @@ pub use offset::OffsetParameter;
 pub use placeholder::PlaceholderParameter;
 pub use polynomial::Polynomial1DParameter;
 pub use profiles::{
-    DailyProfileParameter, DirunalProfileParameter, MonthlyInterpDay, MonthlyProfileParameter, RadialBasisFunction,
-    RadialBasisFunctionType, RbfProfileParameter, RbfProfileVariableSettings, UniformDrawdownProfileParameter,
-    WeeklyInterpDay, WeeklyProfileParameter,
+    DailyProfileParameter, DirunalProfileParameter, MonthlyInterpDay, MonthlyProfileParameter,
+    MonthlyProfileVariableConfig, RadialBasisFunction, RadialBasisFunctionType, RbfProfileParameter,
+    RbfProfileVariableConfig, UniformDrawdownProfileParameter, WeeklyInterpDay, WeeklyProfileParameter,
 };
 pub use python::{PythonObject, PythonObjectType, PythonParameter, PythonReturnType};
 #[cfg(feature = "core")]

@@ -4,6 +4,7 @@ use crate::network::{
     NetworkRecorderSetupError, NetworkResult, NetworkSetupError, NetworkSolverSetupError, NetworkState,
     NetworkStepError, NetworkTimings, RunDuration,
 };
+use crate::network_variable_config::NetworkVariableConfig;
 use crate::parameters::ParameterCollectionIdMismatchError;
 use crate::recorders::RecorderInternalState;
 use crate::solvers::{MultiStateSolver, MultiStateSolverConfig, Solver, SolverConfig, SolverFeatures};
@@ -226,13 +227,51 @@ impl Model {
     where
         C: SolverConfig,
     {
+        self.setup_impl(solver_config, None)
+    }
+
+    /// Setup the model with the given variable values applied to every scenario.
+    ///
+    /// The values are applied during setup, before constant parameters are computed and the
+    /// solvers are created, so that all variable parameters (including constant ones) are used
+    /// in the simulation. See [`NetworkVariableConfig::apply_to_parameter_states`] for how the
+    /// values are split between the variable parameters.
+    pub fn setup_with_variables<C>(
+        &self,
+        solver_config: &C,
+        variable_config: &NetworkVariableConfig,
+        values_f64: &[f64],
+        values_u64: &[u64],
+    ) -> Result<ModelState<Vec<Box<C::Solver>>>, ModelSetupError>
+    where
+        C: SolverConfig,
+    {
+        self.setup_impl(solver_config, Some((variable_config, values_f64, values_u64)))
+    }
+
+    fn setup_impl<C>(
+        &self,
+        solver_config: &C,
+        variables: Option<(&NetworkVariableConfig, &[f64], &[u64])>,
+    ) -> Result<ModelState<Vec<Box<C::Solver>>>, ModelSetupError>
+    where
+        C: SolverConfig,
+    {
         let timesteps = self.domain.time.timesteps();
         let scenario_indices = self.domain.scenario.indices();
 
-        let state = self
-            .network
-            .setup_network(timesteps, scenario_indices, 0)
-            .map_err(|source| ModelSetupError::NetworkSetupError(Box::new(source)))?;
+        let state = match variables {
+            Some((variable_config, values_f64, values_u64)) => self.network.setup_network_with_variables(
+                timesteps,
+                scenario_indices,
+                0,
+                variable_config,
+                values_f64,
+                values_u64,
+            ),
+            None => self.network.setup_network(timesteps, scenario_indices, 0),
+        }
+        .map_err(|source| ModelSetupError::NetworkSetupError(Box::new(source)))?;
 
         let recorder_state = self
             .network
@@ -471,6 +510,30 @@ impl Model {
         C: SolverConfig,
     {
         let mut state = self.setup(solver_config)?;
+
+        let mut timings = ModelTimings::new_with_component_timings(self);
+
+        self.run_with_state(&mut state, solver_config, &mut timings)?;
+
+        let result = self.finalise(state, timings)?;
+
+        Ok(result)
+    }
+
+    /// Run the model with the given variable values applied to every scenario.
+    ///
+    /// See [`Model::setup_with_variables`] for details of how the values are applied.
+    pub fn run_with_variables<C>(
+        &self,
+        solver_config: &C,
+        variable_config: &NetworkVariableConfig,
+        values_f64: &[f64],
+        values_u64: &[u64],
+    ) -> Result<ModelResult, ModelRunError>
+    where
+        C: SolverConfig,
+    {
+        let mut state = self.setup_with_variables(solver_config, variable_config, values_f64, values_u64)?;
 
         let mut timings = ModelTimings::new_with_component_timings(self);
 
