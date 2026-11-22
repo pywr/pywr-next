@@ -8,7 +8,7 @@ network sets, inside one project.
 "sub_networks": [
   {
     "name": "catchment",
-    "network_sets": [{ "name": "inflows", "min": 1, "max": 1 }]
+    "network_sets": [{ "name": "inflows", "min_files": 1, "max_files": 1 }]
   },
   {
     "name": "upper",
