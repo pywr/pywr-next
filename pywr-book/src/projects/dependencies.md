@@ -45,7 +45,9 @@ A dependency's items are used as if they were local, with three differences:
   project becomes `../neighbour/data/demand.csv`. If no relative path exists, as between drives on Windows,
   the absolute path is used.
 - **Set limits:** the `min_files` and `max_files` limits of a dependency's network sets only apply to the sets
-  a model selects from. The dependency's other sets may have limits meant for its own models.
+  a model selects from. The dependency's other sets may have limits meant for its own models. The sets of a
+  dependency's sub-network that a model activates are the exception: as for any active sub-network, their
+  limits apply in full.
 
 ## Exports
 
