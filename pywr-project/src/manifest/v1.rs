@@ -2,7 +2,7 @@ use crate::composition::{
     Composed, ComposedDomain, ComposedModel, ComposedModelBuilder, ComposedMultiModel, ComposedMultiModelNetwork,
     ComposedNetwork, ComposedNetworkPath, LoadContext, PositionOffset,
 };
-use crate::error::{ComposeModelError, ManifestResolutionError};
+use crate::error::{ComposeModelError, DefinitionKind, DefinitionRef, ManifestResolutionError};
 use crate::manifest::{DefinitionOverrides, DependencyPolicy, ResolveOptions};
 use pywr_schema::meta::ProvenanceSource;
 use pywr_schema::model::{MultiNetworkTransfer, ScenarioDomain, TimeDomain};
@@ -74,13 +74,15 @@ impl ProjectManifestProblem {
 
 #[derive(Error, Debug)]
 pub enum ProjectManifestProblem {
-    #[error("The model definition `{definition}` was not found in the project manifest.")]
+    #[error("The definition `{definition}` was not found in the project manifest.")]
     DefinitionNotFound { definition: String },
     #[error("The network definition `{network}` was not found in the project manifest.")]
     NetworkDefinitionNotFound { network: String },
     #[error("The name `{set}` is used by {count} network sets, but each name must be unique.")]
     DuplicateNetworkSet { set: String, count: usize },
-    #[error("The name `{definition}` is used by {count} model definitions, but each name must be unique.")]
+    #[error(
+        "The name `{definition}` is used by {count} model or multi-model definitions, but each name must be unique."
+    )]
     DuplicateDefinition { definition: String, count: usize },
     #[error("The name `{network}` is used by {count} network definitions, but each name must be unique.")]
     DuplicateNetworkDefinition { network: String, count: usize },
@@ -88,29 +90,41 @@ pub enum ProjectManifestProblem {
     DuplicateSubNetwork { sub_network: String, count: usize },
     #[error("The {kind} name `{name}` must not contain `::`.")]
     InvalidName { kind: &'static str, name: String },
-    #[error("The definition `{definition}` refers to the network definition `{network}`, which does not exist.")]
-    NetworkNotFound { definition: String, network: String },
-    #[error("The definition `{definition}` refers to the sub-network `{sub_network}`, which does not exist.")]
-    SubNetworkNotFound { definition: String, sub_network: String },
+    #[error("The {definition} refers to the network definition `{network}`, which does not exist.")]
+    NetworkNotFound { definition: DefinitionRef, network: String },
+    #[error("The {definition} refers to the sub-network `{sub_network}`, which does not exist.")]
+    SubNetworkNotFound {
+        definition: DefinitionRef,
+        sub_network: String,
+    },
     #[error(
-        "The definition `{definition}` selects the network set `{set}`, but its sub-network `{sub_network}` is not active; list it in the model's `sub_networks` or use it as a network definition's `base`."
+        "The {definition} selects the network set `{set}`, but its sub-network `{sub_network}` is not active; list it in the model's `sub_networks` or use it as a network definition's `base`."
     )]
     SubNetworkNotActive {
-        definition: String,
+        definition: DefinitionRef,
         set: String,
         sub_network: String,
     },
     #[error("The network definitions extend each other in a cycle: {}.", .cycle.join(" -> "))]
     NetworkCycle { cycle: Vec<String> },
-    #[error(
-        "The model definition `{definition}` has no base model; give one in the definition or at the top of the manifest."
-    )]
-    BaseModelMissing { definition: String },
-    #[error("The definition `{definition}` refers to the model definition `{model}`, which does not exist.")]
-    ModelNotFound { definition: String, model: String },
-    #[error("The multi-model `{definition}` has {count} networks named `{network}`, but each name must be unique.")]
+    #[error("The {definition} has no base model; give one in the definition or at the top of the manifest.")]
+    BaseModelMissing { definition: DefinitionRef },
+    #[error("The {definition} refers to the model definition `{model}`, which does not exist.")]
+    ModelNotFound { definition: DefinitionRef, model: String },
+    #[error("The {definition} cannot use its base model: {error}")]
+    InvalidBaseModel {
+        definition: DefinitionRef,
+        error: ManifestResolutionError,
+    },
+    #[error("The {definition} lists the network definition `{network}` {count} times, but each may be listed once.")]
+    DuplicateNetworkReference {
+        definition: DefinitionRef,
+        network: String,
+        count: usize,
+    },
+    #[error("The {definition} has {count} networks named `{network}`, but each name must be unique.")]
     DuplicateMultiModelNetwork {
-        definition: String,
+        definition: DefinitionRef,
         network: String,
         count: usize,
     },
@@ -128,58 +142,54 @@ pub enum ProjectManifestProblem {
         transfer: String,
         count: usize,
     },
-    #[error(
-        "The definition `{definition}` selects the network set `{set}` {count} times, but it may select each set at most once."
-    )]
+    #[error("The {definition} selects the network set `{set}` {count} times, but it may select each set at most once.")]
     DuplicateSet {
-        definition: String,
+        definition: DefinitionRef,
         set: String,
         count: usize,
     },
-    #[error("The definition `{definition}` selects the network set `{set}`, which does not exist.")]
-    SetNotFound { definition: String, set: String },
-    #[error("The definition `{definition}` selects the file `{file}`, which was not found in network set `{set}`.")]
+    #[error("The {definition} selects the network set `{set}`, which does not exist.")]
+    SetNotFound { definition: DefinitionRef, set: String },
+    #[error("The {definition} selects the file `{file}`, which was not found in network set `{set}`.")]
     FileNotFound {
-        definition: String,
+        definition: DefinitionRef,
         set: String,
         file: String,
     },
-    #[error("The definition `{definition}` selects the file `{file}` more than once in network set `{set}`.")]
+    #[error("The {definition} selects the file `{file}` more than once in network set `{set}`.")]
     DuplicateFile {
-        definition: String,
+        definition: DefinitionRef,
         set: String,
         file: String,
     },
-    #[error(
-        "The definition `{definition}` gives metadata for file `{file}` in network set `{set}`, but that file is not selected."
-    )]
+    #[error("The {definition} gives metadata for file `{file}` in network set `{set}`, but that file is not selected.")]
     UnusedFileMeta {
-        definition: String,
+        definition: DefinitionRef,
         set: String,
         file: String,
     },
     #[error(
-        "The definition `{definition}` selects the invalid filename `{file}` in network set `{set}`; filenames must be single path components."
+        "The {definition} selects the invalid filename `{file}` in network set `{set}`; filenames must be single path components."
     )]
     InvalidFilePath {
-        definition: String,
+        definition: DefinitionRef,
         set: String,
         file: String,
     },
     #[error(
-        "The definition `{definition}` selects {actual_files} file(s) from network set `{set}`, but at least {min_files} are required."
+        "The {definition} selects {actual_files} file(s) from network set `{set}`, but at least {min_files} are required."
     )]
     MinFilesNotMet {
-        definition: String,
+        definition: DefinitionRef,
         set: String,
         min_files: usize,
         actual_files: usize,
     },
     #[error(
-        "The definition `{definition}` selects {actual_files} file(s) from network set `{set}`, but at most {max_files} are allowed."
+        "The {definition} selects {actual_files} file(s) from network set `{set}`, but at most {max_files} are allowed."
     )]
     MaxFilesExceeded {
-        definition: String,
+        definition: DefinitionRef,
         set: String,
         max_files: usize,
         actual_files: usize,
@@ -196,11 +206,9 @@ pub enum ProjectManifestProblem {
     DependencyNameTaken { dependency: String },
     #[error("The project dependencies form a cycle: {}.", .cycle.iter().map(|path| format!("`{}`", path.display())).collect::<Vec<_>>().join(" -> "))]
     DependencyCycle { cycle: Vec<PathBuf> },
-    #[error(
-        "The definition `{definition}` refers to the {kind} `{item}`, which the dependency `{project}` does not export."
-    )]
+    #[error("The {definition} refers to the {kind} `{item}`, which the dependency `{project}` does not export.")]
     NotExported {
-        definition: String,
+        definition: DefinitionRef,
         project: String,
         kind: &'static str,
         item: String,
@@ -310,7 +318,11 @@ impl ProjectManifest {
         let mut problems = self.manifest_problems();
         let graph = self.load_graph(root, options, false, &mut problems);
         let expansion = Resolver::new(&graph).expand(ROOT, &network.name, &mut problems);
-        check_active(network_name, &expansion, &mut problems);
+        check_active(
+            &DefinitionRef::new(DefinitionKind::Network, network_name),
+            &expansion,
+            &mut problems,
+        );
         into_result(problems)
     }
 
@@ -416,7 +428,11 @@ impl ProjectManifest {
         };
         let graph = self.load_graph(root, options, false, &mut problems);
         let expansion = Resolver::new(&graph).expand(ROOT, &network.name, &mut problems);
-        check_active(network_name, &expansion, &mut problems);
+        check_active(
+            &DefinitionRef::new(DefinitionKind::Network, network_name),
+            &expansion,
+            &mut problems,
+        );
 
         match problems.into_iter().next() {
             Some(problem) => Err(problem.into()),
@@ -773,7 +789,7 @@ impl ResolvedProject {
     /// Returns `None` both when it does not exist and when it failed to resolve.
     fn referred_sub_network(
         &self,
-        definition: &str,
+        definition: &DefinitionRef,
         reference: &str,
         name: &str,
         problems: &mut Vec<ProjectManifestProblem>,
@@ -781,7 +797,7 @@ impl ResolvedProject {
         let sub_network = self.sub_network(name);
         if sub_network.is_none() && !self.unresolved_sub_networks.contains(name) {
             problems.push(ProjectManifestProblem::SubNetworkNotFound {
-                definition: definition.to_string(),
+                definition: definition.clone(),
                 sub_network: reference.to_string(),
             });
         }
@@ -844,7 +860,7 @@ impl<'a> Expansion<'a> {
 }
 
 /// Report each network set selected from a sub-network that the expansion does not activate.
-fn check_active(definition: &str, expansion: &Expansion<'_>, problems: &mut Vec<ProjectManifestProblem>) {
+fn check_active(definition: &DefinitionRef, expansion: &Expansion<'_>, problems: &mut Vec<ProjectManifestProblem>) {
     let mut reported = HashSet::new();
     for set in expansion.files.iter().filter_map(|selected| selected.set) {
         if let Some(sub_network) = &set.sub_network
@@ -854,7 +870,7 @@ fn check_active(definition: &str, expansion: &Expansion<'_>, problems: &mut Vec<
             && reported.insert(&set.label)
         {
             problems.push(ProjectManifestProblem::SubNetworkNotActive {
-                definition: definition.to_string(),
+                definition: definition.clone(),
                 set: set.label.clone(),
                 sub_network: qualify(set.alias.as_deref(), sub_network),
             });
@@ -1218,7 +1234,7 @@ impl<'a> Resolver<'a> {
     fn locate(
         &self,
         from: usize,
-        definition: &str,
+        definition: &DefinitionRef,
         reference: &'a str,
         kind: ItemKind,
         problems: &mut Vec<ProjectManifestProblem>,
@@ -1231,7 +1247,7 @@ impl<'a> Resolver<'a> {
             // A dependency's own dependencies are only visible if it exports everything.
             if index != from && self.project(index).manifest.exports.is_some() {
                 problems.push(ProjectManifestProblem::NotExported {
-                    definition: definition.to_string(),
+                    definition: definition.clone(),
                     project: self.project(index).scope.alias.clone().unwrap_or_default(),
                     kind: "dependency",
                     item: first.to_string(),
@@ -1243,7 +1259,7 @@ impl<'a> Resolver<'a> {
         }
         if index != from && !self.project(index).exports(kind, name) {
             problems.push(ProjectManifestProblem::NotExported {
-                definition: definition.to_string(),
+                definition: definition.clone(),
                 project: self.project(index).scope.alias.clone().unwrap_or_default(),
                 kind: kind.name(),
                 item: name.to_string(),
@@ -1257,7 +1273,7 @@ impl<'a> Resolver<'a> {
     fn expand_reference(
         &mut self,
         from: usize,
-        definition: &str,
+        definition: &DefinitionRef,
         reference: &'a str,
         problems: &mut Vec<ProjectManifestProblem>,
     ) -> Expansion<'a> {
@@ -1266,7 +1282,7 @@ impl<'a> Resolver<'a> {
         };
         if self.project(index).manifest.find_network(name).is_none() {
             problems.push(ProjectManifestProblem::NetworkNotFound {
-                definition: definition.to_string(),
+                definition: definition.clone(),
                 network: reference.to_string(),
             });
             return Expansion::default();
@@ -1278,7 +1294,7 @@ impl<'a> Resolver<'a> {
     fn sub_network_reference(
         &self,
         from: usize,
-        definition: &str,
+        definition: &DefinitionRef,
         reference: &'a str,
         problems: &mut Vec<ProjectManifestProblem>,
     ) -> Option<&'a ResolvedSubNetwork> {
@@ -1313,7 +1329,8 @@ impl<'a> Resolver<'a> {
     ) -> ResolvedModel {
         let base_model = self.model_base_model(ROOT, model, problems);
         let expansion = self.expand_model(ROOT, model, problems);
-        check_composition(&model.name, &expansion, self.graph, problems);
+        let definition = DefinitionRef::new(DefinitionKind::Model, &model.name);
+        check_composition(&definition, &expansion, self.graph, problems);
         ResolvedModel {
             base_model,
             includes: expansion.files.into_iter().map(SelectedFile::into_composed).collect(),
@@ -1332,20 +1349,19 @@ impl<'a> Resolver<'a> {
         }
         let project = self.project(index);
         let start = problems.len();
+        let definition = DefinitionRef::new(DefinitionKind::Model, &model.name);
         let base_model = match (&model.base_model, &project.base_model) {
             (Some(base_model), _) => match resolve_base_model(&project.root, base_model) {
                 Ok(base_model) => Some(base_model),
                 Err(error) => {
-                    problems.push(error.into());
+                    problems.push(ProjectManifestProblem::InvalidBaseModel { definition, error });
                     None
                 }
             },
             (None, ProjectBaseModel::Resolved(base_model)) => Some(base_model.clone()),
             (None, ProjectBaseModel::Unresolved) => None,
             (None, ProjectBaseModel::NotGiven) => {
-                problems.push(ProjectManifestProblem::BaseModelMissing {
-                    definition: model.name.clone(),
-                });
+                problems.push(ProjectManifestProblem::BaseModelMissing { definition });
                 None
             }
         };
@@ -1367,9 +1383,10 @@ impl<'a> Resolver<'a> {
             return expansion.clone();
         }
         let start = problems.len();
+        let definition = DefinitionRef::new(DefinitionKind::Model, &model.name);
         let mut expansion = Expansion::default();
         for reference in &model.sub_networks {
-            if let Some(sub_network) = self.sub_network_reference(index, &model.name, reference, problems) {
+            if let Some(sub_network) = self.sub_network_reference(index, &definition, reference, problems) {
                 expansion
                     .active_sub_networks
                     .push((sub_network.project, &sub_network.name));
@@ -1377,11 +1394,11 @@ impl<'a> Resolver<'a> {
         }
         // The base networks of the sub-networks activated here come straight after the base model.
         expansion.files = self.active_base_networks(&expansion.active_sub_networks);
-        for reference in &model.networks {
-            let network = self.expand_reference(index, &model.name, reference, problems);
+        for reference in unique_network_references(&definition, &model.networks, problems) {
+            let network = self.expand_reference(index, &definition, reference, problems);
             expansion.extend(network);
         }
-        let includes = self.resolve_includes(index, &model.name, None, &model.include, problems);
+        let includes = self.resolve_includes(index, &definition, None, &model.include, problems);
         expansion.files.extend(includes);
         expansion.dedup();
         self.attribute(index, problems, start);
@@ -1414,9 +1431,10 @@ impl<'a> Resolver<'a> {
 
         let start = problems.len();
         self.stack.push((index, &network.name));
+        let definition = DefinitionRef::new(DefinitionKind::Network, &network.name);
         let mut expansion = Expansion::default();
         if let Some(base) = &network.base
-            && let Some(sub_network) = self.sub_network_reference(index, &network.name, base, problems)
+            && let Some(sub_network) = self.sub_network_reference(index, &definition, base, problems)
         {
             expansion
                 .active_sub_networks
@@ -1430,11 +1448,11 @@ impl<'a> Resolver<'a> {
                 });
             }
         }
-        for parent in &network.extends {
-            let parent = self.expand_reference(index, &network.name, parent, problems);
+        for parent in unique_network_references(&definition, &network.extends, problems) {
+            let parent = self.expand_reference(index, &definition, parent, problems);
             expansion.extend(parent);
         }
-        let includes = self.resolve_includes(index, &network.name, Some(&network.name), &network.include, problems);
+        let includes = self.resolve_includes(index, &definition, Some(&network.name), &network.include, problems);
         expansion.files.extend(includes);
         self.stack.pop();
 
@@ -1451,7 +1469,7 @@ impl<'a> Resolver<'a> {
     fn resolve_includes(
         &self,
         from: usize,
-        definition: &str,
+        definition: &DefinitionRef,
         network: Option<&'a str>,
         include: &'a [DefinitionSelection],
         problems: &mut Vec<ProjectManifestProblem>,
@@ -1464,7 +1482,7 @@ impl<'a> Resolver<'a> {
                 // Report each duplicated set once; only its first selection is resolved.
                 if duplicate_sets.insert(selection.set.as_str()) {
                     problems.push(ProjectManifestProblem::DuplicateSet {
-                        definition: definition.to_string(),
+                        definition: definition.clone(),
                         set: selection.set.clone(),
                         count: include.iter().filter(|other| other.set == selection.set).count(),
                     });
@@ -1479,7 +1497,7 @@ impl<'a> Resolver<'a> {
             let Some(set) = project.set(name) else {
                 if !project.unresolved_sets.contains(name) {
                     problems.push(ProjectManifestProblem::SetNotFound {
-                        definition: definition.to_string(),
+                        definition: definition.clone(),
                         set: selection.set.clone(),
                     });
                 }
@@ -1489,7 +1507,7 @@ impl<'a> Resolver<'a> {
             let selected = resolve_selection(definition, selection, set, problems);
             for file in unused_file_meta_keys(selection, &selected) {
                 problems.push(ProjectManifestProblem::UnusedFileMeta {
-                    definition: definition.to_string(),
+                    definition: definition.clone(),
                     set: set.label.clone(),
                     file: file.to_string(),
                 });
@@ -1551,6 +1569,13 @@ impl From<ProjectManifestProblem> for ComposeModelError {
             ProjectManifestProblem::NetworkCycle { cycle } => Self::NetworkCycle { cycle },
             ProjectManifestProblem::BaseModelMissing { definition } => Self::BaseModelMissing { definition },
             ProjectManifestProblem::ModelNotFound { definition, model } => Self::ModelNotFound { definition, model },
+            ProjectManifestProblem::InvalidBaseModel { definition, error } => Self::InvalidBaseModel {
+                definition,
+                error: Box::new(error),
+            },
+            ProjectManifestProblem::DuplicateNetworkReference {
+                definition, network, ..
+            } => Self::DuplicateNetworkReference { definition, network },
             ProjectManifestProblem::DuplicateMultiModelNetwork {
                 definition, network, ..
             } => Self::DuplicateMultiModelNetwork { definition, network },
@@ -1735,10 +1760,34 @@ struct ResolvedModel {
     includes: Vec<ComposedNetworkPath>,
 }
 
+/// The network definitions in `references`, each once, reporting those listed more than once.
+fn unique_network_references<'a>(
+    definition: &DefinitionRef,
+    references: &'a [String],
+    problems: &mut Vec<ProjectManifestProblem>,
+) -> Vec<&'a String> {
+    let mut unique: Vec<&String> = Vec::with_capacity(references.len());
+    for reference in references {
+        if unique.contains(&reference) {
+            continue;
+        }
+        let count = references.iter().filter(|other| *other == reference).count();
+        if count > 1 {
+            problems.push(ProjectManifestProblem::DuplicateNetworkReference {
+                definition: definition.clone(),
+                network: reference.clone(),
+                count,
+            });
+        }
+        unique.push(reference);
+    }
+    unique
+}
+
 /// Check an expansion as the complete network of `definition`: every sub-network it selects
 /// from must be active, and every network set's limits must hold.
 fn check_composition(
-    definition: &str,
+    definition: &DefinitionRef,
     expansion: &Expansion<'_>,
     graph: &ProjectGraph<'_>,
     problems: &mut Vec<ProjectManifestProblem>,
@@ -1875,6 +1924,7 @@ impl MultiModelDefinition {
         resolver: &mut Resolver<'a>,
         problems: &mut Vec<ProjectManifestProblem>,
     ) -> ResolvedMultiModel {
+        let definition = DefinitionRef::new(DefinitionKind::MultiModel, &self.name);
         let mut overrides = Vec::new();
         let domain = match &self.domain {
             MultiModelDomain::Model(ModelDomain { model }) => match resolver.project(ROOT).manifest.find_model(model) {
@@ -1886,7 +1936,7 @@ impl MultiModelDefinition {
                 }
                 None => {
                     problems.push(ProjectManifestProblem::ModelNotFound {
-                        definition: self.name.clone(),
+                        definition: definition.clone(),
                         model: model.clone(),
                     });
                     None
@@ -1896,7 +1946,10 @@ impl MultiModelDefinition {
                 match resolve_base_model(&resolver.project(ROOT).root, base_model) {
                     Ok((path, _)) => Some(ComposedDomain::BaseModel(path)),
                     Err(error) => {
-                        problems.push(error.into());
+                        problems.push(ProjectManifestProblem::InvalidBaseModel {
+                            definition: definition.clone(),
+                            error,
+                        });
                         None
                     }
                 }
@@ -1912,7 +1965,7 @@ impl MultiModelDefinition {
             &self.networks,
             |network| &network.name,
             |name, count| ProjectManifestProblem::DuplicateMultiModelNetwork {
-                definition: self.name.clone(),
+                definition: definition.clone(),
                 network: name,
                 count,
             },
@@ -1940,7 +1993,10 @@ impl MultiModelNetwork {
         problems: &mut Vec<ProjectManifestProblem>,
     ) -> ComposedMultiModelNetwork {
         // Problems in this network are reported against `<multi-model>/<network>`.
-        let label = format!("{}/{}", multi_model.name, self.name);
+        let label = DefinitionRef::new(
+            DefinitionKind::MultiModelNetwork,
+            &format!("{}/{}", multi_model.name, self.name),
+        );
         let mut base_model = None;
         let mut expansion = Expansion::default();
         match &self.network {
@@ -2174,7 +2230,7 @@ struct SubNetworkScope {
 }
 
 fn resolve_selection<'a>(
-    definition: &str,
+    definition: &DefinitionRef,
     selection: &DefinitionSelection,
     set: &'a ResolvedNetworkSet,
     errors: &mut Vec<ProjectManifestProblem>,
@@ -2187,13 +2243,13 @@ fn resolve_selection<'a>(
     for file in selection.files.as_deref().unwrap_or_default() {
         if !is_filename(file) {
             errors.push(ProjectManifestProblem::InvalidFilePath {
-                definition: definition.to_string(),
+                definition: definition.clone(),
                 set: set.label.clone(),
                 file: file.clone(),
             });
         } else if !names.insert(file) {
             errors.push(ProjectManifestProblem::DuplicateFile {
-                definition: definition.to_string(),
+                definition: definition.clone(),
                 set: set.label.clone(),
                 file: file.clone(),
             });
@@ -2201,7 +2257,7 @@ fn resolve_selection<'a>(
             result.push(resolved);
         } else {
             errors.push(ProjectManifestProblem::FileNotFound {
-                definition: definition.to_string(),
+                definition: definition.clone(),
                 set: set.label.clone(),
                 file: file.clone(),
             });
@@ -2226,7 +2282,7 @@ fn unused_file_meta_keys<'a>(
 }
 
 fn validate_constraints(
-    definition: &str,
+    definition: &DefinitionRef,
     set: &ResolvedNetworkSet,
     count: usize,
     errors: &mut Vec<ProjectManifestProblem>,
@@ -2235,7 +2291,7 @@ fn validate_constraints(
         && count < min_files
     {
         errors.push(ProjectManifestProblem::MinFilesNotMet {
-            definition: definition.to_string(),
+            definition: definition.clone(),
             set: set.label.clone(),
             min_files,
             actual_files: count,
@@ -2245,7 +2301,7 @@ fn validate_constraints(
         && count > max_files
     {
         errors.push(ProjectManifestProblem::MaxFilesExceeded {
-            definition: definition.to_string(),
+            definition: definition.clone(),
             set: set.label.clone(),
             max_files,
             actual_files: count,
@@ -2625,7 +2681,7 @@ mod test {
                 assert!(report.problems.iter().any(|error| matches!(
                     error,
                     ProjectManifestProblem::UnusedFileMeta { definition, set, file }
-                        if definition == "test" && set == "nets" && file == unused
+                        if definition.name == "test" && set == "nets" && file == unused
                 )));
             }
             assert!(matches!(
@@ -3101,7 +3157,7 @@ mod test {
         assert!(manifest.validate_network(root.path(), "left", OPTIONS).is_ok());
         assert!(matches!(
             manifest.validate_model(root.path(), "test", OPTIONS).unwrap_err().problems.as_slice(),
-            [ProjectManifestProblem::MaxFilesExceeded { definition, actual_files: 2, .. }] if definition == "test"
+            [ProjectManifestProblem::MaxFilesExceeded { definition, actual_files: 2, .. }] if definition.name == "test"
         ));
         assert!(matches!(
             manifest.compose_model(root.path(), "test", OPTIONS),
@@ -3159,7 +3215,7 @@ mod test {
             .iter()
             .map(|problem| match problem {
                 ProjectManifestProblem::NetworkNotFound { definition, network } => {
-                    (definition.as_str(), network.as_str())
+                    (definition.name.as_str(), network.as_str())
                 }
                 other => panic!("unexpected problem: {other}"),
             })
@@ -3169,6 +3225,96 @@ mod test {
             manifest.compose_network(root.path(), "unknown", OPTIONS),
             Err(ComposeModelError::NetworkDefinitionNotFound { network }) if network == "unknown"
         ));
+    }
+
+    /// A manifest over [`project_with_nets`] with the given networks and models.
+    fn nets_manifest(networks: Vec<NetworkDefinition>, models: Vec<ModelDefinition>) -> ProjectManifest {
+        ProjectManifest {
+            multi_models: vec![],
+            dependencies: vec![],
+            exports: None,
+            base_model: Some("base.json".to_string()),
+            sub_networks: vec![],
+            network_sets: vec![set("nets", None, None, None)],
+            networks,
+            models,
+        }
+    }
+
+    #[test]
+    fn problems_name_the_kind_of_definition_they_are_in() {
+        let root = project_with_nets();
+        let missing = || vec![selection("nets", Some(vec!["missing.json"]), false)];
+        let manifest = nets_manifest(vec![network("x", vec![], missing())], vec![model("x", missing())]);
+        let report = manifest.validate(root.path(), OPTIONS).unwrap_err();
+        let messages: Vec<_> = report.problems.iter().map(ToString::to_string).collect();
+        assert_eq!(
+            messages,
+            [
+                "The model definition `x` selects the file `missing.json`, which was not found in network set `nets`.",
+                "The network definition `x` selects the file `missing.json`, which was not found in network set `nets`.",
+            ]
+        );
+    }
+
+    #[test]
+    fn a_broken_base_model_is_reported_for_each_model_that_gives_it() {
+        let root = project_with_nets();
+        let with_base = |name: &str| ModelDefinition {
+            base_model: Some("missing.json".to_string()),
+            ..model(name, vec![])
+        };
+        let manifest = nets_manifest(vec![], vec![with_base("first"), with_base("second")]);
+        let report = manifest.validate(root.path(), OPTIONS).unwrap_err();
+        let models: Vec<_> = report
+            .problems
+            .iter()
+            .map(|problem| match problem {
+                ProjectManifestProblem::InvalidBaseModel {
+                    definition,
+                    error: ManifestResolutionError::BaseModelNotFound { .. },
+                } => definition.name.as_str(),
+                other => panic!("unexpected problem: {other}"),
+            })
+            .collect();
+        assert_eq!(models, ["first", "second"]);
+        assert!(
+            report.problems[0]
+                .to_string()
+                .starts_with("The model definition `first` cannot use its base model: ")
+        );
+    }
+
+    #[test]
+    fn repeated_network_references_are_reported_and_followed_once() {
+        let root = project_with_nets();
+        let manifest = nets_manifest(
+            vec![
+                network("a", vec![], vec![selection("nets", Some(vec!["a.json"]), false)]),
+                network("twice", vec!["a", "a"], vec![]),
+            ],
+            vec![uses_networks(model("test", vec![]), vec!["a", "twice", "a"])],
+        );
+        let report = manifest.validate(root.path(), OPTIONS).unwrap_err();
+        let repeated: Vec<_> = report
+            .problems
+            .iter()
+            .map(|problem| match problem {
+                ProjectManifestProblem::DuplicateNetworkReference {
+                    definition,
+                    network,
+                    count: 2,
+                } => (definition.to_string(), network.as_str()),
+                other => panic!("unexpected problem: {other}"),
+            })
+            .collect();
+        assert_eq!(
+            repeated,
+            [
+                ("model definition `test`".to_string(), "a"),
+                ("network definition `twice`".to_string(), "a"),
+            ]
+        );
     }
 
     #[test]
@@ -3193,7 +3339,7 @@ mod test {
         };
         assert!(matches!(
             manifest.validate(root.path(), OPTIONS).unwrap_err().problems.as_slice(),
-            [ProjectManifestProblem::FileNotFound { definition, .. }] if definition == "shared"
+            [ProjectManifestProblem::FileNotFound { definition, .. }] if definition.name == "shared"
         ));
     }
 
@@ -3216,7 +3362,7 @@ mod test {
 
         assert!(matches!(
             manifest.validate(root.path(), OPTIONS).unwrap_err().problems.as_slice(),
-            [ProjectManifestProblem::BaseModelMissing { definition }] if definition == "without-base"
+            [ProjectManifestProblem::BaseModelMissing { definition }] if definition.name == "without-base"
         ));
         assert_eq!(
             manifest
@@ -3227,7 +3373,7 @@ mod test {
         );
         assert!(matches!(
             manifest.compose_model(root.path(), "without-base", OPTIONS),
-            Err(ComposeModelError::BaseModelMissing { definition }) if definition == "without-base"
+            Err(ComposeModelError::BaseModelMissing { definition }) if definition.name == "without-base"
         ));
         assert_eq!(
             manifest
@@ -3398,7 +3544,7 @@ mod test {
         assert!(matches!(
             manifest.validate(root.path(), OPTIONS).unwrap_err().problems.as_slice(),
             [ProjectManifestProblem::SubNetworkNotActive { definition, set, sub_network }]
-                if definition == "inactive" && set == "upper::options" && sub_network == "upper"
+                if definition.name == "inactive" && set == "upper::options" && sub_network == "upper"
         ));
         assert!(matches!(
             manifest.compose_model(root.path(), "inactive", OPTIONS),
@@ -3772,9 +3918,9 @@ mod test {
         assert_eq!(
             messages,
             [
-                "The multi-model `joint` has 2 networks named `company`, but each name must be unique.",
-                "The definition `joint/company` refers to the model definition `absent`, which does not exist.",
-                "The definition `joint/river` selects the file `missing.json`, which was not found in network set `nets`.",
+                "The multi-model definition `joint` has 2 networks named `company`, but each name must be unique.",
+                "The multi-model network `joint/company` refers to the model definition `absent`, which does not exist.",
+                "The multi-model network `joint/river` selects the file `missing.json`, which was not found in network set `nets`.",
             ]
         );
     }
@@ -4228,8 +4374,8 @@ mod test {
                 ProjectManifestProblem::NotExported { definition: sets, kind: "network set", item: sets_item, .. },
             ] if dependency == "org"
                 && matches!(problem.as_ref(), ProjectManifestProblem::ExportNotFound { kind: "model definition", name } if name == "missing")
-                && upper == "upper" && upper_project == "org" && upper_item == "upper"
-                && sets == "sets" && sets_item == "licences"
+                && upper.name == "upper" && upper_project == "org" && upper_item == "upper"
+                && sets.name == "sets" && sets_item == "licences"
         ));
         assert_eq!(
             report.problems[0].to_string(),
@@ -4253,7 +4399,7 @@ mod test {
             manifest.validate(&root, OPTIONS).unwrap_err().problems.as_slice(),
             [ProjectManifestProblem::InDependency { dependency, problem }]
                 if dependency == "org"
-                    && matches!(problem.as_ref(), ProjectManifestProblem::SetNotFound { definition, set } if definition == "river" && set == "missing")
+                    && matches!(problem.as_ref(), ProjectManifestProblem::SetNotFound { definition, set } if definition.name == "river" && set == "missing")
         ));
         assert!(matches!(
             manifest.compose_model(&root, "b", OPTIONS),
@@ -4398,7 +4544,7 @@ mod test {
         assert!(matches!(
             manifest.validate(&root, OPTIONS).unwrap_err().problems.as_slice(),
             [ProjectManifestProblem::MinFilesNotMet { definition, set, actual_files: 1, .. }]
-                if definition == "used" && set == "org::licences"
+                if definition.name == "used" && set == "org::licences"
         ));
     }
 

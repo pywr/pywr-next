@@ -47,6 +47,51 @@ pub enum ComposeToSchemaError {
     },
 }
 
+/// The kind of definition a problem is found in.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum DefinitionKind {
+    Model,
+    MultiModel,
+    Network,
+    /// One network of a multi-model.
+    MultiModelNetwork,
+}
+
+impl fmt::Display for DefinitionKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Model => "model definition",
+            Self::MultiModel => "multi-model definition",
+            Self::Network => "network definition",
+            Self::MultiModelNetwork => "multi-model network",
+        })
+    }
+}
+
+/// A definition named in a problem, such as the model definition `baseline`. It displays as its
+/// kind followed by its name.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct DefinitionRef {
+    pub kind: DefinitionKind,
+    /// The definition's name; for a multi-model network, `<multi-model>/<network>`.
+    pub name: String,
+}
+
+impl DefinitionRef {
+    pub(crate) fn new(kind: DefinitionKind, name: &str) -> Self {
+        Self {
+            kind,
+            name: name.to_string(),
+        }
+    }
+}
+
+impl fmt::Display for DefinitionRef {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} `{}`", self.kind, self.name)
+    }
+}
+
 /// The kind of component a placeholder stands in for.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum PlaceholderKind {
@@ -198,7 +243,7 @@ pub enum ManifestResolutionError {
 /// Errors that may occur during composition of a [`ComposeModel`] from a project manifest.
 #[derive(Error, Debug)]
 pub enum ComposeModelError {
-    #[error("The model definition `{definition}` was not found in the project manifest.")]
+    #[error("The definition `{definition}` was not found in the project manifest.")]
     DefinitionNotFound { definition: String },
     #[error("The network definition `{network}` was not found in the project manifest.")]
     NetworkDefinitionNotFound { network: String },
@@ -208,39 +253,40 @@ pub enum ComposeModelError {
     DuplicateSubNetwork { sub_network: String },
     #[error("The {kind} name `{name}` must not contain `::`.")]
     InvalidName { kind: &'static str, name: String },
-    #[error("The definition `{definition}` refers to the sub-network `{sub_network}`, which does not exist.")]
-    SubNetworkNotFound { definition: String, sub_network: String },
-    #[error(
-        "The definition `{definition}` selects the network set `{set}`, but its sub-network `{sub_network}` is not active."
-    )]
+    #[error("The {definition} refers to the sub-network `{sub_network}`, which does not exist.")]
+    SubNetworkNotFound {
+        definition: DefinitionRef,
+        sub_network: String,
+    },
+    #[error("The {definition} selects the network set `{set}`, but its sub-network `{sub_network}` is not active.")]
     SubNetworkNotActive {
-        definition: String,
+        definition: DefinitionRef,
         set: String,
         sub_network: String,
     },
     #[error("The name `{set}` is used by more than one network set, but each name must be unique.")]
     DuplicateNetworkSet { set: String },
-    #[error("The name `{definition}` is used by more than one model definition, but each name must be unique.")]
+    #[error(
+        "The name `{definition}` is used by more than one model or multi-model definition, but each name must be unique."
+    )]
     DuplicateDefinition { definition: String },
     #[error("The name `{network}` is used by more than one network definition, but each name must be unique.")]
     DuplicateNetworkDefinition { network: String },
-    #[error("The definition `{definition}` refers to the network definition `{network}`, which does not exist.")]
-    NetworkNotFound { definition: String, network: String },
+    #[error("The {definition} refers to the network definition `{network}`, which does not exist.")]
+    NetworkNotFound { definition: DefinitionRef, network: String },
     #[error("The network definitions extend each other in a cycle: {}.", .cycle.join(" -> "))]
     NetworkCycle { cycle: Vec<String> },
-    #[error("The model definition `{definition}` has no base model.")]
-    BaseModelMissing { definition: String },
+    #[error("The {definition} has no base model.")]
+    BaseModelMissing { definition: DefinitionRef },
     #[error("The name `{dependency}` is used by more than one dependency, but each name must be unique.")]
     DuplicateDependency { dependency: String },
     #[error("The dependency name `{dependency}` is also the name of a sub-network.")]
     DependencyNameTaken { dependency: String },
     #[error("The project dependencies form a cycle: {}.", .cycle.iter().map(|path| path.display().to_string()).collect::<Vec<_>>().join(" -> "))]
     DependencyCycle { cycle: Vec<PathBuf> },
-    #[error(
-        "The definition `{definition}` refers to the {kind} `{item}`, which the dependency `{project}` does not export."
-    )]
+    #[error("The {definition} refers to the {kind} `{item}`, which the dependency `{project}` does not export.")]
     NotExported {
-        definition: String,
+        definition: DefinitionRef,
         project: String,
         kind: &'static str,
         item: String,
@@ -252,10 +298,17 @@ pub enum ComposeModelError {
         dependency: String,
         error: Box<ComposeModelError>,
     },
-    #[error("The definition `{definition}` refers to the model definition `{model}`, which does not exist.")]
-    ModelNotFound { definition: String, model: String },
-    #[error("The multi-model `{definition}` has more than one network named `{network}`.")]
-    DuplicateMultiModelNetwork { definition: String, network: String },
+    #[error("The {definition} refers to the model definition `{model}`, which does not exist.")]
+    ModelNotFound { definition: DefinitionRef, model: String },
+    #[error("The {definition} cannot use its base model: {error}")]
+    InvalidBaseModel {
+        definition: DefinitionRef,
+        error: Box<ManifestResolutionError>,
+    },
+    #[error("The {definition} lists the network definition `{network}` more than once.")]
+    DuplicateNetworkReference { definition: DefinitionRef, network: String },
+    #[error("The {definition} has more than one network named `{network}`.")]
+    DuplicateMultiModelNetwork { definition: DefinitionRef, network: String },
     #[error("The transfer `{transfer}` into `{network}` is from the network `{from_network}`, which does not exist.")]
     TransferSourceNotFound {
         network: String,
