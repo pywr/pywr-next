@@ -78,6 +78,18 @@ impl Output {
     pub fn is_placeholder(&self) -> bool {
         matches!(self, Self::Placeholder(_))
     }
+
+    /// The file the output writes, relative to the output directory unless absolute; `None` for
+    /// an output that writes no file.
+    pub fn filename(&self) -> Option<&std::path::Path> {
+        match self {
+            Self::ArrowStream(o) => Some(&o.filename),
+            Self::CSV(o) => Some(&o.filename),
+            Self::HDF5(o) => Some(&o.filename),
+            Self::Parquet(o) => Some(&o.filename),
+            Self::Memory(_) | Self::Placeholder(_) => None,
+        }
+    }
 }
 
 #[cfg(feature = "core")]
