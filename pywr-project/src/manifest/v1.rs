@@ -1422,6 +1422,9 @@ impl<'a> Resolver<'a> {
     ) -> Option<(usize, &'a str)> {
         let mut index = from;
         let mut name = reference;
+        // The dependency names followed so far, which name the project reached as `from` does: a
+        // project shared by several dependencies has a different name on each route.
+        let project_name = |name: &str| reference[..reference.len() - name.len()].trim_end_matches(NAME_SEPARATOR);
         while let Some((first, rest)) = name.split_once(NAME_SEPARATOR)
             && let Some(dependency) = self.project(index).dependency(first)
         {
@@ -1429,7 +1432,7 @@ impl<'a> Resolver<'a> {
             if index != from && self.project(index).manifest.exports.is_some() {
                 problems.push(ProjectManifestProblem::NotExported {
                     definition: definition.clone(),
-                    project: self.project(index).scope.alias.clone().unwrap_or_default(),
+                    project: project_name(name).to_string(),
                     kind: "dependency",
                     item: first.to_string(),
                 });
@@ -1441,7 +1444,7 @@ impl<'a> Resolver<'a> {
         if index != from && !self.project(index).exports(kind, name) {
             problems.push(ProjectManifestProblem::NotExported {
                 definition: definition.clone(),
-                project: self.project(index).scope.alias.clone().unwrap_or_default(),
+                project: project_name(name).to_string(),
                 kind: kind.name(),
                 item: name.to_string(),
             });
@@ -5143,6 +5146,41 @@ mod test {
                 canonical(&manifest_path),
                 canonical(&workspace.path().join("a/pywr-project.json")),
                 canonical(&manifest_path)
+            ]
+        );
+    }
+
+    #[test]
+    fn a_shared_project_is_named_as_the_referring_project_names_it() {
+        let workspace = workspace();
+        let root = workspace.path().join("main");
+        write_json(
+            &workspace.path().join("shared/pywr-project.json"),
+            serde_json::json!({"format": "v1", "exports": {}, "networks": [{"name": "hidden"}]}),
+        );
+        write_json(
+            &workspace.path().join("a/pywr-project.json"),
+            serde_json::json!({"format": "v1", "dependencies": [{"name": "common", "manifest": "../shared/pywr-project.json"}]}),
+        );
+        write_json(
+            &workspace.path().join("b/pywr-project.json"),
+            serde_json::json!({
+                "format": "v1",
+                "dependencies": [{"name": "lib", "manifest": "../shared/pywr-project.json"}],
+                "networks": [{"name": "uses", "extends": ["lib::hidden"]}]
+            }),
+        );
+        let mut manifest = main_manifest(vec![uses_networks(model("test", vec![]), vec!["b::uses"])]);
+        manifest.dependencies = vec![
+            dependency("a", "../a/pywr-project.json"),
+            dependency("b", "../b/pywr-project.json"),
+        ];
+        let report = manifest.validate(&root, OPTIONS).unwrap_err();
+        let messages: Vec<_> = report.problems.iter().map(ToString::to_string).collect();
+        assert_eq!(
+            messages,
+            [
+                "In the dependency `b`: The network definition `uses` refers to the network definition `hidden`, which the dependency `lib` does not export."
             ]
         );
     }
