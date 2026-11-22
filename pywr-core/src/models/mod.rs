@@ -8,6 +8,7 @@ pub use multi::{
     MultiNetworkModelBuilderError, MultiNetworkModelFinaliseError, MultiNetworkModelResult, MultiNetworkModelRunError,
     MultiNetworkModelSetupError, MultiNetworkModelTimings, MultiNetworkTransferBuilder, MultiNetworkTransferIndex,
 };
+pub use pywr_output_metadata::RunMetadata;
 pub use simple::{
     Model, ModelBuilder, ModelBuilderError, ModelFinaliseError, ModelResult, ModelRunError, ModelSetupError,
     ModelState, ModelStepError, ModelTimings,

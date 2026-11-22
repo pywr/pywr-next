@@ -41,7 +41,7 @@ pub use metric_set::{
 use ndarray::Array2;
 use ndarray::prelude::*;
 pub use parquet::{ParquetOutput, ParquetOutputBuilder, ParquetOutputError};
-pub use pywr_output_metadata::{MetricColumnExtension, MetricColumnMetadata};
+pub use pywr_output_metadata::{MetricColumnExtension, MetricColumnMetadata, RUN_METADATA_KEY, RunMetadata};
 pub use snapshot::{
     Snapshot, SnapshotBuffer, SnapshotData, SnapshotMeta, SnapshotMetricSetItem, SnapshotMetricSetMeta,
     SnapshotRecorder, SnapshotRecorderBuilder,
@@ -251,6 +251,15 @@ pub trait RecorderFinalResult: Any + Send + Sync {
     }
 }
 
+/// A context struct that is passed to the `setup` method of a [`Recorder`].
+#[derive(Clone, Copy)]
+pub struct RecorderSetupContext<'a> {
+    pub domain: &'a ModelDomain,
+    pub network: &'a Network,
+    /// Metadata describing the run, if any was given, for recorders that write it to their outputs.
+    pub run_metadata: Option<&'a RunMetadata>,
+}
+
 pub trait Recorder: Send + Sync + Debug {
     fn meta(&self) -> &RecorderMeta;
     fn name(&self) -> &str {
@@ -258,8 +267,7 @@ pub trait Recorder: Send + Sync + Debug {
     }
     fn setup(
         &self,
-        _domain: &ModelDomain,
-        _network: &Network,
+        #[allow(unused_variables)] context: RecorderSetupContext<'_>,
     ) -> Result<Option<Box<dyn RecorderInternalState>>, RecorderSetupError> {
         Ok(None)
     }
@@ -336,9 +344,9 @@ impl Recorder for Array2Recorder {
 
     fn setup(
         &self,
-        domain: &ModelDomain,
-        _network: &Network,
+        context: RecorderSetupContext<'_>,
     ) -> Result<Option<Box<dyn RecorderInternalState>>, RecorderSetupError> {
+        let domain = context.domain;
         let array: Array2<f64> = Array::zeros((domain.time().len(), domain.scenarios().len()));
 
         let array: Box<dyn RecorderInternalState> = Box::new(array);

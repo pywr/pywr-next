@@ -1,5 +1,5 @@
-use crate::models::ModelDomain;
 use crate::network::{MetricSetIndex, Network, ResolutionMaps};
+use crate::recorders::RecorderSetupContext;
 use crate::recorders::{
     MetricSetState, Recorder, RecorderBuilder, RecorderBuilderError, RecorderInternalState, RecorderMeta,
     RecorderSaveError, RecorderSetupError,
@@ -110,9 +110,10 @@ impl Recorder for SnapshotRecorder {
 
     fn setup(
         &self,
-        domain: &ModelDomain,
-        network: &Network,
+        context: RecorderSetupContext<'_>,
     ) -> Result<Option<Box<dyn RecorderInternalState>>, RecorderSetupError> {
+        let domain = context.domain;
+        let network = context.network;
         // Populate the snapshot meta with the metric set names and indices
         let mut metric_set_names = Vec::new();
         let mut metric_set_indices = HashMap::new();

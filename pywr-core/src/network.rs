@@ -5,7 +5,7 @@ use crate::aggregated_storage_node::{
 use crate::clock::Instant;
 use crate::edge::Edge;
 use crate::metric::CalculationPhase;
-use crate::models::{ModelDomain, MultiNetworkTransferIndex};
+use crate::models::{ModelDomain, MultiNetworkTransferIndex, RunMetadata};
 use crate::node::{Node, NodeBuilder, NodeBuilderError, NodeError, UnresolvedNode};
 use crate::parameters::{
     GeneralParameterIndex, GeneralParameterType, ParameterCollection, ParameterCollectionBuilder,
@@ -17,7 +17,7 @@ use crate::parameters::{
 use crate::recorders::{
     MetricSet, MetricSetBuilder, MetricSetBuilderError, MetricSetSaveError, MetricSetState, RecorderAggregationError,
     RecorderBuilder, RecorderBuilderError, RecorderFinalResult, RecorderFinaliseError, RecorderInternalState,
-    RecorderSaveError, RecorderSetupError,
+    RecorderSaveError, RecorderSetupContext, RecorderSetupError,
 };
 use crate::scenario::ScenarioIndex;
 use crate::solvers::{
@@ -604,16 +604,20 @@ impl Network {
     pub fn setup_recorders(
         &self,
         domain: &ModelDomain,
+        run_metadata: Option<&RunMetadata>,
     ) -> Result<Vec<Option<Box<dyn RecorderInternalState>>>, NetworkRecorderSetupError> {
+        let context = RecorderSetupContext {
+            domain,
+            network: self,
+            run_metadata,
+        };
         // Setup recorders
         let mut recorder_internal_states = Vec::new();
         for recorder in &self.recorders {
-            let initial_state = recorder
-                .setup(domain, self)
-                .map_err(|source| NetworkRecorderSetupError {
-                    name: recorder.name().to_string(),
-                    source,
-                })?;
+            let initial_state = recorder.setup(context).map_err(|source| NetworkRecorderSetupError {
+                name: recorder.name().to_string(),
+                source,
+            })?;
             recorder_internal_states.push(initial_state);
         }
 

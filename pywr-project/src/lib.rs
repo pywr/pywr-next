@@ -3,6 +3,7 @@ mod error;
 mod layout;
 mod manifest;
 mod project;
+mod run_metadata;
 
 pub use composition::{
     Composed, ComposedDomain, ComposedModel, ComposedModelBuilder, ComposedModelNetworkSchema, ComposedModelSchemas,
@@ -18,3 +19,4 @@ pub use manifest::{
     DefinitionOverrides, DependencyPolicy, ProjectManifest, ProjectManifestValidationError, ResolveOptions, v1,
 };
 pub use project::Project;
+pub use pywr_output_metadata::{ProjectRunMetadata, RunMetadata, SourceFileMetadata};

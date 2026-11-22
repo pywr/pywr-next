@@ -12,6 +12,7 @@ keywords.workspace = true
 categories.workspace = true
 
 [dependencies]
+pywr-output-metadata = { path = "../pywr-output-metadata" }
 jiff = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

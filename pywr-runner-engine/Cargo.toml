@@ -30,4 +30,5 @@ strum_macros = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]
+arrow = { workspace = true }
 tempfile = { workspace = true }

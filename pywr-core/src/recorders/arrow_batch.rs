@@ -3,6 +3,7 @@
 //! set (each timestep, or each completed aggregation period for an aggregated metric set), and one
 //! `FixedSizeList<Float64>` column per metric holding its value in each scenario.
 use super::{MetricSetState, OutputMetric, jiff_datetime_to_arrow_timestamp_ms};
+use crate::models::RunMetadata;
 use crate::network::MetricSetIndex;
 use crate::scenario::ScenarioDomain;
 use arrow::array::{ArrayRef, FixedSizeListArray, Float64Array, TimestampMillisecondArray};
@@ -12,8 +13,8 @@ use arrow::record_batch::RecordBatch;
 use arrow_schema::Metadata;
 use jiff::civil::DateTime;
 use pywr_output_metadata::{
-    MetricColumnExtension, MetricColumnMetadata, SCENARIO_GROUPS_KEY, SCENARIOS_KEY, ScenarioGroupMetadata,
-    ScenarioMetadata, VERSION_KEY,
+    MetricColumnExtension, MetricColumnMetadata, RUN_METADATA_KEY, SCENARIO_GROUPS_KEY, SCENARIOS_KEY,
+    ScenarioGroupMetadata, ScenarioMetadata, VERSION_KEY,
 };
 use std::collections::HashMap;
 use std::ops::Deref;
@@ -120,7 +121,12 @@ impl PendingBatch {
     }
 }
 
-pub(super) fn make_schema(metric_set_name: &str, scenario_domain: &ScenarioDomain, metrics: &[OutputMetric]) -> Schema {
+pub(super) fn make_schema(
+    metric_set_name: &str,
+    scenario_domain: &ScenarioDomain,
+    run_metadata: Option<&RunMetadata>,
+    metrics: &[OutputMetric],
+) -> Schema {
     let mut fields = vec![
         Field::new("time_start", DataType::Timestamp(TimeUnit::Millisecond, None), false),
         Field::new("time_end", DataType::Timestamp(TimeUnit::Millisecond, None), false),
@@ -175,6 +181,12 @@ pub(super) fn make_schema(metric_set_name: &str, scenario_domain: &ScenarioDomai
         SCENARIO_GROUPS_KEY,
         serde_json::to_string(&groups).expect("scenario group metadata is serializable"),
     );
+    if let Some(run_metadata) = run_metadata {
+        metadata.insert(
+            RUN_METADATA_KEY,
+            serde_json::to_string(run_metadata).expect("run metadata is serializable"),
+        );
+    }
 
     Schema::new_with_metadata(fields, metadata)
 }
@@ -272,5 +284,20 @@ pub(super) mod tests {
                 },
             ],
         }
+    }
+
+    #[test]
+    fn schema_records_run_metadata_only_when_given() {
+        let domain = crate::test_utils::default_domain();
+        let schema = make_schema("outputs", domain.scenarios(), None, &[]);
+        assert!(!schema.metadata().contains_key(RUN_METADATA_KEY));
+
+        let run_metadata = RunMetadata {
+            run_name: Some("baseline".to_string()),
+            ..Default::default()
+        };
+        let schema = make_schema("outputs", domain.scenarios(), Some(&run_metadata), &[]);
+        let recorded: RunMetadata = serde_json::from_str(&schema.metadata()[RUN_METADATA_KEY]).unwrap();
+        assert_eq!(recorded, run_metadata);
     }
 }
