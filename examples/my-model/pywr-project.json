@@ -28,7 +28,9 @@
     {
       "name": "historical",
       "description": "Historical catchment inflows.",
-      "base": "catchment",
+      "sub_networks": [
+        "catchment"
+      ],
       "include": [
         {
           "set": "catchment::inflows",
@@ -41,7 +43,9 @@
     {
       "name": "stochastic",
       "description": "Stochastic catchment inflows.",
-      "base": "catchment",
+      "sub_networks": [
+        "catchment"
+      ],
       "include": [
         {
           "set": "catchment::inflows",
