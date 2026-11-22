@@ -180,6 +180,8 @@ pub enum ManifestResolutionError {
     SubNetworkDirectoryNotFound { sub_network: String, path: PathBuf },
     #[error("The path `{}` for sub-network `{sub_network}` is not a directory.", .path.display())]
     SubNetworkNotADirectory { sub_network: String, path: PathBuf },
+    #[error("The data directory `{}` for the {owner} was not found, or is not a directory.", .path.display())]
+    DataDirectoryNotFound { owner: String, path: PathBuf },
     #[error("The base network `{}` for sub-network `{sub_network}` was not found.", .path.display())]
     BaseNetworkNotFound { sub_network: String, path: PathBuf },
     #[error("The base network `{}` for sub-network `{sub_network}` is not a regular file.", .path.display())]

@@ -1173,7 +1173,12 @@ impl DependencyLoader<'_> {
         let data_dir = match &dependency.data_dir {
             Some(data_dir) => {
                 let field = format!("dependency '{}' data directory", dependency.name);
-                match strict_relative_path(&field, data_dir) {
+                let checked = strict_relative_path(&field, data_dir).and_then(|data_dir| {
+                    let owner = format!("dependency `{}`", dependency.name);
+                    check_data_directory(&data_dir.to_path(&dependency_root), owner)?;
+                    Ok(data_dir)
+                });
+                match checked {
                     Ok(data_dir) => prefix.join(data_dir.to_path("")),
                     Err(error) => {
                         problems.push(error.into());
@@ -2509,10 +2514,14 @@ fn resolve_sub_network(
         });
     }
     let data_dir = match &sub_network.data_dir {
-        Some(data_dir) => dir.join(strict_relative_path(
-            &format!("sub-network '{name}' data directory"),
-            data_dir,
-        )?),
+        Some(data_dir) => {
+            let data_dir = dir.join(strict_relative_path(
+                &format!("sub-network '{name}' data directory"),
+                data_dir,
+            )?);
+            check_data_directory(&data_dir.to_path(root), format!("sub-network `{name}`"))?;
+            data_dir
+        }
         None => dir.clone(),
     };
     let data_dir = match &project.prefix {
@@ -2646,6 +2655,19 @@ fn resolve_network_set(
         max_files: set.max_files,
         files,
     })
+}
+
+/// Check that a data directory exists, since a mistyped one would otherwise only show up as
+/// missing data files, at paths the user never wrote, when the model is built.
+fn check_data_directory(path: &Path, owner: String) -> Result<(), ManifestResolutionError> {
+    if path.is_dir() {
+        Ok(())
+    } else {
+        Err(ManifestResolutionError::DataDirectoryNotFound {
+            owner,
+            path: path.to_path_buf(),
+        })
+    }
 }
 
 fn strict_relative_path(field: &str, value: &str) -> Result<RelativePathBuf, ManifestResolutionError> {
@@ -3863,6 +3885,16 @@ mod test {
             base: Some("upper".to_string()),
             ..network("upper", vec![], vec![])
         }];
+        let report = manifest.validate(root.path(), OPTIONS).unwrap_err();
+        let messages: Vec<_> = report.problems.iter().map(ToString::to_string).collect();
+        assert_eq!(
+            messages,
+            [format!(
+                "The data directory `{}` for the sub-network `upper` was not found, or is not a directory.",
+                root.path().join("upper/data").display()
+            )]
+        );
+        std::fs::create_dir(root.path().join("upper/data")).unwrap();
 
         let schema = manifest
             .compose_network(root.path(), "upper", OPTIONS)
@@ -4548,6 +4580,12 @@ mod test {
         assert_eq!(flows_path(&manifest), Path::new("../org/flows.csv"));
 
         manifest.dependencies[0].data_dir = Some("data".to_string());
+        assert!(matches!(
+            manifest.compose_model(&root, "test", OPTIONS),
+            Err(ComposeModelError::Resolution(ManifestResolutionError::DataDirectoryNotFound { owner, .. }))
+                if owner == "dependency `org`"
+        ));
+        std::fs::create_dir(workspace.path().join("org/data")).unwrap();
         assert_eq!(flows_path(&manifest), Path::new("../org/data/flows.csv"));
     }
 
