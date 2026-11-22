@@ -25,8 +25,12 @@ network sets, inside one project.
 | `name`         | The sub-network's name.                                                                        |
 | `dir`          | Its directory, relative to the project directory. Defaults to the sub-network's name.          |
 | `base_network` | A network fragment, relative to the sub-network directory, that the sub-network starts from.   |
-| `data_dir`     | The directory, relative to the sub-network directory, that its files' data paths are relative to. Defaults to the sub-network directory. |
+| `data_dir`     | The directory, relative to the sub-network directory, that its files' data paths are relative to. It must exist. Defaults to the sub-network directory. |
 | `network_sets` | The sub-network's network sets, with directories relative to the sub-network directory.       |
+
+Each sub-network needs a directory of its own. Sub-network directories may not overlap, the project's own
+network sets may not be inside one, and a sub-network's base network may not be in the directory of one of its
+network sets. Every network file then belongs to one sub-network at most, and is reached in one way only.
 
 ## Qualified names
 
@@ -43,16 +47,14 @@ Because `::` separates the parts of a qualified name, no name in a manifest may 
 
 A sub-network is **inactive** unless a model uses it, and a model can only select files from the sets of an
 active sub-network. This stops a model from accidentally including part of an area without the area's base
-network. A sub-network is activated by:
-
-- listing it in a model definition's `sub_networks`; or
-- naming it as the `base` of a network definition the model uses.
+network. A sub-network is activated by listing it in the `sub_networks` of the model definition, of a network
+definition the model uses, or of a [multi-model](./multi-models.md) network.
 
 ```json
 "networks": [
   {
     "name": "historical",
-    "base": "catchment",
+    "sub_networks": ["catchment"],
     "include": [{ "set": "catchment::inflows", "files": ["historical.json"] }]
   }
 ],
@@ -62,10 +64,10 @@ network. A sub-network is activated by:
 ]
 ```
 
-A sub-network's base network is merged once, wherever it is first reached. The base networks of the
-sub-networks a model lists come straight after the base model, in the order the sub-networks are declared. A
-sub-network used as a network definition's `base` starts that definition's files. The `min_files` and `max_files`
-limits of a sub-network's sets only apply to models in which it is active.
+The base networks of the sub-networks a definition lists come first among its files: for a model, straight
+after the base model, and for a network definition, before the files of the definitions it extends. They come in
+the order the sub-networks are declared, and each is merged once, wherever it is first reached. The `min_files`
+and `max_files` limits of a sub-network's sets only apply to models in which it is active.
 
 ## Data paths
 
