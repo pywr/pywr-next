@@ -514,6 +514,7 @@ impl ProjectManifest {
                 root: root.canonicalize().unwrap_or_else(|_| root.to_path_buf()),
                 policy: &options.dependency_policy,
                 loaded: HashMap::new(),
+                hashes: HashMap::new(),
                 stack: Vec::new(),
             };
             loader.load_dependencies(&mut graph, ROOT, problems);
@@ -1104,6 +1105,9 @@ struct DependencyLoader<'o> {
     policy: &'o DependencyPolicy,
     /// The projects already loaded, by canonical manifest path and data directory.
     loaded: HashMap<(PathBuf, Option<String>), usize>,
+    /// The hash of each manifest read, by canonical path, so a dependency's pin is checked
+    /// however many routes lead to its manifest.
+    hashes: HashMap<PathBuf, String>,
     /// The canonical manifest paths of the dependencies being loaded, outermost first, used to
     /// detect cycles.
     stack: Vec<PathBuf>,
@@ -1156,10 +1160,22 @@ impl DependencyLoader<'_> {
         }
         let key = (path.clone(), dependency.data_dir.clone());
         if let Some(&index) = self.loaded.get(&key) {
+            if let Err(error) = check_pin(&path, dependency, &self.hashes[&path]) {
+                problems.push(error.into());
+                return None;
+            }
             return Some(index);
         }
         let manifest = match read_dependency(&path, dependency) {
-            Ok(manifest) => manifest,
+            Ok((manifest, hash)) => {
+                let checked = check_pin(&path, dependency, &hash);
+                self.hashes.insert(path.clone(), hash);
+                if let Err(error) = checked {
+                    problems.push(error.into());
+                    return None;
+                }
+                manifest
+            }
             Err(error) => {
                 problems.push(error.into());
                 return None;
@@ -1268,24 +1284,13 @@ impl DependencyLoader<'_> {
     }
 }
 
-/// Read and parse a dependency's manifest, checking its hash if one is given.
-fn read_dependency(path: &Path, dependency: &Dependency) -> Result<ProjectManifest, ManifestResolutionError> {
+/// Read and parse a dependency's manifest, returning it with its [`manifest_hash`].
+fn read_dependency(path: &Path, dependency: &Dependency) -> Result<(ProjectManifest, String), ManifestResolutionError> {
     let data = std::fs::read(path).map_err(|source| ManifestResolutionError::DependencyManifestRead {
         dependency: dependency.name.clone(),
         path: path.to_path_buf(),
         source,
     })?;
-    if let Some(expected) = &dependency.sha256 {
-        let actual: String = Sha256::digest(&data).iter().map(|byte| format!("{byte:02x}")).collect();
-        if !actual.eq_ignore_ascii_case(expected) {
-            return Err(ManifestResolutionError::DependencyHashMismatch {
-                dependency: dependency.name.clone(),
-                path: path.to_path_buf(),
-                expected: expected.clone(),
-                actual,
-            });
-        }
-    }
     let manifest: crate::manifest::ProjectManifest =
         serde_json::from_slice(&data).map_err(|source| ManifestResolutionError::DependencyManifestInvalid {
             dependency: dependency.name.clone(),
@@ -1293,7 +1298,36 @@ fn read_dependency(path: &Path, dependency: &Dependency) -> Result<ProjectManife
             source,
         })?;
     let crate::manifest::ProjectManifest::V1(manifest) = manifest;
-    Ok(manifest)
+    Ok((manifest, manifest_hash(&data)))
+}
+
+/// The SHA-256 hash of a manifest's contents, as lowercase hex, with each CRLF line ending read
+/// as LF. A pin then holds on any platform, whatever line endings Git checks the file out with.
+fn manifest_hash(data: &[u8]) -> String {
+    let mut hasher = Sha256::new();
+    let mut rest = data;
+    while let Some(position) = rest.windows(2).position(|pair| pair == b"\r\n") {
+        hasher.update(&rest[..position]);
+        hasher.update(b"\n");
+        rest = &rest[position + 2..];
+    }
+    hasher.update(rest);
+    hasher.finalize().iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+/// Check a dependency's `sha256` pin, if it has one, against the hash of its manifest.
+fn check_pin(path: &Path, dependency: &Dependency, actual: &str) -> Result<(), ManifestResolutionError> {
+    match &dependency.sha256 {
+        Some(expected) if !actual.eq_ignore_ascii_case(expected) => {
+            Err(ManifestResolutionError::DependencyHashMismatch {
+                dependency: dependency.name.clone(),
+                path: path.to_path_buf(),
+                expected: expected.clone(),
+                actual: actual.to_string(),
+            })
+        }
+        _ => Ok(()),
+    }
 }
 
 /// The path of `target` relative to `base`, through `..` where needed. Both must be absolute
@@ -5030,6 +5064,38 @@ mod test {
             manifest.validate(&root, OPTIONS).unwrap_err().problems.as_slice(),
             [ProjectManifestProblem::Resolution(ManifestResolutionError::DependencyHashMismatch { actual, .. })]
                 if *actual == hash
+        ));
+    }
+
+    #[test]
+    fn manifest_hashes_read_crlf_line_endings_as_lf() {
+        let lf = manifest_hash(b"{\n  \"format\": \"v1\"\n}\n");
+        assert_eq!(manifest_hash(b"{\r\n  \"format\": \"v1\"\r\n}\r\n"), lf);
+        let plain: String = Sha256::digest(b"{\n  \"format\": \"v1\"\n}\n")
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect();
+        assert_eq!(lf, plain);
+        // A lone carriage return is content, not a line ending.
+        assert_ne!(manifest_hash(b"a\rb"), manifest_hash(b"a\nb"));
+    }
+
+    #[test]
+    fn a_pin_is_checked_when_its_manifest_was_already_loaded_without_one() {
+        let workspace = workspace();
+        let root = workspace.path().join("main");
+        write_json(
+            &workspace.path().join("a/pywr-project.json"),
+            serde_json::json!({"format": "v1", "dependencies": [{"name": "org", "manifest": "../org/pywr-project.json"}]}),
+        );
+        let mut manifest = main_manifest(vec![]);
+        let mut pinned = dependency("org", "../org/pywr-project.json");
+        pinned.sha256 = Some("00".to_string());
+        manifest.dependencies = vec![dependency("a", "../a/pywr-project.json"), pinned];
+        assert!(matches!(
+            manifest.validate(&root, OPTIONS).unwrap_err().problems.as_slice(),
+            [ProjectManifestProblem::Resolution(ManifestResolutionError::DependencyHashMismatch { dependency, .. })]
+                if dependency == "org"
         ));
     }
 
