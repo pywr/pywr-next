@@ -6,7 +6,7 @@ use pywr_schema::{
     ModelSchema, MultiNetworkModelSchema, NetworkMergeOptions, NetworkSchema, NetworkSchemaReadError, NetworkSchemaRef,
     Reference, VisitPaths, VisitReferences,
 };
-use relative_path::RelativePathBuf;
+use relative_path::{RelativePath, RelativePathBuf};
 use std::path::{Path, PathBuf};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -180,7 +180,7 @@ fn load_includes(includes: &[ComposedNetworkPath]) -> Result<Vec<ComposedModelNe
 fn rebase_data_paths(network: &mut NetworkSchema, data_dir: &Path) {
     let mut rebase = |path: &mut PathBuf| {
         if path.is_relative() {
-            *path = data_dir.join(&*path);
+            *path = join_portable(data_dir, path);
         }
     };
     network.nodes.visit_paths_mut(&mut rebase);
@@ -189,6 +189,15 @@ fn rebase_data_paths(network: &mut NetworkSchema, data_dir: &Path) {
     network.tables.visit_paths_mut(&mut rebase);
     network.time_series.visit_paths_mut(&mut rebase);
     network.metric_sets.visit_paths_mut(&mut rebase);
+}
+
+/// Join `path` to `dir` with `/` separators when both are relative, so a composed model saved on
+/// Windows loads elsewhere. An absolute `dir` is joined with the platform's separator.
+fn join_portable(dir: &Path, path: &Path) -> PathBuf {
+    match (RelativePath::from_path(dir), RelativePath::from_path(path)) {
+        (Ok(dir), Ok(path)) => PathBuf::from(dir.join(path).as_str()),
+        _ => dir.join(path),
+    }
 }
 
 /// A composed network that combines the networks selected by a network definition.
@@ -595,5 +604,21 @@ impl ComposedModelBuilder {
             includes: self.includes,
             overrides: self.overrides,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::join_portable;
+    use std::path::{Path, PathBuf};
+
+    #[test]
+    fn relative_data_paths_are_joined_with_forward_slashes() {
+        let joined = join_portable(Path::new("../org/data"), Path::new("flows/inflow.csv"));
+        assert_eq!(joined.to_str(), Some("../org/data/flows/inflow.csv"));
+        assert_eq!(
+            join_portable(Path::new("/abs/data"), Path::new("flows.csv")),
+            PathBuf::from("/abs/data").join("flows.csv")
+        );
     }
 }
