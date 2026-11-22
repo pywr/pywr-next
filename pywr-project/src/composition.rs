@@ -68,6 +68,10 @@ impl ComposedModelSchemas {
         if !placeholders.is_empty() {
             return Err(ComposeToSchemaError::UnresolvedPlaceholders { placeholders });
         }
+        // A plain model has no other networks to receive transfers from.
+        if let Some(transfer) = transfers_read(&model_schema.network).into_iter().next() {
+            return Err(ComposeToSchemaError::TransferInModel { transfer });
+        }
 
         Ok(model_schema)
     }
@@ -305,6 +309,8 @@ pub enum ComposedDomain {
 pub struct ComposedMultiModelNetwork {
     pub network: ComposedNetwork,
     pub transfers: Vec<MultiNetworkTransfer>,
+    /// The canonical path of the file some of `transfers` were read from, if any.
+    pub transfers_file: Option<PathBuf>,
 }
 
 /// A composed multi-network model: several composed networks, linked by transfers, that share a
@@ -380,7 +386,13 @@ impl ComposedMultiModel {
         };
         domain
             .into_iter()
-            .chain(self.networks.iter().flat_map(|entry| entry.network.all_paths()))
+            .chain(self.networks.iter().flat_map(|entry| {
+                entry
+                    .network
+                    .all_paths()
+                    .into_iter()
+                    .chain(entry.transfers_file.clone())
+            }))
             .collect()
     }
 }
@@ -396,8 +408,9 @@ pub struct ComposedMultiModelSchemas {
 impl ComposedMultiModelSchemas {
     /// Merge each network and return a [`MultiNetworkModelSchema`] with every network inline.
     ///
-    /// Fails if a network has unresolved placeholders, or a transfer reads a node, virtual node
-    /// or parameter that its source network does not have.
+    /// Fails if a network has unresolved placeholders, reads a transfer that is not declared for
+    /// it, or writes an output file that another network also writes, or if a transfer reads a
+    /// node, virtual node or parameter that its source network does not have.
     pub fn into_multi_model_schema(
         self,
         options: &NetworkMergeOptions,
@@ -422,7 +435,9 @@ impl ComposedMultiModelSchemas {
         if !placeholders.is_empty() {
             return Err(ComposeToSchemaError::UnresolvedPlaceholders { placeholders });
         }
+        check_transfers_declared(&networks)?;
         check_transfer_components(&networks)?;
+        check_output_files(&networks)?;
 
         Ok(MultiNetworkModelSchema {
             metadata: self.metadata,
@@ -431,6 +446,62 @@ impl ComposedMultiModelSchemas {
             networks,
         })
     }
+}
+
+/// The inter-network transfers that `network` reads, each once, in the order first read.
+fn transfers_read(network: &NetworkSchema) -> Vec<String> {
+    let mut names: Vec<String> = Vec::new();
+    network.visit_references(&mut |reference| {
+        if let Reference::InterNetworkTransfer(name) = reference
+            && !names.iter().any(|other| other == name)
+        {
+            names.push(name.to_string());
+        }
+    });
+    names
+}
+
+/// Check that each transfer a network reads is declared as a transfer into it.
+fn check_transfers_declared(networks: &[MultiNetworkEntry]) -> Result<(), ComposeToSchemaError> {
+    for entry in networks {
+        let NetworkSchemaRef::Inline(network) = &entry.network else {
+            continue;
+        };
+        for transfer in transfers_read(network) {
+            if !entry.transfers.iter().any(|declared| declared.name == transfer) {
+                return Err(ComposeToSchemaError::TransferNotDeclared {
+                    network: entry.name.clone(),
+                    transfer,
+                });
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Check that no two networks write the same output file, which would fail or overwrite each
+/// other's output when the model runs.
+fn check_output_files(networks: &[MultiNetworkEntry]) -> Result<(), ComposeToSchemaError> {
+    let mut written: Vec<(&Path, &str)> = Vec::new();
+    for entry in networks {
+        let NetworkSchemaRef::Inline(network) = &entry.network else {
+            continue;
+        };
+        for filename in network.outputs.iter().flatten().filter_map(|output| output.filename()) {
+            if let Some((_, first)) = written
+                .iter()
+                .find(|(other, name)| *other == filename && *name != entry.name)
+            {
+                return Err(ComposeToSchemaError::SharedOutputFile {
+                    file: filename.to_path_buf(),
+                    first: first.to_string(),
+                    second: entry.name.clone(),
+                });
+            }
+            written.push((filename, &entry.name));
+        }
+    }
+    Ok(())
 }
 
 /// Check that each transfer reads a node, virtual node or parameter that its source network has.

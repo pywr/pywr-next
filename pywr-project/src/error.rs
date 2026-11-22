@@ -45,6 +45,20 @@ pub enum ComposeToSchemaError {
         from_network: String,
         component: String,
     },
+    #[error(
+        "The network `{network}` reads the transfer `{transfer}`, but no transfer of that name into it is declared."
+    )]
+    TransferNotDeclared { network: String, transfer: String },
+    #[error(
+        "The composed model reads the transfer `{transfer}`, but only a network of a multi-model can receive transfers."
+    )]
+    TransferInModel { transfer: String },
+    #[error("The networks `{first}` and `{second}` both write the output file `{}`.", .file.display())]
+    SharedOutputFile {
+        file: PathBuf,
+        first: String,
+        second: String,
+    },
 }
 
 /// The kind of definition a problem is found in.

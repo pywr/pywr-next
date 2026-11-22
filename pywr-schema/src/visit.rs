@@ -323,6 +323,8 @@ pub enum Reference<'a> {
     MetricSet(&'a str),
     /// Resolved in the model's `scenarios.groups`, not in the network.
     ScenarioGroup(&'a str),
+    /// Resolved in the transfers into the network in a multi-network model, not in the network.
+    InterNetworkTransfer(&'a str),
 }
 
 /// The mutable form of [`Reference`], with variants corresponding one-for-one; a node, virtual
@@ -341,6 +343,7 @@ pub enum ReferenceMut<'a> {
     TimeSeries(&'a mut String),
     MetricSet(&'a mut String),
     ScenarioGroup(&'a mut String),
+    InterNetworkTransfer(&'a mut String),
 }
 
 /// The top-level component holding a [`Reference`], however deeply nested the reference is. A
@@ -418,8 +421,8 @@ impl VisitReferences for Metric {
                 metric: MetricValueType::Float,
                 return_value: p_ref.return_value.unwrap_or_default(),
             }),
-            // An inter-network transfer resolves against the multi-network model, not this one.
-            Metric::Literal { .. } | Metric::InterNetworkTransfer { .. } => {}
+            Metric::InterNetworkTransfer { name } => visitor(Reference::InterNetworkTransfer(name)),
+            Metric::Literal { .. } => {}
         }
     }
 
@@ -435,7 +438,8 @@ impl VisitReferences for Metric {
                 node: p_ref.node.as_mut(),
                 name: &mut p_ref.name,
             }),
-            Metric::Literal { .. } | Metric::InterNetworkTransfer { .. } => {}
+            Metric::InterNetworkTransfer { name } => visitor(ReferenceMut::InterNetworkTransfer(name)),
+            Metric::Literal { .. } => {}
         }
     }
 }
@@ -466,7 +470,8 @@ impl VisitReferences for IndexMetric {
                 metric: MetricValueType::Index,
                 return_value: p_ref.return_value.unwrap_or_default(),
             }),
-            IndexMetric::Constant { .. } | IndexMetric::InterNetworkTransfer { .. } => {}
+            IndexMetric::InterNetworkTransfer { name } => visitor(Reference::InterNetworkTransfer(name)),
+            IndexMetric::Constant { .. } => {}
         }
     }
 
@@ -480,7 +485,8 @@ impl VisitReferences for IndexMetric {
                 node: p_ref.node.as_mut(),
                 name: &mut p_ref.name,
             }),
-            IndexMetric::Constant { .. } | IndexMetric::InterNetworkTransfer { .. } => {}
+            IndexMetric::InterNetworkTransfer { name } => visitor(ReferenceMut::InterNetworkTransfer(name)),
+            IndexMetric::Constant { .. } => {}
         }
     }
 }
@@ -1040,6 +1046,7 @@ mod tests {
             Reference::TimeSeries(name) => format!("TimeSeries:{name}"),
             Reference::MetricSet(name) => format!("MetricSet:{name}"),
             Reference::ScenarioGroup(name) => format!("ScenarioGroup:{name}"),
+            Reference::InterNetworkTransfer(name) => format!("InterNetworkTransfer:{name}"),
         }
     }
 
@@ -1061,6 +1068,7 @@ mod tests {
             ReferenceMut::TimeSeries(name) => format!("TimeSeries:{name}"),
             ReferenceMut::MetricSet(name) => format!("MetricSet:{name}"),
             ReferenceMut::ScenarioGroup(name) => format!("ScenarioGroup:{name}"),
+            ReferenceMut::InterNetworkTransfer(name) => format!("InterNetworkTransfer:{name}"),
         }
     }
 
@@ -1118,7 +1126,8 @@ mod tests {
                 | ReferenceMut::Table(name)
                 | ReferenceMut::TimeSeries(name)
                 | ReferenceMut::MetricSet(name)
-                | ReferenceMut::ScenarioGroup(name) => *name = "rewritten".to_string(),
+                | ReferenceMut::ScenarioGroup(name)
+                | ReferenceMut::InterNetworkTransfer(name) => *name = "rewritten".to_string(),
                 // An edge's endpoints are rewritten through their own `Node` arm.
                 ReferenceMut::Edge(_) => {}
             }

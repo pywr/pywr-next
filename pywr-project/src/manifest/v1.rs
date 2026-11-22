@@ -1339,6 +1339,8 @@ struct Resolver<'a> {
     expanded: HashMap<(usize, &'a str), Expansion<'a>>,
     expanded_models: HashMap<(usize, &'a str), Expansion<'a>>,
     model_base_models: HashMap<(usize, &'a str), Option<ResolvedBaseModel>>,
+    /// The root model definitions already checked as whole models.
+    checked_models: HashSet<&'a str>,
     /// The network definitions currently being expanded, outermost first, used to detect cycles.
     stack: Vec<(usize, &'a str)>,
 }
@@ -1350,6 +1352,7 @@ impl<'a> Resolver<'a> {
             expanded: HashMap::new(),
             expanded_models: HashMap::new(),
             model_base_models: HashMap::new(),
+            checked_models: HashSet::new(),
             stack: Vec::new(),
         }
     }
@@ -1488,11 +1491,24 @@ impl<'a> Resolver<'a> {
     ) -> ResolvedModel {
         let base_model = self.model_base_model(ROOT, model, problems);
         let expansion = self.expand_model(ROOT, model, problems);
-        let definition = DefinitionRef::new(DefinitionKind::Model, &model.name);
-        check_composition(&definition, &expansion, self.graph, problems);
+        self.check_model(model, &expansion, problems);
         ResolvedModel {
             base_model,
             includes: expansion.files.into_iter().map(SelectedFile::into_composed).collect(),
+        }
+    }
+
+    /// Check a root model definition's expansion as a whole model, once however many times the
+    /// model is used.
+    fn check_model(
+        &mut self,
+        model: &'a ModelDefinition,
+        expansion: &Expansion<'a>,
+        problems: &mut Vec<ProjectManifestProblem>,
+    ) {
+        if self.checked_models.insert(&model.name) {
+            let definition = DefinitionRef::new(DefinitionKind::Model, &model.name);
+            check_composition(&definition, expansion, self.graph, SetLimits::AllSets, problems);
         }
     }
 
@@ -1946,12 +1962,23 @@ fn unique_network_references<'a>(
     unique
 }
 
+/// Which of the root project's own network sets [`check_composition`] applies the limits of.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum SetLimits {
+    /// Every set, as for a model.
+    AllSets,
+    /// Only sets that something is selected from, as for a network of a multi-model, which is
+    /// only one part of the model. The sets of active sub-networks are still checked in full.
+    SelectedSets,
+}
+
 /// Check an expansion as the complete network of `definition`: every sub-network it selects
 /// from must be active, and every network set's limits must hold.
 fn check_composition(
     definition: &DefinitionRef,
     expansion: &Expansion<'_>,
     graph: &ProjectGraph<'_>,
+    limits: SetLimits,
     problems: &mut Vec<ProjectManifestProblem>,
 ) {
     check_active(definition, expansion, problems);
@@ -1971,8 +1998,10 @@ fn check_composition(
             .iter()
             .filter(|selected| selected.set.is_some_and(|selected_set| std::ptr::eq(selected_set, set)))
             .count();
-        // A dependency's sets are only constrained when something is selected from them.
-        if set.project != ROOT && count == 0 {
+        // A dependency's sets are only constrained when something is selected from them, and so
+        // are the root project's own sets for a multi-model network.
+        let selected_only = set.project != ROOT || (limits == SetLimits::SelectedSets && set.sub_network.is_none());
+        if selected_only && count == 0 {
             continue;
         }
         validate_constraints(definition, set, count, problems);
@@ -2169,6 +2198,8 @@ impl MultiModelNetwork {
             &format!("{}/{}", multi_model.name, self.name),
         );
         let mut base_model = None;
+        // A root model used as it is was, or will be, checked as a model.
+        let mut whole_model = None;
         let mut expansion = resolver.activate_sub_networks(ROOT, &label, &self.sub_networks, None, problems);
         match &self.network {
             Some(MultiModelNetworkSource::Network(NetworkSource { name: network })) => {
@@ -2182,6 +2213,9 @@ impl MultiModelNetwork {
                                 .model_base_model(index, definition, problems)
                                 .map(|base_model| (index, base_model));
                             expansion.extend(resolver.expand_model(index, definition, problems));
+                            if index == ROOT && self.sub_networks.is_empty() && self.include.is_empty() {
+                                whole_model = Some(definition);
+                            }
                         }
                         None => problems.push(ProjectManifestProblem::ModelNotFound {
                             definition: label.clone(),
@@ -2195,9 +2229,12 @@ impl MultiModelNetwork {
         let includes = resolver.resolve_includes(ROOT, &label, None, &self.include, problems);
         expansion.files.extend(includes);
         expansion.dedup(&label, problems);
-        check_composition(&label, &expansion, resolver.graph, problems);
+        match whole_model {
+            Some(model) => resolver.check_model(model, &expansion, problems),
+            None => check_composition(&label, &expansion, resolver.graph, SetLimits::SelectedSets, problems),
+        }
 
-        let transfers = self.resolve_transfers(multi_model, &resolver.project(ROOT).root, problems);
+        let (transfers, transfers_file) = self.resolve_transfers(multi_model, &resolver.project(ROOT).root, problems);
         // A model's base model network is the starting point, with its data paths rebased like
         // the rest of its project's files.
         let base_model = base_model.map(|(index, (path, file))| {
@@ -2224,21 +2261,26 @@ impl MultiModelNetwork {
                 expansion.files.into_iter().map(SelectedFile::into_composed).collect(),
             ),
             transfers,
+            transfers_file,
         }
     }
 
     /// The transfers into this network, given inline and in `transfers_file`, checked against
-    /// the other networks of `multi_model`.
+    /// the other networks of `multi_model`, with the canonical path of the transfers file.
     fn resolve_transfers(
         &self,
         multi_model: &MultiModelDefinition,
         root: &Path,
         problems: &mut Vec<ProjectManifestProblem>,
-    ) -> Vec<MultiNetworkTransfer> {
+    ) -> (Vec<MultiNetworkTransfer>, Option<PathBuf>) {
         let mut transfers = self.transfers.clone();
+        let mut transfers_path = None;
         if let Some(transfers_file) = &self.transfers_file {
             match read_transfers(root, transfers_file) {
-                Ok(from_file) => transfers.extend(from_file),
+                Ok((path, from_file)) => {
+                    transfers.extend(from_file);
+                    transfers_path = Some(path);
+                }
                 Err(error) => problems.push(error.into()),
             }
         }
@@ -2272,12 +2314,16 @@ impl MultiModelNetwork {
             },
             problems,
         );
-        transfers
+        (transfers, transfers_path)
     }
 }
 
-/// Read a JSON list of transfers from `transfers_file`, relative to `root`.
-fn read_transfers(root: &Path, transfers_file: &str) -> Result<Vec<MultiNetworkTransfer>, ManifestResolutionError> {
+/// Read a JSON list of transfers from `transfers_file`, relative to `root`, returning the file's
+/// canonical path with the transfers.
+fn read_transfers(
+    root: &Path,
+    transfers_file: &str,
+) -> Result<(PathBuf, Vec<MultiNetworkTransfer>), ManifestResolutionError> {
     let candidate = strict_relative_path("transfers file", transfers_file)?.to_path(root);
     if !candidate.exists() {
         return Err(ManifestResolutionError::TransfersFileNotFound { path: candidate });
@@ -2287,10 +2333,11 @@ fn read_transfers(root: &Path, transfers_file: &str) -> Result<Vec<MultiNetworkT
         path: candidate.clone(),
         source,
     })?;
-    serde_json::from_str(&data).map_err(|source| ManifestResolutionError::TransfersFileJson {
+    let transfers = serde_json::from_str(&data).map_err(|source| ManifestResolutionError::TransfersFileJson {
         path: candidate,
         source,
-    })
+    })?;
+    Ok((path, transfers))
 }
 
 #[derive(Clone, Serialize, Deserialize, JsonSchema)]
@@ -4239,6 +4286,131 @@ mod test {
         assert_eq!(
             error.to_string(),
             "The transfer `company-missing` into `river` reads the node `missing` from `company`, which does not exist there."
+        );
+    }
+
+    /// Compose `manifest`'s multi-model `joint` into a schema, returning the error.
+    fn joint_schema_error(manifest: &ProjectManifest, root: &Path) -> String {
+        let Err(error) = manifest
+            .compose_multi_model(root, "joint", OPTIONS)
+            .unwrap()
+            .load()
+            .unwrap()
+            .into_multi_model_schema(&Default::default())
+        else {
+            panic!("the multi-model composed without error");
+        };
+        error.to_string()
+    }
+
+    #[test]
+    fn transfers_must_be_declared_for_the_network_that_reads_them() {
+        let root = project_with_nets();
+        write_json(
+            &root.path().join("nets/reader.json"),
+            serde_json::json!({
+                "nodes": [{"type": "Input", "meta": {"name": "reader"},
+                           "max_flow": {"type": "InterNetworkTransfer", "name": "company-a"}}],
+                "edges": []
+            }),
+        );
+        let mut networks = joint_networks();
+        networks[1].include = vec![selection("nets", Some(vec!["c.json", "reader.json"]), false)];
+        let mut manifest = multi_model_manifest(networks);
+        manifest
+            .compose_multi_model(root.path(), "joint", OPTIONS)
+            .unwrap()
+            .load()
+            .unwrap()
+            .into_multi_model_schema(&Default::default())
+            .unwrap();
+
+        manifest.multi_models[0].networks[1].transfers = vec![transfer("company", "a", "company-b")];
+        assert_eq!(
+            joint_schema_error(&manifest, root.path()),
+            "The network `river` reads the transfer `company-a`, but no transfer of that name into it is declared."
+        );
+
+        manifest.models[0].include = vec![selection("nets", Some(vec!["reader.json"]), false)];
+        let Err(error) = manifest
+            .compose_model(root.path(), "company", OPTIONS)
+            .unwrap()
+            .load()
+            .unwrap()
+            .into_model_schema(&Default::default())
+        else {
+            panic!("a model reading a transfer composed without error");
+        };
+        assert_eq!(
+            error.to_string(),
+            "The composed model reads the transfer `company-a`, but only a network of a multi-model can receive transfers."
+        );
+    }
+
+    #[test]
+    fn two_networks_must_not_write_the_same_output_file() {
+        let root = project_with_nets();
+        write_json(
+            &root.path().join("nets/out.json"),
+            serde_json::json!({
+                "nodes": [],
+                "edges": [],
+                "outputs": [{"type": "HDF5", "meta": {"name": "out"}, "filename": "out.h5", "metric_set": "all"}]
+            }),
+        );
+        let mut networks = joint_networks();
+        networks[1].include = vec![selection("nets", Some(vec!["c.json", "out.json"]), false)];
+        let mut manifest = multi_model_manifest(networks);
+        manifest.models[0].include = vec![selection("nets", Some(vec!["a.json", "out.json"]), false)];
+        assert_eq!(
+            joint_schema_error(&manifest, root.path()),
+            "The networks `company` and `river` both write the output file `out.h5`."
+        );
+    }
+
+    #[test]
+    fn multi_model_networks_are_checked_against_the_sets_they_select_from() {
+        let root = project_with_nets();
+        let mut manifest = multi_model_manifest(vec![
+            multi_network("company", from_model("company")),
+            multi_network("river", from_network("river")),
+            multi_network("empty", None),
+        ]);
+        manifest.network_sets = vec![set("nets", None, Some(1), None)];
+        if let Err(error) = manifest.validate(root.path(), OPTIONS) {
+            panic!("{}", error.report());
+        }
+
+        // The model's own problems are reported once, as the model's, not again for the network
+        // that uses it.
+        manifest.network_sets = vec![set("nets", None, None, Some(0))];
+        let expected = [
+            "The model definition `company` selects 1 file(s) from network set `nets`, but at most 0 are allowed.",
+            "The multi-model network `joint/river` selects 1 file(s) from network set `nets`, but at most 0 are allowed.",
+        ];
+        let messages = |report: ProjectManifestValidationError| -> Vec<String> {
+            report.problems.iter().map(ToString::to_string).collect()
+        };
+        assert_eq!(messages(manifest.validate(root.path(), OPTIONS).unwrap_err()), expected);
+        assert_eq!(
+            messages(manifest.validate_model(root.path(), "joint", OPTIONS).unwrap_err()),
+            expected
+        );
+    }
+
+    #[test]
+    fn a_multi_models_paths_include_its_transfers_files() {
+        let root = project_with_nets();
+        write_json(&root.path().join("links/transfers.json"), serde_json::json!([]));
+        let mut networks = joint_networks();
+        networks[1].transfers_file = Some("links/transfers.json".to_string());
+        let paths = multi_model_manifest(networks)
+            .compose_multi_model(root.path(), "joint", OPTIONS)
+            .unwrap()
+            .all_paths();
+        assert_eq!(
+            paths.last(),
+            Some(&root.path().join("links/transfers.json").canonicalize().unwrap())
         );
     }
 
