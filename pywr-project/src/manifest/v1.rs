@@ -1378,8 +1378,8 @@ struct Resolver<'a> {
     expanded: HashMap<(usize, &'a str), Expansion<'a>>,
     expanded_models: HashMap<(usize, &'a str), Expansion<'a>>,
     model_base_models: HashMap<(usize, &'a str), Option<ResolvedBaseModel>>,
-    /// The root model definitions already checked as whole models.
-    checked_models: HashSet<&'a str>,
+    /// The model definitions already checked as whole models, by project index and name.
+    checked_models: HashSet<(usize, &'a str)>,
     /// The network definitions currently being expanded, outermost first, used to detect cycles.
     stack: Vec<(usize, &'a str)>,
 }
@@ -1533,24 +1533,25 @@ impl<'a> Resolver<'a> {
     ) -> ResolvedModel {
         let base_model = self.model_base_model(ROOT, model, problems);
         let expansion = self.expand_model(ROOT, model, problems);
-        self.check_model(model, &expansion, problems);
+        self.check_model(ROOT, model, &expansion, problems);
         ResolvedModel {
             base_model,
             includes: expansion.files.into_iter().map(SelectedFile::into_composed).collect(),
         }
     }
 
-    /// Check a root model definition's expansion as a whole model, once however many times the
-    /// model is used.
+    /// Check the expansion of a model definition in project `index` as a whole model, once
+    /// however many times the model is used.
     fn check_model(
         &mut self,
+        index: usize,
         model: &'a ModelDefinition,
         expansion: &Expansion<'a>,
         problems: &mut Vec<ProjectManifestProblem>,
     ) {
-        if self.checked_models.insert(&model.name) {
-            let definition = DefinitionRef::new(DefinitionKind::Model, &model.name);
-            check_composition(&definition, expansion, self.graph, SetLimits::AllSets, problems);
+        if self.checked_models.insert((index, &model.name)) {
+            let definition = DefinitionRef::new(DefinitionKind::Model, &self.project(index).label(&model.name));
+            check_composition(&definition, expansion, self.graph, SetLimits::ModelOf(index), problems);
         }
     }
 
@@ -2004,13 +2005,15 @@ fn unique_network_references<'a>(
     unique
 }
 
-/// Which of the root project's own network sets [`check_composition`] applies the limits of.
+/// Which network sets [`check_composition`] applies the limits of in full, rather than only
+/// when something is selected from them.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum SetLimits {
-    /// Every set, as for a model.
-    AllSets,
-    /// Only sets that something is selected from, as for a network of a multi-model, which is
-    /// only one part of the model. The sets of active sub-networks are still checked in full.
+    /// The sets of the project with this index, as for one of its models, which its project's
+    /// limits are written for. The sets of its active sub-networks are included.
+    ModelOf(usize),
+    /// Only the sets of the root project's active sub-networks, as for a network of a
+    /// multi-model that is not built from a model, and is only one part of the multi-model.
     SelectedSets,
 }
 
@@ -2040,9 +2043,12 @@ fn check_composition(
             .iter()
             .filter(|selected| selected.set.is_some_and(|selected_set| std::ptr::eq(selected_set, set)))
             .count();
-        // A dependency's sets are only constrained when something is selected from them, and so
-        // are the root project's own sets for a multi-model network.
-        let selected_only = set.project != ROOT || (limits == SetLimits::SelectedSets && set.sub_network.is_none());
+        // Another project's sets are only constrained when something is selected from them, and
+        // so are the root project's own sets for a multi-model network that is not a model.
+        let selected_only = match limits {
+            SetLimits::ModelOf(project) => set.project != project,
+            SetLimits::SelectedSets => set.project != ROOT || set.sub_network.is_none(),
+        };
         if selected_only && count == 0 {
             continue;
         }
@@ -2240,8 +2246,10 @@ impl MultiModelNetwork {
             &format!("{}/{}", multi_model.name, self.name),
         );
         let mut base_model = None;
-        // A root model used as it is was, or will be, checked as a model.
+        // A model used as it is was, or will be, checked as that model. A model with additions is
+        // checked against its own project's limits in full.
         let mut whole_model = None;
+        let mut limits = SetLimits::SelectedSets;
         let mut expansion = resolver.activate_sub_networks(ROOT, &label, &self.sub_networks, None, problems);
         match &self.network {
             Some(MultiModelNetworkSource::Network(NetworkSource { name: network })) => {
@@ -2255,8 +2263,9 @@ impl MultiModelNetwork {
                                 .model_base_model(index, definition, problems)
                                 .map(|base_model| (index, base_model));
                             expansion.extend(resolver.expand_model(index, definition, problems));
-                            if index == ROOT && self.sub_networks.is_empty() && self.include.is_empty() {
-                                whole_model = Some(definition);
+                            limits = SetLimits::ModelOf(index);
+                            if self.sub_networks.is_empty() && self.include.is_empty() {
+                                whole_model = Some((index, definition));
                             }
                         }
                         None => problems.push(ProjectManifestProblem::ModelNotFound {
@@ -2272,8 +2281,8 @@ impl MultiModelNetwork {
         expansion.files.extend(includes);
         expansion.dedup(&label, problems);
         match whole_model {
-            Some(model) => resolver.check_model(model, &expansion, problems),
-            None => check_composition(&label, &expansion, resolver.graph, SetLimits::SelectedSets, problems),
+            Some((index, model)) => resolver.check_model(index, model, &expansion, problems),
+            None => check_composition(&label, &expansion, resolver.graph, limits, problems),
         }
 
         let (transfers, transfers_file) = self.resolve_transfers(multi_model, &resolver.project(ROOT).root, problems);
@@ -5181,6 +5190,42 @@ mod test {
             messages,
             [
                 "In the dependency `b`: The network definition `uses` refers to the network definition `hidden`, which the dependency `lib` does not export."
+            ]
+        );
+    }
+
+    #[test]
+    fn a_dependency_model_is_checked_against_its_own_projects_limits() {
+        let workspace = workspace();
+        let root = workspace.path().join("main");
+        let model_json = serde_json::to_value(pywr_schema::ModelSchema::default()).unwrap();
+        write_json(&workspace.path().join("dep/base.json"), model_json);
+        std::fs::create_dir_all(workspace.path().join("dep/required")).unwrap();
+        write_json(
+            &workspace.path().join("dep/pywr-project.json"),
+            serde_json::json!({
+                "format": "v1",
+                "base_model": "base.json",
+                "network_sets": [{"name": "required", "min_files": 1}],
+                "models": [{"name": "m"}]
+            }),
+        );
+        let mut manifest = main_manifest(vec![model("local", vec![])]);
+        manifest.dependencies = vec![dependency("dep", "../dep/pywr-project.json")];
+        manifest.multi_models = vec![MultiModelDefinition {
+            name: "joint".to_string(),
+            domain: MultiModelDomain::Model(ModelDomain {
+                name: "local".to_string(),
+            }),
+            overrides: None,
+            networks: vec![multi_network("dep", from_model("dep::m"))],
+        }];
+        let report = manifest.validate(&root, OPTIONS).unwrap_err();
+        let messages: Vec<_> = report.problems.iter().map(ToString::to_string).collect();
+        assert_eq!(
+            messages,
+            [
+                "The model definition `dep::m` selects 0 file(s) from network set `dep::required`, but at least 1 are required."
             ]
         );
     }
