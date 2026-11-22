@@ -235,7 +235,7 @@ impl NetworkSchema {
                     Some(existing_ms) => {
                         if let Some(incoming) = ms.meta.provenance.clone() {
                             match &mut existing_ms.meta.provenance {
-                                Some(existing) => existing.merge(incoming),
+                                Some(existing) => existing.merge(*incoming),
                                 None => existing_ms.meta.provenance = Some(incoming),
                             }
                         }

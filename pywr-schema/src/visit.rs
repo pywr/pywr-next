@@ -215,6 +215,19 @@ where
     }
 }
 
+impl<T> VisitMetrics for Box<T>
+where
+    T: VisitMetrics,
+{
+    fn visit_metrics<F: FnMut(&Metric)>(&self, visitor: &mut F) {
+        self.as_ref().visit_metrics(visitor);
+    }
+
+    fn visit_metrics_mut<F: FnMut(&mut Metric)>(&mut self, visitor: &mut F) {
+        self.as_mut().visit_metrics_mut(visitor);
+    }
+}
+
 impl<T> VisitPaths for Box<T>
 where
     T: VisitPaths,
