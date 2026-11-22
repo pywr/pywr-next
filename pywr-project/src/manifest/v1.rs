@@ -11,6 +11,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::borrow::Cow;
+use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::ffi::{OsStr, OsString};
 use std::path::{Component, Path, PathBuf};
@@ -293,7 +294,13 @@ impl ProjectManifest {
     /// this project uses them.
     pub fn validate(&self, root: &Path, options: &ResolveOptions) -> Result<(), ProjectManifestValidationError> {
         let mut problems = self.manifest_problems();
-        let graph = self.load_graph(root, options, true, &mut problems);
+        let mut graph = self.load_graph(root, options, true, &mut problems);
+        // Every dependency's problems are reported, whether or not anything uses it.
+        problems.extend(
+            std::mem::take(&mut graph.load_problems)
+                .into_iter()
+                .map(|found| found.problem),
+        );
         let mut resolver = Resolver::new(&graph);
         for model in &self.models {
             resolver.resolve_model(model, &mut problems);
@@ -324,13 +331,15 @@ impl ProjectManifest {
             }]);
         }
         let mut problems = self.manifest_problems();
-        let graph = self.load_graph(root, options, true, &mut problems);
+        let mut graph = self.load_graph(root, options, true, &mut problems);
+        let (at, load_problems) = (problems.len(), std::mem::take(&mut graph.load_problems));
         let mut resolver = Resolver::new(&graph);
         if let Some(model) = model {
             resolver.resolve_model(model, &mut problems);
         } else if let Some(multi_model) = multi_model {
             multi_model.resolve(&mut resolver, &mut problems);
         }
+        resolver.insert_reached_load_problems(&mut problems, at, load_problems);
         into_result(problems)
     }
 
@@ -347,13 +356,16 @@ impl ProjectManifest {
             }]);
         };
         let mut problems = self.manifest_problems();
-        let graph = self.load_graph(root, options, false, &mut problems);
-        let expansion = Resolver::new(&graph).expand(ROOT, &network.name, &mut problems);
+        let mut graph = self.load_graph(root, options, false, &mut problems);
+        let (at, load_problems) = (problems.len(), std::mem::take(&mut graph.load_problems));
+        let mut resolver = Resolver::new(&graph);
+        let expansion = resolver.expand(ROOT, &network.name, &mut problems);
         check_active(
             &DefinitionRef::new(DefinitionKind::Network, network_name),
             &expansion,
             &mut problems,
         );
+        resolver.insert_reached_load_problems(&mut problems, at, load_problems);
         into_result(problems)
     }
 
@@ -389,8 +401,11 @@ impl ProjectManifest {
             });
             return Err(problems.swap_remove(0).into());
         };
-        let graph = self.load_graph(root, options, true, &mut problems);
-        let resolved = Resolver::new(&graph).resolve_model(model, &mut problems);
+        let mut graph = self.load_graph(root, options, true, &mut problems);
+        let (at, load_problems) = (problems.len(), std::mem::take(&mut graph.load_problems));
+        let mut resolver = Resolver::new(&graph);
+        let resolved = resolver.resolve_model(model, &mut problems);
+        resolver.insert_reached_load_problems(&mut problems, at, load_problems);
 
         match (problems.into_iter().next(), resolved.base_model) {
             (Some(problem), _) => Err(problem.into()),
@@ -425,8 +440,11 @@ impl ProjectManifest {
             });
             return Err(problems.swap_remove(0).into());
         };
-        let graph = self.load_graph(root, options, true, &mut problems);
-        let resolved = multi_model.resolve(&mut Resolver::new(&graph), &mut problems);
+        let mut graph = self.load_graph(root, options, true, &mut problems);
+        let (at, load_problems) = (problems.len(), std::mem::take(&mut graph.load_problems));
+        let mut resolver = Resolver::new(&graph);
+        let resolved = multi_model.resolve(&mut resolver, &mut problems);
+        resolver.insert_reached_load_problems(&mut problems, at, load_problems);
 
         match (problems.into_iter().next(), resolved.domain) {
             (Some(problem), _) => Err(problem.into()),
@@ -457,8 +475,11 @@ impl ProjectManifest {
             });
             return Err(problems.swap_remove(0).into());
         };
-        let graph = self.load_graph(root, options, false, &mut problems);
-        let expansion = Resolver::new(&graph).expand(ROOT, &network.name, &mut problems);
+        let mut graph = self.load_graph(root, options, false, &mut problems);
+        let (at, load_problems) = (problems.len(), std::mem::take(&mut graph.load_problems));
+        let mut resolver = Resolver::new(&graph);
+        let expansion = resolver.expand(ROOT, &network.name, &mut problems);
+        resolver.insert_reached_load_problems(&mut problems, at, load_problems);
         check_active(
             &DefinitionRef::new(DefinitionKind::Network, network_name),
             &expansion,
@@ -508,6 +529,7 @@ impl ProjectManifest {
                 resolved,
                 dependencies: Vec::new(),
             }],
+            load_problems: Vec::new(),
         };
         if !self.dependencies.is_empty() {
             let mut loader = DependencyLoader {
@@ -522,7 +544,19 @@ impl ProjectManifest {
                     .filter_map(|path| path.canonicalize().ok())
                     .collect(),
             };
-            loader.load_dependencies(&mut graph, ROOT, problems);
+            // Problems found loading each dependency are kept apart, so that a definition that
+            // does not use a dependency is not stopped by its problems.
+            for dependency in &self.dependencies {
+                let mut found = Vec::new();
+                let loaded = loader.load(&mut graph, root, dependency.name.clone(), dependency, &mut found);
+                graph.projects[ROOT]
+                    .dependencies
+                    .push((dependency.name.clone(), loaded));
+                graph.load_problems.extend(found.into_iter().map(|problem| LoadProblem {
+                    dependency: dependency.name.clone(),
+                    problem,
+                }));
+            }
         }
         graph
     }
@@ -1060,6 +1094,25 @@ struct ProjectScope {
 struct ProjectGraph<'m> {
     /// The projects, root first. A project that several others depend on is loaded once.
     projects: Vec<LoadedProject<'m>>,
+    /// The problems found loading the dependencies, which the caller reports in full or only
+    /// for the dependencies a definition reaches.
+    load_problems: Vec<LoadProblem>,
+}
+
+/// A problem found while loading the root project's dependency `dependency`, or the projects
+/// loaded through it.
+struct LoadProblem {
+    dependency: String,
+    problem: ProjectManifestProblem,
+}
+
+/// The projects a [`Resolver`] reached while resolving definitions.
+#[derive(Default)]
+struct Reached {
+    /// The projects reached, by index.
+    projects: HashSet<usize>,
+    /// The names of the root project's dependencies followed, including any that failed to load.
+    root_dependencies: HashSet<String>,
 }
 
 /// A project in a [`ProjectGraph`], resolved against the filesystem.
@@ -1380,6 +1433,8 @@ struct Resolver<'a> {
     model_base_models: HashMap<(usize, &'a str), Option<ResolvedBaseModel>>,
     /// The model definitions already checked as whole models, by project index and name.
     checked_models: HashSet<(usize, &'a str)>,
+    /// The projects reached so far through references.
+    reached: RefCell<Reached>,
     /// The network definitions currently being expanded, outermost first, used to detect cycles.
     stack: Vec<(usize, &'a str)>,
 }
@@ -1392,12 +1447,41 @@ impl<'a> Resolver<'a> {
             expanded_models: HashMap::new(),
             model_base_models: HashMap::new(),
             checked_models: HashSet::new(),
+            reached: RefCell::default(),
             stack: Vec::new(),
         }
     }
 
     fn project(&self, index: usize) -> &'a LoadedProject<'a> {
         &self.graph.projects[index]
+    }
+
+    /// Insert at `at` in `problems` the problems found loading the dependencies that this resolver
+    /// reached, leaving out those of dependencies it did not use.
+    fn insert_reached_load_problems(
+        &self,
+        problems: &mut Vec<ProjectManifestProblem>,
+        at: usize,
+        load_problems: Vec<LoadProblem>,
+    ) {
+        let reached = self.reached.borrow();
+        let kept = load_problems.into_iter().filter(|found| {
+            // A problem inside a project names it; one with no such project, such as a manifest
+            // that could not be read, belongs to the dependency it was found loading.
+            let project = match &found.problem {
+                ProjectManifestProblem::InDependency { dependency, .. } => self
+                    .graph
+                    .projects
+                    .iter()
+                    .position(|project| project.scope.alias.as_deref() == Some(dependency.as_str())),
+                _ => None,
+            };
+            match project {
+                Some(index) => reached.projects.contains(&index),
+                None => reached.root_dependencies.contains(&found.dependency),
+            }
+        });
+        problems.splice(at..at, kept.map(|found| found.problem).collect::<Vec<_>>());
     }
 
     /// Report the problems from `start` on as being in project `index`, if it is a dependency.
@@ -1438,7 +1522,12 @@ impl<'a> Resolver<'a> {
                 });
                 return None;
             }
+            let mut reached = self.reached.borrow_mut();
+            if index == ROOT {
+                reached.root_dependencies.insert(first.to_string());
+            }
             index = dependency?;
+            reached.projects.insert(index);
             name = rest;
         }
         if index != from && !self.project(index).exports(kind, name) {
@@ -5228,6 +5317,45 @@ mod test {
                 "The model definition `dep::m` selects 0 file(s) from network set `dep::required`, but at least 1 are required."
             ]
         );
+    }
+
+    #[test]
+    fn a_broken_dependency_only_stops_the_definitions_that_use_it() {
+        let workspace = workspace();
+        let root = workspace.path().join("main");
+        write_json(
+            &workspace.path().join("broken/pywr-project.json"),
+            serde_json::json!({
+                "format": "v1",
+                "network_sets": [{"name": "missing"}],
+                "networks": [{"name": "n"}]
+            }),
+        );
+        let mut manifest = main_manifest(vec![
+            model("own", vec![selection("nets", Some(vec!["m.json"]), false)]),
+            uses_networks(model("uses", vec![]), vec!["broken::n"]),
+        ]);
+        manifest.dependencies = vec![
+            dependency("broken", "../broken/pywr-project.json"),
+            dependency("absent", "../absent/pywr-project.json"),
+        ];
+
+        manifest.compose_model(&root, "own", OPTIONS).unwrap();
+        assert!(manifest.validate_model(&root, "own", OPTIONS).is_ok());
+        let in_broken = |error: &ComposeModelError| matches!(error, ComposeModelError::InDependency { dependency, .. } if dependency == "broken");
+        assert!(in_broken(
+            &manifest.compose_model(&root, "uses", OPTIONS).err().unwrap()
+        ));
+
+        // Validating the whole project reports every dependency's problems.
+        let report = manifest.validate(&root, OPTIONS).unwrap_err();
+        assert!(matches!(
+            report.problems.as_slice(),
+            [
+                ProjectManifestProblem::InDependency { dependency, .. },
+                ProjectManifestProblem::Resolution(ManifestResolutionError::DependencyManifestNotFound { dependency: absent, .. }),
+            ] if dependency == "broken" && absent == "absent"
+        ));
     }
 
     #[test]
