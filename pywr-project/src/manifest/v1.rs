@@ -98,7 +98,7 @@ pub enum ProjectManifestProblem {
         sub_network: String,
     },
     #[error(
-        "The {definition} selects the network set `{set}`, but its sub-network `{sub_network}` is not active; list it in the model's `sub_networks` or use it as a network definition's `base`."
+        "The {definition} selects the network set `{set}`, but its sub-network `{sub_network}` is not active; list the sub-network in `sub_networks`."
     )]
     SubNetworkNotActive {
         definition: DefinitionRef,
@@ -1443,9 +1443,25 @@ impl<'a> Resolver<'a> {
             .referred_sub_network(definition, reference, name, problems)
     }
 
-    /// The base networks of the active sub-networks, in the order the sub-networks are declared.
-    fn active_base_networks(&self, active: &[(usize, &str)]) -> Vec<SelectedFile<'a>> {
-        self.graph
+    /// Activate the sub-networks that `definition` in project `from` lists in its
+    /// `sub_networks`, returning them with their base networks, in the order the sub-networks
+    /// are declared. `network` is the network definition doing so, if any, for provenance.
+    fn activate_sub_networks(
+        &self,
+        from: usize,
+        definition: &DefinitionRef,
+        references: &'a [String],
+        network: Option<&'a str>,
+        problems: &mut Vec<ProjectManifestProblem>,
+    ) -> Expansion<'a> {
+        let mut active = Vec::new();
+        for reference in references {
+            if let Some(sub_network) = self.sub_network_reference(from, definition, reference, problems) {
+                active.push((sub_network.project, sub_network.name.as_str()));
+            }
+        }
+        let files = self
+            .graph
             .projects
             .iter()
             .flat_map(|project| &project.resolved.sub_networks)
@@ -1455,9 +1471,13 @@ impl<'a> Resolver<'a> {
                 file,
                 set: None,
                 position_offset: None,
-                network: None,
+                network,
             })
-            .collect()
+            .collect();
+        Expansion {
+            files,
+            active_sub_networks: active,
+        }
     }
 
     /// Resolve a root model definition's base model and files, checking them as a whole model.
@@ -1523,16 +1543,8 @@ impl<'a> Resolver<'a> {
         }
         let start = problems.len();
         let definition = DefinitionRef::new(DefinitionKind::Model, &model.name);
-        let mut expansion = Expansion::default();
-        for reference in &model.sub_networks {
-            if let Some(sub_network) = self.sub_network_reference(index, &definition, reference, problems) {
-                expansion
-                    .active_sub_networks
-                    .push((sub_network.project, &sub_network.name));
-            }
-        }
         // The base networks of the sub-networks activated here come straight after the base model.
-        expansion.files = self.active_base_networks(&expansion.active_sub_networks);
+        let mut expansion = self.activate_sub_networks(index, &definition, &model.sub_networks, None, problems);
         for reference in unique_network_references(&definition, &model.networks, problems) {
             let network = self.expand_reference(index, &definition, reference, problems);
             expansion.extend(network);
@@ -1571,22 +1583,8 @@ impl<'a> Resolver<'a> {
         let start = problems.len();
         self.stack.push((index, &network.name));
         let definition = DefinitionRef::new(DefinitionKind::Network, &network.name);
-        let mut expansion = Expansion::default();
-        if let Some(base) = &network.base
-            && let Some(sub_network) = self.sub_network_reference(index, &definition, base, problems)
-        {
-            expansion
-                .active_sub_networks
-                .push((sub_network.project, &sub_network.name));
-            if let Some(file) = &sub_network.base_network {
-                expansion.files.push(SelectedFile {
-                    file,
-                    set: None,
-                    position_offset: None,
-                    network: Some(&network.name),
-                });
-            }
-        }
+        let mut expansion =
+            self.activate_sub_networks(index, &definition, &network.sub_networks, Some(&network.name), problems);
         for parent in unique_network_references(&definition, &network.extends, problems) {
             let parent = self.expand_reference(index, &definition, parent, problems);
             expansion.extend(parent);
@@ -1883,9 +1881,10 @@ pub struct NetworkDefinition {
     pub name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
-    /// A sub-network whose base network is the starting point. This also activates the sub-network.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub base: Option<String>,
+    /// Sub-networks to activate. Their base networks are included first, in the order the
+    /// sub-networks are declared.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sub_networks: Vec<String>,
     /// Other network definitions to include next, in order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub extends: Vec<String>,
@@ -2036,6 +2035,10 @@ pub struct MultiModelNetwork {
     /// The definition the network starts from. Without one, the network holds only `include`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub network: Option<MultiModelNetworkSource>,
+    /// Sub-networks to activate. Their base networks are included first, in the order the
+    /// sub-networks are declared.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sub_networks: Vec<String>,
     /// Per-network-set selections, included after the network's source.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub include: Vec<DefinitionSelection>,
@@ -2161,7 +2164,7 @@ impl MultiModelNetwork {
             &format!("{}/{}", multi_model.name, self.name),
         );
         let mut base_model = None;
-        let mut expansion = Expansion::default();
+        let mut expansion = resolver.activate_sub_networks(ROOT, &label, &self.sub_networks, None, problems);
         match &self.network {
             Some(MultiModelNetworkSource::Network(NetworkSource { network })) => {
                 expansion.extend(resolver.expand_reference(ROOT, &label, network, problems));
@@ -3191,7 +3194,7 @@ mod test {
         NetworkDefinition {
             name: name.to_string(),
             description: None,
-            base: None,
+            sub_networks: vec![],
             extends: extends.into_iter().map(str::to_string).collect(),
             include,
         }
@@ -3808,7 +3811,7 @@ mod test {
     }
 
     #[test]
-    fn sub_networks_are_inactive_unless_listed_or_used_as_a_base() {
+    fn sub_networks_are_inactive_unless_listed() {
         let root = project_with_sub_networks();
         let upper_x = || selection("upper::options", Some(vec!["x.json"]), false);
         let manifest = sub_network_manifest(
@@ -3819,7 +3822,7 @@ mod test {
             vec![
                 network("upper-x", vec![], vec![upper_x()]),
                 NetworkDefinition {
-                    base: Some("upper".to_string()),
+                    sub_networks: vec!["upper".to_string()],
                     ..network("with-base", vec![], vec![upper_x()])
                 },
             ],
@@ -3882,7 +3885,7 @@ mod test {
         let mut manifest = sub_network_manifest(vec![], vec![]);
         manifest.sub_networks[0].data_dir = Some("data".to_string());
         manifest.networks = vec![NetworkDefinition {
-            base: Some("upper".to_string()),
+            sub_networks: vec!["upper".to_string()],
             ..network("upper", vec![], vec![])
         }];
         let report = manifest.validate(root.path(), OPTIONS).unwrap_err();
@@ -3995,6 +3998,7 @@ mod test {
         MultiModelNetwork {
             name: name.to_string(),
             network,
+            sub_networks: vec![],
             include: vec![],
             transfers: vec![],
             transfers_file: None,
@@ -4044,6 +4048,40 @@ mod test {
         river.include = vec![selection("nets", Some(vec!["c.json"]), false)];
         river.transfers = vec![transfer("company", "a", "company-a")];
         vec![multi_network("company", from_model("company")), river]
+    }
+
+    #[test]
+    fn a_multi_model_network_can_activate_sub_networks_itself() {
+        let root = project_with_sub_networks();
+        let upper = MultiModelNetwork {
+            include: vec![selection("upper::options", Some(vec!["x.json"]), false)],
+            ..multi_network("upper", None)
+        };
+        let mut manifest = sub_network_manifest(vec![model("m", vec![])], vec![]);
+        manifest.multi_models = vec![MultiModelDefinition {
+            name: "joint".to_string(),
+            domain: MultiModelDomain::Model(ModelDomain { model: "m".to_string() }),
+            overrides: None,
+            networks: vec![upper.clone(), multi_network("plain", from_model("m"))],
+        }];
+        let report = manifest.validate(root.path(), OPTIONS).unwrap_err();
+        let messages: Vec<_> = report.problems.iter().map(ToString::to_string).collect();
+        assert_eq!(
+            messages,
+            [
+                "The multi-model network `joint/upper` selects the network set `upper::options`, but its sub-network `upper` is not active; list the sub-network in `sub_networks`."
+            ]
+        );
+
+        manifest.multi_models[0].networks[0].sub_networks = vec!["upper".to_string()];
+        let composed = manifest.compose_multi_model(root.path(), "joint", OPTIONS).unwrap();
+        let paths: Vec<_> = composed.networks()[0]
+            .network
+            .includes()
+            .iter()
+            .map(|include| include.source.file.to_string())
+            .collect();
+        assert_eq!(paths, ["upper/base.json", "upper/options/x.json"]);
     }
 
     #[test]
@@ -4503,7 +4541,7 @@ mod test {
             "network_sets": [{"name": "licences"}],
             "networks": [
                 {"name": "river", "include": [{"set": "licences", "include_all": true}]},
-                {"name": "upper", "base": "upper"}
+                {"name": "upper", "sub_networks": ["upper"]}
             ],
             "models": [{"name": "baseline", "networks": ["river"]}]
         })
@@ -4598,7 +4636,7 @@ mod test {
             uses_networks(model("upper", vec![]), vec!["upper-o"]),
         ]);
         manifest.networks = vec![NetworkDefinition {
-            base: Some("org::upper".to_string()),
+            sub_networks: vec!["org::upper".to_string()],
             ..network(
                 "upper-o",
                 vec![],
