@@ -3,7 +3,7 @@
   "network_sets": [
     {
       "name": "supply",
-      "min": 1
+      "min_files": 1
     }
   ],
   "networks": [

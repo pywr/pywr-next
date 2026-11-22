@@ -131,7 +131,7 @@ pywr-cli run-project examples/my-model/pywr-project.json --definition baseline-o
 
 `--definition` names the model or multi-model to run. Model and multi-model names share one namespace, so the
 name alone says which to run. The other options are the same as for `run`: `--solver`, `--threads`,
-`--data-path` and `--output-path`.
+`--data-path` and `--output-path`. The output directory is created if it does not exist.
 
 Relative data paths in the composed model are resolved against `--data-path`, which defaults to the directory
 of the manifest. Paths in a project's own files are therefore written relative to the project directory. Files
@@ -161,9 +161,9 @@ loaded.
 
 Every component of a composed model records where it came from, in its `meta.provenance`. The `origin` is the
 file that defined the component, given relative to its project, together with the network set, sub-network,
-network definition and dependency it was included through, where those apply. If a component was a
-placeholder that was later replaced, or a metric set was combined from several files, the other files are
-listed as `contributors`.
+network definition and dependency it was included through, where those apply. A metric set combined from
+several files also lists the other files as `contributors`. A component that replaced a placeholder records
+only its own file, since the placeholder is dropped.
 
 For example, composing `baseline-option1` from the example project gives these node metadata (positions omitted):
 

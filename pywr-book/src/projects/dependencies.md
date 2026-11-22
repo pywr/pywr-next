@@ -70,7 +70,8 @@ Their items can be referred to through both names, such as `org::shared::network
 the middle has no `exports`. A project that needs something from a dependency of an exporting project can
 depend on that project directly.
 
-A project that is reached by more than one route is loaded once. A network file must still be reached through
+A project that is reached by more than one route is loaded once. Problems name it as the referring project
+does, but the provenance of its files records it under the name of the route that loaded it first. A network file must still be reached through
 one network set only, so selecting the same file through the sets of two projects is an error. Projects that
 depend on each other in a cycle are reported as an error, with the manifests that form it.
 
@@ -82,8 +83,10 @@ Problems found in a dependency are reported as being in it, for example:
 In the dependency `org`: The definition `river` selects the network set `missing`, which does not exist.
 ```
 
-When a project is validated, each dependency's manifest is checked as a whole, and its definitions are checked
-as far as the project uses them.
+When the whole project is validated, each dependency's manifest is checked as a whole, and its definitions are
+checked as far as the project uses them. When a single definition is validated or composed, only the problems
+of the dependencies it uses are reported, so a dependency that is broken or unavailable does not stop models
+that never refer to it.
 
 ## Security
 
@@ -107,4 +110,7 @@ let project = Project::open_with("/srv/projects/joint/pywr-project.json", option
 | `AllowWithin(directory)`  | Only dependencies whose manifests are inside the directory.    |
 
 A dependency's `sha256` pins its manifest to a known version: if the manifest's hash differs, the dependency
-is not loaded. The hash covers only the manifest file, not the files it refers to.
+is not loaded. The hash covers only the manifest file, not the files it refers to. It is taken with the
+manifest's line endings read as LF, so a pin holds whichever line endings Git checks the file out with; it is
+what `sha256sum` prints for the file with LF line endings. A manifest reached by several routes must match
+the pin on each of them.
