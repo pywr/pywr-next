@@ -371,6 +371,22 @@ fn check_schema(validation: std::result::Result<(), pywr_schema::ValidationError
     validation.map_err(|error| anyhow::anyhow!("{}", error.report()))
 }
 
+/// Add every problem of a network that failed validation while the model was created.
+///
+/// [`check_schema`] can't see a network a multi-network model gives by path, as the network is
+/// only read when the model is created, and that error only gives the number of problems.
+fn with_network_report(error: anyhow::Error) -> anyhow::Error {
+    let report = error
+        .chain()
+        .find_map(|cause| cause.downcast_ref::<pywr_schema::NetworkValidationError>())
+        .map(|validation| validation.report().to_string());
+
+    match report {
+        Some(report) => error.context(report),
+        None => error,
+    }
+}
+
 fn run(
     path: &Path,
     solver: &Solver,
@@ -385,7 +401,8 @@ fn run(
     check_schema(schema_v2.validate())?;
     let builder = schema_v2
         .create_model_builder(&FileSystem, data_path, output_path)
-        .context("Failed to create the model from its schema")?;
+        .context("Failed to create the model from its schema")
+        .map_err(with_network_report)?;
     let model = builder.build().context("Failed to build the model")?;
 
     match *solver {
@@ -496,7 +513,8 @@ fn run_multi(path: &Path, solver: &Solver, data_path: Option<&Path>, output_path
     check_schema(schema_v2.validate())?;
     let builder = schema_v2
         .create_model_builder(&FileSystem, data_path, output_path)
-        .context("Failed to create the model from its schema")?;
+        .context("Failed to create the model from its schema")
+        .map_err(with_network_report)?;
     let model = builder.build().context("Failed to build the model")?;
 
     match *solver {
@@ -600,7 +618,8 @@ fn run_project(
     check_schema(schema_v2.validate())?;
     let model_builder = schema_v2
         .create_model_builder(&FileSystem, data_path, output_path)
-        .context("Failed to create the model from its schema")?;
+        .context("Failed to create the model from its schema")
+        .map_err(with_network_report)?;
     let model = model_builder.build().context("Failed to build the model")?;
 
     match *solver {
