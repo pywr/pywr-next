@@ -4087,7 +4087,7 @@ mod test {
             messages,
             [format!(
                 "The data directory `{}` for the sub-network `upper` was not found, or is not a directory.",
-                root.path().join("upper/data").display()
+                root.path().join("upper").join("data").display()
             )]
         );
         std::fs::create_dir(root.path().join("upper/data")).unwrap();
