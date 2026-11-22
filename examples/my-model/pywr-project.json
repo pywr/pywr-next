@@ -127,19 +127,22 @@
     {
       "name": "joint-historical",
       "domain": {
-        "model": "baseline-historical"
+        "type": "Model",
+        "name": "baseline-historical"
       },
       "networks": [
         {
           "name": "company",
           "network": {
-            "model": "baseline-historical"
+            "type": "Model",
+            "name": "baseline-historical"
           }
         },
         {
           "name": "neighbour",
           "network": {
-            "network": "neighbour::neighbour"
+            "type": "Network",
+            "name": "neighbour::neighbour"
           },
           "transfers": [
             {

@@ -1994,9 +1994,9 @@ pub struct MultiModelDefinition {
     pub networks: Vec<MultiModelNetwork>,
 }
 
-/// Where a multi-model takes its time domain, scenarios and metadata from.
+/// Where a multi-model takes its time domain, scenarios and metadata from, chosen by `type`.
 #[derive(Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(untagged)]
+#[serde(tag = "type")]
 pub enum MultiModelDomain {
     /// A local model definition's base model, with that definition's overrides applied.
     Model(ModelDomain),
@@ -2009,14 +2009,15 @@ pub enum MultiModelDomain {
 #[derive(Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ModelDomain {
-    pub model: String,
+    /// The name of the model definition.
+    pub name: String,
 }
 
 #[derive(Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct BaseModelDomain {
     /// Path (relative to root) to the ModelSchema JSON.
-    pub base_model: String,
+    pub path: String,
 }
 
 #[derive(Clone, Serialize, Deserialize, JsonSchema)]
@@ -2050,9 +2051,9 @@ pub struct MultiModelNetwork {
     pub transfers_file: Option<String>,
 }
 
-/// The definition a multi-model network starts from.
+/// The definition a multi-model network starts from, chosen by `type`.
 #[derive(Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(untagged)]
+#[serde(tag = "type")]
 pub enum MultiModelNetworkSource {
     /// A network definition.
     Network(NetworkSource),
@@ -2064,13 +2065,15 @@ pub enum MultiModelNetworkSource {
 #[derive(Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct NetworkSource {
-    pub network: String,
+    /// The name of the network definition.
+    pub name: String,
 }
 
 #[derive(Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ModelSource {
-    pub model: String,
+    /// The name of the model definition.
+    pub name: String,
 }
 
 /// A multi-model definition resolved into its domain and networks.
@@ -2093,22 +2096,24 @@ impl MultiModelDefinition {
         let definition = DefinitionRef::new(DefinitionKind::MultiModel, &self.name);
         let mut overrides = Vec::new();
         let domain = match &self.domain {
-            MultiModelDomain::Model(ModelDomain { model }) => match resolver.project(ROOT).manifest.find_model(model) {
-                Some(definition) => {
-                    overrides.extend(definition.overrides.clone());
-                    resolver
-                        .model_base_model(ROOT, definition, problems)
-                        .map(|(path, _)| ComposedDomain::BaseModel(path))
+            MultiModelDomain::Model(ModelDomain { name: model }) => {
+                match resolver.project(ROOT).manifest.find_model(model) {
+                    Some(definition) => {
+                        overrides.extend(definition.overrides.clone());
+                        resolver
+                            .model_base_model(ROOT, definition, problems)
+                            .map(|(path, _)| ComposedDomain::BaseModel(path))
+                    }
+                    None => {
+                        problems.push(ProjectManifestProblem::ModelNotFound {
+                            definition: definition.clone(),
+                            model: model.clone(),
+                        });
+                        None
+                    }
                 }
-                None => {
-                    problems.push(ProjectManifestProblem::ModelNotFound {
-                        definition: definition.clone(),
-                        model: model.clone(),
-                    });
-                    None
-                }
-            },
-            MultiModelDomain::BaseModel(BaseModelDomain { base_model }) => {
+            }
+            MultiModelDomain::BaseModel(BaseModelDomain { path: base_model }) => {
                 match resolve_base_model(&resolver.project(ROOT).root, base_model) {
                     Ok((path, _)) => Some(ComposedDomain::BaseModel(path)),
                     Err(error) => {
@@ -2166,10 +2171,10 @@ impl MultiModelNetwork {
         let mut base_model = None;
         let mut expansion = resolver.activate_sub_networks(ROOT, &label, &self.sub_networks, None, problems);
         match &self.network {
-            Some(MultiModelNetworkSource::Network(NetworkSource { network })) => {
+            Some(MultiModelNetworkSource::Network(NetworkSource { name: network })) => {
                 expansion.extend(resolver.expand_reference(ROOT, &label, network, problems));
             }
-            Some(MultiModelNetworkSource::Model(ModelSource { model })) => {
+            Some(MultiModelNetworkSource::Model(ModelSource { name: model })) => {
                 if let Some((index, name)) = resolver.locate(ROOT, &label, model, ItemKind::Model, problems) {
                     match resolver.project(index).manifest.find_model(name) {
                         Some(definition) => {
@@ -4007,13 +4012,13 @@ mod test {
 
     fn from_model(model: &str) -> Option<MultiModelNetworkSource> {
         Some(MultiModelNetworkSource::Model(ModelSource {
-            model: model.to_string(),
+            name: model.to_string(),
         }))
     }
 
     fn from_network(network: &str) -> Option<MultiModelNetworkSource> {
         Some(MultiModelNetworkSource::Network(NetworkSource {
-            network: network.to_string(),
+            name: network.to_string(),
         }))
     }
 
@@ -4024,7 +4029,7 @@ mod test {
             multi_models: vec![MultiModelDefinition {
                 name: "joint".to_string(),
                 domain: MultiModelDomain::Model(ModelDomain {
-                    model: "company".to_string(),
+                    name: "company".to_string(),
                 }),
                 overrides: None,
                 networks,
@@ -4060,7 +4065,7 @@ mod test {
         let mut manifest = sub_network_manifest(vec![model("m", vec![])], vec![]);
         manifest.multi_models = vec![MultiModelDefinition {
             name: "joint".to_string(),
-            domain: MultiModelDomain::Model(ModelDomain { model: "m".to_string() }),
+            domain: MultiModelDomain::Model(ModelDomain { name: "m".to_string() }),
             overrides: None,
             networks: vec![upper.clone(), multi_network("plain", from_model("m"))],
         }];
@@ -4277,16 +4282,16 @@ mod test {
                 "multi_models": [
                     {
                         "name": "from-model",
-                        "domain": { "model": "full" },
+                        "domain": { "type": "Model", "name": "full" },
                         "networks": [
-                            { "name": "a", "network": { "model": "full" } },
-                            { "name": "b", "network": { "network": "upgraded" }, "transfers_file": "links.json" }
+                            { "name": "a", "network": { "type": "Model", "name": "full" } },
+                            { "name": "b", "network": { "type": "Network", "name": "upgraded" }, "transfers_file": "links.json" }
                         ]
                     },
-                    { "name": "from-file", "domain": { "base_model": "base.json" }, "networks": [] },
+                    { "name": "from-file", "domain": { "type": "BaseModel", "path": "base.json" }, "networks": [] },
                     {
                         "name": "inline",
-                        "domain": { "time": { "start": "2020-01-01T00:00:00", "end": "2020-12-31T00:00:00", "timestep": { "type": "Days", "days": 1 } } },
+                        "domain": { "type": "Inline", "time": { "start": "2020-01-01T00:00:00", "end": "2020-12-31T00:00:00", "timestep": { "type": "Days", "days": 1 } } },
                         "networks": [{ "name": "c", "include": [{ "set": "nets", "include_all": true }] }]
                     }
                 ]
@@ -4305,6 +4310,25 @@ mod test {
         assert!(matches!(from_file.domain, MultiModelDomain::BaseModel(_)));
         assert!(matches!(inline.domain, MultiModelDomain::Inline(_)));
         assert!(inline.networks[0].network.is_none());
+    }
+
+    #[test]
+    fn multi_model_json_errors_name_what_is_wrong() {
+        let error = |domain: &str| {
+            let json =
+                format!(r#"{{"format": "v1", "multi_models": [{{"name": "m", "domain": {domain}, "networks": []}}]}}"#);
+            serde_json::from_str::<super::super::ProjectManifest>(&json)
+                .err()
+                .expect("the manifest was accepted")
+                .to_string()
+        };
+        assert!(
+            error(r#"{"type": "Modle", "name": "x"}"#)
+                .contains("unknown variant `Modle`, expected one of `Model`, `BaseModel`, `Inline`")
+        );
+        assert!(error(r#"{"type": "Model", "nmae": "x"}"#).contains("unknown field `nmae`"));
+        assert!(error(r#"{"type": "BaseModel"}"#).contains("missing field `path`"));
+        assert!(error(r#"{"model": "x"}"#).contains("missing field `type`"));
     }
 
     #[test]
@@ -4646,7 +4670,7 @@ mod test {
         manifest.multi_models = vec![MultiModelDefinition {
             name: "joint".to_string(),
             domain: MultiModelDomain::Model(ModelDomain {
-                model: "sets".to_string(),
+                name: "sets".to_string(),
             }),
             overrides: None,
             networks: vec![multi_network("org", from_model("org::baseline"))],
