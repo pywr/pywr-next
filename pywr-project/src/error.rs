@@ -2,7 +2,7 @@ use pywr_schema::meta::ProvenanceSource;
 use pywr_schema::{ModelSchemaReadError, NetworkMergeError, NetworkSchemaReadError};
 use std::fmt;
 use std::io;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -386,6 +386,30 @@ pub enum ComposeModelError {
     UnusedFileMeta { set: String, file: String },
     #[error(transparent)]
     Resolution(#[from] ManifestResolutionError),
+}
+
+impl ManifestResolutionError {
+    /// The path at which an item was expected but not found, or found but of the wrong kind.
+    ///
+    /// Creating or replacing whatever is at this path is the usual fix, so a watcher should
+    /// notice changes there.
+    pub fn unresolved_path(&self) -> Option<&Path> {
+        match self {
+            Self::BaseModelNotFound { path }
+            | Self::BaseModelNotAFile { path }
+            | Self::DirectoryNotFound { path, .. }
+            | Self::NotADirectory { path, .. }
+            | Self::SubNetworkDirectoryNotFound { path, .. }
+            | Self::SubNetworkNotADirectory { path, .. }
+            | Self::DataDirectoryNotFound { path, .. }
+            | Self::BaseNetworkNotFound { path, .. }
+            | Self::BaseNetworkNotAFile { path, .. }
+            | Self::TransfersFileNotFound { path }
+            | Self::DependencyManifestNotFound { path, .. }
+            | Self::DependencyManifestNotAFile { path, .. } => Some(path),
+            _ => None,
+        }
+    }
 }
 
 #[cfg(test)]

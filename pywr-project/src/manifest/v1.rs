@@ -3,7 +3,9 @@ use crate::composition::{
     ComposedNetwork, ComposedNetworkPath, LoadContext, PositionOffset,
 };
 use crate::error::{ComposeModelError, DefinitionKind, DefinitionRef, ManifestResolutionError};
-use crate::layout::{NetworkFileLayout, NetworkSetLayout, ProjectLayout, ProjectLocation, SubNetworkLayout};
+use crate::layout::{
+    NetworkFileLayout, NetworkSetLayout, ProjectLayout, ProjectLocation, SubNetworkLayout, unique_paths,
+};
 use crate::manifest::{DefinitionOverrides, DependencyPolicy, ResolveOptions};
 use pywr_schema::meta::ProvenanceSource;
 use pywr_schema::model::{MultiNetworkTransfer, ScenarioDomain, TimeDomain};
@@ -257,6 +259,18 @@ pub enum ProjectManifestProblem {
     Resolution(#[from] ManifestResolutionError),
 }
 
+impl ProjectManifestProblem {
+    /// The path at which an item was expected but not found, or found but of the wrong kind,
+    /// if this problem is about one.
+    pub fn unresolved_path(&self) -> Option<&Path> {
+        match self {
+            Self::Resolution(error) | Self::InvalidBaseModel { error, .. } => error.unresolved_path(),
+            Self::InDependency { problem, .. } => problem.unresolved_path(),
+            _ => None,
+        }
+    }
+}
+
 /// A simple project schema that defines how to build a model from multiple JSON fragments.
 #[derive(Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -326,12 +340,24 @@ impl ProjectManifest {
         let mut resolver = Resolver::new(&graph);
         self.resolve_all(&mut resolver, &mut problems);
 
+        // The root project's directory as given may be relative or not canonical; every other
+        // path in the layout is canonical.
+        let canonical_root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
+        // Data directories are held relative to the root project's directory.
+        let data_dir = |relative: Option<&Path>| {
+            let dir = relative.map_or_else(|| canonical_root.clone(), |relative| canonical_root.join(relative));
+            dir.canonicalize().unwrap_or(dir)
+        };
         let projects = graph
             .projects
             .iter()
             .map(|project| ProjectLocation {
                 alias: project.scope.alias.clone(),
-                root: project.root.clone(),
+                root: if project.scope.index == ROOT {
+                    canonical_root.clone()
+                } else {
+                    project.root.clone()
+                },
                 manifest: project.manifest_path.clone(),
                 base_model: match &project.base_model {
                     ProjectBaseModel::Resolved((path, _)) => Some(path.clone()),
@@ -349,6 +375,7 @@ impl ProjectManifest {
                 sub_network: set.sub_network.clone(),
                 set: set.set_name.clone(),
                 dir: set.dir.clone(),
+                data_dir: data_dir(set.data_dir.as_deref()),
                 min_files: set.min_files,
                 max_files: set.max_files,
                 files: set.files.iter().map(|file| file.layout(Some(set))).collect(),
@@ -366,36 +393,27 @@ impl ProjectManifest {
                         name: project.label(&sub_network.name),
                         project: project.scope.alias.clone(),
                         dir: sub_network.dir.clone(),
+                        data_dir: data_dir(Some(&sub_network.data_dir)),
                         base_network: sub_network.base_network.as_ref().map(|file| file.layout(None)),
                     })
             })
             .collect();
 
         // Base models given by definitions, in a stable order, then the root project's
-        // multi-model base models and transfers files.
+        // multi-model base models and transfers files. Projects' own base models are listed with
+        // the projects, so are left out here.
         let mut definition_files: Vec<_> = resolver
             .model_base_models
             .values()
             .flatten()
             .map(|(path, _)| path.clone())
-            .filter(|path| {
-                graph.projects.iter().all(
-                    |project| !matches!(&project.base_model, ProjectBaseModel::Resolved((base, _)) if base == path),
-                )
-            })
             .collect();
         definition_files.sort();
-        definition_files.dedup();
-        let mut add = |path: PathBuf| {
-            if !definition_files.contains(&path) {
-                definition_files.push(path);
-            }
-        };
         for multi_model in &self.multi_models {
             if let MultiModelDomain::BaseModel(BaseModelDomain { path: base_model }) = &multi_model.domain
                 && let Ok((path, _)) = resolve_base_model(root, base_model)
             {
-                add(path);
+                definition_files.push(path);
             }
             for network in &multi_model.networks {
                 if let Some(path) = network
@@ -403,16 +421,34 @@ impl ProjectManifest {
                     .as_deref()
                     .and_then(|file| transfers_path(root, file).ok())
                 {
-                    add(path);
+                    definition_files.push(path);
                 }
             }
         }
+        let project_base_models: HashSet<_> = graph
+            .projects
+            .iter()
+            .filter_map(|project| match &project.base_model {
+                ProjectBaseModel::Resolved((path, _)) => Some(path.clone()),
+                _ => None,
+            })
+            .collect();
+        let mut seen = HashSet::new();
+        definition_files.retain(|path| !project_base_models.contains(path) && seen.insert(path.clone()));
+
+        let unresolved: Vec<_> = problems
+            .iter()
+            .filter_map(ProjectManifestProblem::unresolved_path)
+            .map(|path| std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf()))
+            .collect();
+        let unresolved_paths = unique_paths(unresolved.iter().map(PathBuf::as_path));
 
         ProjectLayout {
             projects,
             network_sets,
             sub_networks,
             definition_files,
+            unresolved_paths,
             problems: into_result(problems)
                 .err()
                 .map(crate::ProjectManifestValidationError::V1),
@@ -2683,6 +2719,9 @@ struct ResolvedNetworkSet {
     sub_network: Option<String>,
     /// The canonical path of the set's directory.
     dir: PathBuf,
+    /// Directory, relative to the root project's directory, that relative data paths in the
+    /// set's files are relative to, or `None` if they are relative to the root project's directory.
+    data_dir: Option<PathBuf>,
     min_files: Option<usize>,
     max_files: Option<usize>,
     files: Vec<ResolvedNetworkFile>,
@@ -2724,6 +2763,8 @@ struct ResolvedSubNetwork {
     project: usize,
     /// The canonical path of the sub-network's directory.
     dir: PathBuf,
+    /// The sub-network's data directory relative to the root project's directory.
+    data_dir: PathBuf,
     base_network: Option<ResolvedNetworkFile>,
 }
 
@@ -2906,6 +2947,7 @@ fn resolve_sub_network(
             name: name.clone(),
             project: project.index,
             dir: sub_root.clone(),
+            data_dir: data_dir.clone(),
             base_network,
         },
         SubNetworkScope {
@@ -2993,6 +3035,7 @@ fn resolve_network_set(
         set_name: set.name.clone(),
         sub_network: scope.map(|scope| scope.name.clone()),
         dir: root,
+        data_dir: scope.map_or_else(|| project.data_dir.clone(), |scope| Some(scope.data_dir.clone())),
         min_files: set.min_files,
         max_files: set.max_files,
         files,
@@ -3991,6 +4034,99 @@ mod test {
             [ProjectManifestProblem::Resolution(ManifestResolutionError::DirectoryNotFound { set, .. })]
                 if set == "missing"
         ));
+    }
+
+    #[test]
+    fn a_layout_watches_where_missing_items_are_expected() {
+        let root = project_with_nets();
+        let manifest = ProjectManifest {
+            network_sets: vec![set("nets", None, None, None), set("missing/deeper", None, None, None)],
+            ..manifest("absent.json", vec![], vec![])
+        };
+        let layout = manifest.layout(root.path(), OPTIONS);
+        let canonical = root.path().canonicalize().unwrap();
+
+        assert_eq!(
+            layout.unresolved_paths,
+            [
+                std::path::absolute(root.path().join("absent.json")).unwrap(),
+                std::path::absolute(root.path().join("missing").join("deeper")).unwrap(),
+            ]
+        );
+        // The project directory is the nearest existing parent of both, so creating either is
+        // noticed.
+        assert_eq!(
+            layout.watch_paths(),
+            [
+                canonical.join("nets"),
+                canonical.join("nets").join("a.json"),
+                canonical.join("nets").join("b.json"),
+                canonical.join("nets").join("c.json"),
+                canonical.clone(),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_layouts_root_is_canonical_even_when_given_relative() {
+        let root = project_with_nets();
+        let manifest = manifest("base.json", vec![set("nets", None, None, None)], vec![]);
+        let parent = root.path().parent().unwrap();
+        let relative = parent
+            .join(".")
+            .join(root.path().file_name().unwrap())
+            .join("nets")
+            .join("..");
+        let layout = manifest.layout(&relative, OPTIONS);
+        assert_eq!(layout.projects[0].root, root.path().canonicalize().unwrap());
+    }
+
+    #[test]
+    fn a_layout_gives_the_data_directory_of_each_set_and_sub_network() {
+        let root = project_with_sub_networks();
+        std::fs::create_dir(root.path().join("upper/data")).unwrap();
+        write_json(&root.path().join("nets/a.json"), input_network("a"));
+        let mut manifest = sub_network_manifest(vec![], vec![]);
+        manifest.sub_networks[0].data_dir = Some("data".to_string());
+        manifest.network_sets = vec![set("nets", None, None, None)];
+        let layout = manifest.layout(root.path(), OPTIONS);
+        let canonical = root.path().canonicalize().unwrap();
+
+        let sets: Vec<_> = layout
+            .network_sets
+            .iter()
+            .map(|set| (set.name.as_str(), set.data_dir.clone()))
+            .collect();
+        assert_eq!(
+            sets,
+            [
+                ("nets", canonical.clone()),
+                ("upper::options", canonical.join("upper").join("data")),
+            ]
+        );
+        let sub_networks: Vec<_> = layout
+            .sub_networks
+            .iter()
+            .map(|sub_network| (sub_network.name.as_str(), sub_network.data_dir.clone()))
+            .collect();
+        assert_eq!(
+            sub_networks,
+            [
+                ("upper", canonical.join("upper").join("data")),
+                ("lower", canonical.join("lower")),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_layout_does_not_list_a_projects_base_model_as_a_definition_file() {
+        let root = project_with_nets();
+        let mut manifest = multi_model_manifest(vec![]);
+        manifest.multi_models[0].domain = MultiModelDomain::BaseModel(BaseModelDomain {
+            path: "base.json".to_string(),
+        });
+        let layout = manifest.layout(root.path(), OPTIONS);
+        assert_eq!(layout.definition_files, Vec::<PathBuf>::new());
     }
 
     #[test]
