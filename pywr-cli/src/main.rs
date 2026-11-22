@@ -496,6 +496,7 @@ fn run(
     threads: usize,
     ignore_feature_requirements: bool,
 ) -> Result<()> {
+    create_output_dir(output_path)?;
     let schema_v2 = ModelSchema::from_path(path).with_context(|| format!("Failed to load model: {path:?}"))?;
     let data_path = data_path.or_else(|| path.parent());
 
@@ -512,6 +513,7 @@ fn run(
 }
 
 fn run_multi(path: &Path, solver: &Solver, data_path: Option<&Path>, output_path: Option<&Path>) -> Result<()> {
+    create_output_dir(output_path)?;
     let schema_v2 =
         MultiNetworkModelSchema::from_path(path).with_context(|| format!("Failed to load model: {path:?}"))?;
     let data_path = data_path.or_else(|| path.parent());
@@ -540,6 +542,15 @@ fn run_multi(path: &Path, solver: &Solver, data_path: Option<&Path>, output_path
     }
     .context("Failed to run the model")?;
 
+    Ok(())
+}
+
+/// Create the output directory, if one is given, so outputs can be written into it.
+fn create_output_dir(output_path: Option<&Path>) -> Result<()> {
+    if let Some(output_path) = output_path {
+        std::fs::create_dir_all(output_path)
+            .with_context(|| format!("Failed to create output directory {output_path:?}"))?;
+    }
     Ok(())
 }
 
@@ -608,6 +619,7 @@ fn run_project(
     threads: usize,
     ignore_feature_requirements: bool,
 ) -> Result<()> {
+    create_output_dir(output_path)?;
     let project = pywr_project::Project::open(path).with_context(|| format!("Failed to open project: {path:?}"))?;
     let data_path = data_path.or_else(|| path.parent());
     let options = pywr_schema::NetworkMergeOptions::default();
