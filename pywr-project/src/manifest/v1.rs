@@ -515,7 +515,12 @@ impl ProjectManifest {
                 policy: &options.dependency_policy,
                 loaded: HashMap::new(),
                 hashes: HashMap::new(),
-                stack: Vec::new(),
+                // The root project starts the chain, so a dependency leading back to it is a cycle.
+                stack: options
+                    .manifest_path
+                    .iter()
+                    .filter_map(|path| path.canonicalize().ok())
+                    .collect(),
             };
             loader.load_dependencies(&mut graph, ROOT, problems);
         }
@@ -2830,6 +2835,7 @@ where
 mod test {
     const OPTIONS: &ResolveOptions = &ResolveOptions {
         dependency_policy: DependencyPolicy::Allow,
+        manifest_path: None,
     };
     use super::*;
     use pywr_schema::meta::ComponentMeta;
@@ -5046,12 +5052,15 @@ mod test {
         };
         assert!(not_allowed(&ResolveOptions {
             dependency_policy: DependencyPolicy::Deny,
+            manifest_path: None,
         }));
         assert!(not_allowed(&ResolveOptions {
             dependency_policy: DependencyPolicy::AllowWithin(root.clone()),
+            manifest_path: None,
         }));
         let within_workspace = ResolveOptions {
             dependency_policy: DependencyPolicy::AllowWithin(workspace.path().to_path_buf()),
+            manifest_path: None,
         };
         assert!(manifest.validate(&root, &within_workspace).is_ok());
 
@@ -5097,6 +5106,45 @@ mod test {
             [ProjectManifestProblem::Resolution(ManifestResolutionError::DependencyHashMismatch { dependency, .. })]
                 if dependency == "org"
         ));
+    }
+
+    #[test]
+    fn a_dependency_leading_back_to_the_root_is_a_cycle_starting_at_the_root() {
+        let workspace = workspace();
+        let root = workspace.path().join("main");
+        write_json(
+            &workspace.path().join("a/pywr-project.json"),
+            serde_json::json!({"format": "v1", "dependencies": [{"name": "back", "manifest": "../main/pywr-project.json"}]}),
+        );
+        let mut manifest = main_manifest(vec![]);
+        manifest.dependencies = vec![dependency("a", "../a/pywr-project.json")];
+        let manifest_path = root.join("pywr-project.json");
+        std::fs::write(
+            &manifest_path,
+            serde_json::to_vec(&super::super::ProjectManifest::V1(manifest.clone())).unwrap(),
+        )
+        .unwrap();
+        let options = ResolveOptions {
+            dependency_policy: DependencyPolicy::Allow,
+            manifest_path: Some(manifest_path.clone()),
+        };
+        let report = manifest.validate(&root, &options).unwrap_err();
+        let [ProjectManifestProblem::InDependency { dependency, problem }] = report.problems.as_slice() else {
+            panic!("{}", report.report());
+        };
+        let ProjectManifestProblem::DependencyCycle { cycle } = problem.as_ref() else {
+            panic!("{problem}");
+        };
+        let canonical = |path: &Path| path.canonicalize().unwrap();
+        assert_eq!(dependency, "a");
+        assert_eq!(
+            cycle,
+            &[
+                canonical(&manifest_path),
+                canonical(&workspace.path().join("a/pywr-project.json")),
+                canonical(&manifest_path)
+            ]
+        );
     }
 
     #[test]
