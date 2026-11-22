@@ -2099,10 +2099,10 @@ fn unique_network_references<'a>(
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum SetLimits {
     /// The sets of the project with this index, as for one of its models, which its project's
-    /// limits are written for. The sets of its active sub-networks are included.
+    /// limits are written for. The sets of active sub-networks are included, in any project.
     ModelOf(usize),
-    /// Only the sets of the root project's active sub-networks, as for a network of a
-    /// multi-model that is not built from a model, and is only one part of the multi-model.
+    /// No project's sets, as for a network of a multi-model that is not built from a model, and
+    /// is only one part of the multi-model. The sets of active sub-networks are still included.
     SelectedSets,
 }
 
@@ -2132,12 +2132,14 @@ fn check_composition(
             .iter()
             .filter(|selected| selected.set.is_some_and(|selected_set| std::ptr::eq(selected_set, set)))
             .count();
-        // Another project's sets are only constrained when something is selected from them, and
+        // An active sub-network's sets are always constrained, whichever project it is in. Other
+        // sets of another project are only constrained when something is selected from them, and
         // so are the root project's own sets for a multi-model network that is not a model.
-        let selected_only = match limits {
-            SetLimits::ModelOf(project) => set.project != project,
-            SetLimits::SelectedSets => set.project != ROOT || set.sub_network.is_none(),
-        };
+        let selected_only = set.sub_network.is_none()
+            && match limits {
+                SetLimits::ModelOf(project) => set.project != project,
+                SetLimits::SelectedSets => true,
+            };
         if selected_only && count == 0 {
             continue;
         }
@@ -5315,6 +5317,42 @@ mod test {
             messages,
             [
                 "The model definition `dep::m` selects 0 file(s) from network set `dep::required`, but at least 1 are required."
+            ]
+        );
+    }
+
+    #[test]
+    fn an_active_dependency_sub_network_is_held_to_its_set_limits() {
+        let workspace = workspace();
+        let root = workspace.path().join("main");
+        std::fs::create_dir_all(workspace.path().join("dep/upper/options")).unwrap();
+        write_json(
+            &workspace.path().join("dep/pywr-project.json"),
+            serde_json::json!({
+                "format": "v1",
+                "sub_networks": [{"name": "upper", "network_sets": [{"name": "options", "min_files": 1}]}],
+                "exports": {"sub_networks": ["upper"]}
+            }),
+        );
+        let mut manifest = main_manifest(vec![with_sub_networks(model("local", vec![]), vec!["dep::upper"])]);
+        manifest.dependencies = vec![dependency("dep", "../dep/pywr-project.json")];
+        let mut network = multi_network("upper", None);
+        network.sub_networks = vec!["dep::upper".to_string()];
+        manifest.multi_models = vec![MultiModelDefinition {
+            name: "joint".to_string(),
+            domain: MultiModelDomain::Model(ModelDomain {
+                name: "local".to_string(),
+            }),
+            overrides: None,
+            networks: vec![network],
+        }];
+        let report = manifest.validate(&root, OPTIONS).unwrap_err();
+        let messages: Vec<_> = report.problems.iter().map(ToString::to_string).collect();
+        assert_eq!(
+            messages,
+            [
+                "The model definition `local` selects 0 file(s) from network set `dep::upper::options`, but at least 1 are required.",
+                "The multi-model network `joint/upper` selects 0 file(s) from network set `dep::upper::options`, but at least 1 are required.",
             ]
         );
     }
