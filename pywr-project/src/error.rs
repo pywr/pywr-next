@@ -341,6 +341,27 @@ pub enum ComposeModelError {
         max_files: usize,
         actual_files: usize,
     },
+    #[error("The network sets `{other}` and `{set}` both use the directory `{}`.", .path.display())]
+    SharedSetDirectory { set: String, other: String, path: PathBuf },
+    #[error("The network set `{set}` is in the directory of the sub-network `{sub_network}`.")]
+    SetInSubNetwork { set: String, sub_network: String },
+    #[error("The directories of the sub-networks `{other}` and `{sub_network}` overlap.")]
+    OverlappingSubNetworks { sub_network: String, other: String },
+    #[error("The base network of the sub-network `{sub_network}` is in the directory of the network set `{set}`.")]
+    BaseNetworkInSet { sub_network: String, set: String },
+    #[error("The {definition} reaches the file `{}` through both {first} and {second}.", .file.display())]
+    FileInSeveralSets {
+        definition: DefinitionRef,
+        file: PathBuf,
+        first: String,
+        second: String,
+    },
+    #[error("The {definition} selects the file `{file}` from {set} more than once, with different position offsets.")]
+    ConflictingPositionOffsets {
+        definition: DefinitionRef,
+        file: String,
+        set: String,
+    },
     #[error("The file `{file}` was not found in network set `{set}`.")]
     FileNotFound { set: String, file: String },
     #[error("The file `{file}` is selected more than once in network set `{set}`.")]

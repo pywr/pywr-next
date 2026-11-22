@@ -9,7 +9,7 @@ use pywr_schema::{
 use relative_path::RelativePathBuf;
 use std::path::{Path, PathBuf};
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct PositionOffset {
     pub schematic: Option<(f32, f32)>,
     pub geographic: Option<(f32, f32)>,

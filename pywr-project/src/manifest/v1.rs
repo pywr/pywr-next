@@ -200,6 +200,37 @@ pub enum ProjectManifestProblem {
         min_files: usize,
         max_files: usize,
     },
+    #[error(
+        "The network sets `{other}` and `{set}` both use the directory `{}`, but each set needs a directory of its own.", .path.display()
+    )]
+    SharedSetDirectory { set: String, other: String, path: PathBuf },
+    #[error(
+        "The network set `{set}` is in the directory of the sub-network `{sub_network}`; make it one of the sub-network's network sets instead."
+    )]
+    SetInSubNetwork { set: String, sub_network: String },
+    #[error(
+        "The directories of the sub-networks `{other}` and `{sub_network}` overlap, but each sub-network needs a directory of its own."
+    )]
+    OverlappingSubNetworks { sub_network: String, other: String },
+    #[error(
+        "The base network of the sub-network `{sub_network}` is in the directory of the network set `{set}`, but it must not also be a file of a network set."
+    )]
+    BaseNetworkInSet { sub_network: String, set: String },
+    #[error(
+        "The {definition} reaches the file `{}` through both {first} and {second}, but a file may be reached through only one.", .file.display()
+    )]
+    FileInSeveralSets {
+        definition: DefinitionRef,
+        file: PathBuf,
+        first: String,
+        second: String,
+    },
+    #[error("The {definition} selects the file `{file}` from {set} more than once, with different position offsets.")]
+    ConflictingPositionOffsets {
+        definition: DefinitionRef,
+        file: String,
+        set: String,
+    },
     #[error("The name `{dependency}` is used by {count} dependencies, but each name must be unique.")]
     DuplicateDependency { dependency: String, count: usize },
     #[error("The dependency name `{dependency}` is also the name of a sub-network, but the two share one namespace.")]
@@ -705,6 +736,7 @@ impl ProjectManifest {
                 }
             }
         }
+        project.check_directories(problems);
         project
     }
 }
@@ -779,6 +811,58 @@ impl ResolvedProject {
         self.sets.iter().find(|set| set.name == name)
     }
 
+    /// Report network sets and sub-networks whose directories overlap, so that each network file
+    /// belongs to one network set, or is one sub-network's base network, and lies in at most one
+    /// sub-network.
+    ///
+    /// Network sets may be nested, since a set holds only the files directly in its directory.
+    fn check_directories(&self, problems: &mut Vec<ProjectManifestProblem>) {
+        let mut reported = HashSet::new();
+        for (index, set) in self.sets.iter().enumerate() {
+            if let Some(other) = self.sets[..index].iter().find(|other| other.dir == set.dir) {
+                reported.insert(&set.name);
+                reported.insert(&other.name);
+                problems.push(ProjectManifestProblem::SharedSetDirectory {
+                    set: set.name.clone(),
+                    other: other.name.clone(),
+                    path: set.dir.clone(),
+                });
+            }
+        }
+        for set in self.sets.iter().filter(|set| set.sub_network.is_none()) {
+            if !reported.contains(&set.name)
+                && let Some(sub_network) = self.sub_networks.iter().find(|sub| set.dir.starts_with(&sub.dir))
+            {
+                problems.push(ProjectManifestProblem::SetInSubNetwork {
+                    set: set.name.clone(),
+                    sub_network: sub_network.name.clone(),
+                });
+            }
+        }
+        for (index, sub_network) in self.sub_networks.iter().enumerate() {
+            if let Some(other) = self.sub_networks[..index]
+                .iter()
+                .find(|other| other.dir.starts_with(&sub_network.dir) || sub_network.dir.starts_with(&other.dir))
+            {
+                problems.push(ProjectManifestProblem::OverlappingSubNetworks {
+                    sub_network: sub_network.name.clone(),
+                    other: other.name.clone(),
+                });
+            }
+            if let Some(base_network) = &sub_network.base_network
+                && let Some(set) = self
+                    .sets
+                    .iter()
+                    .find(|set| set.files.iter().any(|file| file.path == base_network.path))
+            {
+                problems.push(ProjectManifestProblem::BaseNetworkInSet {
+                    sub_network: sub_network.name.clone(),
+                    set: set.name.clone(),
+                });
+            }
+        }
+    }
+
     fn sub_network(&self, name: &str) -> Option<&ResolvedSubNetwork> {
         self.sub_networks.iter().find(|sub_network| sub_network.name == name)
     }
@@ -817,6 +901,19 @@ struct SelectedFile<'a> {
 }
 
 impl SelectedFile<'_> {
+    /// How the file was reached, for problems: through a network set, or as a sub-network's
+    /// base network.
+    fn route(&self) -> String {
+        match (self.set, &self.file.sub_network) {
+            (Some(set), _) => format!("network set `{}`", set.label),
+            (None, Some(sub_network)) => format!(
+                "the base network of sub-network `{}`",
+                qualify(self.file.project.as_deref(), sub_network)
+            ),
+            (None, None) => "a base network".to_string(),
+        }
+    }
+
     fn into_composed(self) -> ComposedNetworkPath {
         ComposedNetworkPath {
             path: self.file.path.clone(),
@@ -850,8 +947,45 @@ impl<'a> Expansion<'a> {
         self.active_sub_networks.extend(other.active_sub_networks);
     }
 
-    /// Remove files reached by more than one route, keeping the first occurrence.
-    fn dedup(&mut self) {
+    /// Merge each file selected more than once into its first selection, reporting a file
+    /// reached through more than one network set, or given different position offsets.
+    ///
+    /// A file is often reached twice legitimately, such as through two networks that extend the
+    /// same parent, so a repeat that agrees with the first selection is not a problem.
+    fn dedup(&mut self, definition: &DefinitionRef, problems: &mut Vec<ProjectManifestProblem>) {
+        let mut first: HashMap<&Path, &SelectedFile<'_>> = HashMap::new();
+        let mut reported = HashSet::new();
+        for selected in &self.files {
+            let Some(earlier) = first.get(selected.file.path.as_path()) else {
+                first.insert(&selected.file.path, selected);
+                continue;
+            };
+            let same_set = match (earlier.set, selected.set) {
+                (Some(earlier), Some(selected)) => std::ptr::eq(earlier, selected),
+                (None, None) => true,
+                _ => false,
+            };
+            let problem = if !same_set {
+                ProjectManifestProblem::FileInSeveralSets {
+                    definition: definition.clone(),
+                    file: selected.file.path.clone(),
+                    first: earlier.route(),
+                    second: selected.route(),
+                }
+            } else if earlier.position_offset != selected.position_offset {
+                ProjectManifestProblem::ConflictingPositionOffsets {
+                    definition: definition.clone(),
+                    file: selected.file.source.to_string(),
+                    set: selected.route(),
+                }
+            } else {
+                continue;
+            };
+            if reported.insert(&selected.file.path) {
+                problems.push(problem);
+            }
+        }
+
         let mut seen = HashSet::new();
         self.files.retain(|selected| seen.insert(&selected.file.path));
         let mut seen = HashSet::new();
@@ -1400,7 +1534,7 @@ impl<'a> Resolver<'a> {
         }
         let includes = self.resolve_includes(index, &definition, None, &model.include, problems);
         expansion.files.extend(includes);
-        expansion.dedup();
+        expansion.dedup(&definition, problems);
         self.attribute(index, problems, start);
         self.expanded_models.insert((index, &model.name), expansion.clone());
         expansion
@@ -1456,7 +1590,7 @@ impl<'a> Resolver<'a> {
         expansion.files.extend(includes);
         self.stack.pop();
 
-        expansion.dedup();
+        expansion.dedup(&definition, problems);
         self.attribute(index, problems, start);
         self.expanded.insert((index, &network.name), expansion.clone());
         expansion
@@ -1634,6 +1768,30 @@ impl From<ProjectManifestProblem> for ComposeModelError {
                 min_files,
                 max_files,
             },
+            ProjectManifestProblem::SharedSetDirectory { set, other, path } => {
+                Self::SharedSetDirectory { set, other, path }
+            }
+            ProjectManifestProblem::SetInSubNetwork { set, sub_network } => Self::SetInSubNetwork { set, sub_network },
+            ProjectManifestProblem::OverlappingSubNetworks { sub_network, other } => {
+                Self::OverlappingSubNetworks { sub_network, other }
+            }
+            ProjectManifestProblem::BaseNetworkInSet { sub_network, set } => {
+                Self::BaseNetworkInSet { sub_network, set }
+            }
+            ProjectManifestProblem::FileInSeveralSets {
+                definition,
+                file,
+                first,
+                second,
+            } => Self::FileInSeveralSets {
+                definition,
+                file,
+                first,
+                second,
+            },
+            ProjectManifestProblem::ConflictingPositionOffsets { definition, file, set } => {
+                Self::ConflictingPositionOffsets { definition, file, set }
+            }
             ProjectManifestProblem::DuplicateDependency { dependency, .. } => Self::DuplicateDependency { dependency },
             ProjectManifestProblem::DependencyNameTaken { dependency } => Self::DependencyNameTaken { dependency },
             ProjectManifestProblem::DependencyCycle { cycle } => Self::DependencyCycle { cycle },
@@ -2023,7 +2181,7 @@ impl MultiModelNetwork {
         }
         let includes = resolver.resolve_includes(ROOT, &label, None, &self.include, problems);
         expansion.files.extend(includes);
-        expansion.dedup();
+        expansion.dedup(&label, problems);
         check_composition(&label, &expansion, resolver.graph, problems);
 
         let transfers = self.resolve_transfers(multi_model, &resolver.project(ROOT).root, problems);
@@ -2192,6 +2350,8 @@ struct ResolvedNetworkSet {
     /// The set's name within its sub-network or project, as recorded in provenance.
     set_name: String,
     sub_network: Option<String>,
+    /// The canonical path of the set's directory.
+    dir: PathBuf,
     min_files: Option<usize>,
     max_files: Option<usize>,
     files: Vec<ResolvedNetworkFile>,
@@ -2215,6 +2375,8 @@ struct ResolvedSubNetwork {
     name: String,
     /// The index of the sub-network's project.
     project: usize,
+    /// The canonical path of the sub-network's directory.
+    dir: PathBuf,
     base_network: Option<ResolvedNetworkFile>,
 }
 
@@ -2392,6 +2554,7 @@ fn resolve_sub_network(
         ResolvedSubNetwork {
             name: name.clone(),
             project: project.index,
+            dir: sub_root.clone(),
             base_network,
         },
         SubNetworkScope {
@@ -2478,6 +2641,7 @@ fn resolve_network_set(
         alias: project.alias.clone(),
         set_name: set.name.clone(),
         sub_network: scope.map(|scope| scope.name.clone()),
+        dir: root,
         min_files: set.min_files,
         max_files: set.max_files,
         files,
@@ -3139,6 +3303,104 @@ mod test {
     }
 
     #[test]
+    fn each_network_file_belongs_to_one_set_and_one_sub_network() {
+        let root = project_with_sub_networks();
+        write_json(&root.path().join("nets/a.json"), input_network("a"));
+        let manifest = ProjectManifest {
+            sub_networks: vec![
+                sub_network("upper", Some("options/x.json"), vec![set("options", None, None, None)]),
+                sub_network("lower", Some("base.json"), vec![]),
+                SubNetwork {
+                    dir: Some("upper/options".to_string()),
+                    ..sub_network("nested", None, vec![])
+                },
+            ],
+            network_sets: vec![
+                set("copy", Some("nets"), None, None),
+                set("again", Some("nets"), None, None),
+                set("inside", Some("upper"), None, None),
+                set("shared", Some("upper/options"), None, None),
+            ],
+            ..sub_network_manifest(vec![], vec![])
+        };
+        let report = manifest.validate(root.path(), OPTIONS).unwrap_err();
+        let messages: Vec<_> = report.problems.iter().map(ToString::to_string).collect();
+        let nets = root.path().join("nets").canonicalize().unwrap();
+        let options = root.path().join("upper/options").canonicalize().unwrap();
+        assert_eq!(
+            messages,
+            [
+                format!(
+                    "The network sets `copy` and `again` both use the directory `{}`, but each set needs a directory of its own.",
+                    nets.display()
+                ),
+                format!(
+                    "The network sets `shared` and `upper::options` both use the directory `{}`, but each set needs a directory of its own.",
+                    options.display()
+                ),
+                "The network set `inside` is in the directory of the sub-network `upper`; make it one of the sub-network's network sets instead.".to_string(),
+                "The base network of the sub-network `upper` is in the directory of the network set `shared`, but it must not also be a file of a network set.".to_string(),
+                "The directories of the sub-networks `upper` and `nested` overlap, but each sub-network needs a directory of its own.".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_file_selected_with_different_offsets_is_reported() {
+        let root = project_with_nets();
+        let manifest = nets_manifest(
+            vec![
+                network(
+                    "moved",
+                    vec![],
+                    vec![with_offset(selection("nets", Some(vec!["a.json"]), false), "a.json")],
+                ),
+                network("plain", vec![], vec![selection("nets", Some(vec!["a.json"]), false)]),
+            ],
+            vec![uses_networks(model("test", vec![]), vec!["moved", "plain"])],
+        );
+        let report = manifest.validate(root.path(), OPTIONS).unwrap_err();
+        let messages: Vec<_> = report.problems.iter().map(ToString::to_string).collect();
+        assert_eq!(
+            messages,
+            [
+                "The model definition `test` selects the file `nets/a.json` from network set `nets` more than once, with different position offsets."
+            ]
+        );
+    }
+
+    #[test]
+    fn a_file_reached_through_two_projects_sets_is_reported() {
+        let root = project_with_nets();
+        // A second manifest in the same directory, whose set is the same directory as `nets`.
+        write_json(
+            &root.path().join("twin.json"),
+            serde_json::json!({"format": "v1", "network_sets": [{"name": "nets"}]}),
+        );
+        let mut manifest = nets_manifest(
+            vec![],
+            vec![model(
+                "test",
+                vec![
+                    selection("nets", Some(vec!["a.json"]), false),
+                    selection("twin::nets", Some(vec!["a.json"]), false),
+                ],
+            )],
+        );
+        manifest.dependencies = vec![dependency("twin", "twin.json")];
+        let report = manifest.validate(root.path(), OPTIONS).unwrap_err();
+        let messages: Vec<_> = report.problems.iter().map(ToString::to_string).collect();
+        let file = root.path().join("nets/a.json").canonicalize().unwrap();
+        assert_eq!(
+            messages,
+            [format!(
+                "The model definition `test` reaches the file `{}` through both network set `nets` and network set `twin::nets`, but a file may be reached through only one.",
+                file.display()
+            )]
+        );
+    }
+
+    #[test]
     fn set_constraints_apply_to_the_whole_model_not_each_network() {
         let root = project_with_nets();
         let manifest = ProjectManifest {
@@ -3679,8 +3941,9 @@ mod test {
     #[test]
     fn names_must_not_contain_the_separator() {
         let root = project_with_sub_networks();
+        write_json(&root.path().join("nets/a.json"), input_network("a"));
         let mut manifest = sub_network_manifest(vec![], vec![]);
-        manifest.network_sets.push(set("a::b", Some("upper"), None, None));
+        manifest.network_sets.push(set("a::b", Some("nets"), None, None));
         assert!(matches!(
             manifest.validate(root.path(), OPTIONS).unwrap_err().problems.as_slice(),
             [ProjectManifestProblem::InvalidName { kind: "network set", name }] if name == "a::b"
