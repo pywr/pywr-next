@@ -110,8 +110,8 @@ pub use turbine::{TargetType, TurbineNode, TurbineNodeAttribute, TurbineNodeComp
 pub use virtual_nodes::{
     AggregatedNode, AggregatedNodeAttribute, AggregatedStorageNode, AggregatedStorageNodeAttribute, AnnualReset,
     Relationship, RelationshipType, RollingWindow, RollingWindowType, SeasonalReset, VirtualNode, VirtualNodeType,
-    VirtualStorageNode, VirtualStorageNodeAttribute, VirtualStorageReset, VirtualStorageResetType,
-    VirtualStorageResetVolume, VirtualStorageResetVolumeType,
+    VirtualStorageCostAggregation, VirtualStorageCostAggregationType, VirtualStorageNode, VirtualStorageNodeAttribute,
+    VirtualStorageReset, VirtualStorageResetType, VirtualStorageResetVolume, VirtualStorageResetVolumeType,
 };
 pub use water_treatment_works::{
     WaterTreatmentWorksNode, WaterTreatmentWorksNodeAttribute, WaterTreatmentWorksNodeComponent,

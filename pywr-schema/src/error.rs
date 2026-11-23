@@ -87,6 +87,13 @@ pub enum SchemaError {
     RbfEpsilonEstimation,
     #[error("Inter-network transfer with name {0} not found")]
     InterNetworkTransferNotFound(String),
+    #[cfg(feature = "core")]
+    #[error("The virtual storage cost cannot be applied to the node `{node}`.")]
+    VirtualStorageCostAggregation {
+        node: String,
+        #[source]
+        source: Box<pywr_core::node::NodeBuilderError>,
+    },
     #[error("Invalid rolling window definition on parameter {name}. Must convert to a positive integer.")]
     InvalidRollingWindow { name: String },
     #[error("Failed to load parameter {name}: {error}")]

@@ -3,7 +3,7 @@
 use crate::data_tables::{CsvDataTableLookup, DataTableValueType};
 use crate::edge::Edge;
 use crate::metric::ParameterReturnValue;
-use crate::nodes::{NodeAttribute, NodeComponent, NodeSlot, NodeType, VirtualNodeType};
+use crate::nodes::{NodeAttribute, NodeComponent, NodeSlot, NodeType, VirtualNodeType, VirtualStorageCostAggregation};
 use crate::parameters::ParameterPhase;
 use crate::visit::Owner;
 use jiff::civil::DateTime;
@@ -711,6 +711,19 @@ pub enum NetworkProblem {
         node: String,
         node_type: NodeType,
         problem: MemberProblem,
+    },
+    /// Two virtual storage nodes that give a node different cost aggregations. A node has one
+    /// aggregation for all of the virtual storage nodes it belongs to.
+    #[error(
+        "The virtual nodes `{first}` and `{second}` give the node `{node}` different cost aggregations (`{first_aggregation}` and `{second_aggregation}`), but a node can only have one."
+    )]
+    ConflictingCostAggregation {
+        /// The node, with its component in brackets if the references give one.
+        node: String,
+        first: String,
+        first_aggregation: VirtualStorageCostAggregation,
+        second: String,
+        second_aggregation: VirtualStorageCostAggregation,
     },
     /// A metric that cannot read the node it names.
     #[error("{}", .problem.message(&format!("The {owner}"), &format!("the `{node_type}` node `{node}`")))]

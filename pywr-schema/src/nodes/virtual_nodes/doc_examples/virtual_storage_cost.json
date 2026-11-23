@@ -1,0 +1,58 @@
+{
+  "meta": {
+    "name": "licence"
+  },
+  "type": "VirtualStorage",
+  "nodes": [
+    {
+      "name": "abstraction1"
+    }
+  ],
+  "max_volume": {
+    "type": "Literal",
+    "value": 1000.0
+  },
+  "initial_volume": {
+    "type": "Proportional",
+    "proportion": 1.0
+  },
+  "cost": {
+    "type": "LocalParameter",
+    "name": "cost"
+  },
+  "cost_aggregation": "Sum",
+  "parameters": [
+    {
+      "meta": {
+        "name": "cost"
+      },
+      "type": "ControlCurveInterpolated",
+      "phase": "Before",
+      "storage_metric": {
+        "type": "VirtualNode",
+        "name": "licence",
+        "attribute": "ProportionalVolume"
+      },
+      "control_curves": [
+        {
+          "type": "Literal",
+          "value": 0.5
+        }
+      ],
+      "values": [
+        {
+          "type": "Literal",
+          "value": 0.0
+        },
+        {
+          "type": "Literal",
+          "value": 5.0
+        },
+        {
+          "type": "Literal",
+          "value": 20.0
+        }
+      ]
+    }
+  ]
+}

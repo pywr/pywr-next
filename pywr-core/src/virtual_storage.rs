@@ -89,6 +89,11 @@ impl VirtualStorageNodeBuilder {
         &self.nodes
     }
 
+    /// The factor for each node, in the same order as [`Self::nodes`].
+    pub fn factors(&self) -> &[f64] {
+        &self.factors
+    }
+
     pub fn sub_name(&mut self, sub_name: &str) -> &mut Self {
         self.name.set_sub_name(Some(sub_name));
         self
@@ -391,11 +396,12 @@ impl VirtualStorageNode {
         VirtualStorageState::new(0.0, 0.0, self.rolling_window)
     }
 
-    pub fn get_cost(&self, network: &Network, state: &State) -> Result<f64, MetricF64Error> {
-        match &self.cost {
-            None => Ok(0.0),
-            Some(m) => m.get_value(network, state),
-        }
+    /// The virtual storage's cost, or `None` if it has no cost.
+    ///
+    /// This cost only applies to the nodes that aggregate it; see
+    /// [`NodeBuilder::cost_agg_func`](crate::node::NodeBuilder::cost_agg_func).
+    pub fn get_cost(&self, network: &Network, state: &State) -> Result<Option<f64>, MetricF64Error> {
+        self.cost.as_ref().map(|m| m.get_value(network, state)).transpose()
     }
 
     pub fn before(&self, timestep: &Timestep, state: &mut State) -> Result<(), VirtualStorageError> {
@@ -498,7 +504,9 @@ mod tests {
     use crate::metric::UnresolvedMetricF64;
     use crate::models::ModelBuilder;
     use crate::network::{NetworkBuildError, NetworkBuilder};
-    use crate::node::{CostAggFunc, NodeBuilder, NodeType, UnresolvedNode, UnresolvedStorageInitialVolume};
+    use crate::node::{
+        CostAggFunc, NodeBuilder, NodeBuilderError, NodeType, UnresolvedNode, UnresolvedStorageInitialVolume,
+    };
     use crate::parameters::ControlCurveInterpolatedParameterBuilder;
     use crate::recorders::{AssertionF64RecorderBuilder, AssertionFnRecorderBuilder};
     use crate::scenario::ScenarioIndex;
@@ -675,7 +683,7 @@ mod tests {
         // Make the input use any VS costs
         let name = "input".into();
         let node = network_builder.node_builder(&name).unwrap();
-        node.cost_agg_func(CostAggFunc::Max);
+        node.cost_agg_func(CostAggFunc::Max).unwrap();
 
         let nodes = vec!["input".into()];
         // Virtual storage node cost is high enough to prevent any flow
@@ -723,7 +731,7 @@ mod tests {
         // Make the input use any VS costs
         let name = "input".into();
         let node = network_builder.node_builder(&name).unwrap();
-        node.cost_agg_func(CostAggFunc::Max);
+        node.cost_agg_func(CostAggFunc::Max).unwrap();
 
         let mut vs_builder = VirtualStorageNodeBuilder::new(
             "vs",
@@ -778,6 +786,160 @@ mod tests {
 
         // Test all solvers
         run_all_solvers(&model, &["ipm-ocl-f64", "ipm-simd"], &[], &[]);
+    }
+
+    /// A virtual storage on `nodes` with a constant `cost`, a large volume and no reset.
+    fn cost_vs_builder(
+        name: &str,
+        nodes: &[UnresolvedNode],
+        factors: &[f64],
+        cost: f64,
+        active_period: VirtualStorageActivePeriod,
+    ) -> VirtualStorageNodeBuilder {
+        let mut vs_builder = VirtualStorageNodeBuilder::new(
+            name,
+            nodes,
+            factors,
+            UnresolvedStorageInitialVolume::Proportional(1.0),
+            VirtualStorageReset::Never,
+            VirtualStorageResetVolume::Initial,
+            active_period,
+        );
+        vs_builder.cost(cost.into()).max_volume(1000.0.into());
+        vs_builder
+    }
+
+    /// Build `model_builder` and check the output receives `expected` on every time-step.
+    fn assert_output_flow(
+        mut model_builder: ModelBuilder,
+        expected: impl Fn(&Timestep) -> f64 + Send + Sync + 'static,
+    ) {
+        let recorder = AssertionFnRecorderBuilder::new(
+            "output-flow",
+            UnresolvedMetricF64::NodeInFlow("output".into()),
+            move |ts: &Timestep, _si: &ScenarioIndex| expected(ts),
+        );
+        model_builder.network_builder().recorder(Box::new(recorder));
+        let model = model_builder.build().unwrap();
+        run_all_solvers(&model, &["ipm-ocl-f64", "ipm-simd"], &[], &[]);
+    }
+
+    /// The flow the simple model delivers when nothing stops it.
+    fn unconstrained_flow(ts: &Timestep) -> f64 {
+        (1.0 + ts.index as f64).min(12.0)
+    }
+
+    #[test]
+    /// The virtual storage cost is multiplied by the node's factor. A cost of 6 is less than the
+    /// demand's benefit of 10, but with a factor of 2 it is more.
+    fn test_virtual_storage_node_cost_factor() {
+        let mut model_builder = simple_model(1, None);
+        let network_builder = model_builder.network_builder();
+        network_builder
+            .node_builder(&"input".into())
+            .unwrap()
+            .cost_agg_func(CostAggFunc::Sum)
+            .unwrap();
+        network_builder.virtual_storage_node(cost_vs_builder(
+            "vs",
+            &["input".into()],
+            &[2.0],
+            6.0,
+            VirtualStorageActivePeriod::Always,
+        ));
+
+        assert_output_flow(model_builder, |_| 0.0);
+    }
+
+    #[test]
+    /// With `Sum`, the costs of every virtual storage the node belongs to add up. Each cost alone
+    /// is less than the demand's benefit of 10, but together they are more.
+    fn test_virtual_storage_node_cost_sum() {
+        let mut model_builder = simple_model(1, None);
+        let network_builder = model_builder.network_builder();
+        network_builder
+            .node_builder(&"input".into())
+            .unwrap()
+            .cost_agg_func(CostAggFunc::Sum)
+            .unwrap();
+        for (name, cost) in [("vs1", 4.0), ("vs2", 7.0)] {
+            network_builder.virtual_storage_node(cost_vs_builder(
+                name,
+                &["input".into()],
+                &[1.0],
+                cost,
+                VirtualStorageActivePeriod::Always,
+            ));
+        }
+
+        assert_output_flow(model_builder, |_| 0.0);
+    }
+
+    #[test]
+    /// A node without a cost of its own aggregates only the virtual storage costs, so `Min` of a
+    /// single cost of 20 is 20, not the minimum of 20 and zero.
+    fn test_virtual_storage_node_cost_min_without_local_cost() {
+        let mut model_builder = simple_model(1, None);
+        let network_builder = model_builder.network_builder();
+        network_builder
+            .node_builder(&"input".into())
+            .unwrap()
+            .cost_agg_func(CostAggFunc::Min)
+            .unwrap();
+        network_builder.virtual_storage_node(cost_vs_builder(
+            "vs",
+            &["input".into()],
+            &[1.0],
+            20.0,
+            VirtualStorageActivePeriod::Always,
+        ));
+
+        assert_output_flow(model_builder, |_| 0.0);
+    }
+
+    #[test]
+    /// A virtual storage's cost does not apply outside its active period. The model runs in
+    /// January and the virtual storage is only active in February.
+    fn test_virtual_storage_node_cost_inactive() {
+        let mut model_builder = simple_model(1, None);
+        let network_builder = model_builder.network_builder();
+        network_builder
+            .node_builder(&"input".into())
+            .unwrap()
+            .cost_agg_func(CostAggFunc::Max)
+            .unwrap();
+        network_builder.virtual_storage_node(cost_vs_builder(
+            "vs",
+            &["input".into()],
+            &[1.0],
+            20.0,
+            VirtualStorageActivePeriod::Period {
+                start_day: 1,
+                start_month: 2,
+                end_day: 28,
+                end_month: 2,
+            },
+        ));
+
+        assert_output_flow(model_builder, unconstrained_flow);
+    }
+
+    #[test]
+    /// A node has one cost aggregation, so setting a different one is an error.
+    fn test_conflicting_cost_agg_func() {
+        let mut node = NodeBuilder::input("input");
+        node.cost_agg_func(CostAggFunc::Sum).unwrap();
+        // Setting the same function again is allowed.
+        node.cost_agg_func(CostAggFunc::Sum).unwrap();
+
+        let err = node.cost_agg_func(CostAggFunc::Max).unwrap_err();
+        assert!(matches!(
+            err,
+            NodeBuilderError::ConflictingCostAggFunc {
+                existing: CostAggFunc::Sum,
+                requested: CostAggFunc::Max
+            }
+        ));
     }
 
     #[test]

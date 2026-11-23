@@ -1,0 +1,175 @@
+{
+  "metadata": {
+    "title": "Virtual storage cost",
+    "description": "Two licences add their costs to supply1, making it more expensive than supply2. A third licence has a cost but no aggregation, so its cost is ignored, as in pywr v1.",
+    "minimum_version": "0.1"
+  },
+  "time": {
+    "start": "2015-01-01",
+    "end": "2015-01-03",
+    "timestep": {
+      "type": "Days",
+      "days": 1
+    }
+  },
+  "network": {
+    "nodes": [
+      {
+        "meta": {
+          "name": "supply1"
+        },
+        "type": "Input",
+        "max_flow": {
+          "type": "Literal",
+          "value": 15.0
+        },
+        "cost": {
+          "type": "Literal",
+          "value": 1.0
+        }
+      },
+      {
+        "meta": {
+          "name": "supply2"
+        },
+        "type": "Input",
+        "max_flow": {
+          "type": "Literal",
+          "value": 15.0
+        },
+        "cost": {
+          "type": "Literal",
+          "value": 5.0
+        }
+      },
+      {
+        "meta": {
+          "name": "demand1"
+        },
+        "type": "Output",
+        "max_flow": {
+          "type": "Literal",
+          "value": 10.0
+        },
+        "cost": {
+          "type": "Literal",
+          "value": -10.0
+        }
+      }
+    ],
+    "virtual_nodes": [
+      {
+        "meta": {
+          "name": "licence1"
+        },
+        "type": "VirtualStorage",
+        "nodes": [
+          {
+            "name": "supply1"
+          }
+        ],
+        "max_volume": {
+          "type": "Literal",
+          "value": 1000.0
+        },
+        "cost": {
+          "type": "Literal",
+          "value": 3.0
+        },
+        "cost_aggregation": "Sum",
+        "initial_volume": {
+          "type": "Proportional",
+          "proportion": 1.0
+        }
+      },
+      {
+        "meta": {
+          "name": "licence2"
+        },
+        "type": "VirtualStorage",
+        "nodes": [
+          {
+            "name": "supply1"
+          }
+        ],
+        "factors": [
+          0.5
+        ],
+        "max_volume": {
+          "type": "Literal",
+          "value": 1000.0
+        },
+        "cost": {
+          "type": "Literal",
+          "value": 4.0
+        },
+        "cost_aggregation": "Sum",
+        "initial_volume": {
+          "type": "Proportional",
+          "proportion": 1.0
+        }
+      },
+      {
+        "meta": {
+          "name": "licence3"
+        },
+        "type": "VirtualStorage",
+        "nodes": [
+          {
+            "name": "supply2"
+          }
+        ],
+        "max_volume": {
+          "type": "Literal",
+          "value": 1000.0
+        },
+        "cost": {
+          "type": "Literal",
+          "value": 100.0
+        },
+        "initial_volume": {
+          "type": "Proportional",
+          "proportion": 1.0
+        }
+      }
+    ],
+    "edges": [
+      {
+        "from_node": "supply1",
+        "to_node": "demand1"
+      },
+      {
+        "from_node": "supply2",
+        "to_node": "demand1"
+      }
+    ],
+    "metric_sets": [
+      {
+        "meta": {
+          "name": "nodes"
+        },
+        "metrics": [
+          {
+            "type": "Node",
+            "name": "supply1"
+          },
+          {
+            "type": "Node",
+            "name": "supply2"
+          }
+        ]
+      }
+    ],
+    "outputs": [
+      {
+        "meta": {
+          "name": "my-outputs"
+        },
+        "type": "CSV",
+        "format": "Long",
+        "filename": "vs-cost1-expected.csv",
+        "metric_set": "nodes"
+      }
+    ]
+  }
+}

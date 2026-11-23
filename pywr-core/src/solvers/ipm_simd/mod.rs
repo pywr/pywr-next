@@ -298,7 +298,7 @@ impl BuiltSolver {
         timings: &mut SolverTimings,
     ) -> Result<(), SolverSolveError> {
         let start_objective_update = Instant::now();
-        self.update_edge_objectives(network, states)?;
+        self.update_edge_objectives(network, timestep, states)?;
         timings.update_objective += start_objective_update.elapsed();
 
         let start_constraint_update = Instant::now();
@@ -312,14 +312,19 @@ impl BuiltSolver {
     }
 
     /// Update edge objective coefficients
-    fn update_edge_objectives(&mut self, network: &Network, states: &[State]) -> Result<(), SolverSolveError> {
+    fn update_edge_objectives(
+        &mut self,
+        network: &Network,
+        timestep: &Timestep,
+        states: &[State],
+    ) -> Result<(), SolverSolveError> {
         self.lp.zero_obj_coefficients();
         for edge in network.edges() {
             // Collect all of the costs for all states together
             let cost = states
                 .iter()
                 .map(|s| {
-                    edge.cost(network.nodes(), network, s)
+                    edge.cost(network.nodes(), network, timestep, s)
                         .map(|c| if c != 0.0 { -c } else { 0.0 })
                 })
                 .collect::<Result<Vec<f64>, _>>()
