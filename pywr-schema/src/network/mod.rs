@@ -16,6 +16,7 @@ use crate::metric_sets::MetricSet;
 #[cfg(feature = "core")]
 use crate::model::MultiNetworkTransfer;
 use crate::outputs::Output;
+use crate::template::{self, LookupError, TemplateError, TemplateUse};
 use crate::time_series::TimeSeries;
 #[cfg(feature = "core")]
 use crate::time_series::{LoadedTimeSeriesCollection, LoadedTimeSeriesCollectionError};
@@ -51,6 +52,12 @@ pub enum NetworkSchemaReadError {
     },
     #[error("JSON error deserialising network.")]
     Json(#[from] serde_json::Error),
+    #[error("Failed to fill in the templates of `{path}`.")]
+    Template {
+        path: PathBuf,
+        #[source]
+        source: TemplateError,
+    },
 }
 
 /// Error type for building a `pywr_core::PywrNetwork` network from a schema ([`NetworkSchema`]).
@@ -452,8 +459,32 @@ impl NetworkSchema {
         Self::from_files(&FileSystem, path.as_ref())
     }
 
+    /// Read the network at `path`, replacing each `${name}` template in its string values with
+    /// the value `lookup` gives for it. See [`crate::template`].
+    ///
+    /// Unlike [`from_path`](Self::from_path), which leaves templates as they are, a template
+    /// that `lookup` gives no value for is an error.
+    pub fn from_path_with<P, F>(path: P, lookup: F) -> Result<Self, NetworkSchemaReadError>
+    where
+        P: AsRef<Path>,
+        F: FnMut(&TemplateUse) -> Result<String, LookupError>,
+    {
+        let path = path.as_ref();
+        let mut value: serde_json::Value = serde_json::from_str(&Self::read(&FileSystem, path)?)?;
+        template::substitute(&mut value, lookup).map_err(|source| NetworkSchemaReadError::Template {
+            path: path.to_path_buf(),
+            source,
+        })?;
+        Ok(serde_json::from_value(value)?)
+    }
+
     /// Read the network at `path` as `files` opens it.
     pub(crate) fn from_files(files: &dyn FileProvider, path: &Path) -> Result<Self, NetworkSchemaReadError> {
+        Ok(serde_json::from_str(&Self::read(files, path)?)?)
+    }
+
+    /// Read the text of the file at `path` as `files` opens it.
+    fn read(files: &dyn FileProvider, path: &Path) -> Result<String, NetworkSchemaReadError> {
         let mut data = String::new();
         files
             .open(path)
@@ -462,7 +493,7 @@ impl NetworkSchema {
                 path: path.to_path_buf(),
                 source,
             })?;
-        Ok(serde_json::from_str(data.as_str())?)
+        Ok(data)
     }
 
     /// Convert a v1 network to a v2 network.

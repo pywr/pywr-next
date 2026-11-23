@@ -20,6 +20,7 @@ pub mod nodes;
 pub mod outputs;
 pub mod parameters;
 mod py_utils;
+pub mod template;
 pub mod time_series;
 mod util;
 mod v1;

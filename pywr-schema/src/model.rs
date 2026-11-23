@@ -8,6 +8,7 @@ use crate::error::SchemaError;
 use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::network::{LoadArgs, NetworkSchemaBuildError, NetworkSchemaReadError};
+use crate::template::{self, LookupError, TemplateError, TemplateUse};
 #[cfg(feature = "core")]
 use crate::time_series::LoadedTimeSeriesCollection;
 use crate::util::duplicates;
@@ -632,6 +633,12 @@ pub enum ModelSchemaReadError {
     },
     #[error("JSON error deserialising model.")]
     Json(#[from] serde_json::Error),
+    #[error("Failed to fill in the templates of `{path}`.")]
+    Template {
+        path: PathBuf,
+        #[source]
+        source: TemplateError,
+    },
 }
 
 #[derive(Error, Debug)]
@@ -781,6 +788,29 @@ impl ModelSchema {
             source,
         })?;
         Ok(serde_json::from_str(data.as_str())?)
+    }
+
+    /// Read the model at `path`, replacing each `${name}` template in its string values with the
+    /// value `lookup` gives for it. See [`crate::template`].
+    ///
+    /// Unlike [`from_path`](Self::from_path), which leaves templates as they are, a template
+    /// that `lookup` gives no value for is an error.
+    pub fn from_path_with<P, F>(path: P, lookup: F) -> Result<Self, ModelSchemaReadError>
+    where
+        P: AsRef<Path>,
+        F: FnMut(&TemplateUse) -> Result<String, LookupError>,
+    {
+        let path = path.as_ref();
+        let data = std::fs::read_to_string(path).map_err(|source| ModelSchemaReadError::IO {
+            path: path.to_path_buf(),
+            source,
+        })?;
+        let mut value: serde_json::Value = serde_json::from_str(&data)?;
+        template::substitute(&mut value, lookup).map_err(|source| ModelSchemaReadError::Template {
+            path: path.to_path_buf(),
+            source,
+        })?;
+        Ok(serde_json::from_value(value)?)
     }
 
     /// Validate the model's schema. See [`TimeDomain::validate`], [`ScenarioDomain::validate`]
