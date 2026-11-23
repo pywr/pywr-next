@@ -72,7 +72,8 @@ use pywr_core::parameters::ParameterName;
 use pywr_schema_macros::{PywrVisitAll, PywrVisitMetrics, PywrVisitPaths};
 use pywr_v1_schema::parameters::{
     CoreParameter, DataFrameParameter as DataFrameParameterV1, Parameter as ParameterV1,
-    ParameterValue as ParameterValueV1, TableIndex as TableIndexV1, TableIndexEntry as TableIndexEntryV1,
+    ParameterMeta as ParameterMetaV1, ParameterValue as ParameterValueV1, TableIndex as TableIndexV1,
+    TableIndexEntry as TableIndexEntryV1,
 };
 pub use rolling::{RollingIndexParameter, RollingParameter};
 use schemars::JsonSchema;
@@ -890,8 +891,12 @@ impl TryFromV1<ParameterV1> for ParameterOrTimeSeriesRef {
                 CoreParameter::MultipleThresholdParameterIndex(p) => {
                     Parameter::MultiThreshold(p.try_into_v2(parent_node, conversion_data)?).into()
                 }
-                CoreParameter::CurrentYearThreshold(_) => todo!(),
-                CoreParameter::CurrentOrdinalDayThreshold(_) => todo!(),
+                CoreParameter::CurrentYearThreshold(p) => {
+                    return Err(unsupported_parameter_type(p.meta, "CurrentYearThreshold"));
+                }
+                CoreParameter::CurrentOrdinalDayThreshold(p) => {
+                    return Err(unsupported_parameter_type(p.meta, "CurrentOrdinalDayThreshold"));
+                }
                 CoreParameter::TablesArray(p) => {
                     Parameter::TablesArray(p.try_into_v2(parent_node, conversion_data)?).into()
                 }
@@ -943,7 +948,7 @@ impl TryFromV1<ParameterV1> for ParameterOrTimeSeriesRef {
                 CoreParameter::RollingMeanFlowNode(p) => {
                     Parameter::Rolling(p.try_into_v2(parent_node, conversion_data)?).into()
                 }
-                CoreParameter::ScenarioWrapper(_) => todo!("Implement ScenarioWrapperParameter"),
+                CoreParameter::ScenarioWrapper(p) => return Err(unsupported_parameter_type(p.meta, "ScenarioWrapper")),
                 CoreParameter::Flow(p) => {
                     return Err(Box::new(ComponentConversionError::Parameter {
                         name: p.meta.and_then(|m| m.name).unwrap_or("unnamed".to_string()),
@@ -975,6 +980,17 @@ impl TryFromV1<ParameterV1> for ParameterOrTimeSeriesRef {
 
         Ok(p)
     }
+}
+
+/// The error for a v1 parameter type that cannot be converted yet.
+fn unsupported_parameter_type(meta: Option<ParameterMetaV1>, ty: &str) -> Box<ComponentConversionError> {
+    Box::new(ComponentConversionError::Parameter {
+        name: meta.and_then(|m| m.name).unwrap_or("unnamed".to_string()),
+        attr: "".to_string(),
+        error: ConversionError::UnsupportedFeature {
+            feature: format!("`{ty}` parameters"),
+        },
+    })
 }
 
 /// A non-variable constant floating-point (f64) value

@@ -1107,10 +1107,17 @@ impl TryFromV1<Box<CoreNodeV1>> for NodeOrVirtualNode {
                 VirtualNode::VirtualStorage(n.try_into_v2(parent_node, conversion_data)?).into()
             }
             CoreNodeV1::PiecewiseLink(n) => Node::PiecewiseLink(n.try_into_v2(parent_node, conversion_data)?).into(),
-            CoreNodeV1::MultiSplitLink(_) => todo!(),
+            n @ (CoreNodeV1::MultiSplitLink(_) | CoreNodeV1::RiverSplit(_)) => {
+                return Err(Box::new(ComponentConversionError::Node {
+                    name: n.name().to_string(),
+                    attr: "".to_string(),
+                    error: ConversionError::UnsupportedFeature {
+                        feature: format!("`{}` nodes", n.node_type()),
+                    },
+                }));
+            }
             CoreNodeV1::BreakLink(n) => Node::Link(n.try_into_v2(parent_node, conversion_data)?).into(),
             CoreNodeV1::Delay(n) => Node::Delay(n.try_into()?).into(),
-            CoreNodeV1::RiverSplit(_) => todo!("Conversion of RiverSplit nodes"),
             CoreNodeV1::MonthlyVirtualStorage(n) => {
                 VirtualNode::VirtualStorage(n.try_into_v2(parent_node, conversion_data)?).into()
             }
