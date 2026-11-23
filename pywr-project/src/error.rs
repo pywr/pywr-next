@@ -202,6 +202,8 @@ pub enum ManifestResolutionError {
     BaseNetworkNotAFile { sub_network: String, path: PathBuf },
     #[error("The transfers file `{}` was not found.", .path.display())]
     TransfersFileNotFound { path: PathBuf },
+    #[error("The path `{}` for {field} was not found.", .path.display())]
+    VariablePathNotFound { field: String, path: PathBuf },
     #[error("The transfers file `{}` could not be read.", .path.display())]
     TransfersFileRead {
         path: PathBuf,
@@ -269,6 +271,14 @@ pub enum ComposeModelError {
     DuplicateSubNetwork { sub_network: String },
     #[error("The {kind} name `{name}` must not contain `::`.")]
     InvalidName { kind: &'static str, name: String },
+    #[error("The name `{variable}` is used by more than one variable, but each name must be unique.")]
+    DuplicateVariable { variable: String },
+    #[error("The variable name `{name}` must be made of ASCII letters, digits, `_` and `-`.")]
+    InvalidVariableName { name: String },
+    #[error("The variable `{variable}` has an empty `choices`.")]
+    NoChoices { variable: String },
+    #[error("The default `{default}` of the variable `{variable}` is not one of its choices.")]
+    DefaultNotAChoice { variable: String, default: String },
     #[error("The {definition} refers to the sub-network `{sub_network}`, which does not exist.")]
     SubNetworkNotFound {
         definition: DefinitionRef,
@@ -405,6 +415,7 @@ impl ManifestResolutionError {
             | Self::BaseNetworkNotFound { path, .. }
             | Self::BaseNetworkNotAFile { path, .. }
             | Self::TransfersFileNotFound { path }
+            | Self::VariablePathNotFound { path, .. }
             | Self::DependencyManifestNotFound { path, .. }
             | Self::DependencyManifestNotAFile { path, .. } => Some(path),
             _ => None,

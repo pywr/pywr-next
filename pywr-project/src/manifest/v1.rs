@@ -9,13 +9,14 @@ use crate::layout::{
 use crate::manifest::{DefinitionOverrides, DependencyPolicy, ResolveOptions};
 use pywr_schema::meta::ProvenanceSource;
 use pywr_schema::model::{MultiNetworkTransfer, ScenarioDomain, TimeDomain};
+use pywr_schema::template;
 use relative_path::{RelativePath, RelativePathBuf};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::borrow::Cow;
 use std::cell::RefCell;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ffi::{OsStr, OsString};
 use std::path::{Component, Path, PathBuf};
 use thiserror::Error;
@@ -94,6 +95,14 @@ pub enum ProjectManifestProblem {
     DuplicateSubNetwork { sub_network: String, count: usize },
     #[error("The {kind} name `{name}` must not contain `::`.")]
     InvalidName { kind: &'static str, name: String },
+    #[error("The name `{variable}` is used by {count} variables, but each name must be unique.")]
+    DuplicateVariable { variable: String, count: usize },
+    #[error("The variable name `{name}` must be made of ASCII letters, digits, `_` and `-`.")]
+    InvalidVariableName { name: String },
+    #[error("The variable `{variable}` has an empty `choices`; give at least one choice, or leave `choices` out.")]
+    NoChoices { variable: String },
+    #[error("The default `{default}` of the variable `{variable}` is not one of its choices.")]
+    DefaultNotAChoice { variable: String, default: String },
     #[error("The {definition} refers to the network definition `{network}`, which does not exist.")]
     NetworkNotFound { definition: DefinitionRef, network: String },
     #[error("The {definition} refers to the sub-network `{sub_network}`, which does not exist.")]
@@ -294,6 +303,10 @@ pub struct ProjectManifest {
     /// Named multi-network model definitions.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub multi_models: Vec<MultiModelDefinition>,
+    /// Variables whose values fill in `${name}` templates in the string values of this
+    /// project's network files and base models.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub variables: Vec<Variable>,
     /// Other projects whose definitions this project may refer to as `<dependency>::<name>`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub dependencies: Vec<Dependency>,
@@ -329,6 +342,13 @@ impl ProjectManifest {
                 .into_iter()
                 .map(|found| found.problem),
         );
+        for project in &graph.projects {
+            let start = problems.len();
+            problems.extend(project.manifest.variable_path_problems(&project.root));
+            if let Some(alias) = &project.scope.alias {
+                wrap_problems(problems, start, alias);
+            }
+        }
         graph
     }
 
@@ -722,6 +742,7 @@ impl ProjectManifest {
             ItemKind::Network => self.find_network(name).is_some(),
             ItemKind::Model => self.find_model(name).is_some(),
             ItemKind::SubNetwork => self.sub_networks.iter().any(|sub_network| sub_network.name == name),
+            ItemKind::Variable => self.variables.iter().any(|variable| variable.name == name),
             ItemKind::NetworkSet => match name.split_once(NAME_SEPARATOR) {
                 Some((sub_network, set)) => self.sub_networks.iter().any(|candidate| {
                     candidate.name == sub_network && candidate.network_sets.iter().any(|other| other.name == set)
@@ -802,12 +823,14 @@ impl ProjectManifest {
                     dependency: name.clone(),
                 }),
         );
+        self.variable_problems(&mut problems);
         if let Some(exports) = &self.exports {
             let exported = [
                 (ItemKind::Network, &exports.networks),
                 (ItemKind::Model, &exports.models),
                 (ItemKind::NetworkSet, &exports.network_sets),
                 (ItemKind::SubNetwork, &exports.sub_networks),
+                (ItemKind::Variable, &exports.variables),
             ];
             for (kind, names) in exported {
                 for name in names.iter().filter(|name| !self.has_item(kind, name)) {
@@ -881,6 +904,58 @@ impl ProjectManifest {
             }
         }
         problems
+    }
+
+    /// Problems in the variable declarations, found without touching the filesystem.
+    fn variable_problems(&self, problems: &mut Vec<ProjectManifestProblem>) {
+        add_duplicate_problems(
+            &self.variables,
+            |variable| &variable.name,
+            |name, count| ProjectManifestProblem::DuplicateVariable { variable: name, count },
+            problems,
+        );
+        for variable in &self.variables {
+            if !template::is_valid_name(&variable.name) {
+                problems.push(ProjectManifestProblem::InvalidVariableName {
+                    name: variable.name.clone(),
+                });
+            }
+            let Some(choices) = &variable.choices else {
+                continue;
+            };
+            if choices.is_empty() {
+                problems.push(ProjectManifestProblem::NoChoices {
+                    variable: variable.name.clone(),
+                });
+            } else if let Some(default) = &variable.default
+                && !choices.contains_key(default)
+            {
+                problems.push(ProjectManifestProblem::DefaultNotAChoice {
+                    variable: variable.name.clone(),
+                    default: default.clone(),
+                });
+            }
+        }
+    }
+
+    /// Problems with the path values of this project's variables: every choice, and the default
+    /// of each variable without choices, so that a mistyped choice is found before anything
+    /// binds it.
+    ///
+    /// Only checking the whole project reports these, so that a dataset that is missing, such
+    /// as one not yet downloaded, does not stop composing definitions that do not bind it.
+    fn variable_path_problems(&self, root: &Path) -> Vec<ProjectManifestProblem> {
+        self.variables
+            .iter()
+            .filter(|variable| variable.kind == VariableKind::Path)
+            .flat_map(|variable| {
+                variable.values().into_iter().filter_map(|(choice, value)| {
+                    resolve_variable_path(root, &variable.name, choice, value)
+                        .err()
+                        .map(ProjectManifestProblem::from)
+                })
+            })
+            .collect()
     }
 
     /// Resolve the project-level base model, appending a problem if it is given but cannot be resolved.
@@ -1217,6 +1292,7 @@ enum ItemKind {
     Model,
     NetworkSet,
     SubNetwork,
+    Variable,
 }
 
 impl ItemKind {
@@ -1226,6 +1302,7 @@ impl ItemKind {
             Self::Model => "model definition",
             Self::NetworkSet => "network set",
             Self::SubNetwork => "sub-network",
+            Self::Variable => "variable",
         }
     }
 }
@@ -1309,6 +1386,7 @@ impl LoadedProject<'_> {
             ItemKind::Model => &exports.models,
             ItemKind::NetworkSet => &exports.network_sets,
             ItemKind::SubNetwork => &exports.sub_networks,
+            ItemKind::Variable => &exports.variables,
         };
         names.iter().any(|exported| exported == name)
     }
@@ -1991,6 +2069,12 @@ impl From<ProjectManifestProblem> for ComposeModelError {
                 Self::DuplicateSubNetwork { sub_network }
             }
             ProjectManifestProblem::InvalidName { kind, name } => Self::InvalidName { kind, name },
+            ProjectManifestProblem::DuplicateVariable { variable, .. } => Self::DuplicateVariable { variable },
+            ProjectManifestProblem::InvalidVariableName { name } => Self::InvalidVariableName { name },
+            ProjectManifestProblem::NoChoices { variable } => Self::NoChoices { variable },
+            ProjectManifestProblem::DefaultNotAChoice { variable, default } => {
+                Self::DefaultNotAChoice { variable, default }
+            }
             ProjectManifestProblem::NetworkNotFound { definition, network } => {
                 Self::NetworkNotFound { definition, network }
             }
@@ -2159,6 +2243,56 @@ pub struct Exports {
     /// Sub-networks, which other projects may use as a network definition's `base`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub sub_networks: Vec<String>,
+    /// Variables, which other projects may bind by qualified name, such as `org::inflow_dataset`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub variables: Vec<String>,
+}
+
+/// A variable whose value fills in `${name}` templates in a project's network files and base
+/// models.
+#[derive(Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Variable {
+    /// The name used in templates. It is made of ASCII letters, digits, `_` and `-`.
+    pub name: String,
+    #[serde(rename = "type")]
+    pub kind: VariableKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    /// The value used when nothing binds the variable: a choice name if the variable has
+    /// choices, and otherwise the value itself. Without a default, the variable must be bound
+    /// wherever it is used.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default: Option<String>,
+    /// The values the variable may take, by choice name. When given, the default and every
+    /// binding name a choice rather than giving a value.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub choices: Option<BTreeMap<String, String>>,
+}
+
+impl Variable {
+    /// The values given directly in the manifest: each choice, by name, or the default of a
+    /// variable without choices.
+    fn values(&self) -> Vec<(Option<&str>, &str)> {
+        match &self.choices {
+            Some(choices) => choices
+                .iter()
+                .map(|(choice, value)| (Some(choice.as_str()), value.as_str()))
+                .collect(),
+            None => self.default.iter().map(|value| (None, value.as_str())).collect(),
+        }
+    }
+}
+
+/// What a variable's values are.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum VariableKind {
+    /// Text inserted as it is, such as a column name or a row key.
+    String,
+    /// A path relative to the root of the project whose manifest gives the value. It must exist
+    /// inside that root, and a template using it must start its string value.
+    Path,
 }
 
 /// A directory holding the base network and network sets for part of a wider model.
@@ -2873,6 +3007,25 @@ fn resolve_base_model(root: &Path, base_model: &str) -> Result<(PathBuf, Relativ
     Ok((path, file))
 }
 
+/// Resolve a path value of a variable, given by `choice` or as the default when `choice` is
+/// `None`, to its canonical path inside the project root.
+fn resolve_variable_path(
+    root: &Path,
+    variable: &str,
+    choice: Option<&str>,
+    value: &str,
+) -> Result<PathBuf, ManifestResolutionError> {
+    let field = match choice {
+        Some(choice) => format!("choice `{choice}` of variable `{variable}`"),
+        None => format!("the default of variable `{variable}`"),
+    };
+    let candidate = strict_relative_path(&field, value)?.to_path(root);
+    if !candidate.exists() {
+        return Err(ManifestResolutionError::VariablePathNotFound { field, path: candidate });
+    }
+    canonicalize_contained(root, &candidate, &field)
+}
+
 /// Resolve a sub-network's directory and base network.
 fn resolve_sub_network(
     root: &Path,
@@ -3176,6 +3329,7 @@ mod test {
 
     fn manifest(base_model: &str, network_sets: Vec<NetworkSet>, include: Vec<DefinitionSelection>) -> ProjectManifest {
         ProjectManifest {
+            variables: Vec::new(),
             multi_models: vec![],
             dependencies: vec![],
             exports: None,
@@ -3619,6 +3773,7 @@ mod test {
     fn network_definitions_compose_in_extension_order_and_record_provenance() {
         let root = project_with_nets();
         let manifest = ProjectManifest {
+            variables: Vec::new(),
             multi_models: vec![],
             dependencies: vec![],
             exports: None,
@@ -3676,6 +3831,7 @@ mod test {
     fn files_reached_by_several_routes_are_included_once() {
         let root = project_with_nets();
         let manifest = ProjectManifest {
+            variables: Vec::new(),
             multi_models: vec![],
             dependencies: vec![],
             exports: None,
@@ -3715,6 +3871,7 @@ mod test {
         let root = project_with_sub_networks();
         write_json(&root.path().join("nets/a.json"), input_network("a"));
         let manifest = ProjectManifest {
+            variables: Vec::new(),
             sub_networks: vec![
                 sub_network("upper", Some("options/x.json"), vec![set("options", None, None, None)]),
                 sub_network("lower", Some("base.json"), vec![]),
@@ -3812,6 +3969,7 @@ mod test {
     fn set_constraints_apply_to_the_whole_model_not_each_network() {
         let root = project_with_nets();
         let manifest = ProjectManifest {
+            variables: Vec::new(),
             multi_models: vec![],
             dependencies: vec![],
             exports: None,
@@ -3839,6 +3997,7 @@ mod test {
     fn network_cycles_are_reported_once() {
         let root = project_with_nets();
         let manifest = ProjectManifest {
+            variables: Vec::new(),
             multi_models: vec![],
             dependencies: vec![],
             exports: None,
@@ -3870,6 +4029,7 @@ mod test {
     fn missing_network_references_are_reported_where_they_are_made() {
         let root = project_with_nets();
         let manifest = ProjectManifest {
+            variables: Vec::new(),
             multi_models: vec![],
             dependencies: vec![],
             exports: None,
@@ -3900,6 +4060,7 @@ mod test {
     /// A manifest over [`project_with_nets`] with the given networks and models.
     fn nets_manifest(networks: Vec<NetworkDefinition>, models: Vec<ModelDefinition>) -> ProjectManifest {
         ProjectManifest {
+            variables: Vec::new(),
             multi_models: vec![],
             dependencies: vec![],
             exports: None,
@@ -4006,6 +4167,7 @@ mod test {
     fn layout_lists_what_resolved_alongside_the_problems() {
         let root = project_with_nets();
         let manifest = ProjectManifest {
+            variables: Vec::new(),
             network_sets: vec![set("nets", None, None, None), set("missing", None, None, None)],
             ..manifest(
                 "base.json",
@@ -4040,6 +4202,7 @@ mod test {
     fn a_layout_watches_where_missing_items_are_expected() {
         let root = project_with_nets();
         let manifest = ProjectManifest {
+            variables: Vec::new(),
             network_sets: vec![set("nets", None, None, None), set("missing/deeper", None, None, None)],
             ..manifest("absent.json", vec![], vec![])
         };
@@ -4133,6 +4296,7 @@ mod test {
     fn network_problems_are_reported_once_however_many_models_use_them() {
         let root = project_with_nets();
         let manifest = ProjectManifest {
+            variables: Vec::new(),
             multi_models: vec![],
             dependencies: vec![],
             exports: None,
@@ -4162,6 +4326,7 @@ mod test {
         let mut with_base = model("with-base", vec![]);
         with_base.base_model = Some("other.json".to_string());
         let manifest = ProjectManifest {
+            variables: Vec::new(),
             multi_models: vec![],
             dependencies: vec![],
             exports: None,
@@ -4256,6 +4421,7 @@ mod test {
 
     fn sub_network_manifest(models: Vec<ModelDefinition>, networks: Vec<NetworkDefinition>) -> ProjectManifest {
         ProjectManifest {
+            variables: Vec::new(),
             multi_models: vec![],
             dependencies: vec![],
             exports: None,
@@ -4546,6 +4712,7 @@ mod test {
     /// network definition `river` (`b.json`) and a multi-model `joint` that links them.
     fn multi_model_manifest(networks: Vec<MultiModelNetwork>) -> ProjectManifest {
         ProjectManifest {
+            variables: Vec::new(),
             multi_models: vec![MultiModelDefinition {
                 name: "joint".to_string(),
                 domain: MultiModelDomain::Model(ModelDomain {
@@ -5144,6 +5311,7 @@ mod test {
         touch(&root.path().join("base.json"));
         std::fs::create_dir(root.path().join("nets")).unwrap();
         let manifest = ProjectManifest {
+            variables: Vec::new(),
             multi_models: vec![],
             dependencies: vec![],
             exports: None,
@@ -5787,5 +5955,218 @@ mod test {
         let crate::manifest::ProjectManifest::V1(manifest) = manifest;
         assert_eq!(manifest.dependencies[0].data_dir.as_deref(), Some("data"));
         assert_eq!(manifest.exports.unwrap().network_sets, ["upper::c"]);
+    }
+
+    #[test]
+    fn manifest_json_accepts_variables_and_their_exports() {
+        let manifest: crate::manifest::ProjectManifest = serde_json::from_value(serde_json::json!({
+            "format": "v1",
+            "variables": [
+                {
+                    "name": "inflow_dataset",
+                    "type": "path",
+                    "description": "The inflow dataset.",
+                    "default": "historic",
+                    "choices": {"historic": "data/historic", "stoch-01": "data/stochastic-01"}
+                },
+                {"name": "demand_column", "type": "string"}
+            ],
+            "exports": {"variables": ["inflow_dataset"]}
+        }))
+        .unwrap();
+        let crate::manifest::ProjectManifest::V1(manifest) = manifest;
+        let [dataset, column] = manifest.variables.as_slice() else {
+            panic!("expected two variables");
+        };
+        assert_eq!(dataset.kind, VariableKind::Path);
+        assert_eq!(dataset.default.as_deref(), Some("historic"));
+        assert_eq!(
+            dataset.choices.as_ref().unwrap().get("stoch-01").map(String::as_str),
+            Some("data/stochastic-01")
+        );
+        assert_eq!(column.kind, VariableKind::String);
+        assert!(column.default.is_none() && column.choices.is_none());
+        assert_eq!(manifest.exports.unwrap().variables, ["inflow_dataset"]);
+
+        let unknown_kind = serde_json::from_value::<crate::manifest::ProjectManifest>(serde_json::json!({
+            "format": "v1",
+            "variables": [{"name": "x", "type": "number"}]
+        }));
+        assert!(unknown_kind.is_err());
+    }
+
+    /// A project in a new directory whose manifest has the given variables and exports.
+    fn project_with_variables(
+        variables: serde_json::Value,
+        exports: serde_json::Value,
+    ) -> (tempfile::TempDir, ProjectManifest) {
+        let dir = tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("data/historic")).unwrap();
+        touch(&dir.path().join("data/flows.csv"));
+        let manifest = serde_json::from_value(serde_json::json!({
+            "variables": variables,
+            "exports": exports,
+        }))
+        .unwrap();
+        (dir, manifest)
+    }
+
+    #[test]
+    fn variable_declarations_are_checked_without_the_filesystem() {
+        let (dir, manifest) = project_with_variables(
+            serde_json::json!([
+                {"name": "a", "type": "string"},
+                {"name": "a", "type": "string"},
+                {"name": "bad name", "type": "string"},
+                {"name": "org::a", "type": "string"},
+                {"name": "empty", "type": "string", "choices": {}},
+                {"name": "column", "type": "string", "default": "x", "choices": {"y": "2030"}},
+                {"name": "ok", "type": "string", "default": "y", "choices": {"y": "2030"}},
+                {"name": "free", "type": "string", "default": "anything at all"}
+            ]),
+            serde_json::json!({"variables": ["ok", "missing"]}),
+        );
+
+        let report = manifest.validate(dir.path(), OPTIONS).unwrap_err();
+        let problems: Vec<String> = report.problems.iter().map(ToString::to_string).collect();
+        assert_eq!(
+            problems,
+            [
+                "The name `a` is used by 2 variables, but each name must be unique.",
+                "The variable name `bad name` must be made of ASCII letters, digits, `_` and `-`.",
+                "The variable name `org::a` must be made of ASCII letters, digits, `_` and `-`.",
+                "The variable `empty` has an empty `choices`; give at least one choice, or leave `choices` out.",
+                "The default `x` of the variable `column` is not one of its choices.",
+                "The project exports the variable `missing`, which does not exist.",
+            ]
+        );
+        assert!(matches!(
+            manifest.compose_model(dir.path(), "any", OPTIONS),
+            Err(ComposeModelError::DuplicateVariable { variable }) if variable == "a"
+        ));
+    }
+
+    #[test]
+    fn every_path_value_of_a_variable_is_checked() {
+        let (dir, manifest) = project_with_variables(
+            serde_json::json!([
+                {
+                    "name": "dataset",
+                    "type": "path",
+                    "default": "historic",
+                    "choices": {
+                        "historic": "data/historic",
+                        "file": "data/flows.csv",
+                        "missing": "data/missing",
+                        "outside": "../outside",
+                        "absolute": "/data"
+                    }
+                },
+                {"name": "plain", "type": "path", "default": "data/historic"},
+                {"name": "plain-missing", "type": "path", "default": "data/gone"},
+                {"name": "unbound", "type": "path"},
+                // Values of a string variable are not paths, so they are not checked.
+                {"name": "column", "type": "string", "choices": {"a": "../not/a/path"}}
+            ]),
+            serde_json::json!(null),
+        );
+
+        let report = manifest.validate(dir.path(), OPTIONS).unwrap_err();
+        let problems: Vec<String> = report.problems.iter().map(ToString::to_string).collect();
+        // Choices are checked in name order.
+        assert_eq!(
+            problems,
+            [
+                "The path `/data` for choice `absolute` of variable `dataset` must be a non-empty strict relative path."
+                    .to_string(),
+                format!(
+                    "The path `{}` for choice `missing` of variable `dataset` was not found.",
+                    dir.path().join("data/missing").display()
+                ),
+                "The path `../outside` for choice `outside` of variable `dataset` must be a non-empty strict relative path."
+                    .to_string(),
+                format!(
+                    "The path `{}` for the default of variable `plain-missing` was not found.",
+                    dir.path().join("data/gone").display()
+                ),
+            ]
+        );
+        let unresolved: Vec<_> = report
+            .problems
+            .iter()
+            .filter_map(ProjectManifestProblem::unresolved_path)
+            .collect();
+        assert_eq!(
+            unresolved,
+            [dir.path().join("data/missing"), dir.path().join("data/gone")]
+        );
+    }
+
+    #[test]
+    fn composing_does_not_check_variable_paths() {
+        let (dir, mut manifest) = project_with_variables(
+            serde_json::json!([
+                {"name": "dataset", "type": "path", "choices": {"missing": "data/missing", "outside": "../outside"}}
+            ]),
+            serde_json::json!(null),
+        );
+        let base = manifest_with_base(dir.path());
+        manifest.base_model = base.base_model;
+        manifest.models = base.models;
+
+        assert_eq!(manifest.validate(dir.path(), OPTIONS).unwrap_err().problems.len(), 2);
+        assert!(manifest.compose_model(dir.path(), "test", OPTIONS).is_ok());
+        let layout = manifest.layout(dir.path(), OPTIONS);
+        assert_eq!(layout.unresolved_paths, [dir.path().join("data/missing")]);
+    }
+
+    /// A manifest with the model `test` on a base model written to `root`.
+    fn manifest_with_base(root: &Path) -> ProjectManifest {
+        write_json(
+            &root.join("base.json"),
+            serde_json::to_value(pywr_schema::ModelSchema::default()).unwrap(),
+        );
+        manifest("base.json", vec![], vec![])
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_variable_path_must_not_lead_out_of_the_project_through_a_link() {
+        let outside = tempdir().unwrap();
+        let (dir, manifest) = project_with_variables(
+            serde_json::json!([{"name": "dataset", "type": "path", "default": "data/link"}]),
+            serde_json::json!(null),
+        );
+        std::os::unix::fs::symlink(outside.path(), dir.path().join("data/link")).unwrap();
+
+        let report = manifest.validate(dir.path(), OPTIONS).unwrap_err();
+        assert!(matches!(
+            report.problems.as_slice(),
+            [ProjectManifestProblem::Resolution(ManifestResolutionError::PathEscapesRoot { field, .. })]
+                if field == "the default of variable `dataset`"
+        ));
+    }
+
+    #[test]
+    fn a_dependencys_variable_paths_are_relative_to_its_own_root() {
+        let workspace = workspace();
+        let root = workspace.path().join("main");
+        std::fs::create_dir_all(workspace.path().join("org/data/historic")).unwrap();
+        let mut org = org_manifest();
+        org["variables"] = serde_json::json!([
+            {"name": "dataset", "type": "path", "choices": {"historic": "data/historic", "missing": "data/missing"}}
+        ]);
+        write_org_manifest(workspace.path(), org);
+        let manifest = main_manifest(vec![]);
+
+        let report = manifest.validate(&root, OPTIONS).unwrap_err();
+        let problems: Vec<String> = report.problems.iter().map(ToString::to_string).collect();
+        assert_eq!(
+            problems,
+            [format!(
+                "In the dependency `org`: The path `{}` for choice `missing` of variable `dataset` was not found.",
+                workspace.path().join("org/data/missing").display()
+            )]
+        );
     }
 }

@@ -127,6 +127,7 @@ mod tests {
             base_model: Some("base_model.json".to_string()),
             sub_networks: vec![],
             multi_models: vec![],
+            variables: vec![],
             dependencies: vec![],
             exports: None,
             network_sets: vec![],
