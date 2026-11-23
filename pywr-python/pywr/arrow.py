@@ -119,16 +119,85 @@ class SourceFileMetadata:
 
 
 @dataclass(frozen=True, slots=True)
+class VariableSource:
+    """Where a project variable's value came from.
+
+    ``type`` is ``"default"``, ``"command_line"`` or ``"definition"``. For a definition,
+    ``kind`` is ``"model"``, ``"network"`` or ``"multi_model_network"`` and ``name`` is the
+    definition's name.
+    """
+
+    type: str
+    kind: str | None = None
+    name: str | None = None
+
+    @classmethod
+    def from_dict(cls, value: dict[str, Any]) -> VariableSource:
+        if value.get("type") not in ("default", "command_line", "definition"):
+            raise TypeError(
+                "Pywr variable source field 'type' must be 'default', 'command_line' "
+                "or 'definition'"
+            )
+        if value["type"] != "definition":
+            return cls(type=value["type"])
+        for name in ("kind", "name"):
+            if not isinstance(value.get(name), str):
+                raise TypeError(f"Pywr variable source field {name!r} must be a string")
+        return cls(type="definition", kind=value["kind"], name=value["name"])
+
+
+@dataclass(frozen=True, slots=True)
+class VariableMetadata:
+    """A project variable used to fill in the templates of a run's files.
+
+    ``name`` is the variable as the project refers to it, such as ``org::dataset`` for a
+    variable of the dependency ``org``. ``value`` is the choice name for a variable with
+    choices, and otherwise the value as given. ``path`` is the path used by a path variable,
+    given as the paths of ``ProjectRunMetadata.files`` are. ``network`` is the network of a
+    multi-model the value is used in.
+    """
+
+    name: str
+    value: str
+    source: VariableSource
+    network: str | None = None
+    path: str | None = None
+
+    @classmethod
+    def from_dict(cls, value: dict[str, Any]) -> VariableMetadata:
+        for name in ("name", "value"):
+            if not isinstance(value.get(name), str):
+                raise TypeError(f"Pywr variable field {name!r} must be a string")
+        for name in ("network", "path"):
+            if value.get(name) is not None and not isinstance(value[name], str):
+                raise TypeError(
+                    f"Pywr variable field {name!r} must be a string or null"
+                )
+        source = value.get("source")
+        if not isinstance(source, dict):
+            raise TypeError("Pywr variable field 'source' must be an object")
+        return cls(
+            name=value["name"],
+            value=value["value"],
+            source=VariableSource.from_dict(source),
+            network=value.get("network"),
+            path=value.get("path"),
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class ProjectRunMetadata:
     """The project definition a run's model was composed from.
 
     ``files`` holds the project's manifest followed by every file the model was composed
     from, in merge order, with paths relative to the project's directory. A file in a
-    dependency outside that directory has a path starting with ``..``.
+    dependency outside that directory has a path starting with ``..``. ``variables`` holds
+    the project variables whose values filled in the templates of those files.
     """
 
     definition: str
     files: list[SourceFileMetadata]
+    variables: list[VariableMetadata] = dataclass_field(default_factory=list)
 
     @classmethod
     def from_dict(cls, value: dict[str, Any]) -> ProjectRunMetadata:
@@ -143,9 +212,17 @@ class ProjectRunMetadata:
             raise TypeError(
                 "Pywr project run metadata field 'files' must be a list of objects"
             )
+        variables = value.get("variables", [])
+        if not isinstance(variables, list) or any(
+            not isinstance(item, dict) for item in variables
+        ):
+            raise TypeError(
+                "Pywr project run metadata field 'variables' must be a list of objects"
+            )
         return cls(
             definition=value["definition"],
             files=[SourceFileMetadata.from_dict(item) for item in files],
+            variables=[VariableMetadata.from_dict(item) for item in variables],
         )
 
 

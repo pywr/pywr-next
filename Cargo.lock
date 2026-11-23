@@ -1978,6 +1978,7 @@ dependencies = [
  "rand_chacha",
  "schemars",
  "serde_json",
+ "tempfile",
 ]
 
 [[package]]

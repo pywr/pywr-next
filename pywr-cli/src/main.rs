@@ -175,6 +175,12 @@ enum Commands {
         /// Name of the run, recorded in the metadata of the run's outputs.
         #[arg(long)]
         run_name: Option<String>,
+        /// Value for a project variable, overriding every definition's. Name a variable of a
+        /// dependency as `<dependency>::<name>`. For a variable with choices, give a choice name;
+        /// for a path variable without choices, a path relative to the project's directory. May be
+        /// given more than once.
+        #[arg(long = "var", value_name = "NAME=VALUE", value_parser = parse_variable)]
+        variables: Vec<(String, String)>,
     },
     // InitProject {
     //     /// Location to initialise the project directory.
@@ -275,6 +281,7 @@ fn main() -> Result<()> {
             threads,
             ignore_feature_requirements,
             run_name,
+            variables,
         } => run_project(
             project,
             definition,
@@ -284,6 +291,7 @@ fn main() -> Result<()> {
             *threads,
             *ignore_feature_requirements,
             run_name.clone(),
+            variables,
         )?,
         // Commands::InitProject {
         //     location,
@@ -650,6 +658,14 @@ fn run_server(mode: RunServerMode, socket_name: &str) -> Result<()> {
     Ok(())
 }
 
+/// Parse a `--var` argument, `NAME=VALUE`, splitting at the first `=`.
+fn parse_variable(argument: &str) -> std::result::Result<(String, String), String> {
+    match argument.split_once('=') {
+        Some((name, value)) if !name.is_empty() => Ok((name.to_string(), value.to_string())),
+        _ => Err(format!("expected `NAME=VALUE`, got `{argument}`")),
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn run_project(
     path: &Path,
@@ -660,14 +676,21 @@ fn run_project(
     threads: usize,
     ignore_feature_requirements: bool,
     run_name: Option<String>,
+    variables: &[(String, String)],
 ) -> Result<()> {
+    let mut compose_options = pywr_project::ComposeOptions::default();
+    for (name, value) in variables {
+        if compose_options.variables.insert(name.clone(), value.clone()).is_some() {
+            bail!("The variable `{name}` is given more than once with `--var`.");
+        }
+    }
     create_output_dir(output_path)?;
     let project = pywr_project::Project::open(path).with_context(|| format!("Failed to open project: {path:?}"))?;
     let data_path = data_path.or_else(|| path.parent());
     let options = pywr_schema::NetworkMergeOptions::default();
 
     let composed = project
-        .compose(definition)
+        .compose_with(definition, &compose_options)
         .with_context(|| format!("Failed to compose definition `{definition}`"))?;
     // Hash the composed files just before loading them. Loading reads them again, so a file
     // changed in between would not match its recorded hash.
@@ -763,5 +786,124 @@ mod tests {
             panic!("expected run-server command");
         };
         assert_eq!(mode, RunServerMode::Stdio);
+    }
+
+    #[test]
+    fn run_project_takes_repeated_variables() {
+        let cli = Cli::try_parse_from([
+            "pywr",
+            "run-project",
+            "pywr-project.json",
+            "-d",
+            "baseline",
+            "--var",
+            "dataset=stoch-01",
+            "--var",
+            "org::column=a=b",
+        ])
+        .unwrap();
+        let Commands::RunProject { variables, .. } = cli.command else {
+            panic!("expected run-project command");
+        };
+        assert_eq!(
+            variables,
+            [
+                ("dataset".to_string(), "stoch-01".to_string()),
+                ("org::column".to_string(), "a=b".to_string())
+            ]
+        );
+        for invalid in ["dataset", "=x"] {
+            assert!(Cli::try_parse_from(["pywr", "run-project", "p.json", "-d", "d", "--var", invalid]).is_err());
+        }
+    }
+
+    /// A project whose model's inflow is read from the dataset chosen by its `dataset`
+    /// variable: `a`, the default, with an inflow of 1, or `b`, with an inflow of 2.
+    fn project_with_datasets(root: &Path) {
+        let write = |path: &str, contents: String| {
+            let path = root.join(path);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, contents).unwrap();
+        };
+        for (dataset, inflow) in [("a", 1), ("b", 2)] {
+            let rows: String = (1..=3).map(|day| format!("2021-01-0{day},{inflow}\n")).collect();
+            write(&format!("data/{dataset}/inflow.csv"), format!("date,inflow1\n{rows}"));
+        }
+        let model = serde_json::json!({
+            "metadata": {"title": "Datasets"},
+            "time": {"start": "2021-01-01", "end": "2021-01-03", "timestep": {"type": "Days", "days": 1}},
+            "network": {
+                "nodes": [
+                    {
+                        "meta": {"name": "input"},
+                        "type": "Input",
+                        "max_flow": {"type": "TimeSeries", "name": "inflow", "columns": {"type": "Column", "name": "inflow1"}}
+                    },
+                    {
+                        "meta": {"name": "output"},
+                        "type": "Output",
+                        "cost": {"type": "Literal", "value": -10.0},
+                        "max_flow": {"type": "Literal", "value": 100.0}
+                    }
+                ],
+                "edges": [{"from_node": "input", "to_node": "output"}],
+                "time_series": [
+                    {"meta": {"name": "inflow"}, "type": "Arrow", "format": "CSV", "time_col": "date", "path": "${dataset}/inflow.csv"}
+                ],
+                "metric_sets": [{"meta": {"name": "nodes"}, "metrics": [{"type": "Node", "name": "output"}]}],
+                "outputs": [
+                    {"meta": {"name": "nodes"}, "type": "CSV", "format": "Long", "filename": "flows.csv", "metric_set": "nodes"}
+                ]
+            }
+        });
+        write("base.json", model.to_string());
+        let manifest = serde_json::json!({
+            "format": "v1",
+            "base_model": "base.json",
+            "variables": [
+                {"name": "dataset", "type": "path", "default": "a", "choices": {"a": "data/a", "b": "data/b"}}
+            ],
+            "models": [{"name": "baseline"}]
+        });
+        write("pywr-project.json", manifest.to_string());
+    }
+
+    /// Run the project in `root` with `variables`, returning the flow to the output node on each day.
+    fn run_flows(root: &Path, variables: &[(&str, &str)]) -> Result<Vec<f64>> {
+        let output = root.join(format!("outputs-{}", variables.len()));
+        let variables: Vec<_> = variables
+            .iter()
+            .map(|(name, value)| (name.to_string(), value.to_string()))
+            .collect();
+        run_project(
+            &root.join("pywr-project.json"),
+            "baseline",
+            &Solver::Clp,
+            None,
+            Some(&output),
+            1,
+            false,
+            None,
+            &variables,
+        )?;
+        let flows = std::fs::read_to_string(output.join("flows.csv")).unwrap();
+        Ok(flows
+            .lines()
+            .skip(1)
+            .map(|line| line.rsplit(',').next().unwrap().parse().unwrap())
+            .collect())
+    }
+
+    #[test]
+    fn run_project_reads_the_dataset_a_variable_chooses() {
+        let root = tempfile::tempdir().unwrap();
+        project_with_datasets(root.path());
+        assert_eq!(run_flows(root.path(), &[]).unwrap(), [1.0, 1.0, 1.0]);
+        assert_eq!(run_flows(root.path(), &[("dataset", "b")]).unwrap(), [2.0, 2.0, 2.0]);
+
+        let error = run_flows(root.path(), &[("dataset", "c")]).unwrap_err();
+        assert!(format!("{error:#}").contains("binds the variable `dataset` to `c`, which is not one of its choices"));
+        let error = run_flows(root.path(), &[("dataset", "a"), ("dataset", "b")]).unwrap_err();
+        assert!(error.to_string().contains("given more than once"), "{error:#}");
     }
 }

@@ -6,9 +6,10 @@ mod project;
 mod run_metadata;
 
 pub use composition::{
-    Composed, ComposedDomain, ComposedModel, ComposedModelBuilder, ComposedModelNetworkSchema, ComposedModelSchemas,
-    ComposedMultiModel, ComposedMultiModelNetwork, ComposedMultiModelSchemas, ComposedNetwork, ComposedNetworkPath,
-    ComposedNetworkSchemas, LoadContext, PositionOffset, ProjectVariables, VariableValue,
+    BindingSource, BoundVariable, Composed, ComposedDomain, ComposedModel, ComposedModelBuilder,
+    ComposedModelNetworkSchema, ComposedModelSchemas, ComposedMultiModel, ComposedMultiModelNetwork,
+    ComposedMultiModelSchemas, ComposedNetwork, ComposedNetworkPath, ComposedNetworkSchemas, LoadContext,
+    PositionOffset, ProjectVariables, VariableValue,
 };
 pub use error::{
     ComposeModelError, ComposeToSchemaError, DefinitionKind, DefinitionRef, ManifestResolutionError, PlaceholderKind,
@@ -16,7 +17,8 @@ pub use error::{
 };
 pub use layout::{NetworkFileLayout, NetworkSetLayout, ProjectLayout, ProjectLocation, SubNetworkLayout};
 pub use manifest::{
-    DefinitionOverrides, DependencyPolicy, ProjectManifest, ProjectManifestValidationError, ResolveOptions, v1,
+    ComposeOptions, DefinitionOverrides, DependencyPolicy, ProjectManifest, ProjectManifestValidationError,
+    ResolveOptions, v1,
 };
 pub use project::Project;
-pub use pywr_output_metadata::{ProjectRunMetadata, RunMetadata, SourceFileMetadata};
+pub use pywr_output_metadata::{ProjectRunMetadata, RunMetadata, SourceFileMetadata, VariableMetadata, VariableSource};

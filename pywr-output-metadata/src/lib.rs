@@ -92,6 +92,45 @@ pub struct ProjectRunMetadata {
     /// order. Each path is relative to the project's directory, using `/` separators, and starts
     /// with `..` for a file in a dependency outside it.
     pub files: Vec<SourceFileMetadata>,
+    /// The variables whose values filled in the templates of those files, in the order they
+    /// are first used.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub variables: Vec<VariableMetadata>,
+}
+
+/// A variable used to fill in the templates of the files a run's model was composed from.
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+pub struct VariableMetadata {
+    /// The network of a multi-model the value is used in; `None` for a model.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub network: Option<String>,
+    /// The variable, named as the project refers to it, such as `org::dataset` for a variable
+    /// of the dependency `org`.
+    pub name: String,
+    /// The choice name for a variable with choices, and otherwise the value as given.
+    pub value: String,
+    /// For a path variable, the path used, given as the paths of
+    /// [`files`](ProjectRunMetadata::files) are.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+    pub source: VariableSource,
+}
+
+/// Where a variable's value came from.
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum VariableSource {
+    /// The variable's default.
+    Default,
+    /// A definition that binds it.
+    Definition {
+        /// `model`, `network` or `multi_model_network`.
+        kind: String,
+        /// The definition's name, such as `org::river` or `<multi-model>/<network>`.
+        name: String,
+    },
+    /// The command line, or whatever ran the model.
+    CommandLine,
 }
 
 /// A file a run's model was composed from.
@@ -131,6 +170,16 @@ mod tests {
                 files: vec![SourceFileMetadata {
                     path: "pywr-project.json".to_string(),
                     sha256: "00".repeat(32),
+                }],
+                variables: vec![VariableMetadata {
+                    network: None,
+                    name: "dataset".to_string(),
+                    value: "stoch".to_string(),
+                    path: Some("data/stoch".to_string()),
+                    source: VariableSource::Definition {
+                        kind: "model".to_string(),
+                        name: "baseline-historical".to_string(),
+                    },
                 }],
             }),
             extra: BTreeMap::from([("user".to_string(), serde_json::json!("analyst"))]),

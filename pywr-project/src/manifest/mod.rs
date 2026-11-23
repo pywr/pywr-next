@@ -5,6 +5,7 @@ use crate::error::{ComposeModelError, ProjectManifestReadError};
 use pywr_schema::model::{ScenarioDomain, TimeDomain};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
@@ -88,6 +89,19 @@ impl ProjectManifest {
         }
     }
 
+    /// Compose the model or multi-model definition `definition_name` with `compose_options`.
+    pub fn compose_with(
+        &self,
+        root: &Path,
+        definition_name: &str,
+        options: &ResolveOptions,
+        compose_options: &ComposeOptions,
+    ) -> Result<Composed, ComposeModelError> {
+        match self {
+            ProjectManifest::V1(manifest) => manifest.compose_with(root, definition_name, options, compose_options),
+        }
+    }
+
     pub fn compose_model(
         &self,
         root: &Path,
@@ -150,6 +164,16 @@ pub struct ResolveOptions {
     /// leads back to it is then reported as a cycle straight away, instead of loading the
     /// project again. [`Project`](crate::Project) sets this.
     pub manifest_path: Option<PathBuf>,
+}
+
+/// Options for composing one definition.
+#[derive(Clone, Debug, Default)]
+pub struct ComposeOptions {
+    /// Values for variables, by name, that override every definition's: a variable of the root
+    /// project, or one that a dependency exports, as `<dependency>::<name>`. For a variable with
+    /// choices, the value names a choice; a path without choices is relative to the root
+    /// project's directory. Each must be used by a file of the composed definition.
+    pub variables: BTreeMap<String, String>,
 }
 
 #[derive(Clone, Serialize, Deserialize, JsonSchema, Default)]

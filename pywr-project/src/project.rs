@@ -1,5 +1,5 @@
 use crate::error::ComposeModelError;
-use crate::manifest::{ProjectManifest, ResolveOptions};
+use crate::manifest::{ComposeOptions, ProjectManifest, ResolveOptions};
 use crate::{
     Composed, ComposedModel, ComposedMultiModel, ComposedNetwork, ProjectError, ProjectLayout,
     ProjectManifestValidationError,
@@ -100,6 +100,17 @@ impl Project {
     /// Compose a model or multi-model from the project manifest and a definition name.
     pub fn compose(&self, definition_name: &str) -> Result<Composed, ComposeModelError> {
         self.manifest.compose(&self.root, definition_name, &self.options)
+    }
+
+    /// Compose a model or multi-model from the project manifest and a definition name, with the
+    /// variables in `compose_options` overriding every definition's.
+    pub fn compose_with(
+        &self,
+        definition_name: &str,
+        compose_options: &ComposeOptions,
+    ) -> Result<Composed, ComposeModelError> {
+        self.manifest
+            .compose_with(&self.root, definition_name, &self.options, compose_options)
     }
 
     /// Compose a multi-network model from the project manifest and a multi-model definition name.

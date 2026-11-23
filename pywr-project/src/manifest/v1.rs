@@ -1,13 +1,13 @@
 use crate::composition::{
-    Composed, ComposedDomain, ComposedModel, ComposedModelBuilder, ComposedMultiModel, ComposedMultiModelNetwork,
-    ComposedNetwork, ComposedNetworkPath, LoadContext, PositionOffset, ProjectVariables, UseError, VariableState,
-    VariableValue,
+    BindingSource, BoundVariable, Composed, ComposedDomain, ComposedModel, ComposedModelBuilder, ComposedMultiModel,
+    ComposedMultiModelNetwork, ComposedNetwork, ComposedNetworkPath, LoadContext, PositionOffset, ProjectVariables,
+    UseError, VariableState, VariableValue,
 };
 use crate::error::{ComposeModelError, DefinitionKind, DefinitionRef, ManifestResolutionError};
 use crate::layout::{
     NetworkFileLayout, NetworkSetLayout, ProjectLayout, ProjectLocation, SubNetworkLayout, unique_paths,
 };
-use crate::manifest::{DefinitionOverrides, DependencyPolicy, ResolveOptions};
+use crate::manifest::{ComposeOptions, DefinitionOverrides, DependencyPolicy, ResolveOptions};
 use pywr_schema::meta::ProvenanceSource;
 use pywr_schema::model::{MultiNetworkTransfer, ScenarioDomain, TimeDomain};
 use pywr_schema::template::{self, TemplateError};
@@ -135,6 +135,11 @@ pub enum ProjectManifestProblem {
     },
     #[error("In the file `{}`: {error}", .file.display())]
     InvalidTemplate { file: PathBuf, error: TemplateError },
+    #[error("No file of the {definition} uses the variable `{variable}` given on the command line.")]
+    UnusedCommandLineVariable {
+        definition: DefinitionRef,
+        variable: String,
+    },
     #[error(
         "The file `{}` uses the variable `{variable}` at `{pointer}`, but its project does not declare it.", .file.display()
     )]
@@ -639,11 +644,24 @@ impl ProjectManifest {
         definition_name: &str,
         options: &ResolveOptions,
     ) -> Result<Composed, ComposeModelError> {
+        self.compose_with(root, definition_name, options, &ComposeOptions::default())
+    }
+
+    /// Compose the model or multi-model definition `definition_name`, as [`compose`](Self::compose)
+    /// does, with the variables in `compose_options` overriding every definition's.
+    pub fn compose_with(
+        &self,
+        root: &Path,
+        definition_name: &str,
+        options: &ResolveOptions,
+        compose_options: &ComposeOptions,
+    ) -> Result<Composed, ComposeModelError> {
         if self.find_multi_model(definition_name).is_some() {
-            self.compose_multi_model(root, definition_name, options)
+            self.compose_multi_model_with(root, definition_name, options, compose_options)
                 .map(Composed::MultiModel)
         } else {
-            self.compose_model(root, definition_name, options).map(Composed::Model)
+            self.compose_model_with(root, definition_name, options, compose_options)
+                .map(Composed::Model)
         }
     }
 
@@ -657,6 +675,18 @@ impl ProjectManifest {
         definition_name: &str,
         options: &ResolveOptions,
     ) -> Result<ComposedModel, ComposeModelError> {
+        self.compose_model_with(root, definition_name, options, &ComposeOptions::default())
+    }
+
+    /// Compose a model, as [`compose_model`](Self::compose_model) does, with the variables in
+    /// `compose_options` overriding every definition's.
+    pub fn compose_model_with(
+        &self,
+        root: &Path,
+        definition_name: &str,
+        options: &ResolveOptions,
+        compose_options: &ComposeOptions,
+    ) -> Result<ComposedModel, ComposeModelError> {
         let mut problems = self.manifest_problems();
         let Some(model) = self.find_model(definition_name) else {
             problems.push(ProjectManifestProblem::DefinitionNotFound {
@@ -667,7 +697,15 @@ impl ProjectManifest {
         let mut graph = self.load_graph(root, options, true, &mut problems);
         let (at, load_problems) = (problems.len(), std::mem::take(&mut graph.load_problems));
         let mut resolver = Resolver::new(&graph);
+        resolver.bind_command_line(&compose_options.variables, &mut problems);
         let resolved = resolver.resolve_model(model, &mut problems);
+        let files = resolved.base_model.iter().map(|(path, _)| (path.as_path(), None));
+        let includes = resolved
+            .includes
+            .iter()
+            .map(|file| (file.path.as_path(), file.source.project.as_deref()));
+        let definition = DefinitionRef::new(DefinitionKind::Model, &model.name);
+        resolver.check_command_line_used(&definition, files.chain(includes), &mut problems);
         resolver.insert_reached_load_problems(&mut problems, at, load_problems);
 
         match (problems.into_iter().next(), resolved.base_model) {
@@ -700,6 +738,19 @@ impl ProjectManifest {
         definition_name: &str,
         options: &ResolveOptions,
     ) -> Result<ComposedMultiModel, ComposeModelError> {
+        self.compose_multi_model_with(root, definition_name, options, &ComposeOptions::default())
+    }
+
+    /// Compose a multi-network model, as [`compose_multi_model`](Self::compose_multi_model)
+    /// does, with the variables in `compose_options` overriding those of every definition, in
+    /// every network.
+    pub fn compose_multi_model_with(
+        &self,
+        root: &Path,
+        definition_name: &str,
+        options: &ResolveOptions,
+        compose_options: &ComposeOptions,
+    ) -> Result<ComposedMultiModel, ComposeModelError> {
         let mut problems = self.manifest_problems();
         let Some(multi_model) = self.find_multi_model(definition_name) else {
             problems.push(ProjectManifestProblem::DefinitionNotFound {
@@ -710,7 +761,14 @@ impl ProjectManifest {
         let mut graph = self.load_graph(root, options, true, &mut problems);
         let (at, load_problems) = (problems.len(), std::mem::take(&mut graph.load_problems));
         let mut resolver = Resolver::new(&graph);
+        resolver.bind_command_line(&compose_options.variables, &mut problems);
         let resolved = multi_model.resolve(&mut resolver, &mut problems);
+        let files = resolved
+            .networks
+            .iter()
+            .flat_map(|network| composed_files(&network.network));
+        let definition = DefinitionRef::new(DefinitionKind::MultiModel, &multi_model.name);
+        resolver.check_command_line_used(&definition, files.map(|(path, _, alias)| (path, alias)), &mut problems);
         resolver.insert_reached_load_problems(&mut problems, at, load_problems);
 
         match (problems.into_iter().next(), resolved.domain) {
@@ -1324,8 +1382,8 @@ struct Binding {
     written: String,
     /// The value, or `None` if it could not be resolved, which is already reported.
     value: Option<VariableValue>,
-    /// The definition that binds it, as problems name it, such as ``network definition `river` ``.
-    by: String,
+    /// The definition that binds it, named as the root project refers to it.
+    by: DefinitionRef,
 }
 
 /// The variables of each project whose files a composition reads, by project index.
@@ -1787,6 +1845,8 @@ struct Resolver<'a> {
     graph: &'a ProjectGraph<'a>,
     /// The root project's canonical directory, which variables' path values are given against.
     root: PathBuf,
+    /// The variables given on the command line, which override every definition's.
+    command_line: Bindings,
     expanded: HashMap<(usize, &'a str), Expansion<'a>>,
     expanded_models: HashMap<(usize, &'a str), Expansion<'a>>,
     model_base_models: HashMap<(usize, &'a str), Option<ResolvedBaseModel>>,
@@ -1804,6 +1864,7 @@ impl<'a> Resolver<'a> {
         Self {
             graph,
             root: root.canonicalize().unwrap_or_else(|_| root.clone()),
+            command_line: Bindings::new(),
             expanded: HashMap::new(),
             expanded_models: HashMap::new(),
             model_base_models: HashMap::new(),
@@ -1857,14 +1918,14 @@ impl<'a> Resolver<'a> {
     ///
     /// Returns `None` if a dependency on the way failed to load, whose problem is already
     /// reported, or if the item is not exported.
-    fn locate(
+    fn locate<'r>(
         &self,
         from: usize,
         definition: &DefinitionRef,
-        reference: &'a str,
+        reference: &'r str,
         kind: ItemKind,
         problems: &mut Vec<ProjectManifestProblem>,
-    ) -> Option<(usize, &'a str)> {
+    ) -> Option<(usize, &'r str)> {
         let mut index = from;
         let mut name = reference;
         // The dependency names followed so far, which name the project reached as `from` does: a
@@ -1982,8 +2043,8 @@ impl<'a> Resolver<'a> {
         &self,
         from: usize,
         definition: &DefinitionRef,
-        by: &str,
-        variables: &'a BTreeMap<String, String>,
+        by: &DefinitionRef,
+        variables: &BTreeMap<String, String>,
         problems: &mut Vec<ProjectManifestProblem>,
     ) -> Bindings {
         let mut bindings = Bindings::new();
@@ -2025,11 +2086,46 @@ impl<'a> Resolver<'a> {
                 Binding {
                     written: written.clone(),
                     value,
-                    by: by.to_string(),
+                    by: by.clone(),
                 },
             );
         }
         bindings
+    }
+
+    /// Bind the root project's variables, or by qualified name those its dependencies export,
+    /// to the values in `variables`, overriding every definition's bindings.
+    fn bind_command_line(&mut self, variables: &BTreeMap<String, String>, problems: &mut Vec<ProjectManifestProblem>) {
+        let command_line = DefinitionRef::new(DefinitionKind::CommandLine, "");
+        self.command_line = self.own_bindings(ROOT, &command_line, &command_line, variables, problems);
+    }
+
+    /// Report each variable given on the command line that no file in `files`, which
+    /// `definition` reads, uses.
+    fn check_command_line_used<'f>(
+        &self,
+        definition: &DefinitionRef,
+        files: impl IntoIterator<Item = (&'f Path, Option<&'f str>)>,
+        problems: &mut Vec<ProjectManifestProblem>,
+    ) {
+        if self.command_line.is_empty() {
+            return;
+        }
+        let mut used = HashSet::new();
+        for (path, alias) in files {
+            for template in read_templates(path).into_iter().flat_map(|scan| scan.uses) {
+                used.insert(qualify(alias, &template.name));
+            }
+        }
+        for (index, name) in self.command_line.keys() {
+            let variable = self.project(*index).label(name);
+            if !used.contains(&variable) {
+                problems.push(ProjectManifestProblem::UnusedCommandLineVariable {
+                    definition: definition.clone(),
+                    variable,
+                });
+            }
+        }
     }
 
     /// Combine the bindings of the definitions that `definition` pulls in, in `pulled_in`, with
@@ -2057,9 +2153,9 @@ impl<'a> Resolver<'a> {
                         definition: definition.clone(),
                         variable: self.project(key.0).label(&key.1),
                         first: existing.written.clone(),
-                        first_by: existing.by.clone(),
+                        first_by: existing.by.to_string(),
                         second: binding.written,
-                        second_by: binding.by,
+                        second_by: binding.by.to_string(),
                     });
                 }
             }
@@ -2088,14 +2184,29 @@ impl<'a> Resolver<'a> {
         let mut values = BTreeMap::new();
         for variable in &project.manifest.variables {
             let state = match bindings.get(&(index, variable.name.clone())) {
-                Some(Binding { value: Some(value), .. }) => VariableState::Value(value.clone()),
+                Some(Binding {
+                    value: Some(value),
+                    written,
+                    by,
+                }) => VariableState::Value(BoundVariable {
+                    value: value.clone(),
+                    written: written.clone(),
+                    source: match by.kind {
+                        DefinitionKind::CommandLine => BindingSource::CommandLine,
+                        _ => BindingSource::Definition(by.clone()),
+                    },
+                }),
                 Some(Binding { value: None, .. }) => VariableState::BindingFailed,
                 None => match &variable.default {
                     None => VariableState::Unbound,
                     Some(default) => {
                         let field = || default_field(&variable.name);
                         match resolve_variable_value(variable, default, &project.root, &project.root, field) {
-                            Ok(value) => VariableState::Value(value),
+                            Ok(value) => VariableState::Value(BoundVariable {
+                                value,
+                                written: default.clone(),
+                                source: BindingSource::Default,
+                            }),
                             Err(ValueError::NotAChoice) => {
                                 VariableState::Unavailable(format!("its default `{default}` is not one of its choices"))
                             }
@@ -2138,8 +2249,9 @@ impl<'a> Resolver<'a> {
         problems: &mut Vec<ProjectManifestProblem>,
     ) -> ResolvedModel {
         let base_model = self.model_base_model(ROOT, model, problems);
-        let expansion = self.expand_model(ROOT, model, problems);
+        let mut expansion = self.expand_model(ROOT, model, problems);
         self.check_model(ROOT, model, &expansion, problems);
+        expansion.bindings.extend(self.command_line.clone());
         let projects = expansion.files.iter().map(|selected| selected.file.project_index);
         let variables = self.variables_for(&expansion.bindings, projects.chain([ROOT]));
         ResolvedModel {
@@ -2225,7 +2337,7 @@ impl<'a> Resolver<'a> {
         }
         let includes = self.resolve_includes(index, &definition, None, &model.include, problems);
         expansion.files.extend(includes);
-        let by = DefinitionRef::new(DefinitionKind::Model, &self.project(index).label(&model.name)).to_string();
+        let by = DefinitionRef::new(DefinitionKind::Model, &self.project(index).label(&model.name));
         let own = self.own_bindings(index, &definition, &by, &model.variables, problems);
         expansion.bindings = self.combine(&definition, pulled_in, own, problems);
         expansion.dedup(&definition, problems);
@@ -2270,7 +2382,7 @@ impl<'a> Resolver<'a> {
         }
         let includes = self.resolve_includes(index, &definition, Some(&network.name), &network.include, problems);
         expansion.files.extend(includes);
-        let by = DefinitionRef::new(DefinitionKind::Network, &project.label(&network.name)).to_string();
+        let by = DefinitionRef::new(DefinitionKind::Network, &project.label(&network.name));
         let own = self.own_bindings(index, &definition, &by, &network.variables, problems);
         expansion.bindings = self.combine(&definition, pulled_in, own, problems);
         self.stack.pop();
@@ -2406,6 +2518,9 @@ impl From<ProjectManifestProblem> for ComposeModelError {
                 second,
             },
             ProjectManifestProblem::InvalidTemplate { file, error } => Self::InvalidTemplate { file, error },
+            ProjectManifestProblem::UnusedCommandLineVariable { definition, variable } => {
+                Self::UnusedCommandLineVariable { definition, variable }
+            }
             ProjectManifestProblem::UndefinedVariable {
                 file,
                 variable,
@@ -3195,8 +3310,9 @@ impl MultiModelNetwork {
         }
         let includes = resolver.resolve_includes(ROOT, &label, None, &self.include, problems);
         expansion.files.extend(includes);
-        let own = resolver.own_bindings(ROOT, &label, &label.to_string(), &self.variables, problems);
-        let bindings = resolver.combine(&label, pulled_in, own, problems);
+        let own = resolver.own_bindings(ROOT, &label, &label, &self.variables, problems);
+        let mut bindings = resolver.combine(&label, pulled_in, own, problems);
+        bindings.extend(resolver.command_line.clone());
         expansion.dedup(&label, problems);
         match whole_model {
             Some((index, model)) => resolver.check_model(index, model, &expansion, problems),
@@ -7284,5 +7400,85 @@ mod test {
         assert_eq!(names, ["dataset", "column", "unbound", "bad-default"]);
         let problems = layout.problems.unwrap().report().to_string();
         assert!(!problems.contains("nope"), "{problems}");
+    }
+
+    fn command_line(variables: &[(&str, &str)]) -> ComposeOptions {
+        ComposeOptions {
+            variables: variables
+                .iter()
+                .map(|(name, value)| (name.to_string(), value.to_string()))
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn command_line_variables_override_every_definition() {
+        let root = project_with_templates();
+        let manifest = templates_manifest(
+            serde_json::json!([{"name": "net", "include": flows("f.json"), "variables": {"column": "net"}}]),
+            serde_json::json!([{"name": "m", "networks": ["net"], "variables": {"column": "model"}}]),
+            serde_json::json!([{
+                "name": "joint",
+                "domain": {"type": "Model", "name": "m"},
+                "networks": [
+                    {"name": "a", "network": {"type": "Network", "name": "net"}},
+                    {"name": "b", "network": {"type": "Network", "name": "net"}, "variables": {"column": "b"}}
+                ]
+            }]),
+        );
+        let options = command_line(&[("column", "cli"), ("dataset", "stoch")]);
+
+        let composed = manifest
+            .compose_model_with(root.path(), "m", OPTIONS, &options)
+            .unwrap();
+        let schema = composed.load().unwrap().into_model_schema(&Default::default()).unwrap();
+        let (paths, comments) = paths_and_comments(&serde_json::to_value(schema.network).unwrap());
+        assert_eq!(paths["flows"], "data/stoch/flows.csv");
+        assert_eq!(comments["flows-node"], "cli");
+        let bound = composed.includes()[0].context.variables.get("column").unwrap();
+        assert_eq!(bound.source, BindingSource::CommandLine);
+
+        let joint = manifest
+            .compose_multi_model_with(root.path(), "joint", OPTIONS, &options)
+            .unwrap();
+        for network in joint.networks() {
+            let schema = network
+                .network
+                .load()
+                .unwrap()
+                .into_network_schema(&Default::default())
+                .unwrap();
+            let (_, comments) = paths_and_comments(&serde_json::to_value(schema).unwrap());
+            assert_eq!(comments["flows-node"], "cli");
+        }
+    }
+
+    #[test]
+    fn command_line_variables_must_be_declared_and_used() {
+        let root = project_with_templates();
+        let manifest = templates_manifest(
+            serde_json::json!([]),
+            serde_json::json!([{"name": "m", "include": flows("f.json")}]),
+            serde_json::json!([]),
+        );
+        let error = |variables: &[(&str, &str)]| {
+            manifest
+                .compose_model_with(root.path(), "m", OPTIONS, &command_line(variables))
+                .err()
+                .map(|error| error.to_string())
+        };
+        assert_eq!(
+            error(&[("nope", "x")]).as_deref(),
+            Some("The command line binds the variable `nope`, which is not declared.")
+        );
+        assert_eq!(
+            error(&[("dataset", "bogus")]).as_deref(),
+            Some("The command line binds the variable `dataset` to `bogus`, which is not one of its choices.")
+        );
+        assert_eq!(
+            error(&[("unbound", "x")]).as_deref(),
+            Some("No file of the model definition `m` uses the variable `unbound` given on the command line.")
+        );
+        assert_eq!(error(&[("column", "x")]), None);
     }
 }

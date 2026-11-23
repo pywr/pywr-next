@@ -14,6 +14,8 @@ from pywr import (
     ScenarioGroupMetadata,
     ScenarioMetadata,
     SourceFileMetadata,
+    VariableMetadata,
+    VariableSource,
     get_run_metadata,
     get_scenario_groups,
     get_scenarios,
@@ -238,3 +240,41 @@ def test_run_metadata_is_read_when_present():
 
     with pytest.raises(TypeError):
         get_run_metadata(pa.schema([], metadata={b"PYWR_RUN": b"[]"}))
+
+
+def test_run_metadata_reads_the_variables_used():
+    value = {
+        "project": {
+            "definition": "joint",
+            "files": [],
+            "variables": [
+                {
+                    "network": "river",
+                    "name": "org::dataset",
+                    "value": "stoch",
+                    "path": "../org/data/stoch",
+                    "source": {"type": "definition", "kind": "model", "name": "m"},
+                },
+                {"name": "column", "value": "x", "source": {"type": "command_line"}},
+            ],
+        }
+    }
+    schema = pa.schema([], metadata={b"PYWR_RUN": json.dumps(value).encode()})
+    assert get_run_metadata(schema).project.variables == [
+        VariableMetadata(
+            name="org::dataset",
+            value="stoch",
+            source=VariableSource(type="definition", kind="model", name="m"),
+            network="river",
+            path="../org/data/stoch",
+        ),
+        VariableMetadata(
+            name="column", value="x", source=VariableSource(type="command_line")
+        ),
+    ]
+
+    value["project"]["variables"][1]["source"] = {"type": "elsewhere"}
+    with pytest.raises(TypeError):
+        get_run_metadata(
+            pa.schema([], metadata={b"PYWR_RUN": json.dumps(value).encode()})
+        )

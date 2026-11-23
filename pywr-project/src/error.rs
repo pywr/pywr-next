@@ -70,6 +70,9 @@ pub enum DefinitionKind {
     Network,
     /// One network of a multi-model.
     MultiModelNetwork,
+    /// Variables given on the command line, or by whatever runs the composition, rather than
+    /// in a definition. Its [`DefinitionRef`] has an empty name.
+    CommandLine,
 }
 
 impl fmt::Display for DefinitionKind {
@@ -79,6 +82,7 @@ impl fmt::Display for DefinitionKind {
             Self::MultiModel => "multi-model definition",
             Self::Network => "network definition",
             Self::MultiModelNetwork => "multi-model network",
+            Self::CommandLine => "command line",
         })
     }
 }
@@ -103,7 +107,10 @@ impl DefinitionRef {
 
 impl fmt::Display for DefinitionRef {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{} `{}`", self.kind, self.name)
+        match self.kind {
+            DefinitionKind::CommandLine => write!(f, "{}", self.kind),
+            _ => write!(f, "{} `{}`", self.kind, self.name),
+        }
     }
 }
 
@@ -308,6 +315,11 @@ pub enum ComposeModelError {
     },
     #[error("In the file `{}`: {error}", .file.display())]
     InvalidTemplate { file: PathBuf, error: TemplateError },
+    #[error("No file of the {definition} uses the variable `{variable}` given on the command line.")]
+    UnusedCommandLineVariable {
+        definition: DefinitionRef,
+        variable: String,
+    },
     #[error("The file `{}` uses the variable `{variable}` at `{pointer}`, but its project does not declare it.", .file.display())]
     UndefinedVariable {
         file: PathBuf,

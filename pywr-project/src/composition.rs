@@ -1,4 +1,4 @@
-use crate::error::{ComposeToSchemaError, PlaceholderKind, UnresolvedPlaceholder};
+use crate::error::{ComposeToSchemaError, DefinitionRef, PlaceholderKind, UnresolvedPlaceholder};
 use crate::manifest::DefinitionOverrides;
 use pywr_schema::meta::{ComponentMeta, ProvenanceSource};
 use pywr_schema::model::{Metadata, MultiNetworkEntry, MultiNetworkTransfer, ScenarioDomain, TimeDomain};
@@ -606,6 +606,26 @@ pub struct ProjectVariables {
     paths: BTreeSet<String>,
 }
 
+/// A variable with a value in a composed definition, and where the value comes from.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BoundVariable {
+    pub value: VariableValue,
+    /// The value as written: a choice name for a variable with choices, and otherwise the value.
+    pub written: String,
+    pub source: BindingSource,
+}
+
+/// Where a variable's value comes from.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum BindingSource {
+    /// The variable's default.
+    Default,
+    /// The definition that binds it, named as the root project refers to it.
+    Definition(DefinitionRef),
+    /// The command line, or whatever runs the composition; see [`ComposeOptions`](crate::ComposeOptions).
+    CommandLine,
+}
+
 /// The value a variable takes in a composed definition.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum VariableValue {
@@ -617,7 +637,7 @@ pub enum VariableValue {
 /// Whether a variable has a value in a composed definition.
 #[derive(Clone, Debug)]
 pub(crate) enum VariableState {
-    Value(VariableValue),
+    Value(BoundVariable),
     /// Nothing binds the variable and it has no default.
     Unbound,
     /// The value bound to the variable could not be resolved, which is already reported.
@@ -632,10 +652,10 @@ impl ProjectVariables {
         Self { root, values, paths }
     }
 
-    /// The value of the variable `name`, if it is declared and has one.
-    pub fn value(&self, name: &str) -> Option<&VariableValue> {
+    /// The variable `name`, if it is declared and has a value.
+    pub fn get(&self, name: &str) -> Option<&BoundVariable> {
         match self.values.get(name)? {
-            VariableState::Value(value) => Some(value),
+            VariableState::Value(bound) => Some(bound),
             VariableState::Unbound | VariableState::BindingFailed | VariableState::Unavailable(_) => None,
         }
     }
@@ -669,8 +689,14 @@ impl ProjectVariables {
             VariableState::Unbound => Err(UseError::Unbound),
             VariableState::BindingFailed => Err(UseError::BindingFailed),
             VariableState::Unavailable(reason) => Err(UseError::Unavailable(reason.clone())),
-            VariableState::Value(VariableValue::String(value)) => Ok(value.clone()),
-            VariableState::Value(VariableValue::Path(path)) => {
+            VariableState::Value(BoundVariable {
+                value: VariableValue::String(value),
+                ..
+            }) => Ok(value.clone()),
+            VariableState::Value(BoundVariable {
+                value: VariableValue::Path(path),
+                ..
+            }) => {
                 let base = match data_dir {
                     None => self.root.clone(),
                     Some(data_dir) if data_dir.is_absolute() => data_dir.to_path_buf(),
@@ -760,6 +786,11 @@ impl ComposedModel {
     /// The network files to merge into the base model, in merge order, each with its provenance.
     pub fn includes(&self) -> &[ComposedNetworkPath] {
         &self.includes
+    }
+
+    /// How the base model is adjusted as it is loaded.
+    pub fn base_context(&self) -> &LoadContext {
+        &self.base_context
     }
 
     /// The overrides applied to the base model's time and scenario domains, if any.
