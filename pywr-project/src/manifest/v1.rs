@@ -1,6 +1,6 @@
 use crate::composition::{
     Composed, ComposedDomain, ComposedModel, ComposedModelBuilder, ComposedMultiModel, ComposedMultiModelNetwork,
-    ComposedNetwork, ComposedNetworkPath, LoadContext, PositionOffset,
+    ComposedNetwork, ComposedNetworkPath, LoadContext, PositionOffset, ProjectVariables, VariableState, VariableValue,
 };
 use crate::error::{ComposeModelError, DefinitionKind, DefinitionRef, ManifestResolutionError};
 use crate::layout::{
@@ -19,6 +19,7 @@ use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ffi::{OsStr, OsString};
 use std::path::{Component, Path, PathBuf};
+use std::sync::Arc;
 use thiserror::Error;
 
 /// A validation error for a project manifest.
@@ -103,6 +104,34 @@ pub enum ProjectManifestProblem {
     NoChoices { variable: String },
     #[error("The default `{default}` of the variable `{variable}` is not one of its choices.")]
     DefaultNotAChoice { variable: String, default: String },
+    #[error("The {definition} binds the variable `{variable}`, which is not declared.")]
+    UndeclaredVariable {
+        definition: DefinitionRef,
+        variable: String,
+    },
+    #[error("The {definition} binds the variable `{variable}` to `{value}`, which is not one of its choices.")]
+    ValueNotAChoice {
+        definition: DefinitionRef,
+        variable: String,
+        value: String,
+    },
+    #[error("The {definition} binds the variable `{variable}` to a path that cannot be used: {error}")]
+    InvalidBinding {
+        definition: DefinitionRef,
+        variable: String,
+        error: ManifestResolutionError,
+    },
+    #[error(
+        "The {definition} uses the {first_by}, which binds the variable `{variable}` to `{first}`, and the {second_by}, which binds it to `{second}`; bind the variable in the {definition} to choose."
+    )]
+    ConflictingBindings {
+        definition: DefinitionRef,
+        variable: String,
+        first: String,
+        first_by: String,
+        second: String,
+        second_by: String,
+    },
     #[error("The {definition} refers to the network definition `{network}`, which does not exist.")]
     NetworkNotFound { definition: DefinitionRef, network: String },
     #[error("The {definition} refers to the sub-network `{sub_network}`, which does not exist.")]
@@ -273,7 +302,9 @@ impl ProjectManifestProblem {
     /// if this problem is about one.
     pub fn unresolved_path(&self) -> Option<&Path> {
         match self {
-            Self::Resolution(error) | Self::InvalidBaseModel { error, .. } => error.unresolved_path(),
+            Self::Resolution(error) | Self::InvalidBaseModel { error, .. } | Self::InvalidBinding { error, .. } => {
+                error.unresolved_path()
+            }
             Self::InDependency { problem, .. } => problem.unresolved_path(),
             _ => None,
         }
@@ -585,6 +616,10 @@ impl ProjectManifest {
             (Some(problem), _) => Err(problem.into()),
             (None, Some((base_model, base_file))) => {
                 let mut builder = ComposedModelBuilder::new(model.name.clone(), base_model, base_file);
+                builder.base_context(LoadContext {
+                    data_dir: None,
+                    variables: resolved.base_variables,
+                });
                 for include in resolved.includes {
                     builder.add_include(include);
                 }
@@ -662,11 +697,19 @@ impl ProjectManifest {
 
         match problems.into_iter().next() {
             Some(problem) => Err(problem.into()),
-            None => Ok(ComposedNetwork::new(
-                network_name.to_string(),
-                None,
-                expansion.files.into_iter().map(SelectedFile::into_composed).collect(),
-            )),
+            None => {
+                let projects = expansion.files.iter().map(|selected| selected.file.project_index);
+                let variables = resolver.variables_for(&expansion.bindings, projects);
+                Ok(ComposedNetwork::new(
+                    network_name.to_string(),
+                    None,
+                    expansion
+                        .files
+                        .into_iter()
+                        .map(|selected| selected.into_composed(&variables))
+                        .collect(),
+                ))
+            }
         }
     }
 
@@ -762,6 +805,10 @@ impl ProjectManifest {
 
     fn find_multi_model(&self, name: &str) -> Option<&MultiModelDefinition> {
         self.multi_models.iter().find(|multi_model| multi_model.name == name)
+    }
+
+    fn find_variable(&self, name: &str) -> Option<&Variable> {
+        self.variables.iter().find(|variable| variable.name == name)
     }
 
     /// Problems in the manifest itself, found without touching the filesystem.
@@ -950,7 +997,11 @@ impl ProjectManifest {
             .filter(|variable| variable.kind == VariableKind::Path)
             .flat_map(|variable| {
                 variable.values().into_iter().filter_map(|(choice, value)| {
-                    resolve_variable_path(root, &variable.name, choice, value)
+                    let field = match choice {
+                        Some(choice) => choice_field(&variable.name, choice),
+                        None => default_field(&variable.name),
+                    };
+                    resolve_variable_path(root, &field, value)
                         .err()
                         .map(ProjectManifestProblem::from)
                 })
@@ -1184,7 +1235,8 @@ impl SelectedFile<'_> {
         }
     }
 
-    fn into_composed(self) -> ComposedNetworkPath {
+    /// This file as composed, with the variables of its project from `variables`.
+    fn into_composed(self, variables: &VariableMap) -> ComposedNetworkPath {
         ComposedNetworkPath {
             path: self.file.path.clone(),
             position_offset: self.position_offset,
@@ -1197,6 +1249,7 @@ impl SelectedFile<'_> {
             },
             context: LoadContext {
                 data_dir: self.file.data_dir.clone(),
+                variables: variables.get(&self.file.project_index).cloned().unwrap_or_default(),
             },
         }
     }
@@ -1209,7 +1262,28 @@ struct Expansion<'a> {
     files: Vec<SelectedFile<'a>>,
     /// Sub-networks made active in the expansion, by project index and name.
     active_sub_networks: Vec<(usize, &'a str)>,
+    /// The variables bound by the expanded definition and everything it pulls in. Unlike the
+    /// files, these are not gathered by [`extend`](Self::extend), because a definition's own
+    /// bindings override those it pulls in; see [`Resolver::combine`].
+    bindings: Bindings,
 }
+
+/// Bound variables, by the index of their project and their name.
+type Bindings = BTreeMap<(usize, String), Binding>;
+
+/// A variable bound by a definition.
+#[derive(Clone)]
+struct Binding {
+    /// The value as written: a choice name, or the value itself.
+    written: String,
+    /// The value, or `None` if it could not be resolved, which is already reported.
+    value: Option<VariableValue>,
+    /// The definition that binds it, as problems name it, such as ``network definition `river` ``.
+    by: String,
+}
+
+/// The variables of each project whose files a composition reads, by project index.
+type VariableMap = HashMap<usize, Arc<ProjectVariables>>;
 
 impl<'a> Expansion<'a> {
     fn extend(&mut self, other: Expansion<'a>) {
@@ -1665,6 +1739,8 @@ fn wrap_problems(problems: &mut Vec<ProjectManifestProblem>, start: usize, alias
 /// so that a definition's problems are reported once however many definitions refer to it.
 struct Resolver<'a> {
     graph: &'a ProjectGraph<'a>,
+    /// The root project's canonical directory, which variables' path values are given against.
+    root: PathBuf,
     expanded: HashMap<(usize, &'a str), Expansion<'a>>,
     expanded_models: HashMap<(usize, &'a str), Expansion<'a>>,
     model_base_models: HashMap<(usize, &'a str), Option<ResolvedBaseModel>>,
@@ -1678,8 +1754,10 @@ struct Resolver<'a> {
 
 impl<'a> Resolver<'a> {
     fn new(graph: &'a ProjectGraph<'a>) -> Self {
+        let root = &graph.projects[ROOT].root;
         Self {
             graph,
+            root: root.canonicalize().unwrap_or_else(|_| root.clone()),
             expanded: HashMap::new(),
             expanded_models: HashMap::new(),
             model_base_models: HashMap::new(),
@@ -1848,7 +1926,143 @@ impl<'a> Resolver<'a> {
         Expansion {
             files,
             active_sub_networks: active,
+            bindings: Bindings::new(),
         }
+    }
+
+    /// The variables that `definition` in project `from`, named `by` in problems, binds in
+    /// `variables`, each checked against its declaration.
+    fn own_bindings(
+        &self,
+        from: usize,
+        definition: &DefinitionRef,
+        by: &str,
+        variables: &'a BTreeMap<String, String>,
+        problems: &mut Vec<ProjectManifestProblem>,
+    ) -> Bindings {
+        let mut bindings = Bindings::new();
+        for (reference, written) in variables {
+            let Some((index, name)) = self.locate(from, definition, reference, ItemKind::Variable, problems) else {
+                continue;
+            };
+            let project = self.project(index);
+            let Some(variable) = project.manifest.find_variable(name) else {
+                problems.push(ProjectManifestProblem::UndeclaredVariable {
+                    definition: definition.clone(),
+                    variable: reference.clone(),
+                });
+                continue;
+            };
+            let field = || format!("the value of variable `{reference}`");
+            let value = match resolve_variable_value(variable, written, &project.root, &self.project(from).root, field)
+            {
+                Ok(value) => Some(value),
+                Err(ValueError::NotAChoice) => {
+                    problems.push(ProjectManifestProblem::ValueNotAChoice {
+                        definition: definition.clone(),
+                        variable: reference.clone(),
+                        value: written.clone(),
+                    });
+                    None
+                }
+                Err(ValueError::Path(error)) => {
+                    problems.push(ProjectManifestProblem::InvalidBinding {
+                        definition: definition.clone(),
+                        variable: reference.clone(),
+                        error,
+                    });
+                    None
+                }
+            };
+            bindings.insert(
+                (index, name.to_string()),
+                Binding {
+                    written: written.clone(),
+                    value,
+                    by: by.to_string(),
+                },
+            );
+        }
+        bindings
+    }
+
+    /// Combine the bindings of the definitions that `definition` pulls in, in `pulled_in`, with
+    /// its own, which override them. Two pulled-in bindings of one variable to different values
+    /// are reported, unless `definition` binds the variable itself.
+    fn combine(
+        &self,
+        definition: &DefinitionRef,
+        pulled_in: Vec<Bindings>,
+        own: Bindings,
+        problems: &mut Vec<ProjectManifestProblem>,
+    ) -> Bindings {
+        let mut combined = Bindings::new();
+        let mut reported = HashSet::new();
+        for bindings in pulled_in {
+            for (key, binding) in bindings {
+                let Some(existing) = combined.get(&key) else {
+                    combined.insert(key, binding);
+                    continue;
+                };
+                let differs =
+                    matches!((&existing.value, &binding.value), (Some(first), Some(second)) if first != second);
+                if differs && !own.contains_key(&key) && reported.insert(key.clone()) {
+                    problems.push(ProjectManifestProblem::ConflictingBindings {
+                        definition: definition.clone(),
+                        variable: self.project(key.0).label(&key.1),
+                        first: existing.written.clone(),
+                        first_by: existing.by.clone(),
+                        second: binding.written,
+                        second_by: binding.by,
+                    });
+                }
+            }
+        }
+        combined.extend(own);
+        combined
+    }
+
+    /// The values of the variables of each project in `projects`, given `bindings`: a variable
+    /// takes its bound value, or else its default.
+    ///
+    /// A default that cannot be resolved is not reported here, since nothing may use it;
+    /// loading a file that does fails.
+    fn variables_for(&self, bindings: &Bindings, projects: impl IntoIterator<Item = usize>) -> VariableMap {
+        let mut variables = VariableMap::new();
+        for index in projects {
+            variables
+                .entry(index)
+                .or_insert_with(|| Arc::new(self.project_variables(bindings, index)));
+        }
+        variables
+    }
+
+    fn project_variables(&self, bindings: &Bindings, index: usize) -> ProjectVariables {
+        let project = self.project(index);
+        let mut values = BTreeMap::new();
+        for variable in &project.manifest.variables {
+            let state = match bindings.get(&(index, variable.name.clone())) {
+                Some(Binding { value: Some(value), .. }) => VariableState::Value(value.clone()),
+                Some(Binding { value: None, .. }) => {
+                    VariableState::Unavailable("the value bound to it could not be resolved".to_string())
+                }
+                None => match &variable.default {
+                    None => VariableState::Unbound,
+                    Some(default) => {
+                        let field = || default_field(&variable.name);
+                        match resolve_variable_value(variable, default, &project.root, &project.root, field) {
+                            Ok(value) => VariableState::Value(value),
+                            Err(ValueError::NotAChoice) => {
+                                VariableState::Unavailable(format!("its default `{default}` is not one of its choices"))
+                            }
+                            Err(ValueError::Path(error)) => VariableState::Unavailable(error.to_string()),
+                        }
+                    }
+                },
+            };
+            values.entry(variable.name.clone()).or_insert(state);
+        }
+        ProjectVariables::new(self.root.clone(), values)
     }
 
     /// Resolve a root model definition's base model and files, checking them as a whole model.
@@ -1860,9 +2074,16 @@ impl<'a> Resolver<'a> {
         let base_model = self.model_base_model(ROOT, model, problems);
         let expansion = self.expand_model(ROOT, model, problems);
         self.check_model(ROOT, model, &expansion, problems);
+        let projects = expansion.files.iter().map(|selected| selected.file.project_index);
+        let variables = self.variables_for(&expansion.bindings, projects.chain([ROOT]));
         ResolvedModel {
             base_model,
-            includes: expansion.files.into_iter().map(SelectedFile::into_composed).collect(),
+            base_variables: variables[&ROOT].clone(),
+            includes: expansion
+                .files
+                .into_iter()
+                .map(|selected| selected.into_composed(&variables))
+                .collect(),
         }
     }
 
@@ -1930,12 +2151,17 @@ impl<'a> Resolver<'a> {
         let definition = DefinitionRef::new(DefinitionKind::Model, &model.name);
         // The base networks of the sub-networks activated here come straight after the base model.
         let mut expansion = self.activate_sub_networks(index, &definition, &model.sub_networks, None, problems);
+        let mut pulled_in = Vec::new();
         for reference in unique_network_references(&definition, &model.networks, problems) {
             let network = self.expand_reference(index, &definition, reference, problems);
+            pulled_in.push(network.bindings.clone());
             expansion.extend(network);
         }
         let includes = self.resolve_includes(index, &definition, None, &model.include, problems);
         expansion.files.extend(includes);
+        let by = DefinitionRef::new(DefinitionKind::Model, &self.project(index).label(&model.name)).to_string();
+        let own = self.own_bindings(index, &definition, &by, &model.variables, problems);
+        expansion.bindings = self.combine(&definition, pulled_in, own, problems);
         expansion.dedup(&definition, problems);
         self.attribute(index, problems, start);
         self.expanded_models.insert((index, &model.name), expansion.clone());
@@ -1970,12 +2196,17 @@ impl<'a> Resolver<'a> {
         let definition = DefinitionRef::new(DefinitionKind::Network, &network.name);
         let mut expansion =
             self.activate_sub_networks(index, &definition, &network.sub_networks, Some(&network.name), problems);
+        let mut pulled_in = Vec::new();
         for parent in unique_network_references(&definition, &network.extends, problems) {
             let parent = self.expand_reference(index, &definition, parent, problems);
+            pulled_in.push(parent.bindings.clone());
             expansion.extend(parent);
         }
         let includes = self.resolve_includes(index, &definition, Some(&network.name), &network.include, problems);
         expansion.files.extend(includes);
+        let by = DefinitionRef::new(DefinitionKind::Network, &project.label(&network.name)).to_string();
+        let own = self.own_bindings(index, &definition, &by, &network.variables, problems);
+        expansion.bindings = self.combine(&definition, pulled_in, own, problems);
         self.stack.pop();
 
         expansion.dedup(&definition, problems);
@@ -2075,6 +2306,39 @@ impl From<ProjectManifestProblem> for ComposeModelError {
             ProjectManifestProblem::DefaultNotAChoice { variable, default } => {
                 Self::DefaultNotAChoice { variable, default }
             }
+            ProjectManifestProblem::UndeclaredVariable { definition, variable } => {
+                Self::UndeclaredVariable { definition, variable }
+            }
+            ProjectManifestProblem::ValueNotAChoice {
+                definition,
+                variable,
+                value,
+            } => Self::ValueNotAChoice {
+                definition,
+                variable,
+                value,
+            },
+            ProjectManifestProblem::InvalidBinding {
+                definition,
+                variable,
+                error,
+            } => Self::InvalidBinding {
+                definition,
+                variable,
+                error: Box::new(error),
+            },
+            ProjectManifestProblem::ConflictingBindings {
+                definition,
+                variable,
+                first,
+                second,
+                ..
+            } => Self::ConflictingBindings {
+                definition,
+                variable,
+                first,
+                second,
+            },
             ProjectManifestProblem::NetworkNotFound { definition, network } => {
                 Self::NetworkNotFound { definition, network }
             }
@@ -2332,6 +2596,10 @@ pub struct NetworkDefinition {
     /// Per-network-set selections for this network definition.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub include: Vec<DefinitionSelection>,
+    /// Values for variables, by name: a variable of this project, or one that a dependency
+    /// exports, as `<dependency>::<name>`. For a variable with choices, the value names a choice.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub variables: BTreeMap<String, String>,
 }
 
 /// A named model, composed from a base model, network definitions and further selections.
@@ -2355,11 +2623,17 @@ pub struct ModelDefinition {
     /// Optional overrides to base model.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub overrides: Option<DefinitionOverrides>,
+    /// Values for variables, by name: a variable of this project, or one that a dependency
+    /// exports, as `<dependency>::<name>`. For a variable with choices, the value names a choice.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub variables: BTreeMap<String, String>,
 }
 
 /// A model definition resolved into its base model and the networks to include in merge order.
 struct ResolvedModel {
     base_model: Option<ResolvedBaseModel>,
+    /// The variables of the root project, which fill in the base model's templates.
+    base_variables: Arc<ProjectVariables>,
     includes: Vec<ComposedNetworkPath>,
 }
 
@@ -2510,6 +2784,10 @@ pub struct MultiModelNetwork {
     /// Path (relative to root) to a JSON list of further transfers into this network.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub transfers_file: Option<String>,
+    /// Values for variables, by name: a variable of this project, or one that a dependency
+    /// exports, as `<dependency>::<name>`. For a variable with choices, the value names a choice.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub variables: BTreeMap<String, String>,
 }
 
 /// The definition a multi-model network starts from, chosen by `type`.
@@ -2635,9 +2913,12 @@ impl MultiModelNetwork {
         let mut whole_model = None;
         let mut limits = SetLimits::SelectedSets;
         let mut expansion = resolver.activate_sub_networks(ROOT, &label, &self.sub_networks, None, problems);
+        let mut pulled_in = Vec::new();
         match &self.network {
             Some(MultiModelNetworkSource::Network(NetworkSource { name: network })) => {
-                expansion.extend(resolver.expand_reference(ROOT, &label, network, problems));
+                let source = resolver.expand_reference(ROOT, &label, network, problems);
+                pulled_in.push(source.bindings.clone());
+                expansion.extend(source);
             }
             Some(MultiModelNetworkSource::Model(ModelSource { name: model })) => {
                 if let Some((index, name)) = resolver.locate(ROOT, &label, model, ItemKind::Model, problems) {
@@ -2646,7 +2927,9 @@ impl MultiModelNetwork {
                             base_model = resolver
                                 .model_base_model(index, definition, problems)
                                 .map(|base_model| (index, base_model));
-                            expansion.extend(resolver.expand_model(index, definition, problems));
+                            let source = resolver.expand_model(index, definition, problems);
+                            pulled_in.push(source.bindings.clone());
+                            expansion.extend(source);
                             limits = SetLimits::ModelOf(index);
                             if self.sub_networks.is_empty() && self.include.is_empty() {
                                 whole_model = Some((index, definition));
@@ -2663,6 +2946,8 @@ impl MultiModelNetwork {
         }
         let includes = resolver.resolve_includes(ROOT, &label, None, &self.include, problems);
         expansion.files.extend(includes);
+        let own = resolver.own_bindings(ROOT, &label, &label.to_string(), &self.variables, problems);
+        let bindings = resolver.combine(&label, pulled_in, own, problems);
         expansion.dedup(&label, problems);
         match whole_model {
             Some((index, model)) => resolver.check_model(index, model, &expansion, problems),
@@ -2670,8 +2955,10 @@ impl MultiModelNetwork {
         }
 
         let (transfers, transfers_file) = self.resolve_transfers(multi_model, &resolver.project(ROOT).root, problems);
-        // A model's base model network is the starting point, with its data paths rebased like
-        // the rest of its project's files.
+        let projects = expansion.files.iter().map(|selected| selected.file.project_index);
+        let variables = resolver.variables_for(&bindings, projects.chain(base_model.as_ref().map(|(index, _)| *index)));
+        // A model's base model network is the starting point, with its data paths rebased and
+        // templates filled in like the rest of its project's files.
         let base_model = base_model.map(|(index, (path, file))| {
             let scope = &resolver.project(index).scope;
             ComposedNetworkPath {
@@ -2686,6 +2973,7 @@ impl MultiModelNetwork {
                 },
                 context: LoadContext {
                     data_dir: scope.data_dir.clone(),
+                    variables: variables.get(&index).cloned().unwrap_or_default(),
                 },
             }
         });
@@ -2693,7 +2981,11 @@ impl MultiModelNetwork {
             network: ComposedNetwork::new(
                 self.name.clone(),
                 base_model,
-                expansion.files.into_iter().map(SelectedFile::into_composed).collect(),
+                expansion
+                    .files
+                    .into_iter()
+                    .map(|selected| selected.into_composed(&variables))
+                    .collect(),
             ),
             transfers,
             transfers_file,
@@ -2870,6 +3162,8 @@ struct ResolvedNetworkFile {
     sub_network: Option<String>,
     /// The alias of the file's project, if it is a dependency.
     project: Option<String>,
+    /// The index of the file's project.
+    project_index: usize,
     /// Directory, relative to the root project's directory, that the file's relative data paths
     /// are relative to, or `None` if they are already relative to the root project's directory.
     data_dir: Option<PathBuf>,
@@ -3007,23 +3301,57 @@ fn resolve_base_model(root: &Path, base_model: &str) -> Result<(PathBuf, Relativ
     Ok((path, file))
 }
 
-/// Resolve a path value of a variable, given by `choice` or as the default when `choice` is
-/// `None`, to its canonical path inside the project root.
-fn resolve_variable_path(
-    root: &Path,
-    variable: &str,
-    choice: Option<&str>,
-    value: &str,
-) -> Result<PathBuf, ManifestResolutionError> {
-    let field = match choice {
-        Some(choice) => format!("choice `{choice}` of variable `{variable}`"),
-        None => format!("the default of variable `{variable}`"),
-    };
-    let candidate = strict_relative_path(&field, value)?.to_path(root);
+/// Resolve a path value of a variable, described in problems as `field`, to its canonical path
+/// inside `root`.
+fn resolve_variable_path(root: &Path, field: &str, value: &str) -> Result<PathBuf, ManifestResolutionError> {
+    let candidate = strict_relative_path(field, value)?.to_path(root);
     if !candidate.exists() {
-        return Err(ManifestResolutionError::VariablePathNotFound { field, path: candidate });
+        return Err(ManifestResolutionError::VariablePathNotFound {
+            field: field.to_string(),
+            path: candidate,
+        });
     }
-    canonicalize_contained(root, &candidate, &field)
+    canonicalize_contained(root, &candidate, field)
+}
+
+fn choice_field(variable: &str, choice: &str) -> String {
+    format!("choice `{choice}` of variable `{variable}`")
+}
+
+fn default_field(variable: &str) -> String {
+    format!("the default of variable `{variable}`")
+}
+
+/// Why a value written for a variable could not be resolved.
+enum ValueError {
+    NotAChoice,
+    Path(ManifestResolutionError),
+}
+
+/// Resolve `written`, a value for `variable` given in the manifest whose root is `written_root`,
+/// into the variable's value. For a variable with choices, `written` names a choice, whose
+/// value is relative to `declared_root`, the root of the variable's own project. `field`
+/// describes a path written directly, in problems.
+fn resolve_variable_value(
+    variable: &Variable,
+    written: &str,
+    declared_root: &Path,
+    written_root: &Path,
+    field: impl FnOnce() -> String,
+) -> Result<VariableValue, ValueError> {
+    let (value, root, field) = match &variable.choices {
+        Some(choices) => {
+            let value = choices.get(written).ok_or(ValueError::NotAChoice)?;
+            (value.as_str(), declared_root, choice_field(&variable.name, written))
+        }
+        None => (written, written_root, field()),
+    };
+    match variable.kind {
+        VariableKind::String => Ok(VariableValue::String(value.to_string())),
+        VariableKind::Path => resolve_variable_path(root, &field, value)
+            .map(VariableValue::Path)
+            .map_err(ValueError::Path),
+    }
 }
 
 /// Resolve a sub-network's directory and base network.
@@ -3089,6 +3417,7 @@ fn resolve_sub_network(
                 source: dir.join(&file),
                 sub_network: Some(name.clone()),
                 project: project.alias.clone(),
+                project_index: project.index,
                 data_dir: Some(data_dir.clone()),
             })
         }
@@ -3176,6 +3505,7 @@ fn resolve_network_set(
             source,
             sub_network: scope.map(|scope| scope.name.clone()),
             project: project.alias.clone(),
+            project_index: project.index,
             data_dir: scope.map_or_else(|| project.data_dir.clone(), |scope| Some(scope.data_dir.clone())),
         });
     }
@@ -3342,6 +3672,7 @@ mod test {
     }
     fn model(name: &str, include: Vec<DefinitionSelection>) -> ModelDefinition {
         ModelDefinition {
+            variables: BTreeMap::new(),
             name: name.to_string(),
             base_model: None,
             sub_networks: vec![],
@@ -3729,6 +4060,7 @@ mod test {
 
     fn network(name: &str, extends: Vec<&str>, include: Vec<DefinitionSelection>) -> NetworkDefinition {
         NetworkDefinition {
+            variables: BTreeMap::new(),
             name: name.to_string(),
             description: None,
             sub_networks: vec![],
@@ -4687,6 +5019,7 @@ mod test {
 
     fn multi_network(name: &str, network: Option<MultiModelNetworkSource>) -> MultiModelNetwork {
         MultiModelNetwork {
+            variables: BTreeMap::new(),
             name: name.to_string(),
             network,
             sub_networks: vec![],
@@ -6168,5 +6501,350 @@ mod test {
                 workspace.path().join("org/data/missing").display()
             )]
         );
+    }
+
+    /// A network with an input node whose comment is `comment` and a time series named `name`
+    /// read from `path`.
+    fn templated_network(name: &str, comment: &str, path: &str) -> serde_json::Value {
+        serde_json::json!({
+            "nodes": [{"type": "Input", "meta": {"name": format!("{name}-node"), "comment": comment}}],
+            "edges": [],
+            "time_series": [{"type": "Polars", "meta": {"name": name}, "path": path}]
+        })
+    }
+
+    /// A project with variables `dataset` (a path, with choices) and `column` (a string, with a
+    /// default), a network set `flows` whose `f.json` uses both, and a sub-network `upper`, with
+    /// its own data directory, whose base network uses `dataset`.
+    fn project_with_templates() -> tempfile::TempDir {
+        let root = tempdir().unwrap();
+        write_json(
+            &root.path().join("base.json"),
+            serde_json::to_value(pywr_schema::ModelSchema::default()).unwrap(),
+        );
+        for dataset in ["historic", "stoch"] {
+            std::fs::create_dir_all(root.path().join("data").join(dataset)).unwrap();
+        }
+        std::fs::create_dir_all(root.path().join("upper/data")).unwrap();
+        write_json(
+            &root.path().join("flows/f.json"),
+            templated_network("flows", "${column}", "${dataset}/flows.csv"),
+        );
+        write_json(
+            &root.path().join("upper/base.json"),
+            templated_network("upper-flows", "upper", "${dataset}/upper.csv"),
+        );
+        write_json(
+            &root.path().join("misused/unbound.json"),
+            templated_network("unbound", "${unbound}", "flows.csv"),
+        );
+        write_json(
+            &root.path().join("misused/inside.json"),
+            templated_network("inside", "x", "data/${dataset}/flows.csv"),
+        );
+        root
+    }
+
+    /// The manifest of [`project_with_templates`] with the given networks, models and
+    /// multi-models.
+    fn templates_manifest(
+        networks: serde_json::Value,
+        models: serde_json::Value,
+        multi_models: serde_json::Value,
+    ) -> ProjectManifest {
+        serde_json::from_value(serde_json::json!({
+            "base_model": "base.json",
+            "variables": [
+                {
+                    "name": "dataset",
+                    "type": "path",
+                    "default": "historic",
+                    "choices": {"historic": "data/historic", "stoch": "data/stoch", "missing": "data/missing"}
+                },
+                {"name": "column", "type": "string", "default": "baseline"},
+                {"name": "unbound", "type": "string"}
+            ],
+            "sub_networks": [{"name": "upper", "base_network": "base.json", "data_dir": "data"}],
+            "network_sets": [{"name": "flows"}, {"name": "misused"}],
+            "networks": networks,
+            "models": models,
+            "multi_models": multi_models
+        }))
+        .unwrap()
+    }
+
+    fn composed_json(manifest: &ProjectManifest, root: &Path, model: &str) -> serde_json::Value {
+        let schema = manifest
+            .compose_model(root, model, OPTIONS)
+            .unwrap()
+            .load()
+            .unwrap()
+            .into_model_schema(&Default::default())
+            .unwrap();
+        serde_json::to_value(schema.network).unwrap()
+    }
+
+    /// The paths of each time series and the comment of each node in a network as JSON.
+    fn paths_and_comments(network: &serde_json::Value) -> (BTreeMap<String, String>, BTreeMap<String, String>) {
+        let named = |items: &str, field: &str| {
+            network[items]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|item| {
+                    let value = item.pointer(field)?.as_str()?;
+                    Some((item["meta"]["name"].as_str()?.to_string(), value.to_string()))
+                })
+                .collect()
+        };
+        (named("time_series", "/path"), named("nodes", "/meta/comment"))
+    }
+
+    fn flows(include: &str) -> serde_json::Value {
+        serde_json::json!([{"set": "flows", "files": [include]}])
+    }
+
+    #[test]
+    fn bound_values_fill_in_templates_and_path_values_are_rebased() {
+        let root = project_with_templates();
+        let manifest = templates_manifest(
+            serde_json::json!([]),
+            serde_json::json!([
+                {"name": "stoch", "sub_networks": ["upper"], "include": flows("f.json"), "variables": {"dataset": "stoch"}},
+                {"name": "defaults", "sub_networks": ["upper"], "include": flows("f.json")}
+            ]),
+            serde_json::json!([]),
+        );
+
+        let (paths, comments) = paths_and_comments(&composed_json(&manifest, root.path(), "stoch"));
+        // The sub-network's data paths are relative to `upper/data`, so its path value is
+        // given as `../../data/stoch` and rebased back.
+        assert_eq!(paths["flows"], "data/stoch/flows.csv");
+        assert_eq!(paths["upper-flows"], "data/stoch/upper.csv");
+        assert_eq!(comments["flows-node"], "baseline");
+
+        let (paths, _) = paths_and_comments(&composed_json(&manifest, root.path(), "defaults"));
+        assert_eq!(paths["flows"], "data/historic/flows.csv");
+        assert_eq!(paths["upper-flows"], "data/historic/upper.csv");
+    }
+
+    #[test]
+    fn a_definitions_own_bindings_override_those_it_pulls_in() {
+        let root = project_with_templates();
+        let manifest = templates_manifest(
+            serde_json::json!([
+                {"name": "parent", "include": flows("f.json"), "variables": {"column": "parent"}},
+                {"name": "child", "extends": ["parent"], "variables": {"column": "child"}},
+                {"name": "other", "variables": {"column": "other"}},
+                {"name": "same", "variables": {"column": "child"}}
+            ]),
+            serde_json::json!([
+                {"name": "parent", "networks": ["parent"]},
+                {"name": "child", "networks": ["child"]},
+                {"name": "agreeing", "networks": ["child", "same"]},
+                {"name": "conflicting", "networks": ["child", "other"]},
+                {"name": "settled", "networks": ["child", "other"], "variables": {"column": "model"}}
+            ]),
+            serde_json::json!([]),
+        );
+
+        let comment =
+            |model: &str| paths_and_comments(&composed_json(&manifest, root.path(), model)).1["flows-node"].clone();
+        assert_eq!(comment("parent"), "parent");
+        assert_eq!(comment("child"), "child");
+        assert_eq!(comment("agreeing"), "child");
+        assert_eq!(comment("settled"), "model");
+
+        let report = manifest.validate(root.path(), OPTIONS).unwrap_err();
+        // The fixture's `missing` choice is reported too, as checking the whole project finds it.
+        let problems: Vec<String> = report
+            .problems
+            .iter()
+            .map(ToString::to_string)
+            .filter(|problem| !problem.contains("choice `missing`"))
+            .collect();
+        assert_eq!(
+            problems,
+            [
+                "The model definition `conflicting` uses the network definition `child`, which binds the variable `column` to `child`, and the network definition `other`, which binds it to `other`; bind the variable in the model definition `conflicting` to choose."
+            ]
+        );
+        assert!(matches!(
+            manifest.compose_model(root.path(), "conflicting", OPTIONS),
+            Err(ComposeModelError::ConflictingBindings { variable, .. }) if variable == "column"
+        ));
+    }
+
+    #[test]
+    fn bindings_are_checked_against_their_declarations() {
+        let root = project_with_templates();
+        let manifest = templates_manifest(
+            serde_json::json!([{"name": "net", "variables": {"nope": "x", "dataset": "bogus"}}]),
+            serde_json::json!([
+                {"name": "missing", "include": flows("f.json"), "variables": {"dataset": "missing"}},
+                {"name": "net", "networks": ["net"]}
+            ]),
+            serde_json::json!([]),
+        );
+
+        let report = manifest.validate(root.path(), OPTIONS).unwrap_err();
+        let problems: Vec<String> = report.problems.iter().map(ToString::to_string).collect();
+        let missing = root.path().join("data/missing");
+        assert_eq!(
+            problems,
+            [
+                format!(
+                    "The path `{}` for choice `missing` of variable `dataset` was not found.",
+                    missing.display()
+                ),
+                format!(
+                    "The model definition `missing` binds the variable `dataset` to a path that cannot be used: The path `{}` for choice `missing` of variable `dataset` was not found.",
+                    missing.display()
+                ),
+                "The network definition `net` binds the variable `dataset` to `bogus`, which is not one of its choices."
+                    .to_string(),
+                "The network definition `net` binds the variable `nope`, which is not declared.".to_string(),
+            ]
+        );
+        assert!(matches!(
+            manifest.compose_model(root.path(), "missing", OPTIONS),
+            Err(ComposeModelError::InvalidBinding { variable, .. }) if variable == "dataset"
+        ));
+    }
+
+    #[test]
+    fn templates_that_cannot_be_filled_in_fail_to_load() {
+        let root = project_with_templates();
+        let manifest = templates_manifest(
+            serde_json::json!([]),
+            serde_json::json!([
+                {"name": "unbound", "include": [{"set": "misused", "files": ["unbound.json"]}]},
+                {"name": "inside", "include": [{"set": "misused", "files": ["inside.json"]}]}
+            ]),
+            serde_json::json!([]),
+        );
+        let load_error = |model: &str| {
+            let composed = manifest.compose_model(root.path(), model, OPTIONS).unwrap();
+            let Err(crate::ComposeToSchemaError::NetworkRead(pywr_schema::NetworkSchemaReadError::Template {
+                source,
+                ..
+            })) = composed.load()
+            else {
+                panic!("expected a template error loading `{model}`");
+            };
+            source.to_string()
+        };
+        assert_eq!(
+            load_error("unbound"),
+            "Variable `unbound` cannot be used at `/nodes/0/meta/comment`: nothing binds it and it has no default"
+        );
+        assert_eq!(
+            load_error("inside"),
+            "Variable `dataset` cannot be used at `/time_series/0/path`: a path variable must start the string it is used in"
+        );
+    }
+
+    #[test]
+    fn each_network_of_a_multi_model_has_its_own_bindings() {
+        let root = project_with_templates();
+        let manifest = templates_manifest(
+            serde_json::json!([{"name": "net", "include": flows("f.json")}]),
+            serde_json::json!([{"name": "m"}]),
+            serde_json::json!([{
+                "name": "joint",
+                "domain": {"type": "Model", "name": "m"},
+                "networks": [
+                    {"name": "a", "network": {"type": "Network", "name": "net"}},
+                    {"name": "b", "network": {"type": "Network", "name": "net"}, "variables": {"dataset": "stoch", "column": "b"}}
+                ]
+            }]),
+        );
+
+        let joint = manifest.compose_multi_model(root.path(), "joint", OPTIONS).unwrap();
+        let network = |index: usize| {
+            let schema = joint.networks()[index]
+                .network
+                .load()
+                .unwrap()
+                .into_network_schema(&Default::default())
+                .unwrap();
+            paths_and_comments(&serde_json::to_value(schema).unwrap())
+        };
+        let (paths, comments) = network(0);
+        assert_eq!(
+            (paths["flows"].as_str(), comments["flows-node"].as_str()),
+            ("data/historic/flows.csv", "baseline")
+        );
+        let (paths, comments) = network(1);
+        assert_eq!(
+            (paths["flows"].as_str(), comments["flows-node"].as_str()),
+            ("data/stoch/flows.csv", "b")
+        );
+    }
+
+    #[test]
+    fn a_dependencys_exported_variables_are_bound_by_qualified_name() {
+        let workspace = workspace();
+        let root = workspace.path().join("main");
+        for dataset in ["historic", "stoch"] {
+            std::fs::create_dir_all(workspace.path().join("org/data").join(dataset)).unwrap();
+        }
+        write_json(
+            &workspace.path().join("org/licences/l.json"),
+            templated_network("licence", "${column}", "${dataset}/flows.csv"),
+        );
+        let mut org = org_manifest();
+        org["variables"] = serde_json::json!([
+            {"name": "dataset", "type": "path", "default": "historic", "choices": {"historic": "data/historic", "stoch": "data/stoch"}},
+            {"name": "column", "type": "string", "default": "org"}
+        ]);
+        org["exports"] =
+            serde_json::json!({"networks": ["river"], "network_sets": ["licences"], "variables": ["dataset"]});
+        write_org_manifest(workspace.path(), org);
+
+        let licences = || vec![selection("org::licences", Some(vec!["l.json"]), false)];
+        let mut bound = model("bound", licences());
+        bound.variables = BTreeMap::from([("org::dataset".to_string(), "stoch".to_string())]);
+        let mut unexported = model("unexported", licences());
+        unexported.variables = BTreeMap::from([("org::column".to_string(), "x".to_string())]);
+        let manifest = main_manifest(vec![model("defaults", licences()), bound, unexported]);
+
+        let licence = |model: &str| {
+            let (paths, comments) = paths_and_comments(&composed_json(&manifest, &root, model));
+            (paths["licence"].clone(), comments["licence-node"].clone())
+        };
+        assert_eq!(
+            licence("defaults"),
+            ("../org/data/historic/flows.csv".to_string(), "org".to_string())
+        );
+        assert_eq!(
+            licence("bound"),
+            ("../org/data/stoch/flows.csv".to_string(), "org".to_string())
+        );
+        assert!(matches!(
+            manifest.compose_model(&root, "unexported", OPTIONS),
+            Err(ComposeModelError::NotExported { kind: "variable", item, .. }) if item == "column"
+        ));
+    }
+
+    #[test]
+    fn manifest_json_accepts_bindings() {
+        let manifest: ProjectManifest = serde_json::from_value(serde_json::json!({
+            "networks": [{"name": "n", "variables": {"a": "1"}}],
+            "models": [{"name": "m", "variables": {"org::b": "2"}}],
+            "multi_models": [{
+                "name": "mm",
+                "domain": {"type": "Model", "name": "m"},
+                "networks": [{"name": "x", "variables": {"c": "3"}}]
+            }]
+        }))
+        .unwrap();
+        assert_eq!(manifest.networks[0].variables["a"], "1");
+        assert_eq!(manifest.models[0].variables["org::b"], "2");
+        assert_eq!(manifest.multi_models[0].networks[0].variables["c"], "3");
+        let json = serde_json::to_value(&manifest.models[0]).unwrap();
+        assert_eq!(json["variables"], serde_json::json!({"org::b": "2"}));
+        let json = serde_json::to_value(&manifest.networks[0]).unwrap();
+        assert!(json.get("include").is_none());
     }
 }

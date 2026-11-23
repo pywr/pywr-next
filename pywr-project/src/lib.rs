@@ -8,7 +8,7 @@ mod run_metadata;
 pub use composition::{
     Composed, ComposedDomain, ComposedModel, ComposedModelBuilder, ComposedModelNetworkSchema, ComposedModelSchemas,
     ComposedMultiModel, ComposedMultiModelNetwork, ComposedMultiModelSchemas, ComposedNetwork, ComposedNetworkPath,
-    ComposedNetworkSchemas, LoadContext, PositionOffset,
+    ComposedNetworkSchemas, LoadContext, PositionOffset, ProjectVariables, VariableValue,
 };
 pub use error::{
     ComposeModelError, ComposeToSchemaError, DefinitionKind, DefinitionRef, ManifestResolutionError, PlaceholderKind,

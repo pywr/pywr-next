@@ -2,12 +2,15 @@ use crate::error::{ComposeToSchemaError, PlaceholderKind, UnresolvedPlaceholder}
 use crate::manifest::DefinitionOverrides;
 use pywr_schema::meta::{ComponentMeta, ProvenanceSource};
 use pywr_schema::model::{Metadata, MultiNetworkEntry, MultiNetworkTransfer, ScenarioDomain, TimeDomain};
+use pywr_schema::template::{LookupError, TemplateUse};
 use pywr_schema::{
-    ModelSchema, MultiNetworkModelSchema, NetworkMergeOptions, NetworkSchema, NetworkSchemaReadError, NetworkSchemaRef,
-    Reference, VisitPaths, VisitReferences,
+    ModelSchema, MultiNetworkModelSchema, NetworkMergeOptions, NetworkSchema, NetworkSchemaRef, Reference, VisitPaths,
+    VisitReferences,
 };
 use relative_path::{RelativePath, RelativePathBuf};
-use std::path::{Path, PathBuf};
+use std::collections::BTreeMap;
+use std::path::{Component, Path, PathBuf};
+use std::sync::Arc;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct PositionOffset {
@@ -160,14 +163,11 @@ fn merge_includes(
 }
 
 /// Read each included network from its path, applying its load context.
-fn load_includes(includes: &[ComposedNetworkPath]) -> Result<Vec<ComposedModelNetworkSchema>, NetworkSchemaReadError> {
+fn load_includes(includes: &[ComposedNetworkPath]) -> Result<Vec<ComposedModelNetworkSchema>, ComposeToSchemaError> {
     includes
         .iter()
         .map(|network| {
-            let mut network_schema = NetworkSchema::from_path(&network.path)?;
-            if let Some(data_dir) = &network.context.data_dir {
-                rebase_data_paths(&mut network_schema, data_dir);
-            }
+            let network_schema = network.context.read_network(&network.path)?;
             Ok(ComposedModelNetworkSchema {
                 network_schema,
                 position_offset: network.position_offset,
@@ -197,9 +197,12 @@ fn rebase_data_paths(network: &mut NetworkSchema, data_dir: &Path) {
 
 /// Join `path` to `dir` with `/` separators when both are relative, so a composed model saved on
 /// Windows loads elsewhere. An absolute `dir` is joined with the platform's separator.
+///
+/// Relative paths are normalised, so that a path such as `upper/data/../../data/flows.csv`,
+/// which a path variable gives in a sub-network's file, becomes `data/flows.csv`.
 fn join_portable(dir: &Path, path: &Path) -> PathBuf {
     match (RelativePath::from_path(dir), RelativePath::from_path(path)) {
-        (Ok(dir), Ok(path)) => PathBuf::from(dir.join(path).as_str()),
+        (Ok(dir), Ok(path)) => PathBuf::from(dir.join(path).normalize().as_str()),
         _ => dir.join(path),
     }
 }
@@ -270,10 +273,7 @@ impl ComposedNetwork {
     pub fn load(&self) -> Result<ComposedNetworkSchemas, ComposeToSchemaError> {
         let base_network = match &self.base_model {
             Some(base_model) => {
-                let mut network = ModelSchema::from_path(&base_model.path)?.network;
-                if let Some(data_dir) = &base_model.context.data_dir {
-                    rebase_data_paths(&mut network, data_dir);
-                }
+                let mut network = base_model.context.read_model(&base_model.path)?.network;
                 network.set_provenance(base_model.source.clone());
                 Some(network)
             }
@@ -565,6 +565,132 @@ pub struct LoadContext {
     /// the root project's directory, possibly through `..`, or absolute when no relative path
     /// exists. `None` leaves the paths as they are.
     pub data_dir: Option<PathBuf>,
+    /// The variables of the file's project, which fill in the `${name}` templates in its string
+    /// values. A template using a variable not given here is an error.
+    pub variables: Arc<ProjectVariables>,
+}
+
+impl LoadContext {
+    /// Read the network at `path`, filling in its templates and then rebasing its data paths.
+    fn read_network(&self, path: &Path) -> Result<NetworkSchema, ComposeToSchemaError> {
+        let mut network = NetworkSchema::from_path_with(path, |used| self.lookup(used))?;
+        if let Some(data_dir) = &self.data_dir {
+            rebase_data_paths(&mut network, data_dir);
+        }
+        Ok(network)
+    }
+
+    /// Read the model at `path`, filling in its templates and then rebasing its network's data
+    /// paths.
+    fn read_model(&self, path: &Path) -> Result<ModelSchema, ComposeToSchemaError> {
+        let mut model = ModelSchema::from_path_with(path, |used| self.lookup(used))?;
+        if let Some(data_dir) = &self.data_dir {
+            rebase_data_paths(&mut model.network, data_dir);
+        }
+        Ok(model)
+    }
+
+    fn lookup(&self, used: &TemplateUse) -> Result<String, LookupError> {
+        self.variables.lookup(used, self.data_dir.as_deref())
+    }
+}
+
+/// The values of one project's variables in a composed definition.
+#[derive(Clone, Debug, Default)]
+pub struct ProjectVariables {
+    /// The root project's canonical directory.
+    root: PathBuf,
+    /// Every variable the project declares, by name.
+    values: BTreeMap<String, VariableState>,
+}
+
+/// The value a variable takes in a composed definition.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum VariableValue {
+    String(String),
+    /// A canonical path.
+    Path(PathBuf),
+}
+
+/// Whether a variable has a value in a composed definition.
+#[derive(Clone, Debug)]
+pub(crate) enum VariableState {
+    Value(VariableValue),
+    /// Nothing binds the variable and it has no default.
+    Unbound,
+    /// The variable's value could not be resolved, for the reason given. A template using it
+    /// fails to load.
+    Unavailable(String),
+}
+
+impl ProjectVariables {
+    pub(crate) fn new(root: PathBuf, values: BTreeMap<String, VariableState>) -> Self {
+        Self { root, values }
+    }
+
+    /// The value of the variable `name`, if it is declared and has one.
+    pub fn value(&self, name: &str) -> Option<&VariableValue> {
+        match self.values.get(name)? {
+            VariableState::Value(value) => Some(value),
+            VariableState::Unbound | VariableState::Unavailable(_) => None,
+        }
+    }
+
+    /// The text to put in place of `used` in a file whose relative data paths are relative to
+    /// `data_dir`, given as in [`LoadContext::data_dir`].
+    ///
+    /// A path value is given relative to `data_dir`, so that rebasing the file's data paths
+    /// turns it back into the path relative to the root project's directory. That needs the
+    /// template to start its string value.
+    fn lookup(&self, used: &TemplateUse, data_dir: Option<&Path>) -> Result<String, LookupError> {
+        match self.values.get(&used.name) {
+            None => Err(LookupError::Undefined),
+            Some(VariableState::Unbound) => Err(LookupError::Rejected(
+                "nothing binds it and it has no default".to_string(),
+            )),
+            Some(VariableState::Unavailable(reason)) => Err(LookupError::Rejected(reason.clone())),
+            Some(VariableState::Value(VariableValue::String(value))) => Ok(value.clone()),
+            Some(VariableState::Value(VariableValue::Path(path))) => {
+                if !used.at_start {
+                    return Err(LookupError::Rejected(
+                        "a path variable must start the string it is used in".to_string(),
+                    ));
+                }
+                let base = match data_dir {
+                    None => self.root.clone(),
+                    Some(data_dir) if data_dir.is_absolute() => data_dir.to_path_buf(),
+                    Some(data_dir) => normalize_lexically(&self.root.join(data_dir)),
+                };
+                Ok(portable_string(&crate::manifest::v1::relative_to(&base, path)))
+            }
+        }
+    }
+}
+
+/// `path` with `.` and `..` components resolved without touching the filesystem.
+fn normalize_lexically(path: &Path) -> PathBuf {
+    let mut normalized = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                normalized.pop();
+            }
+            component => normalized.push(component),
+        }
+    }
+    normalized
+}
+
+/// `path` as text, with `/` separators if it is relative, and `.` if it is empty.
+fn portable_string(path: &Path) -> String {
+    if path.as_os_str().is_empty() {
+        return ".".to_string();
+    }
+    match RelativePath::from_path(path) {
+        Ok(relative) => relative.as_str().to_string(),
+        Err(_) => path.display().to_string(),
+    }
 }
 
 /// A network file to merge into a composed model or network, with where it came from.
@@ -581,6 +707,7 @@ pub struct ComposedModel {
     name: String,
     base_model: PathBuf,
     base_source: ProvenanceSource,
+    base_context: LoadContext,
     includes: Vec<ComposedNetworkPath>,
     overrides: Option<DefinitionOverrides>,
 }
@@ -611,7 +738,7 @@ impl ComposedModel {
     }
     /// Deserialize the composed model from the specified paths, returning a [`ComposedModelSchemas`] instance.
     pub fn load(&self) -> Result<ComposedModelSchemas, ComposeToSchemaError> {
-        let base_schema = ModelSchema::from_path(&self.base_model)?;
+        let base_schema = self.base_context.read_model(&self.base_model)?;
 
         let includes = load_includes(&self.includes)?;
 
@@ -635,6 +762,7 @@ pub struct ComposedModelBuilder {
     name: String,
     base_model: PathBuf,
     base_source: ProvenanceSource,
+    base_context: LoadContext,
     includes: Vec<ComposedNetworkPath>,
     overrides: Option<DefinitionOverrides>,
 }
@@ -652,9 +780,17 @@ impl ComposedModelBuilder {
             name,
             base_model,
             base_source,
+            base_context: LoadContext::default(),
             includes: Vec::new(),
             overrides: None,
         }
+    }
+
+    /// How the base model is adjusted as it is loaded. By default, it is loaded as it is, and a
+    /// template in it is an error.
+    pub fn base_context(&mut self, context: LoadContext) -> &mut Self {
+        self.base_context = context;
+        self
     }
 
     pub fn add_include(&mut self, include: ComposedNetworkPath) -> &mut Self {
@@ -672,6 +808,7 @@ impl ComposedModelBuilder {
             name: self.name,
             base_model: self.base_model,
             base_source: self.base_source,
+            base_context: self.base_context,
             includes: self.includes,
             overrides: self.overrides,
         }

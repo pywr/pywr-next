@@ -279,6 +279,32 @@ pub enum ComposeModelError {
     NoChoices { variable: String },
     #[error("The default `{default}` of the variable `{variable}` is not one of its choices.")]
     DefaultNotAChoice { variable: String, default: String },
+    #[error("The {definition} binds the variable `{variable}`, which is not declared.")]
+    UndeclaredVariable {
+        definition: DefinitionRef,
+        variable: String,
+    },
+    #[error("The {definition} binds the variable `{variable}` to `{value}`, which is not one of its choices.")]
+    ValueNotAChoice {
+        definition: DefinitionRef,
+        variable: String,
+        value: String,
+    },
+    #[error("The {definition} binds the variable `{variable}` to a path that cannot be used: {error}")]
+    InvalidBinding {
+        definition: DefinitionRef,
+        variable: String,
+        error: Box<ManifestResolutionError>,
+    },
+    #[error(
+        "The {definition} uses definitions that bind the variable `{variable}` to both `{first}` and `{second}`; bind it in the {definition} to choose."
+    )]
+    ConflictingBindings {
+        definition: DefinitionRef,
+        variable: String,
+        first: String,
+        second: String,
+    },
     #[error("The {definition} refers to the sub-network `{sub_network}`, which does not exist.")]
     SubNetworkNotFound {
         definition: DefinitionRef,
