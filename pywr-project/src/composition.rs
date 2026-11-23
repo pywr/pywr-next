@@ -8,7 +8,7 @@ use pywr_schema::{
     VisitReferences,
 };
 use relative_path::{RelativePath, RelativePathBuf};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 
@@ -602,6 +602,8 @@ pub struct ProjectVariables {
     root: PathBuf,
     /// Every variable the project declares, by name.
     values: BTreeMap<String, VariableState>,
+    /// The names of the project's path variables.
+    paths: BTreeSet<String>,
 }
 
 /// The value a variable takes in a composed definition.
@@ -618,21 +620,23 @@ pub(crate) enum VariableState {
     Value(VariableValue),
     /// Nothing binds the variable and it has no default.
     Unbound,
+    /// The value bound to the variable could not be resolved, which is already reported.
+    BindingFailed,
     /// The variable's value could not be resolved, for the reason given. A template using it
     /// fails to load.
     Unavailable(String),
 }
 
 impl ProjectVariables {
-    pub(crate) fn new(root: PathBuf, values: BTreeMap<String, VariableState>) -> Self {
-        Self { root, values }
+    pub(crate) fn new(root: PathBuf, values: BTreeMap<String, VariableState>, paths: BTreeSet<String>) -> Self {
+        Self { root, values, paths }
     }
 
     /// The value of the variable `name`, if it is declared and has one.
     pub fn value(&self, name: &str) -> Option<&VariableValue> {
         match self.values.get(name)? {
             VariableState::Value(value) => Some(value),
-            VariableState::Unbound | VariableState::Unavailable(_) => None,
+            VariableState::Unbound | VariableState::BindingFailed | VariableState::Unavailable(_) => None,
         }
     }
 
@@ -643,19 +647,30 @@ impl ProjectVariables {
     /// turns it back into the path relative to the root project's directory. That needs the
     /// template to start its string value.
     fn lookup(&self, used: &TemplateUse, data_dir: Option<&Path>) -> Result<String, LookupError> {
-        match self.values.get(&used.name) {
-            None => Err(LookupError::Undefined),
-            Some(VariableState::Unbound) => Err(LookupError::Rejected(
-                "nothing binds it and it has no default".to_string(),
-            )),
-            Some(VariableState::Unavailable(reason)) => Err(LookupError::Rejected(reason.clone())),
-            Some(VariableState::Value(VariableValue::String(value))) => Ok(value.clone()),
-            Some(VariableState::Value(VariableValue::Path(path))) => {
-                if !used.at_start {
-                    return Err(LookupError::Rejected(
-                        "a path variable must start the string it is used in".to_string(),
-                    ));
-                }
+        self.resolve(used, data_dir).map_err(|error| match error {
+            UseError::Undefined => LookupError::Undefined,
+            UseError::MisplacedPath => {
+                LookupError::Rejected("a path variable must start the string it is used in".to_string())
+            }
+            UseError::Unbound => LookupError::Rejected("nothing binds it and it has no default".to_string()),
+            UseError::BindingFailed => LookupError::Rejected("the value bound to it could not be resolved".to_string()),
+            UseError::Unavailable(reason) => LookupError::Rejected(reason),
+        })
+    }
+
+    /// The text to put in place of `used`, as [`lookup`](Self::lookup) gives it, or why there is
+    /// none.
+    pub(crate) fn resolve(&self, used: &TemplateUse, data_dir: Option<&Path>) -> Result<String, UseError> {
+        let state = self.values.get(&used.name).ok_or(UseError::Undefined)?;
+        if self.paths.contains(&used.name) && !used.at_start {
+            return Err(UseError::MisplacedPath);
+        }
+        match state {
+            VariableState::Unbound => Err(UseError::Unbound),
+            VariableState::BindingFailed => Err(UseError::BindingFailed),
+            VariableState::Unavailable(reason) => Err(UseError::Unavailable(reason.clone())),
+            VariableState::Value(VariableValue::String(value)) => Ok(value.clone()),
+            VariableState::Value(VariableValue::Path(path)) => {
                 let base = match data_dir {
                     None => self.root.clone(),
                     Some(data_dir) if data_dir.is_absolute() => data_dir.to_path_buf(),
@@ -665,6 +680,21 @@ impl ProjectVariables {
             }
         }
     }
+}
+
+/// Why a use of a variable cannot be filled in.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum UseError {
+    /// The project does not declare the variable.
+    Undefined,
+    /// A path variable that does not start its string.
+    MisplacedPath,
+    /// Nothing binds the variable and it has no default.
+    Unbound,
+    /// The value bound to the variable could not be resolved, which is already reported.
+    BindingFailed,
+    /// The variable's default could not be resolved, for the reason given.
+    Unavailable(String),
 }
 
 /// `path` with `.` and `..` components resolved without touching the filesystem.

@@ -1,6 +1,7 @@
 use crate::composition::{
     Composed, ComposedDomain, ComposedModel, ComposedModelBuilder, ComposedMultiModel, ComposedMultiModelNetwork,
-    ComposedNetwork, ComposedNetworkPath, LoadContext, PositionOffset, ProjectVariables, VariableState, VariableValue,
+    ComposedNetwork, ComposedNetworkPath, LoadContext, PositionOffset, ProjectVariables, UseError, VariableState,
+    VariableValue,
 };
 use crate::error::{ComposeModelError, DefinitionKind, DefinitionRef, ManifestResolutionError};
 use crate::layout::{
@@ -9,7 +10,7 @@ use crate::layout::{
 use crate::manifest::{DefinitionOverrides, DependencyPolicy, ResolveOptions};
 use pywr_schema::meta::ProvenanceSource;
 use pywr_schema::model::{MultiNetworkTransfer, ScenarioDomain, TimeDomain};
-use pywr_schema::template;
+use pywr_schema::template::{self, TemplateError};
 use relative_path::{RelativePath, RelativePathBuf};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -131,6 +132,38 @@ pub enum ProjectManifestProblem {
         first_by: String,
         second: String,
         second_by: String,
+    },
+    #[error("In the file `{}`: {error}", .file.display())]
+    InvalidTemplate { file: PathBuf, error: TemplateError },
+    #[error(
+        "The file `{}` uses the variable `{variable}` at `{pointer}`, but its project does not declare it.", .file.display()
+    )]
+    UndefinedVariable {
+        file: PathBuf,
+        variable: String,
+        pointer: String,
+    },
+    #[error(
+        "The file `{}` uses the path variable `{variable}` at `{pointer}` after the start of the string, but a path variable must start the string it is used in.", .file.display()
+    )]
+    MisplacedPathVariable {
+        file: PathBuf,
+        variable: String,
+        pointer: String,
+    },
+    #[error(
+        "The {definition} reads the file `{}`, which uses the variable `{variable}`, but nothing binds it and it has no default.", .file.display()
+    )]
+    UnboundVariable {
+        definition: DefinitionRef,
+        variable: String,
+        file: PathBuf,
+    },
+    #[error("The {definition} uses the default of the variable `{variable}`, which cannot be used: {reason}")]
+    UnusableDefault {
+        definition: DefinitionRef,
+        variable: String,
+        reason: String,
     },
     #[error("The {definition} refers to the network definition `{network}`, which does not exist.")]
     NetworkNotFound { definition: DefinitionRef, network: String },
@@ -355,7 +388,7 @@ impl ProjectManifest {
         let mut problems = self.manifest_problems();
         let graph = self.load_whole_graph(root, options, &mut problems);
         let mut resolver = Resolver::new(&graph);
-        self.resolve_all(&mut resolver, &mut problems);
+        self.resolve_all(&mut resolver, &mut problems, Some(&mut TemplateChecker::default()));
         into_result(problems)
     }
 
@@ -389,7 +422,8 @@ impl ProjectManifest {
         let mut problems = self.manifest_problems();
         let graph = self.load_whole_graph(root, options, &mut problems);
         let mut resolver = Resolver::new(&graph);
-        self.resolve_all(&mut resolver, &mut problems);
+        // A layout lists where files are without reading them, so templates are not checked.
+        self.resolve_all(&mut resolver, &mut problems, None);
 
         // The root project's directory as given may be relative or not canonical; every other
         // path in the layout is canonical.
@@ -414,6 +448,7 @@ impl ProjectManifest {
                     ProjectBaseModel::Resolved((path, _)) => Some(path.clone()),
                     _ => None,
                 },
+                variables: project.manifest.variables.clone(),
             })
             .collect();
         let network_sets = graph
@@ -507,17 +542,37 @@ impl ProjectManifest {
     }
 
     /// Resolve every definition, appending the problems found.
-    fn resolve_all<'a>(&'a self, resolver: &mut Resolver<'a>, problems: &mut Vec<ProjectManifestProblem>) {
+    /// Resolve every definition, checking the templates of the files they read with
+    /// `templates`, if given.
+    fn resolve_all<'a>(
+        &'a self,
+        resolver: &mut Resolver<'a>,
+        problems: &mut Vec<ProjectManifestProblem>,
+        mut templates: Option<&mut TemplateChecker>,
+    ) {
         for model in &self.models {
-            resolver.resolve_model(model, problems);
+            let resolved = resolver.resolve_model(model, problems);
+            if let Some(templates) = templates.as_deref_mut() {
+                templates.check_model(&model.name, &resolved, problems);
+            }
         }
         for multi_model in &self.multi_models {
-            multi_model.resolve(resolver, problems);
+            let resolved = multi_model.resolve(resolver, problems);
+            if let Some(templates) = templates.as_deref_mut() {
+                templates.check_multi_model(multi_model, &resolved, problems);
+            }
         }
         // Network definitions that no model uses are still validated; each is reported once.
         // Sub-network activation is not checked here, because a model may activate it instead.
         for network in &self.networks {
-            resolver.expand(ROOT, &network.name, problems);
+            let expansion = resolver.expand(ROOT, &network.name, problems);
+            // A network definition often leaves variables for the models that use it to bind,
+            // so only the problems of its files themselves are reported here.
+            if let Some(templates) = templates.as_deref_mut() {
+                let composed = resolver.composed_network(&network.name, expansion);
+                let definition = DefinitionRef::new(DefinitionKind::Network, &network.name);
+                templates.check(&definition, composed_files(&composed), false, problems);
+            }
         }
     }
 
@@ -539,10 +594,13 @@ impl ProjectManifest {
         let mut graph = self.load_graph(root, options, true, &mut problems);
         let (at, load_problems) = (problems.len(), std::mem::take(&mut graph.load_problems));
         let mut resolver = Resolver::new(&graph);
+        let mut templates = TemplateChecker::default();
         if let Some(model) = model {
-            resolver.resolve_model(model, &mut problems);
+            let resolved = resolver.resolve_model(model, &mut problems);
+            templates.check_model(&model.name, &resolved, &mut problems);
         } else if let Some(multi_model) = multi_model {
-            multi_model.resolve(&mut resolver, &mut problems);
+            let resolved = multi_model.resolve(&mut resolver, &mut problems);
+            templates.check_multi_model(multi_model, &resolved, &mut problems);
         }
         resolver.insert_reached_load_problems(&mut problems, at, load_problems);
         into_result(problems)
@@ -565,11 +623,11 @@ impl ProjectManifest {
         let (at, load_problems) = (problems.len(), std::mem::take(&mut graph.load_problems));
         let mut resolver = Resolver::new(&graph);
         let expansion = resolver.expand(ROOT, &network.name, &mut problems);
-        check_active(
-            &DefinitionRef::new(DefinitionKind::Network, network_name),
-            &expansion,
-            &mut problems,
-        );
+        let definition = DefinitionRef::new(DefinitionKind::Network, network_name);
+        check_active(&definition, &expansion, &mut problems);
+        // Composed on its own, the network's variables must have values.
+        let composed = resolver.composed_network(&network.name, expansion);
+        TemplateChecker::default().check(&definition, composed_files(&composed), true, &mut problems);
         resolver.insert_reached_load_problems(&mut problems, at, load_problems);
         into_result(problems)
     }
@@ -697,19 +755,7 @@ impl ProjectManifest {
 
         match problems.into_iter().next() {
             Some(problem) => Err(problem.into()),
-            None => {
-                let projects = expansion.files.iter().map(|selected| selected.file.project_index);
-                let variables = resolver.variables_for(&expansion.bindings, projects);
-                Ok(ComposedNetwork::new(
-                    network_name.to_string(),
-                    None,
-                    expansion
-                        .files
-                        .into_iter()
-                        .map(|selected| selected.into_composed(&variables))
-                        .collect(),
-                ))
-            }
+            None => Ok(resolver.composed_network(network_name, expansion)),
         }
     }
 
@@ -2043,9 +2089,7 @@ impl<'a> Resolver<'a> {
         for variable in &project.manifest.variables {
             let state = match bindings.get(&(index, variable.name.clone())) {
                 Some(Binding { value: Some(value), .. }) => VariableState::Value(value.clone()),
-                Some(Binding { value: None, .. }) => {
-                    VariableState::Unavailable("the value bound to it could not be resolved".to_string())
-                }
+                Some(Binding { value: None, .. }) => VariableState::BindingFailed,
                 None => match &variable.default {
                     None => VariableState::Unbound,
                     Some(default) => {
@@ -2062,7 +2106,29 @@ impl<'a> Resolver<'a> {
             };
             values.entry(variable.name.clone()).or_insert(state);
         }
-        ProjectVariables::new(self.root.clone(), values)
+        let paths = project
+            .manifest
+            .variables
+            .iter()
+            .filter(|variable| variable.kind == VariableKind::Path)
+            .map(|variable| variable.name.clone())
+            .collect();
+        ProjectVariables::new(self.root.clone(), values, paths)
+    }
+
+    /// The network definition `name`, composed on its own from its `expansion`.
+    fn composed_network(&self, name: &str, expansion: Expansion<'a>) -> ComposedNetwork {
+        let projects = expansion.files.iter().map(|selected| selected.file.project_index);
+        let variables = self.variables_for(&expansion.bindings, projects);
+        ComposedNetwork::new(
+            name.to_string(),
+            None,
+            expansion
+                .files
+                .into_iter()
+                .map(|selected| selected.into_composed(&variables))
+                .collect(),
+        )
     }
 
     /// Resolve a root model definition's base model and files, checking them as a whole model.
@@ -2339,6 +2405,43 @@ impl From<ProjectManifestProblem> for ComposeModelError {
                 first,
                 second,
             },
+            ProjectManifestProblem::InvalidTemplate { file, error } => Self::InvalidTemplate { file, error },
+            ProjectManifestProblem::UndefinedVariable {
+                file,
+                variable,
+                pointer,
+            } => Self::UndefinedVariable {
+                file,
+                variable,
+                pointer,
+            },
+            ProjectManifestProblem::MisplacedPathVariable {
+                file,
+                variable,
+                pointer,
+            } => Self::MisplacedPathVariable {
+                file,
+                variable,
+                pointer,
+            },
+            ProjectManifestProblem::UnboundVariable {
+                definition,
+                variable,
+                file,
+            } => Self::UnboundVariable {
+                definition,
+                variable,
+                file,
+            },
+            ProjectManifestProblem::UnusableDefault {
+                definition,
+                variable,
+                reason,
+            } => Self::UnusableDefault {
+                definition,
+                variable,
+                reason,
+            },
             ProjectManifestProblem::NetworkNotFound { definition, network } => {
                 Self::NetworkNotFound { definition, network }
             }
@@ -2514,7 +2617,7 @@ pub struct Exports {
 
 /// A variable whose value fills in `${name}` templates in a project's network files and base
 /// models.
-#[derive(Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Variable {
     /// The name used in templates. It is made of ASCII letters, digits, `_` and `-`.
@@ -2635,6 +2738,152 @@ struct ResolvedModel {
     /// The variables of the root project, which fill in the base model's templates.
     base_variables: Arc<ProjectVariables>,
     includes: Vec<ComposedNetworkPath>,
+}
+
+/// A file that a composition reads, with how it is loaded and the alias of its project, if it
+/// is a dependency.
+type ComposedFile<'c> = (&'c Path, &'c LoadContext, Option<&'c str>);
+
+/// The files of a composed network, in merge order, its base model first.
+fn composed_files(network: &ComposedNetwork) -> Vec<ComposedFile<'_>> {
+    network
+        .base_model()
+        .into_iter()
+        .chain(network.includes())
+        .map(|file| (file.path.as_path(), &file.context, file.source.project.as_deref()))
+        .collect()
+}
+
+/// Finds the problems with the templates in the files that definitions read, reading each file
+/// once however many definitions read it.
+#[derive(Default)]
+struct TemplateChecker {
+    /// The templates of each file, or `None` for a file that is not valid JSON, which loading
+    /// reports.
+    scans: HashMap<PathBuf, Option<template::Scan>>,
+    /// The files whose own problems are already reported.
+    checked_files: HashSet<PathBuf>,
+}
+
+impl TemplateChecker {
+    fn check_model(&mut self, name: &str, model: &ResolvedModel, problems: &mut Vec<ProjectManifestProblem>) {
+        let definition = DefinitionRef::new(DefinitionKind::Model, name);
+        let base_context = LoadContext {
+            data_dir: None,
+            variables: model.base_variables.clone(),
+        };
+        let base = model
+            .base_model
+            .iter()
+            .map(|(path, _)| (path.as_path(), &base_context, None));
+        let includes = model
+            .includes
+            .iter()
+            .map(|file| (file.path.as_path(), &file.context, file.source.project.as_deref()));
+        self.check(&definition, base.chain(includes).collect(), true, problems);
+    }
+
+    fn check_multi_model(
+        &mut self,
+        multi_model: &MultiModelDefinition,
+        resolved: &ResolvedMultiModel,
+        problems: &mut Vec<ProjectManifestProblem>,
+    ) {
+        for (network, composed) in multi_model.networks.iter().zip(&resolved.networks) {
+            let definition = DefinitionRef::new(
+                DefinitionKind::MultiModelNetwork,
+                &format!("{}/{}", multi_model.name, network.name),
+            );
+            self.check(&definition, composed_files(&composed.network), true, problems);
+        }
+    }
+
+    /// Check the templates in `files`, which `definition` reads. Problems in a file itself are
+    /// reported once, in the file's project; with `with_values`, so is each variable that
+    /// `definition` uses without giving it a value.
+    fn check(
+        &mut self,
+        definition: &DefinitionRef,
+        files: Vec<ComposedFile<'_>>,
+        with_values: bool,
+        problems: &mut Vec<ProjectManifestProblem>,
+    ) {
+        let mut reported = HashSet::new();
+        for (path, context, alias) in files {
+            let Some(scan) = self
+                .scans
+                .entry(path.to_path_buf())
+                .or_insert_with(|| read_templates(path))
+            else {
+                continue;
+            };
+            let resolve = |used| context.variables.resolve(used, context.data_dir.as_deref());
+
+            if self.checked_files.insert(path.to_path_buf()) {
+                let start = problems.len();
+                problems.extend(
+                    scan.problems
+                        .iter()
+                        .map(|error| ProjectManifestProblem::InvalidTemplate {
+                            file: path.to_path_buf(),
+                            error: error.clone(),
+                        }),
+                );
+                let mut seen = HashSet::new();
+                for used in &scan.uses {
+                    let problem = match resolve(used) {
+                        Err(UseError::Undefined) => ProjectManifestProblem::UndefinedVariable {
+                            file: path.to_path_buf(),
+                            variable: used.name.clone(),
+                            pointer: used.pointer.clone(),
+                        },
+                        Err(UseError::MisplacedPath) => ProjectManifestProblem::MisplacedPathVariable {
+                            file: path.to_path_buf(),
+                            variable: used.name.clone(),
+                            pointer: used.pointer.clone(),
+                        },
+                        _ => continue,
+                    };
+                    if seen.insert(&used.name) {
+                        problems.push(problem);
+                    }
+                }
+                if let Some(alias) = alias {
+                    wrap_problems(problems, start, alias);
+                }
+            }
+
+            if !with_values {
+                continue;
+            }
+            for used in &scan.uses {
+                let variable = qualify(alias, &used.name);
+                let problem = match resolve(used) {
+                    Err(UseError::Unbound) => ProjectManifestProblem::UnboundVariable {
+                        definition: definition.clone(),
+                        variable: variable.clone(),
+                        file: path.to_path_buf(),
+                    },
+                    Err(UseError::Unavailable(reason)) => ProjectManifestProblem::UnusableDefault {
+                        definition: definition.clone(),
+                        variable: variable.clone(),
+                        reason,
+                    },
+                    _ => continue,
+                };
+                if reported.insert(variable) {
+                    problems.push(problem);
+                }
+            }
+        }
+    }
+}
+
+/// The templates in the JSON file at `path`, or `None` if it cannot be read as JSON.
+fn read_templates(path: &Path) -> Option<template::Scan> {
+    let data = std::fs::read_to_string(path).ok()?;
+    let value: serde_json::Value = serde_json::from_str(&data).ok()?;
+    Some(template::scan(&value))
 }
 
 /// The network definitions in `references`, each once, reporting those listed more than once.
@@ -6846,5 +7095,194 @@ mod test {
         assert_eq!(json["variables"], serde_json::json!({"org::b": "2"}));
         let json = serde_json::to_value(&manifest.networks[0]).unwrap();
         assert!(json.get("include").is_none());
+    }
+
+    /// [`project_with_templates`] with more files in its `misused` set, each with a template
+    /// that cannot be filled in, and a manifest whose `bad-default` variable has a default that
+    /// does not exist.
+    fn project_with_misused_templates(
+        networks: serde_json::Value,
+        models: serde_json::Value,
+    ) -> (tempfile::TempDir, ProjectManifest) {
+        let root = project_with_templates();
+        let misused = root.path().join("misused");
+        write_json(
+            &misused.join("undefined.json"),
+            templated_network("undefined", "${nope}", "${nope}"),
+        );
+        write_json(
+            &misused.join("broken.json"),
+            serde_json::json!({
+                "nodes": [{"type": "${column}", "meta": {"name": "broken", "comment": "${column"}}],
+                "edges": []
+            }),
+        );
+        write_json(
+            &misused.join("bad-default.json"),
+            templated_network("bad-default", "x", "${bad-default}/flows.csv"),
+        );
+        let mut manifest = templates_manifest(networks, models, serde_json::json!([]));
+        manifest.variables.push(
+            serde_json::from_value(serde_json::json!({"name": "bad-default", "type": "path", "default": "data/gone"}))
+                .unwrap(),
+        );
+        (root, manifest)
+    }
+
+    fn misused(files: &[&str]) -> serde_json::Value {
+        serde_json::json!([{"set": "misused", "files": files}])
+    }
+
+    fn problem_strings(report: &ProjectManifestValidationError) -> Vec<String> {
+        report
+            .problems
+            .iter()
+            .map(ToString::to_string)
+            .filter(|problem| !problem.contains("choice `missing`"))
+            .collect()
+    }
+
+    #[test]
+    fn validation_reports_each_template_that_cannot_be_filled_in() {
+        let (root, manifest) = project_with_misused_templates(
+            serde_json::json!([]),
+            serde_json::json!([
+                {"name": "first", "include": misused(&["undefined.json", "broken.json", "inside.json"])},
+                {"name": "second", "include": misused(&["undefined.json", "broken.json", "inside.json", "unbound.json"])},
+                {"name": "third", "include": misused(&["unbound.json", "bad-default.json"])}
+            ]),
+        );
+        let file = |name: &str| {
+            root.path()
+                .join("misused")
+                .join(name)
+                .canonicalize()
+                .unwrap()
+                .display()
+                .to_string()
+        };
+        let gone = root.path().join("data/gone").display().to_string();
+
+        let report = manifest.validate(root.path(), OPTIONS).unwrap_err();
+        assert_eq!(
+            problem_strings(&report),
+            [
+                format!("The path `{gone}` for the default of variable `bad-default` was not found."),
+                // Each file's own problems are reported once, however many definitions read it.
+                format!(
+                    "The file `{}` uses the variable `nope` at `/nodes/0/meta/comment`, but its project does not declare it.",
+                    file("undefined.json")
+                ),
+                format!(
+                    "In the file `{}`: A template at `/nodes/0/meta/comment` has no closing `}}`.",
+                    file("broken.json")
+                ),
+                format!(
+                    "In the file `{}`: A template at `/nodes/0/type` is in a `type` value, which cannot be templated.",
+                    file("broken.json")
+                ),
+                format!(
+                    "The file `{}` uses the path variable `dataset` at `/time_series/0/path` after the start of the string, but a path variable must start the string it is used in.",
+                    file("inside.json")
+                ),
+                // Each definition that leaves a variable without a value is reported.
+                format!(
+                    "The model definition `second` reads the file `{}`, which uses the variable `unbound`, but nothing binds it and it has no default.",
+                    file("unbound.json")
+                ),
+                format!(
+                    "The model definition `third` reads the file `{}`, which uses the variable `unbound`, but nothing binds it and it has no default.",
+                    file("unbound.json")
+                ),
+                format!(
+                    "The model definition `third` uses the default of the variable `bad-default`, which cannot be used: The path `{gone}` for the default of variable `bad-default` was not found."
+                ),
+            ]
+        );
+
+        // Validating one definition reports its own problems.
+        let report = manifest.validate_model(root.path(), "third", OPTIONS).unwrap_err();
+        assert_eq!(problem_strings(&report).len(), 2);
+        // Composing does not read the files; loading them fails.
+        let third = manifest.compose_model(root.path(), "third", OPTIONS).unwrap();
+        assert!(third.load().is_err());
+    }
+
+    #[test]
+    fn a_network_definition_may_leave_variables_to_the_models_that_use_it() {
+        let (root, manifest) = project_with_misused_templates(
+            serde_json::json!([
+                {"name": "unbound", "include": misused(&["unbound.json"])},
+                {"name": "undefined", "include": misused(&["undefined.json"])}
+            ]),
+            serde_json::json!([{"name": "bound", "networks": ["unbound"], "variables": {"unbound": "x"}}]),
+        );
+
+        let report = manifest.validate(root.path(), OPTIONS).unwrap_err();
+        let problems = problem_strings(&report);
+        let [default, undefined] = problems.as_slice() else {
+            panic!("unexpected problems: {problems:#?}");
+        };
+        assert!(default.contains("for the default of variable `bad-default` was not found"));
+        assert!(undefined.contains("uses the variable `nope`"), "{undefined}");
+
+        // Composed on its own, the network leaves `unbound` without a value.
+        let report = manifest.validate_network(root.path(), "unbound", OPTIONS).unwrap_err();
+        let problems = problem_strings(&report);
+        assert!(
+            matches!(problems.as_slice(), [unbound] if unbound.starts_with("The network definition `unbound` reads the file")),
+            "{problems:#?}"
+        );
+    }
+
+    #[test]
+    fn template_problems_in_a_dependency_are_reported_as_in_it() {
+        let workspace = workspace();
+        let root = workspace.path().join("main");
+        write_json(
+            &workspace.path().join("org/licences/l.json"),
+            templated_network("licence", "${column}", "${nope}"),
+        );
+        let mut org = org_manifest();
+        org["variables"] = serde_json::json!([{"name": "column", "type": "string"}]);
+        write_org_manifest(workspace.path(), org);
+        let manifest = main_manifest(vec![model(
+            "sets",
+            vec![selection("org::licences", Some(vec!["l.json"]), false)],
+        )]);
+        let file = workspace.path().join("org/licences/l.json").canonicalize().unwrap();
+
+        let report = manifest.validate(&root, OPTIONS).unwrap_err();
+        let problems: Vec<String> = report.problems.iter().map(ToString::to_string).collect();
+        assert_eq!(
+            problems,
+            [
+                format!(
+                    "In the dependency `org`: The file `{}` uses the variable `nope` at `/time_series/0/path`, but its project does not declare it.",
+                    file.display()
+                ),
+                format!(
+                    "The model definition `sets` reads the file `{}`, which uses the variable `org::column`, but nothing binds it and it has no default.",
+                    file.display()
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_layout_lists_variables_without_reading_files() {
+        let (root, manifest) = project_with_misused_templates(
+            serde_json::json!([]),
+            serde_json::json!([{"name": "first", "include": misused(&["undefined.json"])}]),
+        );
+        let layout = manifest.layout(root.path(), OPTIONS);
+        let names: Vec<_> = layout.projects[0]
+            .variables
+            .iter()
+            .map(|variable| variable.name.as_str())
+            .collect();
+        assert_eq!(names, ["dataset", "column", "unbound", "bad-default"]);
+        let problems = layout.problems.unwrap().report().to_string();
+        assert!(!problems.contains("nope"), "{problems}");
     }
 }

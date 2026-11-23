@@ -1,4 +1,5 @@
 use pywr_schema::meta::ProvenanceSource;
+use pywr_schema::template::TemplateError;
 use pywr_schema::{ModelSchemaReadError, NetworkMergeError, NetworkSchemaReadError};
 use std::fmt;
 use std::io;
@@ -304,6 +305,32 @@ pub enum ComposeModelError {
         variable: String,
         first: String,
         second: String,
+    },
+    #[error("In the file `{}`: {error}", .file.display())]
+    InvalidTemplate { file: PathBuf, error: TemplateError },
+    #[error("The file `{}` uses the variable `{variable}` at `{pointer}`, but its project does not declare it.", .file.display())]
+    UndefinedVariable {
+        file: PathBuf,
+        variable: String,
+        pointer: String,
+    },
+    #[error("The file `{}` uses the path variable `{variable}` at `{pointer}` after the start of the string.", .file.display())]
+    MisplacedPathVariable {
+        file: PathBuf,
+        variable: String,
+        pointer: String,
+    },
+    #[error("The {definition} reads the file `{}`, which uses the variable `{variable}`, but nothing binds it and it has no default.", .file.display())]
+    UnboundVariable {
+        definition: DefinitionRef,
+        variable: String,
+        file: PathBuf,
+    },
+    #[error("The {definition} uses the default of the variable `{variable}`, which cannot be used: {reason}")]
+    UnusableDefault {
+        definition: DefinitionRef,
+        variable: String,
+        reason: String,
     },
     #[error("The {definition} refers to the sub-network `{sub_network}`, which does not exist.")]
     SubNetworkNotFound {

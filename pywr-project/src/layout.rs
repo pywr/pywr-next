@@ -1,4 +1,5 @@
 use crate::manifest::ProjectManifestValidationError;
+use crate::manifest::v1::Variable;
 use pywr_schema::meta::ProvenanceSource;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -43,6 +44,9 @@ pub struct ProjectLocation {
     pub manifest: Option<PathBuf>,
     /// The project-level base model, if one is given and it resolved.
     pub base_model: Option<PathBuf>,
+    /// The variables the project declares. Their path values are relative to the project's
+    /// directory.
+    pub variables: Vec<Variable>,
 }
 
 /// A network set in a [`ProjectLayout`].
