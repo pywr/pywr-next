@@ -941,7 +941,7 @@ pub enum MultiNetworkModelSchemaBuildError {
 ///
 /// This schema is used to define a model containing multiple linked networks. Each network
 /// is self-contained and solved as like a single a model. However, the networks can be linked
-/// together using [`PywrMultiNetworkTransfer`]s. These transfers allow the value of a metric
+/// together using [`MultiNetworkTransfer`]s. These transfers allow the value of a metric
 /// in one network to be used as the value of a parameter in another network. This allows complex
 /// inter-model relationships to be defined.
 ///

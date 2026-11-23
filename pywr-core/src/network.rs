@@ -1288,7 +1288,7 @@ impl Network {
         Ok(metric_set_idx)
     }
 
-    /// Get a [`MetricSet'] from its index.
+    /// Get a [`MetricSet`] from its index.
     pub fn get_metric_set(&self, index: MetricSetIndex) -> Option<&MetricSet> {
         self.metric_sets.get(*index)
     }

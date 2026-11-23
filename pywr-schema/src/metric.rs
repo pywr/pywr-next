@@ -293,7 +293,7 @@ impl NodeAttrReference {
         Self { name, attribute }
     }
 
-    /// Load a node reference into a [`MetricF64`].
+    /// Load a node reference into an [`UnresolvedMetricF64`].
     #[cfg(feature = "core")]
     pub fn load_f64(
         &self,
@@ -311,7 +311,7 @@ impl NodeAttrReference {
         node.create_metric(network, self.attribute)
     }
 
-    /// Load a node reference into a [`MetricUsize`].
+    /// Load a node reference into an [`UnresolvedMetricU64`].
     #[cfg(feature = "core")]
     pub fn load_u64(&self, args: &LoadArgs) -> Result<UnresolvedMetricU64, SchemaError> {
         // This is the associated node in the schema
@@ -383,7 +383,7 @@ impl VirtualNodeAttrReference {
         Self { name, attribute }
     }
 
-    /// Load a node reference into a [`MetricF64`].
+    /// Load a node reference into an [`UnresolvedMetricF64`].
     #[cfg(feature = "core")]
     pub fn load_f64(&self, args: &LoadArgs) -> Result<UnresolvedMetricF64, SchemaError> {
         // This is the associated node in the schema
@@ -397,7 +397,7 @@ impl VirtualNodeAttrReference {
         node.create_metric(self.attribute)
     }
 
-    /// Load a node reference into a [`MetricUsize`].
+    /// Load a node reference into an [`UnresolvedMetricU64`].
     #[cfg(feature = "core")]
     pub fn load_u64(
         &self,
@@ -529,7 +529,7 @@ pub struct ParameterReference {
 
 #[cfg(feature = "core")]
 impl ParameterReference {
-    /// Load a parameter reference into a [`MetricF64`] by attempting to retrieve the parameter
+    /// Load a parameter reference into an [`UnresolvedMetricF64`] by attempting to retrieve the parameter
     /// from the `network`.
     pub fn load_f64(&self) -> UnresolvedMetricF64 {
         let name = ParameterName::new(&self.name, None);
@@ -549,7 +549,7 @@ impl ParameterReference {
         }
     }
 
-    /// Load a parameter reference into a [`MetricUsize`] by attempting to retrieve the parameter
+    /// Load a parameter reference into an [`UnresolvedMetricU64`] by attempting to retrieve the parameter
     /// from the `network`.
     pub fn load_u64(&self) -> UnresolvedMetricU64 {
         let name = ParameterName::new(&self.name, None);
@@ -656,7 +656,7 @@ impl LocalParameterReference {
         }
     }
 
-    /// Load a local parameter reference into a [`MetricF64`] by attempting to retrieve the parameter
+    /// Load a local parameter reference into an [`UnresolvedMetricF64`] by attempting to retrieve the parameter
     /// from the `network`. If the `node` field is set, it will be used as the parent node name for
     /// resolving the parameter. Otherwise, the `parent` argument will be used. If neither is
     /// provided, an error will be returned.
@@ -681,7 +681,7 @@ impl LocalParameterReference {
         Ok(m)
     }
 
-    /// Load a local parameter reference into a [`MetricUsize`] by attempting to retrieve the parameter
+    /// Load a local parameter reference into an [`UnresolvedMetricU64`] by attempting to retrieve the parameter
     /// from the `network`. If the `node` field is set, it will be used as the parent node name for
     /// resolving the parameter. Otherwise, the `parent` argument will be used. If neither is
     /// provided, an error will be returned.

@@ -3,6 +3,8 @@
 #![allow(non_snake_case)]
 
 #[cfg(feature = "clp")]
+// The bindgen-generated docs contain unbalanced HTML copied from the C headers.
+#[allow(rustdoc::invalid_html_tags)]
 pub mod clp {
     include!("clp.rs");
 

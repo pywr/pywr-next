@@ -150,7 +150,7 @@ pub fn simple_storage_model() -> ModelBuilder {
 /// This function will run a number of time-steps equal to the number of rows in the expected
 /// values array.
 ///
-/// See [`AssertionF64Recorder`] for more information.
+/// See [`AssertionF64Recorder`](crate::recorders::AssertionF64Recorder) for more information.
 pub fn run_and_assert_parameter(
     mut model_builder: ModelBuilder,
     parameter: Box<dyn ParameterBuilder<f64>>,
@@ -190,7 +190,7 @@ pub fn run_and_assert_parameter(
 /// This function will run a number of time-steps equal to the number of rows in the expected
 /// values array.
 ///
-/// See [`AssertionU64Recorder`] for more information.
+/// See [`AssertionU64Recorder`](crate::recorders::AssertionU64Recorder) for more information.
 pub fn run_and_assert_parameter_u64(
     mut model_builder: ModelBuilder,
     parameter: Box<dyn ParameterBuilder<u64>>,

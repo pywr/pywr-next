@@ -150,7 +150,7 @@ impl ScenarioGroupBuilder {
     }
 
     /// Set the subset of scenarios to run as a list of labels. The complete list of labels must
-    /// be defined using the [`with_labels`] method.
+    /// be defined using the [`with_labels`](Self::with_labels) method.
     pub fn with_subset_labels<T: AsRef<str>>(&mut self, labels: &[T]) -> &mut Self {
         self.subset = Some(ScenarioGroupSubsetBuilder::Labels(
             labels.iter().map(|l| l.as_ref().to_string()).collect(),

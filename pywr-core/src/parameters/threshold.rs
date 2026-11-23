@@ -23,7 +23,7 @@ pub enum Predicate {
 impl Predicate {
     /// Applies the predicate to a `value` against a `threshold`.
     ///
-    /// Equality comparison uses an absolute tolerance equal to [`FLOAT_EQ_TOLERANCE`].
+    /// Equality comparison uses an absolute tolerance of `1e-6`.
     ///
     /// Note: Comparisons involving `NaN` will always return `false`.
     pub fn apply(&self, value: f64, threshold: f64) -> bool {
