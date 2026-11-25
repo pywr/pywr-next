@@ -1810,6 +1810,8 @@ pub enum DependentAttribute {
     AggregatedNodeMaxFlow(AggregatedNodeIndex),
     AggregatedStorageNodeMinVolume(AggregatedStorageNodeIndex),
     AggregatedStorageNodeMaxVolume(AggregatedStorageNodeIndex),
+    VirtualStorageMinVolume(VirtualStorageIndex),
+    VirtualStorageMaxVolume(VirtualStorageIndex),
     VirtualStorageCost(VirtualStorageIndex),
 }
 
@@ -1826,6 +1828,8 @@ impl DependentAttribute {
             Self::AggregatedNodeMaxFlow(_) => ("MaxFlow", "aggregated node"),
             Self::AggregatedStorageNodeMinVolume(_) => ("MinVolume", "aggregated storage node"),
             Self::AggregatedStorageNodeMaxVolume(_) => ("MaxVolume", "aggregated storage node"),
+            Self::VirtualStorageMinVolume(_) => ("MinVolume", "virtual storage node"),
+            Self::VirtualStorageMaxVolume(_) => ("MaxVolume", "virtual storage node"),
             Self::VirtualStorageCost(_) => ("Cost", "virtual storage node"),
         };
         format!("{attribute} of {kind} `{node}`")

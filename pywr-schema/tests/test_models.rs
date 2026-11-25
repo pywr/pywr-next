@@ -54,6 +54,8 @@ model_tests! {
     test_csv3: ("csv3.json", vec![("csv3-outputs-long.csv", ResultsShape::Long)], vec![], vec![]),
     test_constraint_attributes1: ("constraint-attributes1.json", vec![("constraint-attributes1-expected.csv", ResultsShape::Long)], vec!["ipm-simd", "ipm-ocl-f64"], vec![]),
     test_cost_attributes1: ("cost-attributes1.json", vec![("cost-attributes1-expected.csv", ResultsShape::Long)], vec!["ipm-simd", "ipm-ocl-f64"], vec![]),
+    test_virtual_node_attributes1: ("virtual-node-attributes1.json", vec![("virtual-node-attributes1-expected.csv", ResultsShape::Long)], vec!["ipm-simd", "ipm-ocl-f64"], vec![]),
+    test_virtual_node_attribute_order1: ("virtual-node-attribute-order1.json", vec![("virtual-node-attribute-order1-expected.csv", ResultsShape::Long)], vec!["ipm-simd", "ipm-ocl-f64"], vec![]),
     test_deficit_agg1: ("deficit-agg1.json", vec![("deficit-agg1-expected.csv", ResultsShape::Long)], vec![], vec![]),
     test_deficit_agg2: ("deficit-agg2.json", vec![("deficit-agg2-expected.csv", ResultsShape::Long)], vec![], vec![]),
     test_deficit_agg3: ("deficit-agg3.json", vec![("deficit-agg3-expected.csv", ResultsShape::Long)], vec![], vec![]),

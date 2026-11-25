@@ -4,6 +4,8 @@ use crate::metric::{Metric, NodeComponentReference};
 #[cfg(feature = "core")]
 use crate::network::LoadArgs;
 use crate::nodes::NodeMeta;
+#[cfg(feature = "core")]
+use crate::nodes::attributes::field_not_set;
 use crate::nodes::core::StorageInitialVolume;
 #[cfg(feature = "core")]
 use crate::nodes::{NodeAttribute, VirtualNode};
@@ -30,6 +32,7 @@ use pywr_v1_schema::nodes::{
 };
 use schemars::JsonSchema;
 use std::num::{NonZeroU8, NonZeroUsize};
+use strum::IntoEnumIterator;
 use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumString, IntoStaticStr};
 
 // This macro generates a subset enum for the `VirtualStorageNode` attributes.
@@ -38,6 +41,9 @@ node_attribute_subset_enum! {
     pub enum VirtualStorageNodeAttribute {
         Volume,
         ProportionalVolume,
+        MaxVolume,
+        MinVolume,
+        Cost,
     }
 }
 
@@ -333,6 +339,18 @@ impl VirtualStorageNode {
         Self::DEFAULT_ATTRIBUTE
     }
 
+    /// The attributes this node offers; `MaxVolume` requires `max_volume` to be set.
+    pub fn available_attributes(&self) -> Vec<VirtualStorageNodeAttribute> {
+        VirtualStorageNodeAttribute::iter()
+            .filter(|attr| match attr {
+                VirtualStorageNodeAttribute::MaxVolume => self.max_volume.is_some(),
+                // A cost without an aggregation is ignored, so there is no cost to read.
+                VirtualStorageNodeAttribute::Cost => self.cost.is_some() && self.cost_aggregation.is_some(),
+                _ => true,
+            })
+            .collect()
+    }
+
     pub fn validate(&self) -> Result<(), Vec<VirtualNodeProblem>> {
         let mut problems = Vec::new();
 
@@ -537,6 +555,22 @@ impl VirtualStorageNode {
             VirtualStorageNodeAttribute::Volume => UnresolvedMetricF64::VirtualStorageVolume(name),
             VirtualStorageNodeAttribute::ProportionalVolume => {
                 UnresolvedMetricF64::VirtualStorageProportionalVolume(name)
+            }
+            VirtualStorageNodeAttribute::MaxVolume => {
+                if self.max_volume.is_none() {
+                    return Err(field_not_set(attr, &self.meta.name, "max_volume"));
+                }
+                UnresolvedMetricF64::VirtualStorageMaxVolume(name)
+            }
+            VirtualStorageNodeAttribute::MinVolume => UnresolvedMetricF64::VirtualStorageMinVolume(name),
+            VirtualStorageNodeAttribute::Cost => {
+                if self.cost.is_none() {
+                    return Err(field_not_set(attr, &self.meta.name, "cost"));
+                }
+                if self.cost_aggregation.is_none() {
+                    return Err(field_not_set(attr, &self.meta.name, "cost_aggregation"));
+                }
+                UnresolvedMetricF64::VirtualStorageCost(name)
             }
         };
 

@@ -105,10 +105,14 @@ impl VirtualStorageNodeBuilder {
         &self,
         index: VirtualStorageIndex,
     ) -> Vec<(DependentAttribute, &UnresolvedMetricF64)> {
-        [(DependentAttribute::VirtualStorageCost(index), &self.cost)]
-            .into_iter()
-            .filter_map(|(attribute, metric)| Some((attribute, metric.as_ref()?)))
-            .collect()
+        [
+            (DependentAttribute::VirtualStorageMinVolume(index), &self.min_volume),
+            (DependentAttribute::VirtualStorageMaxVolume(index), &self.max_volume),
+            (DependentAttribute::VirtualStorageCost(index), &self.cost),
+        ]
+        .into_iter()
+        .filter_map(|(attribute, metric)| Some((attribute, metric.as_ref()?)))
+        .collect()
     }
 
     pub fn cost(&mut self, cost: UnresolvedMetricF64) -> &mut Self {
