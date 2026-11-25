@@ -61,7 +61,8 @@ the project can reorganise it without breaking the projects that depend on it.
 ```
 [//]: # (@formatter:on)
 
-`exports` has four lists: `networks`, `models`, `network_sets` and `sub_networks`. Network sets of a
+`exports` has five lists: `networks`, `models`, `network_sets`, `sub_networks` and
+[`variables`](./variables.md#variables-of-dependencies). Network sets of a
 sub-network are listed by their qualified name, such as `upper::options`. A project without `exports` exports
 everything. `exports` has no effect on the project's own definitions.
 

@@ -70,6 +70,7 @@ pages.
 | `models`       | Model definitions: the runnable models of the project.                        |
 | `sub_networks` | Directories holding part of a wider model, each with its own network sets.    |
 | `multi_models` | Multi-network models, whose networks run together and exchange values.        |
+| `variables`    | Values, such as data directories or column names, that definitions can choose. |
 | `dependencies` | Other projects whose definitions this project uses.                           |
 | `exports`      | What other projects may use from this one.                                    |
 
@@ -79,6 +80,7 @@ pages.
 - [Sub-networks](./sub-networks.md) covers organising a project into `sub_networks`.
 - [Multi-models](./multi-models.md) covers `multi_models`.
 - [Dependencies](./dependencies.md) covers using other projects with `dependencies` and `exports`.
+- [Variables](./variables.md) covers `variables`, and `${name}` in network files.
 
 ## An example project
 
@@ -131,7 +133,8 @@ pywr-cli run-project examples/my-model/pywr-project.json --definition baseline-o
 
 `--definition` names the model or multi-model to run. Model and multi-model names share one namespace, so the
 name alone says which to run. The other options are the same as for `run`: `--solver`, `--threads`,
-`--data-path` and `--output-path`. The output directory is created if it does not exist.
+`--data-path` and `--output-path`. The output directory is created if it does not exist. `--var NAME=VALUE`
+sets a [variable](./variables.md#on-the-command-line), and can be given more than once.
 
 Relative data paths in the composed model are resolved against `--data-path`, which defaults to the directory
 of the manifest. Paths in a project's own files are therefore written relative to the project directory. Files
@@ -150,7 +153,9 @@ validated as a whole, which reports every problem found:
 - a file reached through more than one network set, or given different position offsets;
 - paths that are not plain relative paths, or that lead outside the project directory, including through
   symbolic links;
-- cycles between network definitions or between projects.
+- cycles between network definitions or between projects;
+- problems with [variables](./variables.md#validation): their declarations, their bindings, and their use in
+  the network files and base models that definitions select.
 
 Problems that can only be found once the files are read, such as duplicate component names, unresolved
 placeholders, a transfer reading a node that does not exist, a network reading a transfer that is not

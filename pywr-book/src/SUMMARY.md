@@ -24,6 +24,7 @@
     - [Sub-networks](./projects/sub-networks.md)
     - [Multi-models](./projects/multi-models.md)
     - [Dependencies](./projects/dependencies.md)
+    - [Variables](./projects/variables.md)
 - [Migration guide](./migration_guide.md)
 - [Model management](./model-management/README.md)
     - [Version control](./model-management/version-control.md)
