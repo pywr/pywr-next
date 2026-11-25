@@ -1528,9 +1528,9 @@ checksum = "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98"
 
 [[package]]
 name = "microlp"
-version = "0.7.0"
+version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a0923d9e791375ceb064da7bb52b51e287dd194545f4294f7d6e855e5a37ce8d"
+checksum = "6872b9ffab96550ca7ef8016bc21cb511445a38822d92566f62389af21ea4033"
 dependencies = [
  "log",
  "sprs",
