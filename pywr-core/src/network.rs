@@ -2176,7 +2176,7 @@ impl NetworkBuilder {
         let mut metric_sets = Vec::with_capacity(nodes.len());
         for metric_set_builder in self.metric_sets {
             let name = metric_set_builder.name().to_string();
-            let metric_set = metric_set_builder.build(&resolution_map).map_err(|source| {
+            let metric_set = metric_set_builder.build(&resolution_map, &nodes).map_err(|source| {
                 NetworkBuildError::MetricSetBuilderError {
                     name,
                     source: Box::new(source),

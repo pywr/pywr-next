@@ -1,0 +1,161 @@
+{
+  "metadata": {
+    "title": "Core node attributes",
+    "description": "Test of the attributes of the core nodes that a node builds, both of named nodes and of every node.",
+    "minimum_version": "0.1"
+  },
+  "time": {
+    "start": "2015-01-01",
+    "end": "2015-01-03",
+    "timestep": {
+      "type": "Days",
+      "days": 1
+    }
+  },
+  "network": {
+    "nodes": [
+      {
+        "meta": {
+          "name": "input1"
+        },
+        "type": "Input",
+        "max_flow": {
+          "type": "Literal",
+          "value": 10.0
+        }
+      },
+      {
+        "meta": {
+          "name": "link1"
+        },
+        "type": "Link",
+        "cost": {
+          "type": "Literal",
+          "value": 0.0
+        },
+        "soft_max": {
+          "cost": {
+            "type": "Literal",
+            "value": 5.0
+          },
+          "flow": {
+            "type": "Literal",
+            "value": 4.0
+          }
+        }
+      },
+      {
+        "meta": {
+          "name": "demand1"
+        },
+        "type": "Output",
+        "max_flow": {
+          "type": "Literal",
+          "value": 6.0
+        },
+        "cost": {
+          "type": "Literal",
+          "value": -10.0
+        }
+      },
+      {
+        "meta": {
+          "name": "storage1"
+        },
+        "type": "Storage",
+        "max_volume": {
+          "type": "Literal",
+          "value": 100.0
+        },
+        "min_volume": {
+          "type": "Literal",
+          "value": 10.0
+        },
+        "cost": {
+          "type": "Literal",
+          "value": -1.0
+        },
+        "initial_volume": {
+          "type": "Absolute",
+          "volume": 50.0
+        }
+      },
+      {
+        "meta": {
+          "name": "output1"
+        },
+        "type": "Output"
+      }
+    ],
+    "edges": [
+      {
+        "from_node": "input1",
+        "to_node": "link1"
+      },
+      {
+        "from_node": "link1",
+        "to_node": "demand1"
+      },
+      {
+        "from_node": "storage1",
+        "to_node": "output1"
+      }
+    ],
+    "metric_sets": [
+      {
+        "meta": {
+          "name": "named"
+        },
+        "core_nodes": [
+          {
+            "node": "link1",
+            "attributes": [
+              "Inflow",
+              "Cost",
+              "Volume"
+            ]
+          },
+          {
+            "node": "storage1",
+            "attributes": [
+              "Volume",
+              "MinVolume",
+              "Inflow"
+            ]
+          }
+        ]
+      },
+      {
+        "meta": {
+          "name": "all"
+        },
+        "filters": {
+          "all_core_nodes": [
+            "Cost",
+            "MinVolume"
+          ]
+        }
+      }
+    ],
+    "outputs": [
+      {
+        "meta": {
+          "name": "named"
+        },
+        "type": "CSV",
+        "format": "Long",
+        "filename": "core-nodes1-named-expected.csv",
+        "metric_set": "named"
+      },
+      {
+        "meta": {
+          "name": "all"
+        },
+        "type": "CSV",
+        "format": "Long",
+        "filename": "core-nodes1-all-expected.csv",
+        "metric_set": "all"
+      }
+    ]
+  }
+}

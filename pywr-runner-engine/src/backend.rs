@@ -165,12 +165,14 @@ fn apply_result_options_to_schema(
                 ..Default::default()
             },
             metrics: None,
+            core_nodes: None,
             aggregator: None,
             filters: pywr_schema::metric_sets::MetricSetFilters {
                 all_nodes: true,
                 all_virtual_nodes: false,
                 all_parameters: false,
                 all_edges: false,
+                ..Default::default()
             },
         };
 
@@ -189,12 +191,14 @@ fn apply_result_options_to_schema(
                 ..Default::default()
             },
             metrics: None,
+            core_nodes: None,
             aggregator: None,
             filters: pywr_schema::metric_sets::MetricSetFilters {
                 all_nodes: false,
                 all_virtual_nodes: false,
                 all_parameters: false,
                 all_edges: true,
+                ..Default::default()
             },
         };
 
