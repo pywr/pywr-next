@@ -56,7 +56,7 @@ impl LossFactor {
 
 #[cfg(feature = "core")]
 impl LossFactor {
-    /// Load the loss factor and return a corresponding [`Relationship`] if the loss factor is
+    /// Load the loss factor and return a corresponding [`RelationshipBuilder`] if the loss factor is
     /// not a constant zero. If a zero is loaded, then `None` is returned.
     pub fn load(
         &self,

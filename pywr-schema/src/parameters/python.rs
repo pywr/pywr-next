@@ -68,10 +68,10 @@ pub enum PythonReturnType {
 
 /// A Parameter that uses a Python object for its calculations.
 ///
-/// This struct defines a schema for loading a [`PyClassParameter`] or [`PyFuncParameter`] from external
+/// This struct defines a schema for loading a [`PyClassParameter`](pywr_core::parameters::PyClassParameter) or [`PyFuncParameter`](pywr_core::parameters::PyFuncParameter) from external
 /// sources. The user provides the name of an object in the given module. Typically, this object will be
 /// a class or function the user has written. For more information on the expected format and signature of
-/// this object please refer to the [`PyClassParameter`] documentation. If a class is provided
+/// this object please refer to the [`PyClassParameter`](pywr_core::parameters::PyClassParameter) documentation. If a class is provided
 /// then it is initialised with user provided positional and/or keyword arguments that can be provided
 /// here. If a function is provided then it is called with the same arguments along with an `info`
 /// object (see below).

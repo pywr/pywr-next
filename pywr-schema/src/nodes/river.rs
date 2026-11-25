@@ -121,7 +121,7 @@ pub struct RiverNode {
     /// Optional local parameters.
     pub parameters: Option<Vec<Parameter>>,
     /// An optional loss. This internally creates an [`crate::nodes::OutputNode`] and
-    /// [`pywr_core::nodes::Aggregated`] to handle the loss.
+    /// [`pywr_core::aggregated_node::AggregatedNode`] to handle the loss.
     pub loss_factor: Option<LossFactor>,
     /// The routing method to use.
     pub routing_method: Option<RoutingMethod>,

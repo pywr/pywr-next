@@ -73,7 +73,7 @@ impl VisitReferences for CsvMetricSet {
 /// wide or long format. The wide format will write each metric to a separate column, while the
 /// long format will write each metric to a separate row. The wide format is useful for small
 /// numbers of metrics or scenarios, while the long format is useful for large numbers of metrics
-/// or scenarios. For more details see the [`CsvLongFmtOutput`] and [`CsvWideFmtOutput`] types.
+/// or scenarios. For more details see the [`CsvLongFmtOutput`](pywr_core::recorders::CsvLongFmtOutput) and [`CsvWideFmtOutput`](pywr_core::recorders::CsvWideFmtOutput) types.
 ///
 /// The long format supports either a single metric set or a list of metric sets. However,
 /// the wide format only supports a single metric set.

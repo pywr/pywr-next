@@ -13,7 +13,7 @@ pub enum ProjectError {
     Json(#[from] serde_json::Error),
 }
 
-/// Error type for reading a [`NetworkSchema`] network from a file or string.
+/// Error type for reading a [`ProjectManifest`](crate::ProjectManifest) from a file or string.
 #[derive(Error, Debug)]
 pub enum ProjectManifestReadError {
     #[error("The project manifest at `{}` could not be read.", .path.display())]
@@ -256,7 +256,7 @@ pub enum ManifestResolutionError {
     },
 }
 
-/// Errors that may occur during composition of a [`ComposeModel`] from a project manifest.
+/// Errors that may occur during composition of a [`Composed`](crate::Composed) model from a project manifest.
 #[derive(Error, Debug)]
 pub enum ComposeModelError {
     #[error("The definition `{definition}` was not found in the project manifest.")]
