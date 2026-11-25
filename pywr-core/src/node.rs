@@ -716,6 +716,21 @@ impl Node {
         }
     }
 
+    /// Return the node's cost per unit of flow, or per unit of net increase in volume for a
+    /// storage node.
+    ///
+    /// This includes the cost of any virtual storage nodes the node belongs to, aggregated with
+    /// the node's local cost. It is the full cost of the node, before it is split between the
+    /// incoming and outgoing edges of a link node.
+    pub fn get_cost(&self, network: &Network, state: &State) -> Result<f64, NodeError> {
+        match self {
+            Self::Input(n) => n.get_cost(network, state),
+            Self::Link(n) => n.get_cost(network, state),
+            Self::Output(n) => n.get_cost(network, state),
+            Self::Storage(n) => n.get_cost(network, state),
+        }
+    }
+
     pub fn get_outgoing_cost(&self, network: &Network, state: &State) -> Result<f64, NodeError> {
         match self {
             Self::Input(n) => n.get_cost(network, state),

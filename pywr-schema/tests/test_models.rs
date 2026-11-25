@@ -53,6 +53,7 @@ model_tests! {
     test_csv2: ("csv2.json", vec![("csv2-outputs-long.csv", ResultsShape::Long), ("csv2-outputs-wide.csv", ResultsShape::Wide)], vec![], vec![]),
     test_csv3: ("csv3.json", vec![("csv3-outputs-long.csv", ResultsShape::Long)], vec![], vec![]),
     test_constraint_attributes1: ("constraint-attributes1.json", vec![("constraint-attributes1-expected.csv", ResultsShape::Long)], vec![], vec![]),
+    test_cost_attributes1: ("cost-attributes1.json", vec![("cost-attributes1-expected.csv", ResultsShape::Long)], vec![], vec![]),
     test_deficit_agg1: ("deficit-agg1.json", vec![("deficit-agg1-expected.csv", ResultsShape::Long)], vec![], vec![]),
     test_deficit_agg2: ("deficit-agg2.json", vec![("deficit-agg2-expected.csv", ResultsShape::Long)], vec![], vec![]),
     test_deficit_agg3: ("deficit-agg3.json", vec![("deficit-agg3-expected.csv", ResultsShape::Long)], vec![], vec![]),

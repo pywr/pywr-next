@@ -709,6 +709,43 @@ mod tests {
     }
 
     #[test]
+    /// A node's cost metric includes the costs of its virtual storage nodes.
+    fn test_node_cost_metric_includes_virtual_storage_costs() {
+        let mut model_builder = simple_model(1, None);
+        let network_builder = model_builder.network_builder();
+
+        // The input sums its local cost and those of its virtual storage nodes.
+        let name = "input".into();
+        let node = network_builder.node_builder(&name).unwrap();
+        node.cost(3.0.into()).cost_agg_func(CostAggFunc::Sum);
+
+        let mut vs_builder = VirtualStorageNodeBuilder::new(
+            "vs",
+            &["input".into()],
+            &[1.0],
+            UnresolvedStorageInitialVolume::Proportional(1.0),
+            VirtualStorageReset::Never,
+            VirtualStorageResetVolume::Initial,
+            VirtualStorageActivePeriod::Always,
+        );
+        vs_builder.cost(2.0.into()).max_volume(f64::MAX.into());
+        network_builder.virtual_storage_node(vs_builder);
+
+        for (node, cost) in [("input", 5.0), ("link", 0.0), ("output", -10.0)] {
+            let recorder = AssertionF64RecorderBuilder::new(
+                &format!("{node}-cost"),
+                UnresolvedMetricF64::NodeCost(node.into()),
+                Array::from_elem((366, 1), cost),
+            );
+            network_builder.recorder(Box::new(recorder));
+        }
+
+        let model = model_builder.build().unwrap();
+
+        run_all_solvers(&model, &["ipm-ocl-f64", "ipm-simd"], &[], &[]);
+    }
+
+    #[test]
     /// Virtual storage node resets every month. This test will check that a parameter which
     /// uses the derived proportional volume receives the correct value after each reset.
     fn test_virtual_storage_node_cost_dynamic() {

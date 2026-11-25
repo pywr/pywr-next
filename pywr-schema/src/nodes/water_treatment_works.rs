@@ -26,6 +26,9 @@ node_attribute_subset_enum! {
         MaxFlow,
         /// The value of the `min_flow` metric on the net flow. Defaults to 0 if `min_flow` is not defined.
         MinFlow,
+        /// The cost per unit of net flow, excluding the soft minimum flow cost, and including the
+        /// costs of any virtual storage nodes.
+        Cost,
     }
 }
 
@@ -282,6 +285,7 @@ impl WaterTreatmentWorksNode {
                 UnresolvedMetricF64::NodeMaxFlow(self.net_sub_name())
             }
             WaterTreatmentWorksNodeAttribute::MinFlow => UnresolvedMetricF64::NodeMinFlow(self.net_sub_name()),
+            WaterTreatmentWorksNodeAttribute::Cost => UnresolvedMetricF64::NodeCost(self.net_sub_name()),
         };
 
         Ok(metric)

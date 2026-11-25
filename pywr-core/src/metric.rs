@@ -133,6 +133,8 @@ pub enum MetricF64Error {
     NodeGetMaxVolumeError(#[source] Box<NodeError>),
     #[error("Error getting node min volume.")]
     NodeGetMinVolumeError(#[source] Box<NodeError>),
+    #[error("Error getting node cost.")]
+    NodeGetCostError(#[source] Box<NodeError>),
     #[error("Aggregated node index not found: {0}")]
     AggregatedNodeIndexNotFound(AggregatedNodeIndex),
     #[error("Aggregated storage node index not found: {0}")]
@@ -159,6 +161,7 @@ pub enum MetricF64 {
     NodeProportionalVolume(NodeIndex),
     NodeMaxVolume(NodeIndex),
     NodeMinVolume(NodeIndex),
+    NodeCost(NodeIndex),
     AggregatedNodeInFlow(AggregatedNodeIndex),
     AggregatedNodeOutFlow(AggregatedNodeIndex),
     AggregatedNodeMaxFlow(AggregatedNodeIndex),
@@ -233,6 +236,11 @@ impl MetricF64 {
                 .ok_or(MetricF64Error::NodeIndexNotFound(*idx))?
                 .get_min_volume(state)
                 .map_err(|e| MetricF64Error::NodeGetMinVolumeError(Box::new(e)))?),
+            MetricF64::NodeCost(idx) => Ok(network
+                .get_node(idx)
+                .ok_or(MetricF64Error::NodeIndexNotFound(*idx))?
+                .get_cost(network, state)
+                .map_err(|e| MetricF64Error::NodeGetCostError(Box::new(e)))?),
             MetricF64::AggregatedNodeMaxFlow(idx) => network
                 .get_aggregated_node(idx)
                 .ok_or(MetricF64Error::AggregatedNodeIndexNotFound(*idx))?
@@ -537,6 +545,9 @@ pub enum UnresolvedMetricF64 {
     NodeProportionalVolume(UnresolvedNode),
     NodeMaxVolume(UnresolvedNode),
     NodeMinVolume(UnresolvedNode),
+    /// The cost of a node per unit of flow, including any virtual storage costs. See
+    /// [`crate::node::Node::get_cost`].
+    NodeCost(UnresolvedNode),
     NodeMaxFlow(UnresolvedNode),
     NodeMinFlow(UnresolvedNode),
     AggregatedNodeInFlow(UnresolvedNode),
@@ -724,6 +735,15 @@ impl UnresolvedMetricF64 {
                         node: unresolved.clone(),
                     })?;
                 MetricF64::NodeMinVolume(*idx)
+            }
+            UnresolvedMetricF64::NodeCost(unresolved) => {
+                let idx = maps
+                    .nodes
+                    .get(unresolved)
+                    .ok_or_else(|| MetricF64ResolutionError::NodeNotFound {
+                        node: unresolved.clone(),
+                    })?;
+                MetricF64::NodeCost(*idx)
             }
             UnresolvedMetricF64::AggregatedNodeMaxFlow(unresolved) => {
                 let idx = maps.aggregated_nodes.get(unresolved).ok_or_else(|| {
