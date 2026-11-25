@@ -77,7 +77,7 @@
       {
         "meta": {"name": "nodes"},
         "filters": {
-          "all_nodes": true
+          "all_nodes": "Default"
         }
       }
     ],

@@ -158,18 +158,37 @@ impl MetricAggregator {
     }
 }
 
+/// Which attributes a filter adds for each node it selects.
+#[derive(
+    serde::Deserialize, serde::Serialize, Debug, Copy, Clone, JsonSchema, PywrVisitAll, PartialEq, Eq, Display, EnumIter,
+)]
+pub enum FilterAttributes {
+    /// The node's default attribute.
+    Default,
+    /// Every attribute the node has, such as its flows, bounds and cost. An attribute that
+    /// requires an optional field, such as `MaxFlow` requiring `max_flow`, is only added when that
+    /// field is set.
+    All,
+}
+
 /// Filters that allow multiple metrics to be added to a metric set.
 ///
-/// The filters allow the default metrics for all nodes, virtual nodes, parameters and/or edges in
-/// a model to be added to a metric set. A parameter adds each value it calculates, before and/or
-/// after.
+/// The filters allow metrics for all nodes, virtual nodes, parameters and/or edges in a model to
+/// be added to a metric set. The node filters add either the default attribute or every attribute
+/// of each node (see [`FilterAttributes`]). A parameter adds each value it calculates, before
+/// and/or after.
+///
+/// For example, `{"all_nodes": "All", "all_virtual_nodes": "Default"}` adds every attribute of
+/// every node and the default attribute of every virtual node.
 #[derive(Deserialize, Serialize, Debug, Clone, JsonSchema, Default, PywrVisitPaths, PywrVisitReferences)]
 #[serde(deny_unknown_fields)]
 pub struct MetricSetFilters {
-    #[serde(default)]
-    pub all_nodes: bool,
-    #[serde(default)]
-    pub all_virtual_nodes: bool,
+    /// The attributes to add for every node, if any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub all_nodes: Option<FilterAttributes>,
+    /// The attributes to add for every virtual node, if any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub all_virtual_nodes: Option<FilterAttributes>,
     #[serde(default)]
     pub all_parameters: bool,
     #[serde(default)]
@@ -186,20 +205,32 @@ impl MetricSetFilters {
 
         let mut metrics = vec![];
 
-        if self.all_nodes {
+        if let Some(selection) = self.all_nodes {
             for node in args.schema.nodes.iter() {
-                metrics.push(Metric::Node(NodeAttrReference::new(node.name().to_string(), None)));
+                let attributes = match selection {
+                    FilterAttributes::Default => vec![None],
+                    FilterAttributes::All => node.attributes().into_iter().map(Some).collect(),
+                };
+                for attribute in attributes {
+                    metrics.push(Metric::Node(NodeAttrReference::new(node.name().to_string(), attribute)));
+                }
             }
         }
 
-        if self.all_virtual_nodes
+        if let Some(selection) = self.all_virtual_nodes
             && let Some(virtual_nodes) = args.schema.virtual_nodes.as_ref()
         {
             for node in virtual_nodes.iter() {
-                metrics.push(Metric::VirtualNode(VirtualNodeAttrReference::new(
-                    node.name().to_string(),
-                    None,
-                )));
+                let attributes = match selection {
+                    FilterAttributes::Default => vec![None],
+                    FilterAttributes::All => node.attributes().into_iter().map(Some).collect(),
+                };
+                for attribute in attributes {
+                    metrics.push(Metric::VirtualNode(VirtualNodeAttrReference::new(
+                        node.name().to_string(),
+                        attribute,
+                    )));
+                }
             }
         }
 

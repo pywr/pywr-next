@@ -363,3 +363,129 @@ fn test_core_nodes_carry_their_node_name() {
         .collect();
     assert!(missing.is_empty(), "No test model builds these node types: {missing:?}");
 }
+
+/// Every attribute the `All` filters add must build and evaluate, on every node and virtual node
+/// of every test model that runs.
+#[test]
+#[cfg(feature = "clp")]
+fn test_all_attribute_filters_run_on_every_model() {
+    use pywr_core::solvers::ClpSolverSettings;
+    use pywr_schema::meta::NamedMeta;
+    use pywr_schema::metric_sets::{FilterAttributes, MetricSet, MetricSetFilters};
+
+    let tests_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests");
+    let solver = ClpSolverSettings::default();
+    let mut checked = 0;
+
+    for entry in fs::read_dir(&tests_dir).unwrap() {
+        let path = entry.unwrap().path();
+        if path.extension().is_none_or(|ext| ext != "json") {
+            continue;
+        }
+        let Ok(data) = fs::read_to_string(&path) else { continue };
+        let Ok(mut schema) = serde_json::from_str::<ModelSchema>(&data) else {
+            continue;
+        };
+
+        // Only models that run as they are can show the filter's effect.
+        let temp_dir = TempDir::new().unwrap();
+        let Ok(builder) = schema.create_model_builder(&FileSystem, Some(&tests_dir), Some(temp_dir.path())) else {
+            continue;
+        };
+        let Ok(model) = builder.build() else { continue };
+        if !model.check_solver_features(&solver) || model.run(&solver).is_err() {
+            continue;
+        }
+
+        schema.network.metric_sets.get_or_insert_with(Vec::new).push(MetricSet {
+            meta: NamedMeta {
+                name: "every-attribute".to_string(),
+                ..Default::default()
+            },
+            metrics: None,
+            core_nodes: None,
+            aggregator: None,
+            filters: MetricSetFilters {
+                all_nodes: Some(FilterAttributes::All),
+                all_virtual_nodes: Some(FilterAttributes::All),
+                ..Default::default()
+            },
+        });
+
+        let temp_dir = TempDir::new().unwrap();
+        let model = schema
+            .create_model_builder(&FileSystem, Some(&tests_dir), Some(temp_dir.path()))
+            .unwrap_or_else(|e| panic!("{}: failed to load with every attribute: {e}", path.display()))
+            .build()
+            .unwrap_or_else(|e| panic!("{}: failed to build with every attribute: {e}", path.display()));
+        model
+            .run(&solver)
+            .unwrap_or_else(|e| panic!("{}: failed to run with every attribute: {e}", path.display()));
+        checked += 1;
+    }
+
+    assert!(checked > 0, "No test model ran");
+}
+
+/// `Default` adds each node's default attribute and `All` every attribute the node has.
+#[test]
+fn test_node_filter_attributes() {
+    let model_json = |all_nodes: &str| {
+        serde_json::json!({
+            "metadata": {"title": "filters", "minimum_version": "0.1"},
+            "time": {"start": "2015-01-01", "end": "2015-01-02", "timestep": {"type": "Days", "days": 1}},
+            "network": {
+                "nodes": [
+                    {"meta": {"name": "supply"}, "type": "Input", "max_flow": {"type": "Literal", "value": 5.0}},
+                    {"meta": {"name": "demand"}, "type": "Output"}
+                ],
+                "edges": [{"from_node": "supply", "to_node": "demand"}],
+                "virtual_nodes": [
+                    {"meta": {"name": "agg"}, "type": "Aggregated", "nodes": [{"name": "supply"}]}
+                ],
+                "metric_sets": [
+                    {"meta": {"name": "ms"}, "filters": {"all_nodes": all_nodes, "all_virtual_nodes": all_nodes}}
+                ]
+            }
+        })
+    };
+
+    let metrics = |all_nodes: &str| -> Vec<(String, String)> {
+        let schema: ModelSchema = serde_json::from_value(model_json(all_nodes)).unwrap();
+        let model = schema
+            .create_model_builder(&FileSystem, None, None)
+            .unwrap()
+            .build()
+            .unwrap();
+        model.network().metric_sets()[0]
+            .metrics()
+            .iter()
+            .map(|m| (m.name().to_string(), m.attribute().to_string()))
+            .collect()
+    };
+    let pairs = |items: &[(&str, &str)]| -> Vec<(String, String)> {
+        items.iter().map(|(n, a)| (n.to_string(), a.to_string())).collect()
+    };
+
+    assert_eq!(
+        metrics("Default"),
+        pairs(&[("supply", "Outflow"), ("demand", "Inflow"), ("agg", "Outflow")])
+    );
+    // Without `max_flow` neither the demand nor the aggregated node has `MaxFlow`, and the demand
+    // has no `Deficit`.
+    assert_eq!(
+        metrics("All"),
+        pairs(&[
+            ("supply", "Outflow"),
+            ("supply", "MaxFlow"),
+            ("supply", "MinFlow"),
+            ("supply", "Cost"),
+            ("demand", "Inflow"),
+            ("demand", "MinFlow"),
+            ("demand", "Cost"),
+            ("agg", "Inflow"),
+            ("agg", "Outflow"),
+            ("agg", "MinFlow"),
+        ])
+    );
+}

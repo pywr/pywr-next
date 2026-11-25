@@ -111,7 +111,7 @@ mod tests {
     fn named_components_round_trip_metadata() {
         let json = serde_json::json!({
             "meta": {"name": "metrics", "comment": "a set", "tags": {"team": "planning"}},
-            "filters": {"all_nodes": true}
+            "filters": {"all_nodes": "Default"}
         });
         let mut metrics: MetricSet = serde_json::from_value(json.clone()).unwrap();
         assert_eq!(metrics.name(), "metrics");
