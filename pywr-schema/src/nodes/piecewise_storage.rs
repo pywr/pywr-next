@@ -32,6 +32,11 @@ node_attribute_subset_enum! {
     pub enum PiecewiseStorageNodeAttribute {
         Volume,
         ProportionalVolume,
+        /// The total maximum volume of the stores, which is the value of `max_volume`.
+        MaxVolume,
+        /// The total minimum volume of the stores, which is the value of `min_volume`. Defaults
+        /// to 0 if `min_volume` is not defined.
+        MinVolume,
     }
 }
 
@@ -430,6 +435,8 @@ impl PiecewiseStorageNode {
             PiecewiseStorageNodeAttribute::ProportionalVolume => {
                 UnresolvedMetricF64::AggregatedStorageNodeProportionalVolume(name)
             }
+            PiecewiseStorageNodeAttribute::MaxVolume => UnresolvedMetricF64::AggregatedStorageNodeMaxVolume(name),
+            PiecewiseStorageNodeAttribute::MinVolume => UnresolvedMetricF64::AggregatedStorageNodeMinVolume(name),
         };
 
         Ok(metric)

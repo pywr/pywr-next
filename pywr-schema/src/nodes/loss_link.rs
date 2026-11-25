@@ -8,7 +8,7 @@ use crate::validation::NodeProblem;
 use crate::{
     error::SchemaError,
     network::LoadArgs,
-    nodes::{NodeAttribute, NodeComponent, NodeSlot},
+    nodes::{NodeAttribute, NodeComponent, NodeSlot, attributes::field_not_set},
 };
 use crate::{mermaid, node_attribute_subset_enum, node_component_subset_enum};
 #[cfg(feature = "core")]
@@ -102,6 +102,10 @@ node_attribute_subset_enum! {
         Inflow,
         Outflow,
         Loss,
+        /// The value of the `max_net_flow` metric. Requires `max_net_flow` to be defined.
+        MaxFlow,
+        /// The value of the `min_net_flow` metric. Defaults to 0 if `min_net_flow` is not defined.
+        MinFlow,
     }
 }
 
@@ -151,6 +155,13 @@ impl LossLinkNode {
 
     pub fn default_component(&self) -> LossLinkNodeComponent {
         Self::DEFAULT_COMPONENT
+    }
+
+    /// The attributes this node has; `MaxFlow` requires `max_net_flow` to be set.
+    pub fn available_attributes(&self) -> Vec<LossLinkNodeAttribute> {
+        LossLinkNodeAttribute::iter()
+            .filter(|attr| !matches!(attr, LossLinkNodeAttribute::MaxFlow) || self.max_net_flow.is_some())
+            .collect()
     }
 
     pub(crate) fn built_components(&self) -> impl Iterator<Item = LossLinkNodeComponent> + '_ {
@@ -309,6 +320,13 @@ impl LossLinkNode {
                     0.0.into()
                 }
             }
+            LossLinkNodeAttribute::MaxFlow => {
+                if self.max_net_flow.is_none() {
+                    return Err(field_not_set(attr, &self.meta.name, "max_net_flow"));
+                }
+                UnresolvedMetricF64::NodeMaxFlow(self.net_sub_name())
+            }
+            LossLinkNodeAttribute::MinFlow => UnresolvedMetricF64::NodeMinFlow(self.net_sub_name()),
         };
 
         Ok(metric)

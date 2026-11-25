@@ -83,6 +83,12 @@ impl AggregatedStorageNodeBuilder {
         self
     }
 
+    /// The storage nodes this aggregated storage node is made of.
+    #[must_use]
+    pub fn nodes(&self) -> &[UnresolvedNode] {
+        &self.nodes
+    }
+
     /// Try to construct an [`AggregatedStorageNode`] from this builder.
     ///
     /// # Errors

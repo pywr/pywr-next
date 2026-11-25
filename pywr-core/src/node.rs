@@ -97,6 +97,7 @@ impl NodeBuilder {
         [
             (DependentAttribute::NodeMinFlow(index), &self.min_flow),
             (DependentAttribute::NodeMaxFlow(index), &self.max_flow),
+            (DependentAttribute::NodeMinVolume(index), &self.min_volume),
             (DependentAttribute::NodeMaxVolume(index), &self.max_volume),
         ]
         .into_iter()
