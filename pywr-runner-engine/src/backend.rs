@@ -34,6 +34,8 @@ pub enum BackendError {
     ModelSetupError(#[from] pywr_core::models::ModelSetupError),
     #[error("Failed to create multi-network model builder from schema.")]
     MultiNetworkModelBuilderCreationError(#[from] pywr_schema::MultiNetworkModelSchemaBuildError),
+    #[error("Failed to read a network of the multi-network model.")]
+    NetworkReadError(#[from] pywr_schema::NetworkSchemaReadError),
     #[error("Failed to build multi-network model from builder.")]
     MultiNetworkModelBuildError(#[from] pywr_core::models::MultiNetworkModelBuilderError),
     #[error("Failed to setup multi-network model state.")]
@@ -516,16 +518,10 @@ impl PywrModel {
 
 pub struct PywrRuntime {
     model: PywrModel,
-    /// Progress when the model was finalised, after which its state is gone.
-    final_progress: Option<RunProgress>,
 }
 
 impl PywrRuntime {
     fn current_progress(&self) -> RunProgress {
-        if let Some(progress) = &self.final_progress {
-            return progress.clone();
-        }
-
         let timesteps = self.model.domain().time().timesteps();
         let completed = self.model.current_time_step_idx().unwrap_or(0);
         RunProgress {
@@ -543,7 +539,6 @@ impl PywrRuntime {
     fn finalise(&mut self) -> Result<RunProgress, BackendError> {
         let progress = self.current_progress();
         self.model.finalise()?;
-        self.final_progress = Some(progress.clone());
         Ok(progress)
     }
 }
@@ -669,10 +664,7 @@ impl RunnerBackend for PywrBackend {
         let mut model = model_builder.build()?;
         model.setup(&solver_config)?;
 
-        let runtime = PywrRuntime {
-            model,
-            final_progress: None,
-        };
+        let runtime = PywrRuntime { model };
         let progress = runtime.current_progress();
 
         Ok(Initialised {
