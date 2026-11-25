@@ -10,7 +10,8 @@ use crate::network::LoadArgs;
 #[cfg(feature = "core")]
 use crate::parameters::{Parameter, PythonReturnType};
 use crate::validation::MetricSetProblem;
-use pywr_schema_macros::{PywrVisitPaths, PywrVisitReferences, skip_serializing_none};
+use crate::visit::{Reference, ReferenceMut, VisitReferences};
+use pywr_schema_macros::{PywrVisitAll, PywrVisitPaths, PywrVisitReferences, skip_serializing_none};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::num::NonZeroI64;
@@ -37,6 +38,80 @@ pub enum MetricAggFrequency {
     Monthly,
     Annual,
     Days { days: NonZeroI64 },
+}
+
+/// An attribute of a single core node, which is one of the nodes a node of the schema builds.
+///
+/// Flow attributes and bounds belong to input, output and link core nodes, volumes and their
+/// bounds to storage core nodes; `Inflow`, `Outflow` and `Cost` to all of them. A core node
+/// without the attribute gives no value for it.
+#[derive(
+    serde::Deserialize, serde::Serialize, Debug, Copy, Clone, JsonSchema, PywrVisitAll, PartialEq, Eq, Display, EnumIter,
+)]
+pub enum CoreNodeAttribute {
+    Inflow,
+    Outflow,
+    /// The minimum flow constraint.
+    MinFlow,
+    /// The maximum flow constraint. An unconstrained core node gives the largest float.
+    MaxFlow,
+    Volume,
+    ProportionalVolume,
+    /// The minimum volume constraint.
+    MinVolume,
+    /// The maximum volume constraint.
+    MaxVolume,
+    /// The cost per unit of flow, or per unit of net increase in volume for a storage, including
+    /// the costs of any virtual storage nodes.
+    Cost,
+}
+
+#[cfg(feature = "core")]
+impl From<CoreNodeAttribute> for pywr_core::node::CoreNodeAttribute {
+    fn from(value: CoreNodeAttribute) -> Self {
+        match value {
+            CoreNodeAttribute::Inflow => Self::Inflow,
+            CoreNodeAttribute::Outflow => Self::Outflow,
+            CoreNodeAttribute::MinFlow => Self::MinFlow,
+            CoreNodeAttribute::MaxFlow => Self::MaxFlow,
+            CoreNodeAttribute::Volume => Self::Volume,
+            CoreNodeAttribute::ProportionalVolume => Self::ProportionalVolume,
+            CoreNodeAttribute::MinVolume => Self::MinVolume,
+            CoreNodeAttribute::MaxVolume => Self::MaxVolume,
+            CoreNodeAttribute::Cost => Self::Cost,
+        }
+    }
+}
+
+/// The attributes of each core node that a node builds.
+///
+/// This shows the parts of a node that its own attributes combine or leave out, such as the
+/// spill of a reservoir or the steps of a piecewise link. Each core node gives a value named by
+/// the node's name and, for all but its main core node, a sub-name in brackets (e.g.
+/// `reservoir1[spill]`). These sub-names come from how a node is built, so they may change
+/// between versions.
+#[derive(Deserialize, Serialize, Debug, Clone, JsonSchema, PywrVisitPaths)]
+#[serde(deny_unknown_fields)]
+pub struct CoreNodesReference {
+    /// The name of the node.
+    pub node: String,
+    /// The attributes to give for each of its core nodes.
+    pub attributes: Vec<CoreNodeAttribute>,
+}
+
+/// Names a node without reading one of its attributes.
+impl VisitReferences for CoreNodesReference {
+    fn visit_references<F: FnMut(Reference<'_>)>(&self, visitor: &mut F) {
+        visitor(Reference::Node {
+            name: &self.node,
+            attribute: None,
+            metric: None,
+        });
+    }
+
+    fn visit_references_mut<F: FnMut(ReferenceMut<'_>)>(&mut self, visitor: &mut F) {
+        visitor(ReferenceMut::Node(&mut self.node));
+    }
 }
 
 #[cfg(feature = "core")]
@@ -99,6 +174,9 @@ pub struct MetricSetFilters {
     pub all_parameters: bool,
     #[serde(default)]
     pub all_edges: bool,
+    /// The attributes to give for every core node of every node. See [`CoreNodesReference`].
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub all_core_nodes: Vec<CoreNodeAttribute>,
 }
 
 #[cfg(feature = "core")]
@@ -171,6 +249,8 @@ impl MetricSetFilters {
 pub struct MetricSet {
     pub meta: NamedMeta,
     pub metrics: Option<Vec<Metric>>,
+    /// The attributes of each core node of nodes, given after `metrics`.
+    pub core_nodes: Option<Vec<CoreNodesReference>>,
     pub aggregator: Option<MetricAggregator>,
     #[serde(default)]
     pub filters: MetricSetFilters,
@@ -230,7 +310,30 @@ impl MetricSet {
             .filter(|m| !named_metrics.contains(m))
             .collect();
 
-        if named_metrics.is_empty() && metrics_from_filters.is_empty() {
+        // Every node's core nodes from the filter, after any named explicitly.
+        let mut core_nodes: Vec<(&str, Vec<pywr_core::node::CoreNodeAttribute>)> = self
+            .core_nodes
+            .iter()
+            .flatten()
+            .map(|r| (r.node.as_str(), r.attributes.iter().map(|&a| a.into()).collect()))
+            .collect();
+
+        if !self.filters.all_core_nodes.is_empty() {
+            let attributes: Vec<_> = self.filters.all_core_nodes.iter().map(|&a| a.into()).collect();
+            for node in args.schema.nodes.iter().filter(|node| !node.is_placeholder()) {
+                if !core_nodes.iter().any(|(name, _)| *name == node.name()) {
+                    core_nodes.push((node.name(), attributes.clone()));
+                }
+            }
+        }
+
+        for (name, _) in &core_nodes {
+            if args.schema.get_node_by_name(name).is_none() {
+                return Err(SchemaError::NodeNotFound { name: name.to_string() });
+            }
+        }
+
+        if named_metrics.is_empty() && metrics_from_filters.is_empty() && core_nodes.is_empty() {
             return Err(SchemaError::EmptyMetricSet(self.name().to_string()));
         }
 
@@ -247,6 +350,10 @@ impl MetricSet {
         // A filter's metric may ask for a phase its parameter does not calculate.
         for m in metrics_from_filters {
             metric_set.metric_if_calculated(m);
+        }
+
+        for (name, attributes) in core_nodes {
+            metric_set.node_family(name, &attributes);
         }
 
         network.metric_set(metric_set);

@@ -53,6 +53,7 @@ model_tests! {
     test_csv2: ("csv2.json", vec![("csv2-outputs-long.csv", ResultsShape::Long), ("csv2-outputs-wide.csv", ResultsShape::Wide)], vec![], vec![]),
     test_csv3: ("csv3.json", vec![("csv3-outputs-long.csv", ResultsShape::Long)], vec![], vec![]),
     test_constraint_attributes1: ("constraint-attributes1.json", vec![("constraint-attributes1-expected.csv", ResultsShape::Long)], vec!["ipm-simd", "ipm-ocl-f64"], vec![]),
+    test_core_nodes1: ("core-nodes1.json", vec![("core-nodes1-named-expected.csv", ResultsShape::Long), ("core-nodes1-all-expected.csv", ResultsShape::Long)], vec!["ipm-simd", "ipm-ocl-f64"], vec![]),
     test_cost_attributes1: ("cost-attributes1.json", vec![("cost-attributes1-expected.csv", ResultsShape::Long)], vec!["ipm-simd", "ipm-ocl-f64"], vec![]),
     test_virtual_node_attributes1: ("virtual-node-attributes1.json", vec![("virtual-node-attributes1-expected.csv", ResultsShape::Long)], vec!["ipm-simd", "ipm-ocl-f64"], vec![]),
     test_virtual_node_attribute_order1: ("virtual-node-attribute-order1.json", vec![("virtual-node-attribute-order1-expected.csv", ResultsShape::Long)], vec!["ipm-simd", "ipm-ocl-f64"], vec![]),
@@ -309,4 +310,56 @@ fn convert_model(v1_path: &Path, v2_path: &Path) {
     let v2_expected_str = fs::read_to_string(v2_path).unwrap();
     let v2_expected: serde_json::Value = serde_json::from_str(&v2_expected_str).unwrap();
     assert_eq!(v2_converted, v2_expected);
+}
+
+/// Every core node a node builds carries the node's name, with a sub-name for all but its main
+/// core node. A metric set's `core_nodes` finds a node's core nodes by this name.
+///
+/// This builds each test model that loads without Python, and checks the node types it covers
+/// so that a type missing from the test models is noticed.
+#[cfg(feature = "core")]
+#[test]
+fn test_core_nodes_carry_their_node_name() {
+    use pywr_schema::nodes::NodeType;
+    use std::collections::HashSet;
+    use strum::IntoEnumIterator;
+
+    let tests_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests");
+    let mut covered: Vec<NodeType> = Vec::new();
+
+    for entry in fs::read_dir(&tests_dir).unwrap() {
+        let path = entry.unwrap().path();
+        if path.extension().is_none_or(|ext| ext != "json") {
+            continue;
+        }
+        let Ok(data) = fs::read_to_string(&path) else { continue };
+        let Ok(schema) = serde_json::from_str::<ModelSchema>(&data) else {
+            continue;
+        };
+
+        let temp_dir = TempDir::new().unwrap();
+        let Ok(builder) = schema.create_model_builder(&FileSystem, Some(&tests_dir), Some(temp_dir.path())) else {
+            continue;
+        };
+        let Ok(model) = builder.build() else { continue };
+
+        let names: HashSet<&str> = schema.network.nodes.iter().map(|node| node.name()).collect();
+        for node in model.network().nodes() {
+            assert!(
+                names.contains(node.name()),
+                "{}: the core node `{}` does not carry the name of a node",
+                path.display(),
+                node.name()
+            );
+        }
+
+        covered.extend(schema.network.nodes.iter().map(|node| node.node_type()));
+        covered.dedup();
+    }
+
+    // A placeholder builds no core nodes.
+    let missing: Vec<NodeType> = NodeType::iter()
+        .filter(|node_type| *node_type != NodeType::Placeholder && !covered.contains(node_type))
+        .collect();
+    assert!(missing.is_empty(), "No test model builds these node types: {missing:?}");
 }
