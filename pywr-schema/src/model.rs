@@ -1,4 +1,3 @@
-#[cfg(feature = "core")]
 use crate::FileProvider;
 #[cfg(feature = "core")]
 use crate::data_tables::LoadedTableCollection;
@@ -6,8 +5,9 @@ use crate::error::ComponentConversionError;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
 use crate::metric::Metric;
+use crate::network::NetworkSchemaReadError;
 #[cfg(feature = "core")]
-use crate::network::{LoadArgs, NetworkSchemaBuildError, NetworkSchemaReadError};
+use crate::network::{LoadArgs, NetworkSchemaBuildError};
 #[cfg(feature = "core")]
 use crate::time_series::LoadedTimeSeriesCollection;
 use crate::util::duplicates;
@@ -1010,7 +1010,6 @@ pub struct MultiNetworkModelSchema {
 
 /// Where a multi-network model reads a network given by `path`: relative to `data_path`, if
 /// there is one.
-#[cfg(feature = "core")]
 fn network_file_path(path: &Path, data_path: Option<&Path>) -> PathBuf {
     match data_path {
         Some(data_path) if path.is_relative() => data_path.join(path),
@@ -1089,17 +1088,14 @@ impl MultiNetworkModelSchema {
     /// Read each network given by path through `files` and put it in the schema inline, so
     /// its components can be changed before the model is built. Paths are resolved as
     /// [`Self::create_model_builder`] resolves them.
-    #[cfg(feature = "core")]
     pub fn inline_network_files(
         &mut self,
         files: &dyn FileProvider,
         data_path: Option<&Path>,
-    ) -> Result<(), MultiNetworkModelSchemaBuildError> {
+    ) -> Result<(), NetworkSchemaReadError> {
         for entry in &mut self.networks {
             if let NetworkSchemaRef::Path(path) = &entry.network {
-                let path = network_file_path(path, data_path);
-                let network = NetworkSchema::from_files(files, &path)
-                    .map_err(|source| MultiNetworkModelSchemaBuildError::NetworkReadError { path, source })?;
+                let network = NetworkSchema::from_files(files, &network_file_path(path, data_path))?;
                 entry.network = NetworkSchemaRef::Inline(network);
             }
         }
