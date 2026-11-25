@@ -6,6 +6,8 @@ use crate::network::LoadArgs;
 #[cfg(feature = "core")]
 use crate::nodes::NodeAttribute;
 use crate::nodes::NodeMeta;
+#[cfg(feature = "core")]
+use crate::nodes::attributes::field_not_set;
 use crate::nodes::core::StorageInitialVolume;
 use crate::parameters::Parameter;
 use crate::v1::{ConversionData, TryFromV1, try_convert_initial_storage, try_convert_node_attr, try_convert_node_meta};
@@ -28,6 +30,7 @@ use pywr_v1_schema::nodes::{
 };
 use schemars::JsonSchema;
 use std::num::{NonZeroU8, NonZeroUsize};
+use strum::IntoEnumIterator;
 use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumString, IntoStaticStr};
 
 // This macro generates a subset enum for the `VirtualStorageNode` attributes.
@@ -36,6 +39,9 @@ node_attribute_subset_enum! {
     pub enum VirtualStorageNodeAttribute {
         Volume,
         ProportionalVolume,
+        MaxVolume,
+        MinVolume,
+        Cost,
     }
 }
 
@@ -252,6 +258,13 @@ impl VirtualStorageNode {
         Self::DEFAULT_ATTRIBUTE
     }
 
+    /// The attributes this node offers; `MaxVolume` requires `max_volume` to be set.
+    pub fn available_attributes(&self) -> Vec<VirtualStorageNodeAttribute> {
+        VirtualStorageNodeAttribute::iter()
+            .filter(|attr| !matches!(attr, VirtualStorageNodeAttribute::MaxVolume) || self.max_volume.is_some())
+            .collect()
+    }
+
     pub fn validate(&self) -> Result<(), Vec<VirtualNodeProblem>> {
         let mut problems = Vec::new();
 
@@ -368,6 +381,14 @@ impl VirtualStorageNode {
             VirtualStorageNodeAttribute::ProportionalVolume => {
                 UnresolvedMetricF64::VirtualStorageProportionalVolume(name)
             }
+            VirtualStorageNodeAttribute::MaxVolume => {
+                if self.max_volume.is_none() {
+                    return Err(field_not_set(attr, &self.meta.name, "max_volume"));
+                }
+                UnresolvedMetricF64::VirtualStorageMaxVolume(name)
+            }
+            VirtualStorageNodeAttribute::MinVolume => UnresolvedMetricF64::VirtualStorageMinVolume(name),
+            VirtualStorageNodeAttribute::Cost => UnresolvedMetricF64::VirtualStorageCost(name),
         };
 
         Ok(metric)

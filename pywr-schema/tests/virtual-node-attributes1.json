@@ -1,0 +1,227 @@
+{
+  "metadata": {
+    "title": "Virtual node attributes",
+    "description": "Test of the MaxFlow and MinFlow attributes of an aggregated node, the MaxVolume and MinVolume attributes of an aggregated storage node and the MaxVolume, MinVolume and Cost attributes of a virtual storage node.",
+    "minimum_version": "0.1"
+  },
+  "time": {
+    "start": "2015-01-01",
+    "end": "2015-01-03",
+    "timestep": {
+      "type": "Days",
+      "days": 1
+    }
+  },
+  "network": {
+    "nodes": [
+      {
+        "meta": {
+          "name": "supply1"
+        },
+        "type": "Input",
+        "max_flow": {
+          "type": "Literal",
+          "value": 20.0
+        }
+      },
+      {
+        "meta": {
+          "name": "supply2"
+        },
+        "type": "Input",
+        "max_flow": {
+          "type": "Literal",
+          "value": 20.0
+        }
+      },
+      {
+        "meta": {
+          "name": "storage1"
+        },
+        "type": "Storage",
+        "max_volume": {
+          "type": "Literal",
+          "value": 100.0
+        },
+        "min_volume": {
+          "type": "Literal",
+          "value": 10.0
+        },
+        "initial_volume": {
+          "type": "Absolute",
+          "volume": 50.0
+        }
+      },
+      {
+        "meta": {
+          "name": "storage2"
+        },
+        "type": "Storage",
+        "max_volume": {
+          "type": "Literal",
+          "value": 50.0
+        },
+        "min_volume": {
+          "type": "Literal",
+          "value": 5.0
+        },
+        "initial_volume": {
+          "type": "Absolute",
+          "volume": 25.0
+        }
+      },
+      {
+        "meta": {
+          "name": "demand1"
+        },
+        "type": "Output",
+        "max_flow": {
+          "type": "Literal",
+          "value": 15.0
+        },
+        "cost": {
+          "type": "Literal",
+          "value": -10.0
+        }
+      }
+    ],
+    "edges": [
+      {
+        "from_node": "supply1",
+        "to_node": "demand1"
+      },
+      {
+        "from_node": "supply2",
+        "to_node": "demand1"
+      },
+      {
+        "from_node": "storage1",
+        "to_node": "demand1"
+      },
+      {
+        "from_node": "storage2",
+        "to_node": "demand1"
+      }
+    ],
+    "virtual_nodes": [
+      {
+        "meta": {
+          "name": "agg1"
+        },
+        "type": "Aggregated",
+        "nodes": [
+          {
+            "name": "supply1"
+          },
+          {
+            "name": "supply2"
+          }
+        ],
+        "max_flow": {
+          "type": "Literal",
+          "value": 12.0
+        },
+        "min_flow": {
+          "type": "Literal",
+          "value": 3.0
+        }
+      },
+      {
+        "meta": {
+          "name": "agg_storage1"
+        },
+        "type": "AggregatedStorage",
+        "storage_nodes": [
+          {
+            "name": "storage1"
+          },
+          {
+            "name": "storage2"
+          }
+        ]
+      },
+      {
+        "meta": {
+          "name": "licence1"
+        },
+        "type": "VirtualStorage",
+        "nodes": [
+          {
+            "name": "supply1"
+          }
+        ],
+        "max_volume": {
+          "type": "Literal",
+          "value": 100.0
+        },
+        "min_volume": {
+          "type": "Literal",
+          "value": 20.0
+        },
+        "cost": {
+          "type": "Literal",
+          "value": 2.0
+        },
+        "initial_volume": {
+          "type": "Absolute",
+          "volume": 80.0
+        }
+      }
+    ],
+    "metric_sets": [
+      {
+        "meta": {
+          "name": "attributes"
+        },
+        "metrics": [
+          {
+            "type": "VirtualNode",
+            "name": "agg1",
+            "attribute": "MaxFlow"
+          },
+          {
+            "type": "VirtualNode",
+            "name": "agg1",
+            "attribute": "MinFlow"
+          },
+          {
+            "type": "VirtualNode",
+            "name": "agg_storage1",
+            "attribute": "MaxVolume"
+          },
+          {
+            "type": "VirtualNode",
+            "name": "agg_storage1",
+            "attribute": "MinVolume"
+          },
+          {
+            "type": "VirtualNode",
+            "name": "licence1",
+            "attribute": "MaxVolume"
+          },
+          {
+            "type": "VirtualNode",
+            "name": "licence1",
+            "attribute": "MinVolume"
+          },
+          {
+            "type": "VirtualNode",
+            "name": "licence1",
+            "attribute": "Cost"
+          }
+        ]
+      }
+    ],
+    "outputs": [
+      {
+        "meta": {
+          "name": "attributes"
+        },
+        "type": "CSV",
+        "format": "Long",
+        "filename": "virtual-node-attributes1-expected.csv",
+        "metric_set": "attributes"
+      }
+    ]
+  }
+}

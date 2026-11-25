@@ -188,6 +188,8 @@ pub enum MetricF64 {
     VirtualStorageVolume(VirtualStorageIndex),
     VirtualStorageProportionalVolume(VirtualStorageIndex),
     VirtualStorageMaxVolume(VirtualStorageIndex),
+    VirtualStorageMinVolume(VirtualStorageIndex),
+    VirtualStorageCost(VirtualStorageIndex),
     MultiNodeInFlow {
         indices: Vec<NodeIndex>,
         name: String,
@@ -345,6 +347,14 @@ impl MetricF64 {
                 .get_virtual_storage_node(idx)
                 .ok_or(MetricF64Error::VirtualStorageIndexNotFound(*idx))?
                 .get_max_volume(state)?),
+            MetricF64::VirtualStorageMinVolume(idx) => Ok(network
+                .get_virtual_storage_node(idx)
+                .ok_or(MetricF64Error::VirtualStorageIndexNotFound(*idx))?
+                .get_min_volume(state)?),
+            MetricF64::VirtualStorageCost(idx) => network
+                .get_virtual_storage_node(idx)
+                .ok_or(MetricF64Error::VirtualStorageIndexNotFound(*idx))?
+                .get_cost(network, state),
             MetricF64::AggregatedStorageNodeVolume(idx) => {
                 let node = network
                     .get_aggregated_storage_node(*idx)
@@ -574,6 +584,9 @@ pub enum UnresolvedMetricF64 {
     },
     VirtualStorageVolume(UnresolvedNode),
     VirtualStorageProportionalVolume(UnresolvedNode),
+    VirtualStorageMaxVolume(UnresolvedNode),
+    VirtualStorageMinVolume(UnresolvedNode),
+    VirtualStorageCost(UnresolvedNode),
     MultiNodeInFlow {
         nodes: Vec<UnresolvedNode>,
         name: String,
@@ -881,6 +894,33 @@ impl UnresolvedMetricF64 {
                 })?;
 
                 MetricF64::VirtualStorageProportionalVolume(*idx)
+            }
+            UnresolvedMetricF64::VirtualStorageMaxVolume(unresolved) => {
+                let idx = maps.virtual_storage_node.get(unresolved).ok_or_else(|| {
+                    MetricF64ResolutionError::VirtualStorageNodeNotFound {
+                        node: unresolved.clone(),
+                    }
+                })?;
+
+                MetricF64::VirtualStorageMaxVolume(*idx)
+            }
+            UnresolvedMetricF64::VirtualStorageMinVolume(unresolved) => {
+                let idx = maps.virtual_storage_node.get(unresolved).ok_or_else(|| {
+                    MetricF64ResolutionError::VirtualStorageNodeNotFound {
+                        node: unresolved.clone(),
+                    }
+                })?;
+
+                MetricF64::VirtualStorageMinVolume(*idx)
+            }
+            UnresolvedMetricF64::VirtualStorageCost(unresolved) => {
+                let idx = maps.virtual_storage_node.get(unresolved).ok_or_else(|| {
+                    MetricF64ResolutionError::VirtualStorageNodeNotFound {
+                        node: unresolved.clone(),
+                    }
+                })?;
+
+                MetricF64::VirtualStorageCost(*idx)
             }
             UnresolvedMetricF64::MultiNodeInFlow { name, nodes: indices } => {
                 let resolved = indices
