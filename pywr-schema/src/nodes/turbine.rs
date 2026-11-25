@@ -37,6 +37,8 @@ node_attribute_subset_enum! {
         Inflow,
         Outflow,
         Power,
+        /// The cost per unit of flow, including the costs of any virtual storage nodes.
+        Cost,
     }
 }
 
@@ -240,6 +242,7 @@ impl TurbineNode {
         let metric = match attr {
             TurbineNodeAttribute::Outflow => UnresolvedMetricF64::NodeOutFlow(name),
             TurbineNodeAttribute::Inflow => UnresolvedMetricF64::NodeInFlow(name),
+            TurbineNodeAttribute::Cost => UnresolvedMetricF64::NodeCost(name),
             TurbineNodeAttribute::Power => {
                 // Retrieve the parameter created for the hydropower calculation
                 let name = ParameterName::new("power", Some(self.meta.name.as_str()));

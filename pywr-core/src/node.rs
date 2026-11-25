@@ -99,6 +99,7 @@ impl NodeBuilder {
             (DependentAttribute::NodeMaxFlow(index), &self.max_flow),
             (DependentAttribute::NodeMinVolume(index), &self.min_volume),
             (DependentAttribute::NodeMaxVolume(index), &self.max_volume),
+            (DependentAttribute::NodeCost(index), &self.cost),
         ]
         .into_iter()
         .filter_map(|(attribute, metric)| Some((attribute, metric.as_ref()?)))
@@ -143,6 +144,12 @@ impl NodeBuilder {
     pub fn cost(&mut self, cost: UnresolvedMetricF64) -> &mut Self {
         self.cost = Some(cost);
         self
+    }
+
+    /// Whether the node combines its own cost with the costs of the virtual storage nodes it
+    /// belongs to; see [`Self::cost_agg_func`].
+    pub fn applies_virtual_storage_costs(&self) -> bool {
+        self.cost_agg_func.is_some()
     }
 
     /// Set how the node combines its own cost with the costs of the virtual storage nodes it
@@ -745,6 +752,21 @@ impl Node {
 
                 Ok(NodeBounds::Volume(VolumeBounds { available, missing }))
             }
+        }
+    }
+
+    /// Return the node's cost per unit of flow, or per unit of net increase in volume for a
+    /// storage node.
+    ///
+    /// This includes the cost of any virtual storage nodes the node belongs to, aggregated with
+    /// the node's local cost. It is the full cost of the node, before it is split between the
+    /// incoming and outgoing edges of a link node.
+    pub fn get_cost(&self, network: &Network, timestep: &Timestep, state: &State) -> Result<f64, NodeError> {
+        match self {
+            Self::Input(n) => n.get_cost(network, timestep, state),
+            Self::Link(n) => n.get_cost(network, timestep, state),
+            Self::Output(n) => n.get_cost(network, timestep, state),
+            Self::Storage(n) => n.get_cost(network, timestep, state),
         }
     }
 

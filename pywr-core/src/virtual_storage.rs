@@ -3,7 +3,7 @@ use crate::aggregated_node::RelationshipBuildError;
 use crate::metric::{
     MetricConsumerPhase, MetricF64, MetricF64Error, MetricF64ResolutionError, SimpleMetricF64Error, UnresolvedMetricF64,
 };
-use crate::network::{Network, ResolutionMaps, VirtualStorageIndex};
+use crate::network::{DependentAttribute, Network, ResolutionMaps, VirtualStorageIndex};
 use crate::node::{NodeMeta, StorageConstraints, StorageInitialVolume, UnresolvedNode, UnresolvedStorageInitialVolume};
 use crate::state::{NetworkStateError, State, StateError, VirtualStorageState};
 use crate::timestep::Timestep;
@@ -97,6 +97,18 @@ impl VirtualStorageNodeBuilder {
     pub fn sub_name(&mut self, sub_name: &str) -> &mut Self {
         self.name.set_sub_name(Some(sub_name));
         self
+    }
+
+    /// The metrics this virtual storage node's attributes are calculated from, as the virtual storage node at `index`.
+    #[must_use]
+    pub(crate) fn attribute_metrics(
+        &self,
+        index: VirtualStorageIndex,
+    ) -> Vec<(DependentAttribute, &UnresolvedMetricF64)> {
+        [(DependentAttribute::VirtualStorageCost(index), &self.cost)]
+            .into_iter()
+            .filter_map(|(attribute, metric)| Some((attribute, metric.as_ref()?)))
+            .collect()
     }
 
     pub fn cost(&mut self, cost: UnresolvedMetricF64) -> &mut Self {
@@ -713,6 +725,43 @@ mod tests {
         let model = model_builder.build().unwrap();
 
         // Test all solvers
+        run_all_solvers(&model, &["ipm-ocl-f64", "ipm-simd"], &[], &[]);
+    }
+
+    #[test]
+    /// A node's cost metric includes the costs of its virtual storage nodes.
+    fn test_node_cost_metric_includes_virtual_storage_costs() {
+        let mut model_builder = simple_model(1, None);
+        let network_builder = model_builder.network_builder();
+
+        // The input sums its local cost and those of its virtual storage nodes.
+        let name = "input".into();
+        let node = network_builder.node_builder(&name).unwrap();
+        node.cost(3.0.into()).cost_agg_func(CostAggFunc::Sum).unwrap();
+
+        let mut vs_builder = VirtualStorageNodeBuilder::new(
+            "vs",
+            &["input".into()],
+            &[1.0],
+            UnresolvedStorageInitialVolume::Proportional(1.0),
+            VirtualStorageReset::Never,
+            VirtualStorageResetVolume::Initial,
+            VirtualStorageActivePeriod::Always,
+        );
+        vs_builder.cost(2.0.into()).max_volume(f64::MAX.into());
+        network_builder.virtual_storage_node(vs_builder);
+
+        for (node, cost) in [("input", 5.0), ("link", 0.0), ("output", -10.0)] {
+            let recorder = AssertionF64RecorderBuilder::new(
+                &format!("{node}-cost"),
+                UnresolvedMetricF64::NodeCost(node.into()),
+                Array::from_elem((366, 1), cost),
+            );
+            network_builder.recorder(Box::new(recorder));
+        }
+
+        let model = model_builder.build().unwrap();
+
         run_all_solvers(&model, &["ipm-ocl-f64", "ipm-simd"], &[], &[]);
     }
 

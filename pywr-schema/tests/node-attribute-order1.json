@@ -1,7 +1,7 @@
 {
   "metadata": {
     "title": "Node attribute order",
-    "description": "A parameter that reads a node's maximum flow is calculated after the parameter that sets it, even when it is listed first, including when the maximum flow is set from another node's. The readers should equal demand-max-flow at every time-step.",
+    "description": "Parameters that read a node's maximum flow and cost are calculated after the parameters that set them, even when listed first, including when the maximum flow is set from another node's. Each reader should equal the parameter it reads at every time-step.",
     "minimum_version": "0.1"
   },
   "time": {
@@ -45,8 +45,8 @@
           "name": "demand-max-flow"
         },
         "cost": {
-          "type": "Literal",
-          "value": -10.0
+          "type": "Parameter",
+          "name": "demand-cost"
         }
       }
     ],
@@ -97,6 +97,23 @@
       },
       {
         "meta": {
+          "name": "cost-reader"
+        },
+        "type": "Aggregated",
+        "agg_func": {
+          "type": "Sum"
+        },
+        "phase": "Before",
+        "metrics": [
+          {
+            "type": "Node",
+            "name": "demand",
+            "attribute": "Cost"
+          }
+        ]
+      },
+      {
+        "meta": {
           "name": "demand-max-flow"
         },
         "type": "Aggregated",
@@ -113,6 +130,26 @@
             "type": "Node",
             "name": "demand",
             "attribute": "Inflow"
+          }
+        ]
+      },
+      {
+        "meta": {
+          "name": "demand-cost"
+        },
+        "type": "Aggregated",
+        "agg_func": {
+          "type": "Product"
+        },
+        "phase": "Before",
+        "metrics": [
+          {
+            "type": "Literal",
+            "value": -1.0
+          },
+          {
+            "type": "Parameter",
+            "name": "demand-max-flow"
           }
         ]
       },
@@ -140,6 +177,14 @@
           {
             "type": "Parameter",
             "name": "reader"
+          },
+          {
+            "type": "Parameter",
+            "name": "demand-cost"
+          },
+          {
+            "type": "Parameter",
+            "name": "cost-reader"
           },
           {
             "type": "Parameter",

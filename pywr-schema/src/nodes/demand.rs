@@ -28,6 +28,8 @@ node_attribute_subset_enum! {
         MaxFlow,
         /// The value of the `min_flow` metric. Defaults to 0 if `min_flow` is not defined.
         MinFlow,
+        /// The cost per unit of flow, including the costs of any virtual storage nodes.
+        Cost,
     }
 }
 
@@ -127,6 +129,7 @@ impl DemandNode {
             DemandNodeAttribute::Inflow => UnresolvedMetricF64::NodeInFlow(name),
             DemandNodeAttribute::MaxFlow => UnresolvedMetricF64::NodeMaxFlow(name),
             DemandNodeAttribute::MinFlow => UnresolvedMetricF64::NodeMinFlow(name),
+            DemandNodeAttribute::Cost => UnresolvedMetricF64::NodeCost(name),
             DemandNodeAttribute::Deficit => {
                 let deficit_parameter_name = ParameterName::new("deficit", Some(self.meta.name.as_str()));
 

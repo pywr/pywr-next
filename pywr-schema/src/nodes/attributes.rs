@@ -31,6 +31,10 @@ pub enum NodeAttribute {
     Evaporation,
     /// The abstracted flow
     Abstraction,
+    /// The cost per unit of flow, or per unit of net increase in volume for a storage. This
+    /// includes the costs of any virtual storage nodes with a `cost_aggregation` that the node
+    /// belongs to.
+    Cost,
 }
 
 /// The error for an `attribute` of node `name` that reads the optional `field`, which is not set.
