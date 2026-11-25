@@ -81,7 +81,8 @@ impl TryFromV1<Polynomial1DParameterV1> for Polynomial1DParameter {
         parent_node: Option<&str>,
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
-        let attribute = match v1.use_proportional_volume.unwrap_or(true) {
+        // pywr v1 reads the absolute volume unless `use_proportional_volume` is true.
+        let attribute = match v1.use_proportional_volume.unwrap_or(false) {
             true => Some(NodeAttribute::ProportionalVolume),
             false => Some(NodeAttribute::Volume),
         };
