@@ -25,10 +25,8 @@ from pywr import (
 def test_metric_extension_metadata_round_trips_through_ipc_stream():
     metadata = MetricColumnMetadata(
         metric_set="outputs",
-        name="reservoir",
+        source={"type": "Node", "name": "reservoir", "node_type": "Storage"},
         attribute="volume",
-        type="node",
-        sub_type="storage",
     )
     extension = MetricColumnExtensionType(metadata, 2)
     field = pa.field(
@@ -89,7 +87,9 @@ def test_metric_extension_metadata_round_trips_through_ipc_stream():
 
 
 def test_metric_extension_serialization_and_validation():
-    metadata = MetricColumnMetadata("nodes", "demand", "outflow", "node")
+    metadata = MetricColumnMetadata(
+        "nodes", {"type": "Node", "name": "demand", "node_type": "Output"}, "outflow"
+    )
     extension = MetricColumnExtensionType(metadata, 2)
 
     assert (
@@ -200,6 +200,11 @@ def test_parquet_output_reads_as_the_arrow_stream_table(tmp_path: Path):
 
     assert parquet_table.schema.equals(stream_table.schema, check_metadata=True)
     assert isinstance(parquet_table.schema.field(2).type, MetricColumnExtensionType)
+    assert parquet_table.schema.field(2).type.metadata == MetricColumnMetadata(
+        metric_set="nodes",
+        source={"type": "Node", "name": "demand", "node_type": "Output"},
+        attribute="Inflow",
+    )
     assert parquet_table.equals(stream_table)
     assert get_scenarios(parquet_table.schema) == get_scenarios(stream_table.schema)
     assert get_scenario_groups(parquet_table.schema) == [

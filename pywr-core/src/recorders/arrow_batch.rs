@@ -145,10 +145,8 @@ pub(super) fn make_schema(
         *count += 1;
         let metadata = MetricColumnMetadata {
             metric_set: metric_set_name.to_string(),
-            name: metric.name().to_string(),
+            source: metric.source().clone(),
             attribute: metric.attribute().to_string(),
-            ty: metric.ty().to_string(),
-            sub_type: metric.sub_type().map(ToString::to_string),
         };
         fields.push(MetricColumnExtension::new(metadata).field(column_name, scenario_count));
     }
@@ -243,6 +241,7 @@ pub(super) fn record_batch(
 #[cfg(test)]
 pub(super) mod tests {
     use super::*;
+    use crate::recorders::MetricSource;
 
     /// Two metrics over two scenarios.
     pub(in crate::recorders) fn two_metric_schema() -> Arc<Schema> {
@@ -251,18 +250,20 @@ pub(super) mod tests {
             Field::new("time_end", DataType::Timestamp(TimeUnit::Millisecond, None), false),
             MetricColumnExtension::new(MetricColumnMetadata {
                 metric_set: "outputs".to_string(),
-                name: "flow".to_string(),
+                source: MetricSource::Node {
+                    name: "flow".to_string(),
+                    node_type: "Storage".to_string(),
+                },
                 attribute: "outflow".to_string(),
-                ty: "node".to_string(),
-                sub_type: None,
             })
             .field("flow", 2),
             MetricColumnExtension::new(MetricColumnMetadata {
                 metric_set: "outputs".to_string(),
-                name: "volume".to_string(),
+                source: MetricSource::Node {
+                    name: "volume".to_string(),
+                    node_type: "Storage".to_string(),
+                },
                 attribute: "volume".to_string(),
-                ty: "node".to_string(),
-                sub_type: None,
             })
             .field("volume", 2),
         ]))

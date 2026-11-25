@@ -1,4 +1,6 @@
 //! The [`MetricColumnExtension`] Arrow extension type, enabled by the `arrow` feature.
+#[cfg(test)]
+use crate::MetricSource;
 use crate::{METRIC_EXTENSION_NAME, MetricColumnMetadata};
 use arrow_schema::extension::{EXTENSION_TYPE_METADATA_KEY, EXTENSION_TYPE_NAME_KEY, ExtensionType};
 use arrow_schema::{ArrowError, DataType, Field};
@@ -78,10 +80,11 @@ mod tests {
     fn metric_extension_round_trips_through_field_metadata() {
         let metadata = MetricColumnMetadata {
             metric_set: "outputs".to_string(),
-            name: "reservoir".to_string(),
+            source: MetricSource::Node {
+                name: "reservoir".to_string(),
+                node_type: "storage".to_string(),
+            },
             attribute: "volume".to_string(),
-            ty: "node".to_string(),
-            sub_type: Some("storage".to_string()),
         };
         let field = MetricColumnExtension::new(metadata.clone()).field("reservoir", 2);
         assert_eq!(

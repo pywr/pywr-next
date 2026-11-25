@@ -211,11 +211,12 @@ fn require_metric_dataset<S: Into<Extents>>(
     let ds = require_dataset(&grp, shape, metric.attribute())?;
 
     // Write the type and subtype as attributes
-    let ty =
-        hdf5_metno::types::VarLenUnicode::from_str(metric.ty()).map_err(|source| Hdf5Error::HDF5VarLenUnicode {
+    let ty = hdf5_metno::types::VarLenUnicode::from_str(metric.source().kind()).map_err(|source| {
+        Hdf5Error::HDF5VarLenUnicode {
             path: ds.filename().into(),
             source,
-        })?;
+        }
+    })?;
 
     let attr = ds
         .new_attr::<hdf5_metno::types::VarLenUnicode>()
@@ -233,7 +234,7 @@ fn require_metric_dataset<S: Into<Extents>>(
             source,
         })?;
 
-    if let Some(sub_type) = metric.sub_type() {
+    if let Some(sub_type) = metric.source().sub_kind() {
         let sub_type =
             hdf5_metno::types::VarLenUnicode::from_str(sub_type).map_err(|source| Hdf5Error::HDF5VarLenUnicode {
                 path: ds.filename().into(),

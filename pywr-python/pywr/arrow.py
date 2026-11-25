@@ -14,40 +14,40 @@ METRIC_EXTENSION_NAME = "org.pywr.metric"
 
 @dataclass(frozen=True, slots=True)
 class MetricColumnMetadata:
-    """Identity metadata attached to a Pywr Arrow metric column."""
+    """Identity metadata attached to a Pywr Arrow metric column.
+
+    ``source`` says what the metric reads from. Its ``type`` key names the kind of
+    source and the other keys depend on it, for example
+    ``{"type": "CoreNode", "node": "res", "sub_name": "spill", "node_type": "Link"}``
+    or ``{"type": "Edge", "from_node": "a", "from_slot": None, "to_node": "b", "to_slot": None}``.
+    """
 
     metric_set: str
-    name: str
+    source: dict[str, Any]
     attribute: str
-    type: str
-    sub_type: str | None = None
 
     @classmethod
     def from_dict(cls, value: dict[str, Any]) -> MetricColumnMetadata:
-        required_fields = (
-            "metric_set",
-            "name",
-            "attribute",
-            "type",
-        )
+        required_fields = ("metric_set", "source", "attribute")
         missing = [field for field in required_fields if field not in value]
         if missing:
             raise ValueError(
                 f"Pywr metric metadata is missing required field(s): {', '.join(missing)}"
             )
 
-        for field in ["metric_set", "name", "attribute", "type"]:
+        for field in ["metric_set", "attribute"]:
             if not isinstance(value[field], str):
                 raise TypeError(
                     f"Pywr metric metadata field {field!r} must be a string"
                 )
 
-        if value.get("sub_type") is not None and not isinstance(value["sub_type"], str):
+        source = value["source"]
+        if not isinstance(source, dict) or not isinstance(source.get("type"), str):
             raise TypeError(
-                "Pywr metric metadata field 'sub_type' must be a string or null"
+                "Pywr metric metadata field 'source' must be an object with a string 'type'"
             )
         return cls(
-            **{field: value.get(field) for field in (*required_fields, "sub_type")}
+            metric_set=value["metric_set"], source=source, attribute=value["attribute"]
         )
 
 
@@ -282,7 +282,7 @@ def register_metric_extension_type() -> None:
     try:
         pa.register_extension_type(
             MetricColumnExtensionType(
-                MetricColumnMetadata("", "", "", ""),
+                MetricColumnMetadata("", {"type": ""}, ""),
                 1,
             )
         )
