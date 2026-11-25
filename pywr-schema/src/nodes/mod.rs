@@ -615,17 +615,17 @@ impl Node {
     /// Returns the attributes that this node has.
     pub fn attributes(&self) -> Vec<NodeAttribute> {
         match self {
-            Node::Input(_) => InputNodeAttribute::iter().map(Into::into).collect(),
-            Node::Link(_) => LinkNodeAttribute::iter().map(Into::into).collect(),
+            Node::Input(n) => n.available_attributes().into_iter().map(Into::into).collect(),
+            Node::Link(n) => n.available_attributes().into_iter().map(Into::into).collect(),
             Node::Output(n) => n.available_attributes().into_iter().map(Into::into).collect(),
             Node::Demand(_) => DemandNodeAttribute::iter().map(Into::into).collect(),
             Node::Storage(_) => StorageNodeAttribute::iter().map(Into::into).collect(),
             Node::Catchment(_) => CatchmentNodeAttribute::iter().map(Into::into).collect(),
             Node::RiverGauge(_) => RiverGaugeNodeAttribute::iter().map(Into::into).collect(),
-            Node::LossLink(_) => LossLinkNodeAttribute::iter().map(Into::into).collect(),
+            Node::LossLink(n) => n.available_attributes().into_iter().map(Into::into).collect(),
             Node::River(_) => RiverNodeAttribute::iter().map(Into::into).collect(),
             Node::RiverSplitWithGauge(_) => RiverSplitWithGaugeNodeAttribute::iter().map(Into::into).collect(),
-            Node::WaterTreatmentWorks(_) => WaterTreatmentWorksNodeAttribute::iter().map(Into::into).collect(),
+            Node::WaterTreatmentWorks(n) => n.available_attributes().into_iter().map(Into::into).collect(),
             Node::PiecewiseLink(_) => PiecewiseLinkNodeAttribute::iter().map(Into::into).collect(),
             Node::PiecewiseStorage(_) => PiecewiseStorageNodeAttribute::iter().map(Into::into).collect(),
             Node::Delay(_) => DelayNodeAttribute::iter().map(Into::into).collect(),

@@ -1,0 +1,313 @@
+{
+  "metadata": {
+    "title": "Node constraint attributes",
+    "description": "Test of the MaxFlow, MinFlow, MaxVolume and MinVolume attributes of nodes, including a Link with a soft constraint whose hard bounds are on an aggregated node.",
+    "minimum_version": "0.1"
+  },
+  "time": {
+    "start": "2015-01-01",
+    "end": "2015-01-03",
+    "timestep": {
+      "type": "Days",
+      "days": 1
+    }
+  },
+  "network": {
+    "nodes": [
+      {
+        "meta": {
+          "name": "supply1"
+        },
+        "type": "Input",
+        "max_flow": {
+          "type": "Literal",
+          "value": 20.0
+        },
+        "min_flow": {
+          "type": "Literal",
+          "value": 1.0
+        }
+      },
+      {
+        "meta": {
+          "name": "link1"
+        },
+        "type": "Link",
+        "max_flow": {
+          "type": "Literal",
+          "value": 15.0
+        },
+        "min_flow": {
+          "type": "Literal",
+          "value": 2.0
+        }
+      },
+      {
+        "meta": {
+          "name": "wtw1"
+        },
+        "type": "WaterTreatmentWorks",
+        "max_flow": {
+          "type": "Literal",
+          "value": 12.0
+        },
+        "min_flow": {
+          "type": "Literal",
+          "value": 1.0
+        }
+      },
+      {
+        "meta": {
+          "name": "loss_link1"
+        },
+        "type": "LossLink",
+        "max_net_flow": {
+          "type": "Literal",
+          "value": 10.0
+        },
+        "min_net_flow": {
+          "type": "Literal",
+          "value": 0.5
+        }
+      },
+      {
+        "meta": {
+          "name": "link2"
+        },
+        "type": "Link",
+        "max_flow": {
+          "type": "Literal",
+          "value": 9.0
+        },
+        "min_flow": {
+          "type": "Literal",
+          "value": 1.0
+        },
+        "soft_max": {
+          "cost": {
+            "type": "Literal",
+            "value": 1.0
+          },
+          "flow": {
+            "type": "Literal",
+            "value": 4.0
+          }
+        }
+      },
+      {
+        "meta": {
+          "name": "storage1"
+        },
+        "type": "Storage",
+        "max_volume": {
+          "type": "Literal",
+          "value": 100.0
+        },
+        "min_volume": {
+          "type": "Literal",
+          "value": 10.0
+        },
+        "initial_volume": {
+          "type": "Absolute",
+          "volume": 50.0
+        }
+      },
+      {
+        "meta": {
+          "name": "reservoir1"
+        },
+        "type": "Reservoir",
+        "max_volume": {
+          "type": "Literal",
+          "value": 50.0
+        },
+        "min_volume": {
+          "type": "Literal",
+          "value": 5.0
+        },
+        "initial_volume": {
+          "type": "Absolute",
+          "volume": 25.0
+        }
+      },
+      {
+        "meta": {
+          "name": "piecewise_storage1"
+        },
+        "type": "PiecewiseStorage",
+        "max_volume": {
+          "type": "Literal",
+          "value": 1000.0
+        },
+        "min_volume": {
+          "type": "Literal",
+          "value": 200.0
+        },
+        "initial_volume": {
+          "type": "Absolute",
+          "volume": 500.0
+        },
+        "steps": [
+          {
+            "cost": {
+              "type": "Literal",
+              "value": -15.0
+            },
+            "control_curve": {
+              "type": "Literal",
+              "value": 0.5
+            }
+          }
+        ]
+      },
+      {
+        "meta": {
+          "name": "demand1"
+        },
+        "type": "Output",
+        "max_flow": {
+          "type": "Literal",
+          "value": 8.0
+        },
+        "cost": {
+          "type": "Literal",
+          "value": -10.0
+        }
+      }
+    ],
+    "edges": [
+      {
+        "from_node": "supply1",
+        "to_node": "link1"
+      },
+      {
+        "from_node": "link1",
+        "to_node": "wtw1"
+      },
+      {
+        "from_node": "wtw1",
+        "to_node": "loss_link1"
+      },
+      {
+        "from_node": "loss_link1",
+        "to_node": "link2"
+      },
+      {
+        "from_node": "link2",
+        "to_node": "demand1"
+      },
+      {
+        "from_node": "storage1",
+        "to_node": "demand1"
+      },
+      {
+        "from_node": "reservoir1",
+        "to_node": "demand1"
+      },
+      {
+        "from_node": "piecewise_storage1",
+        "to_node": "demand1"
+      }
+    ],
+    "metric_sets": [
+      {
+        "meta": {
+          "name": "attributes"
+        },
+        "metrics": [
+          {
+            "type": "Node",
+            "name": "supply1",
+            "attribute": "MaxFlow"
+          },
+          {
+            "type": "Node",
+            "name": "supply1",
+            "attribute": "MinFlow"
+          },
+          {
+            "type": "Node",
+            "name": "link1",
+            "attribute": "MaxFlow"
+          },
+          {
+            "type": "Node",
+            "name": "link1",
+            "attribute": "MinFlow"
+          },
+          {
+            "type": "Node",
+            "name": "wtw1",
+            "attribute": "MaxFlow"
+          },
+          {
+            "type": "Node",
+            "name": "wtw1",
+            "attribute": "MinFlow"
+          },
+          {
+            "type": "Node",
+            "name": "loss_link1",
+            "attribute": "MaxFlow"
+          },
+          {
+            "type": "Node",
+            "name": "loss_link1",
+            "attribute": "MinFlow"
+          },
+          {
+            "type": "Node",
+            "name": "link2",
+            "attribute": "MaxFlow"
+          },
+          {
+            "type": "Node",
+            "name": "link2",
+            "attribute": "MinFlow"
+          },
+          {
+            "type": "Node",
+            "name": "storage1",
+            "attribute": "MaxVolume"
+          },
+          {
+            "type": "Node",
+            "name": "storage1",
+            "attribute": "MinVolume"
+          },
+          {
+            "type": "Node",
+            "name": "reservoir1",
+            "attribute": "MaxVolume"
+          },
+          {
+            "type": "Node",
+            "name": "reservoir1",
+            "attribute": "MinVolume"
+          },
+          {
+            "type": "Node",
+            "name": "piecewise_storage1",
+            "attribute": "MaxVolume"
+          },
+          {
+            "type": "Node",
+            "name": "piecewise_storage1",
+            "attribute": "MinVolume"
+          }
+        ]
+      }
+    ],
+    "outputs": [
+      {
+        "meta": {
+          "name": "attributes"
+        },
+        "type": "CSV",
+        "format": "Long",
+        "filename": "constraint-attributes1-expected.csv",
+        "metric_set": "attributes"
+      }
+    ]
+  }
+}

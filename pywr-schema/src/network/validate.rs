@@ -917,8 +917,8 @@ mod tests {
         assert_eq!(
             messages,
             vec![
-                "The node `supply` reads the attribute `Inflow` of the `Storage` node `store`, but nodes of its type do not have it. Their attributes are: `Volume`, `ProportionalVolume`, `MaxVolume`.",
-                "The parameter `total` reads the attribute `Volume` of the `Link` node `link`, but nodes of its type do not have it. Their attributes are: `Inflow`, `Outflow`.",
+                "The node `supply` reads the attribute `Inflow` of the `Storage` node `store`, but nodes of its type do not have it. Their attributes are: `Volume`, `ProportionalVolume`, `MaxVolume`, `MinVolume`.",
+                "The parameter `total` reads the attribute `Volume` of the `Link` node `link`, but nodes of its type do not have it. Their attributes are: `Inflow`, `Outflow`, `MinFlow`.",
                 "The parameter `total` reads the attribute `Inflow` of the `VirtualStorage` virtual node `licence`, but nodes of its type do not have it. Their attributes are: `Volume`, `ProportionalVolume`.",
                 "The parameter `indexed` uses the `Link` node `link` as an index, but nodes give only float values.",
             ]

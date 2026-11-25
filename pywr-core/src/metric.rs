@@ -131,6 +131,8 @@ pub enum MetricF64Error {
     NodeGetMinFlowError(#[source] Box<NodeError>),
     #[error("Error getting node max volume.")]
     NodeGetMaxVolumeError(#[source] Box<NodeError>),
+    #[error("Error getting node min volume.")]
+    NodeGetMinVolumeError(#[source] Box<NodeError>),
     #[error("Aggregated node index not found: {0}")]
     AggregatedNodeIndexNotFound(AggregatedNodeIndex),
     #[error("Aggregated storage node index not found: {0}")]
@@ -156,10 +158,15 @@ pub enum MetricF64 {
     NodeVolume(NodeIndex),
     NodeProportionalVolume(NodeIndex),
     NodeMaxVolume(NodeIndex),
+    NodeMinVolume(NodeIndex),
     AggregatedNodeInFlow(AggregatedNodeIndex),
     AggregatedNodeOutFlow(AggregatedNodeIndex),
+    AggregatedNodeMaxFlow(AggregatedNodeIndex),
+    AggregatedNodeMinFlow(AggregatedNodeIndex),
     AggregatedStorageNodeVolume(AggregatedStorageNodeIndex),
     AggregatedStorageNodeProportionalVolume(AggregatedStorageNodeIndex),
+    AggregatedStorageNodeMaxVolume(AggregatedStorageNodeIndex),
+    AggregatedStorageNodeMinVolume(AggregatedStorageNodeIndex),
     EdgeFlow(EdgeIndex),
     MultiEdgeFlow {
         indices: Vec<EdgeIndex>,
@@ -221,6 +228,38 @@ impl MetricF64 {
                 .ok_or(MetricF64Error::NodeIndexNotFound(*idx))?
                 .get_max_volume(state)
                 .map_err(|e| MetricF64Error::NodeGetMaxVolumeError(Box::new(e)))?),
+            MetricF64::NodeMinVolume(idx) => Ok(network
+                .get_node(idx)
+                .ok_or(MetricF64Error::NodeIndexNotFound(*idx))?
+                .get_min_volume(state)
+                .map_err(|e| MetricF64Error::NodeGetMinVolumeError(Box::new(e)))?),
+            MetricF64::AggregatedNodeMaxFlow(idx) => network
+                .get_aggregated_node(idx)
+                .ok_or(MetricF64Error::AggregatedNodeIndexNotFound(*idx))?
+                .get_max_flow(network, state),
+            MetricF64::AggregatedNodeMinFlow(idx) => network
+                .get_aggregated_node(idx)
+                .ok_or(MetricF64Error::AggregatedNodeIndexNotFound(*idx))?
+                .get_min_flow(network, state),
+            MetricF64::AggregatedStorageNodeMaxVolume(idx) => network
+                .get_aggregated_storage_node(*idx)
+                .ok_or(MetricF64Error::AggregatedStorageNodeIndexNotFound(*idx))?
+                .iter_nodes()
+                .map(|idx| state.get_network_state().get_node_max_volume(idx))
+                .sum::<Result<_, _>>()
+                .map_err(Into::into),
+            MetricF64::AggregatedStorageNodeMinVolume(idx) => network
+                .get_aggregated_storage_node(*idx)
+                .ok_or(MetricF64Error::AggregatedStorageNodeIndexNotFound(*idx))?
+                .iter_nodes()
+                .map(|idx| {
+                    network
+                        .get_node(idx)
+                        .ok_or(MetricF64Error::NodeIndexNotFound(*idx))?
+                        .get_min_volume(state)
+                        .map_err(|e| MetricF64Error::NodeGetMinVolumeError(Box::new(e)))
+                })
+                .sum(),
             MetricF64::AggregatedNodeInFlow(idx) => {
                 let node = network
                     .get_aggregated_node(idx)
@@ -497,12 +536,17 @@ pub enum UnresolvedMetricF64 {
     NodeVolume(UnresolvedNode),
     NodeProportionalVolume(UnresolvedNode),
     NodeMaxVolume(UnresolvedNode),
+    NodeMinVolume(UnresolvedNode),
     NodeMaxFlow(UnresolvedNode),
     NodeMinFlow(UnresolvedNode),
     AggregatedNodeInFlow(UnresolvedNode),
     AggregatedNodeOutFlow(UnresolvedNode),
+    AggregatedNodeMaxFlow(UnresolvedNode),
+    AggregatedNodeMinFlow(UnresolvedNode),
     AggregatedStorageNodeVolume(UnresolvedNode),
     AggregatedStorageNodeProportionalVolume(UnresolvedNode),
+    AggregatedStorageNodeMaxVolume(UnresolvedNode),
+    AggregatedStorageNodeMinVolume(UnresolvedNode),
     EdgeFlow(UnresolvedEdge),
     MultiEdgeFlow {
         edges: Vec<UnresolvedEdge>,
@@ -671,6 +715,47 @@ impl UnresolvedMetricF64 {
                         node: unresolved.clone(),
                     })?;
                 MetricF64::NodeMinFlow(*idx)
+            }
+            UnresolvedMetricF64::NodeMinVolume(unresolved) => {
+                let idx = maps
+                    .nodes
+                    .get(unresolved)
+                    .ok_or_else(|| MetricF64ResolutionError::NodeNotFound {
+                        node: unresolved.clone(),
+                    })?;
+                MetricF64::NodeMinVolume(*idx)
+            }
+            UnresolvedMetricF64::AggregatedNodeMaxFlow(unresolved) => {
+                let idx = maps.aggregated_nodes.get(unresolved).ok_or_else(|| {
+                    MetricF64ResolutionError::AggregatedNodeNotFound {
+                        aggregated_node: unresolved.clone(),
+                    }
+                })?;
+                MetricF64::AggregatedNodeMaxFlow(*idx)
+            }
+            UnresolvedMetricF64::AggregatedNodeMinFlow(unresolved) => {
+                let idx = maps.aggregated_nodes.get(unresolved).ok_or_else(|| {
+                    MetricF64ResolutionError::AggregatedNodeNotFound {
+                        aggregated_node: unresolved.clone(),
+                    }
+                })?;
+                MetricF64::AggregatedNodeMinFlow(*idx)
+            }
+            UnresolvedMetricF64::AggregatedStorageNodeMaxVolume(unresolved) => {
+                let idx = maps.aggregated_storage_nodes.get(unresolved).ok_or_else(|| {
+                    MetricF64ResolutionError::AggregatedStorageNodeNotFound {
+                        aggregated_node: unresolved.clone(),
+                    }
+                })?;
+                MetricF64::AggregatedStorageNodeMaxVolume(*idx)
+            }
+            UnresolvedMetricF64::AggregatedStorageNodeMinVolume(unresolved) => {
+                let idx = maps.aggregated_storage_nodes.get(unresolved).ok_or_else(|| {
+                    MetricF64ResolutionError::AggregatedStorageNodeNotFound {
+                        aggregated_node: unresolved.clone(),
+                    }
+                })?;
+                MetricF64::AggregatedStorageNodeMinVolume(*idx)
             }
             UnresolvedMetricF64::AggregatedNodeInFlow(unresolved) => {
                 let idx = maps.aggregated_nodes.get(unresolved).ok_or_else(|| {
