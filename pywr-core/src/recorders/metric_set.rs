@@ -5,20 +5,19 @@ use crate::recorders::aggregator::{Aggregator, AggregatorState, PeriodValue};
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
 use crate::timestep::Timestep;
+use pywr_output_metadata::MetricSource;
 use thiserror::Error;
 
 /// A container for a [`MetricF64`] that retains additional information from the schema.
 ///
-/// This is used to store the name and attribute of the metric so that it can be output in
+/// This is used to store the source and attribute of the metric so that it can be output in
 /// a context that is relevant to the originating schema, and therefore more meaningful to the user.
 #[derive(Clone, Debug, PartialEq)]
 pub struct OutputMetric {
+    source: MetricSource,
+    /// The source's label, kept as outputs read it for every value.
     name: String,
     attribute: String,
-    // The originating type of the metric (e.g. node, parameter, etc.)
-    ty: String,
-    // The originating subtype of the metric (e.g. node type, parameter type, etc.)
-    sub_type: Option<String>,
     metric: MetricF64,
 }
 
@@ -27,50 +26,42 @@ impl OutputMetric {
         self.metric.get_value(network, state)
     }
 
+    /// What the metric reads from.
+    pub fn source(&self) -> &MetricSource {
+        &self.source
+    }
+
+    /// The single-string label of the source; see [`MetricSource::label`].
     pub fn name(&self) -> &str {
         &self.name
     }
+
     pub fn attribute(&self) -> &str {
         &self.attribute
     }
 
-    pub fn ty(&self) -> &str {
-        &self.ty
-    }
-
-    pub fn sub_type(&self) -> Option<&str> {
-        self.sub_type.as_deref()
-    }
-
-    /// Get a fully qualified name for the metric that includes the type and subtype (if any) and
-    /// attribute.
+    /// Get a fully qualified name for the metric that includes the kind and type (if any) of its
+    /// source and its attribute.
     pub fn fully_qualified_name(&self) -> String {
-        if let Some(sub_type) = &self.sub_type {
-            format!("{}.{}.{}.{}", self.ty, sub_type, self.name, self.attribute)
-        } else {
-            format!("{}.{}.{}", self.ty, self.name, self.attribute)
+        match self.source.sub_kind() {
+            Some(sub_kind) => format!("{}.{}.{}.{}", self.source.kind(), sub_kind, self.name, self.attribute),
+            None => format!("{}.{}.{}", self.source.kind(), self.name, self.attribute),
         }
     }
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct UnresolvedOutputMetric {
-    name: String,
+    source: MetricSource,
     attribute: String,
-    // The originating type of the metric (e.g. node, parameter, etc.)
-    ty: String,
-    // The originating subtype of the metric (e.g. node type, parameter type, etc.)
-    sub_type: Option<String>,
     metric: UnresolvedMetricF64,
 }
 
 impl UnresolvedOutputMetric {
-    pub fn new(name: &str, attribute: &str, ty: &str, sub_type: Option<&str>, metric: UnresolvedMetricF64) -> Self {
+    pub fn new(source: MetricSource, attribute: &str, metric: UnresolvedMetricF64) -> Self {
         Self {
-            name: name.to_string(),
+            source,
             attribute: attribute.to_string(),
-            ty: ty.to_string(),
-            sub_type: sub_type.map(|s| s.to_string()),
             metric,
         }
     }
@@ -78,10 +69,9 @@ impl UnresolvedOutputMetric {
     pub fn resolve(self, resolution_maps: &ResolutionMaps) -> Result<OutputMetric, MetricF64ResolutionError> {
         let metric = self.metric.resolve(resolution_maps, MetricConsumerPhase::After)?;
         Ok(OutputMetric {
-            name: self.name,
+            name: self.source.label(),
+            source: self.source,
             attribute: self.attribute,
-            ty: self.ty,
-            sub_type: self.sub_type,
             metric,
         })
     }
@@ -299,7 +289,7 @@ impl MetricSetBuilder {
         for entry in self.entries {
             match entry {
                 MetricSetEntry::Metric(metric, if_not_calculated) => {
-                    let name = metric.name.clone();
+                    let name = metric.source.label();
                     match (metric.resolve(resolution_maps), if_not_calculated) {
                         (Ok(metric), _) => metrics.push(metric),
                         (Err(ParameterNotRegisteredInCorrectPhase { .. }), IfNotCalculated::Drop) => {}
@@ -318,19 +308,17 @@ impl MetricSetBuilder {
                         let (node_name, sub_name) = node.full_name();
                         let unresolved = UnresolvedNode::new(node_name, sub_name);
                         let output_name = unresolved.to_string();
-                        let node_type = node.node_type().to_string();
+                        let source = MetricSource::CoreNode {
+                            node: node_name.to_string(),
+                            sub_name: sub_name.map(ToString::to_string),
+                            node_type: node.node_type().to_string(),
+                        };
 
                         for attribute in &attributes {
                             let Some(metric) = attribute.metric(unresolved.clone(), node.node_type()) else {
                                 continue;
                             };
-                            let output = UnresolvedOutputMetric::new(
-                                &output_name,
-                                &attribute.to_string(),
-                                "CoreNode",
-                                Some(&node_type),
-                                metric,
-                            );
+                            let output = UnresolvedOutputMetric::new(source.clone(), &attribute.to_string(), metric);
                             let metric = output.resolve(resolution_maps).map_err(|source| {
                                 MetricSetBuilderError::ResolveMetricF64Error {
                                     name: output_name.clone(),
@@ -356,7 +344,7 @@ impl MetricSetBuilder {
 
 #[cfg(test)]
 mod tests {
-    use super::{MetricSetBuilder, UnresolvedOutputMetric};
+    use super::{MetricSetBuilder, MetricSource, UnresolvedOutputMetric};
     use crate::metric::UnresolvedMetricF64;
     use crate::network::NetworkBuilder;
     use crate::parameters::ConstantParameterBuilder;
@@ -367,7 +355,14 @@ mod tests {
     /// added by `metric_if_calculated` and fails the build for one added by `metric`.
     #[test]
     fn test_metric_if_calculated() {
-        let output_metric = |metric| UnresolvedOutputMetric::new("p", "value", "Parameter", None, metric);
+        let output_metric = |metric| {
+            let source = MetricSource::Parameter {
+                name: "p".to_string(),
+                parent: None,
+                parameter_type: "Constant".to_string(),
+            };
+            UnresolvedOutputMetric::new(source, "value", metric)
+        };
         let build = |metric_set| {
             let mut builder = NetworkBuilder::default();
             builder
@@ -426,7 +421,7 @@ mod tests {
         let metrics: Vec<_> = network.metric_sets()[0]
             .metrics()
             .iter()
-            .map(|m| (m.name(), m.attribute(), m.ty(), m.sub_type()))
+            .map(|m| (m.name(), m.attribute(), m.source().kind(), m.source().sub_kind()))
             .collect();
         assert_eq!(
             metrics,
@@ -436,6 +431,14 @@ mod tests {
                 ("res[spill]", "MaxFlow", "CoreNode", Some("Link")),
                 ("res[spill]", "Cost", "CoreNode", Some("Link")),
             ]
+        );
+        assert_eq!(
+            network.metric_sets()[0].metrics()[2].source(),
+            &MetricSource::CoreNode {
+                node: "res".to_string(),
+                sub_name: Some("spill".to_string()),
+                node_type: "Link".to_string(),
+            }
         );
 
         let mut metric_set = MetricSetBuilder::new("missing");

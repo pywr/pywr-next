@@ -25,7 +25,7 @@ use pyo3::{PyResult, exceptions::PyRuntimeError, pyclass, pymethods};
 use pywr_core::{
     metric::{UnresolvedMetricF64, UnresolvedMetricU64},
     parameters::ParameterName,
-    recorders::UnresolvedOutputMetric,
+    recorders::{MetricSource, UnresolvedOutputMetric},
 };
 use pywr_schema_macros::{PywrVisitMetrics, PywrVisitPaths, skip_serializing_none};
 use pywr_v1_schema::parameters::ParameterValue as ParameterValueV1;
@@ -140,21 +140,47 @@ impl Metric {
         }
     }
 
-    fn name(&self) -> Result<String, SchemaError> {
-        match self {
-            Self::Node(node_ref) => Ok(node_ref.name.to_string()),
-            Self::VirtualNode(node_ref) => Ok(node_ref.name.to_string()),
-            Self::Parameter(parameter_ref) => Ok(parameter_ref.name.clone()),
-            Self::LocalParameter(parameter_ref) => match &parameter_ref.node {
-                Some(node) => Ok(format!("{}.{}", node, parameter_ref.name)),
-                None => Ok(parameter_ref.name.clone()),
+    /// What this metric reads from, as written in the outputs of a metric set.
+    fn source(&self, args: &LoadArgs, parent: Option<&str>) -> Result<MetricSource, SchemaError> {
+        let source = match self {
+            Self::Node(node_ref) => MetricSource::Node {
+                name: node_ref.name.clone(),
+                node_type: node_ref.node_type(args)?.to_string(),
             },
-            Self::Literal { .. } => Err(SchemaError::LiteralConstantOutputNotSupported),
-            Self::Table(table_ref) => Ok(table_ref.table.clone()),
-            Self::TimeSeries(ts_ref) => Ok(ts_ref.name.clone()),
-            Self::InterNetworkTransfer { name } => Ok(name.clone()),
-            Self::Edge(edge_ref) => Ok(edge_ref.edge.to_string()),
-        }
+            Self::VirtualNode(node_ref) => MetricSource::VirtualNode {
+                name: node_ref.name.clone(),
+                node_type: node_ref.node_type(args)?.to_string(),
+            },
+            Self::Parameter(parameter_ref) => MetricSource::Parameter {
+                name: parameter_ref.name.clone(),
+                parent: None,
+                parameter_type: parameter_ref.parameter_type(args)?.to_string(),
+            },
+            Self::LocalParameter(parameter_ref) => MetricSource::Parameter {
+                name: parameter_ref.name.clone(),
+                parent: Some(parameter_ref.parent(parent)?.to_string()),
+                parameter_type: parameter_ref.parameter_type(args, parent)?.to_string(),
+            },
+            Self::Literal { .. } => return Err(SchemaError::LiteralConstantOutputNotSupported),
+            Self::Table(table_ref) => MetricSource::Table {
+                name: table_ref.table.clone(),
+            },
+            Self::TimeSeries(ts_ref) => MetricSource::TimeSeries {
+                name: ts_ref.name.clone(),
+            },
+            Self::InterNetworkTransfer { name } => MetricSource::InterNetworkTransfer { name: name.clone() },
+            Self::Edge(edge_ref) => {
+                let edge = &edge_ref.edge;
+                MetricSource::Edge {
+                    from_node: edge.from_node.clone(),
+                    from_slot: edge.from_slot.as_ref().map(ToString::to_string),
+                    to_node: edge.to_node.clone(),
+                    to_slot: edge.to_slot.as_ref().map(ToString::to_string),
+                }
+            }
+        };
+
+        Ok(source)
     }
 
     fn attribute(&self, args: &LoadArgs) -> Result<String, SchemaError> {
@@ -176,25 +202,6 @@ impl Metric {
         Ok(attribute)
     }
 
-    /// Return the subtype of the metric. This is the type of the metric that is being
-    /// referenced. For example, if the metric is a node then the subtype is the type of the
-    /// node.
-    fn sub_type(&self, args: &LoadArgs, parent: Option<&str>) -> Result<Option<String>, SchemaError> {
-        let sub_type = match self {
-            Self::Node(node_ref) => Some(node_ref.node_type(args)?.to_string()),
-            Self::VirtualNode(node_ref) => Some(node_ref.node_type(args)?.to_string()),
-            Self::Parameter(parameter_ref) => Some(parameter_ref.parameter_type(args)?.to_string()),
-            Self::LocalParameter(parameter_ref) => Some(parameter_ref.parameter_type(args, parent)?.to_string()),
-            Self::Literal { .. } => None,
-            Self::Table(_) => None,
-            Self::TimeSeries(_) => None,
-            Self::InterNetworkTransfer { .. } => None,
-            Self::Edge { .. } => None,
-        };
-
-        Ok(sub_type)
-    }
-
     pub fn load_as_output(
         &self,
         network: &mut pywr_core::network::NetworkBuilder,
@@ -203,14 +210,9 @@ impl Metric {
     ) -> Result<UnresolvedOutputMetric, SchemaError> {
         let metric = self.load(network, args, parent)?;
 
-        let ty = self.to_string();
-        let sub_type = self.sub_type(args, parent)?;
-
         Ok(UnresolvedOutputMetric::new(
-            self.name()?.as_str(),
+            self.source(args, parent)?,
             &self.attribute(args)?,
-            &ty,
-            sub_type.as_deref(),
             metric,
         ))
     }
