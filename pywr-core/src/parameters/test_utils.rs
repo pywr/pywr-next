@@ -550,6 +550,7 @@ impl<T: TestValue> ParameterBuilder<T> for TestParameterBuilder {
         {
             return Ok(MaybeBuiltParameter::Retry {
                 parameter_not_found: dependency.clone(),
+                attribute: None,
                 builder: self,
             });
         }

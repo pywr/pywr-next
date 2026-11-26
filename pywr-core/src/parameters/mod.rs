@@ -948,6 +948,9 @@ pub enum MaybeBuiltParameter<T> {
     Retry {
         builder: Box<dyn ParameterBuilder<T>>,
         parameter_not_found: ParameterName,
+        /// The node attribute, calculated from `parameter_not_found`, that the parameter reads, if
+        /// it waits for the parameter through one.
+        attribute: Option<Box<str>>,
     },
 }
 
@@ -987,10 +990,12 @@ macro_rules! resolve_metric_f64 {
         match $unresolved.resolve($maps, $phase) {
             Ok(m) => m,
             Err(err) => {
-                return if let $crate::metric::MetricF64ResolutionError::ParameterNotFound { parameter } = err {
+                return if let $crate::metric::MetricF64ResolutionError::ParameterNotFound { parameter, attribute } = err
+                {
                     Ok($crate::parameters::MaybeBuiltParameter::Retry {
                         builder: $self,
                         parameter_not_found: parameter,
+                        attribute,
                     })
                 } else {
                     Err($crate::parameters::ParameterBuildError::ResolveMetricF64Error {
@@ -1025,6 +1030,7 @@ macro_rules! resolve_metric_u64 {
                     Ok($crate::parameters::MaybeBuiltParameter::Retry {
                         builder: $self,
                         parameter_not_found: parameter,
+                        attribute: None,
                     })
                 } else {
                     Err($crate::parameters::ParameterBuildError::ResolveMetricU64Error {
@@ -1052,10 +1058,13 @@ macro_rules! resolve_optional_metric_f64 {
             Some(u) => match u.resolve($maps, $phase) {
                 Ok(m) => Some(m),
                 Err(err) => {
-                    return if let $crate::metric::MetricF64ResolutionError::ParameterNotFound { parameter } = err {
+                    return if let $crate::metric::MetricF64ResolutionError::ParameterNotFound { parameter, attribute } =
+                        err
+                    {
                         Ok($crate::parameters::MaybeBuiltParameter::Retry {
                             builder: $self,
                             parameter_not_found: parameter,
+                            attribute,
                         })
                     } else {
                         Err($crate::parameters::ParameterBuildError::ResolveMetricF64Error {
@@ -1091,10 +1100,13 @@ macro_rules! resolve_metric_f64_vec {
             match m.resolve($maps, $phase) {
                 Ok(m) => resolved.push(m),
                 Err(err) => {
-                    return if let $crate::metric::MetricF64ResolutionError::ParameterNotFound { parameter } = err {
+                    return if let $crate::metric::MetricF64ResolutionError::ParameterNotFound { parameter, attribute } =
+                        err
+                    {
                         Ok($crate::parameters::MaybeBuiltParameter::Retry {
                             builder: $self,
                             parameter_not_found: parameter,
+                            attribute,
                         })
                     } else {
                         Err($crate::parameters::ParameterBuildError::ResolveMetricF64Error {
@@ -1129,6 +1141,7 @@ macro_rules! resolve_metric_u64_vec {
                         Ok($crate::parameters::MaybeBuiltParameter::Retry {
                             builder: $self,
                             parameter_not_found: parameter,
+                            attribute: None,
                         })
                     } else {
                         Err($crate::parameters::ParameterBuildError::ResolveMetricU64Error {
@@ -1161,10 +1174,13 @@ macro_rules! resolve_metric_f64_hashmap {
                     resolved.insert(k.clone(), m);
                 }
                 Err(err) => {
-                    return if let $crate::metric::MetricF64ResolutionError::ParameterNotFound { parameter } = err {
+                    return if let $crate::metric::MetricF64ResolutionError::ParameterNotFound { parameter, attribute } =
+                        err
+                    {
                         Ok($crate::parameters::MaybeBuiltParameter::Retry {
                             builder: $self,
                             parameter_not_found: parameter,
+                            attribute,
                         })
                     } else {
                         Err($crate::parameters::ParameterBuildError::ResolveMetricF64Error {
@@ -1201,6 +1217,7 @@ macro_rules! resolve_metric_u64_hashmap {
                         Ok($crate::parameters::MaybeBuiltParameter::Retry {
                             builder: $self,
                             parameter_not_found: parameter,
+                            attribute: None,
                         })
                     } else {
                         Err($crate::parameters::ParameterBuildError::ResolveMetricU64Error {
@@ -2993,10 +3010,21 @@ pub enum ParameterCollectionBuilderError {
         #[source]
         source: Box<ParameterBuildError>,
     },
-    #[error("Circular (or self) parameter references found: {names:?}")]
-    CircularParameterReference { names: Vec<ParameterName> },
+    #[error(
+        "Circular (or self) parameter references found: {names:?}{}",
+        describe_attribute_references(attribute_references)
+    )]
+    CircularParameterReference {
+        names: Vec<ParameterName>,
+        /// Descriptions of the references among `names` made through a node attribute.
+        attribute_references: Vec<String>,
+    },
     #[error("Parameter not found: {name}.")]
     ParameterNotFound { name: ParameterName },
+}
+
+fn describe_attribute_references(references: &[String]) -> String {
+    references.iter().map(|r| format!("; {r}")).collect()
 }
 
 /// A builder for [`ParameterCollection`] that allows adding parameters without worrying about the
@@ -3092,8 +3120,9 @@ impl ParameterCollectionBuilder {
                             MaybeBuiltParameter::Retry {
                                 builder,
                                 parameter_not_found,
+                                attribute,
                             } => {
-                                failed_f64.push((builder, parameter_not_found));
+                                failed_f64.push((builder, (parameter_not_found, attribute)));
                             }
                         }
                     }
@@ -3129,8 +3158,9 @@ impl ParameterCollectionBuilder {
                             MaybeBuiltParameter::Retry {
                                 builder,
                                 parameter_not_found,
+                                attribute,
                             } => {
-                                failed_u64.push((builder, parameter_not_found));
+                                failed_u64.push((builder, (parameter_not_found, attribute)));
                             }
                         }
                     }
@@ -3166,8 +3196,9 @@ impl ParameterCollectionBuilder {
                             MaybeBuiltParameter::Retry {
                                 builder,
                                 parameter_not_found,
+                                attribute,
                             } => {
-                                failed_multi.push((builder, parameter_not_found));
+                                failed_multi.push((builder, (parameter_not_found, attribute)));
                             }
                         }
                     }
@@ -3196,14 +3227,25 @@ impl ParameterCollectionBuilder {
 
                 // If any of the missing names are not in the failed names, then we have legitimate
                 // missing parameter (or typo).
-                for missing in missing_names {
-                    if !failed_names.contains(&missing) {
-                        return Err(ParameterCollectionBuilderError::ParameterNotFound { name: missing });
+                for (missing, _) in &missing_names {
+                    if !failed_names.contains(missing) {
+                        return Err(ParameterCollectionBuilderError::ParameterNotFound { name: missing.clone() });
                     }
                 }
                 // Otherwise all the missing names are other failed parameters and this is a circular
-                // or self reference.
-                return Err(ParameterCollectionBuilderError::CircularParameterReference { names: failed_names });
+                // or self reference. A reference made through a node attribute names neither the
+                // node nor the attribute in the parameters' definitions, so describe it.
+                let attribute_references = failed_names
+                    .iter()
+                    .zip(missing_names)
+                    .filter_map(|(name, (missing, attribute))| {
+                        attribute.map(|a| format!("`{name}` reads the {a}, which is calculated from `{missing}`"))
+                    })
+                    .collect();
+                return Err(ParameterCollectionBuilderError::CircularParameterReference {
+                    names: failed_names,
+                    attribute_references,
+                });
             } else {
                 // Keep the builders for the next iteration, but we no longer need the missing parameter names.
                 self.f64 = failed_f64.into_iter().map(|(b, _)| b).collect();
@@ -3618,7 +3660,7 @@ mod tests {
         ));
 
         match builder.build(&mut ResolutionMaps::new(default_domain())) {
-            Err(ParameterCollectionBuilderError::CircularParameterReference { names }) => {
+            Err(ParameterCollectionBuilderError::CircularParameterReference { names, .. }) => {
                 assert_eq!(names, vec![ParameterName::from("self")]);
             }
             result => panic!("expected a circular reference error, got {result:?}"),
@@ -3640,7 +3682,7 @@ mod tests {
             ));
 
         match builder.build(&mut ResolutionMaps::new(default_domain())) {
-            Err(ParameterCollectionBuilderError::CircularParameterReference { names }) => {
+            Err(ParameterCollectionBuilderError::CircularParameterReference { names, .. }) => {
                 assert_eq!(names, ["a", "b", "c"].map(ParameterName::from));
             }
             result => panic!("expected a circular reference error, got {result:?}"),

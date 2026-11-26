@@ -4,7 +4,7 @@ use crate::aggregated_storage_node::{
 };
 use crate::clock::Instant;
 use crate::edge::Edge;
-use crate::metric::CalculationPhase;
+use crate::metric::{CalculationPhase, MetricConsumerPhase, MetricF64ResolutionError};
 use crate::models::{ModelDomain, MultiNetworkTransferIndex, RunMetadata};
 use crate::node::{Node, NodeBuilder, NodeBuilderError, NodeError, UnresolvedNode};
 use crate::parameters::{
@@ -1734,6 +1734,9 @@ pub struct ResolutionMaps {
     pub inter_network_transfers: HashMap<String, MultiNetworkTransferIndex>,
     /// The index associated wit heach metric set
     pub metric_sets: HashMap<String, MetricSetIndex>,
+    /// The parameters each node attribute is calculated from, directly or through other
+    /// attributes.
+    pub attribute_parameters: HashMap<DependentAttribute, Vec<ParameterName>>,
 }
 
 impl ResolutionMaps {
@@ -1753,8 +1756,113 @@ impl ResolutionMaps {
             domain,
             inter_network_transfers: Default::default(),
             metric_sets: Default::default(),
+            attribute_parameters: Default::default(),
         }
     }
+
+    /// Check that every parameter that a node attribute is calculated from has been built.
+    ///
+    /// A metric that reads a node's constraint or cost calls this as it resolves. Otherwise a
+    /// parameter reading the metric in the 'before' phase could be built, and so calculated,
+    /// before the parameter that sets the constraint, and would read that parameter's value from
+    /// the previous time-step. Returning [`MetricF64ResolutionError::ParameterNotFound`] makes the
+    /// reading parameter wait. A consumer in the 'after' phase reads the attribute once every
+    /// 'before' value is calculated, so it does not wait.
+    ///
+    /// `node` names the node in the error.
+    pub fn require_attribute_parameters(
+        &self,
+        attribute: DependentAttribute,
+        node: &UnresolvedNode,
+        consumer_phase: MetricConsumerPhase,
+    ) -> Result<(), MetricF64ResolutionError> {
+        if consumer_phase == MetricConsumerPhase::After {
+            return Ok(());
+        }
+        for name in self.attribute_parameters.get(&attribute).into_iter().flatten() {
+            if !self.parameters_f64.contains_key(name)
+                && !self.parameters_u64.contains_key(name)
+                && !self.parameters_multi.contains_key(name)
+            {
+                return Err(MetricF64ResolutionError::ParameterNotFound {
+                    parameter: name.clone(),
+                    attribute: Some(attribute.describe(node).into()),
+                });
+            }
+        }
+        Ok(())
+    }
+}
+
+/// An attribute of a node that can be calculated from the 'before' values of parameters.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum DependentAttribute {
+    NodeMinFlow(NodeIndex),
+    NodeMaxFlow(NodeIndex),
+    NodeMaxVolume(NodeIndex),
+}
+
+impl DependentAttribute {
+    /// Describe the attribute of `node`, which this attribute belongs to, for an error message.
+    fn describe(&self, node: &UnresolvedNode) -> String {
+        let (attribute, kind) = match self {
+            Self::NodeMinFlow(_) => ("MinFlow", "node"),
+            Self::NodeMaxFlow(_) => ("MaxFlow", "node"),
+            Self::NodeMaxVolume(_) => ("MaxVolume", "node"),
+        };
+        format!("{attribute} of {kind} `{node}`")
+    }
+}
+
+/// What a [`DependentAttribute`] is directly calculated from.
+#[derive(Debug, Clone, PartialEq)]
+pub enum AttributeDependency {
+    /// The 'before' value of a parameter.
+    Parameter(ParameterName),
+    /// Another attribute, which may itself be calculated from parameters.
+    Attribute(DependentAttribute),
+}
+
+/// Find every parameter each attribute is calculated from, directly or through other attributes.
+///
+/// An attribute calculated from itself, through other attributes, can't be evaluated; that
+/// cycle is not followed.
+fn flatten_attribute_dependencies(
+    direct: &HashMap<DependentAttribute, Vec<AttributeDependency>>,
+) -> HashMap<DependentAttribute, Vec<ParameterName>> {
+    fn visit(
+        attribute: DependentAttribute,
+        direct: &HashMap<DependentAttribute, Vec<AttributeDependency>>,
+        visiting: &mut HashSet<DependentAttribute>,
+        flattened: &mut HashMap<DependentAttribute, Vec<ParameterName>>,
+    ) -> Vec<ParameterName> {
+        if let Some(parameters) = flattened.get(&attribute) {
+            return parameters.clone();
+        }
+        if !visiting.insert(attribute) {
+            return Vec::new();
+        }
+        let mut parameters = Vec::new();
+        for dependency in direct.get(&attribute).into_iter().flatten() {
+            match dependency {
+                AttributeDependency::Parameter(name) => parameters.push(name.clone()),
+                AttributeDependency::Attribute(other) => {
+                    parameters.extend(visit(*other, direct, visiting, flattened));
+                }
+            }
+        }
+        let mut seen = HashSet::new();
+        parameters.retain(|name| seen.insert(name.clone()));
+        visiting.remove(&attribute);
+        flattened.insert(attribute, parameters.clone());
+        parameters
+    }
+
+    let mut flattened = HashMap::new();
+    for attribute in direct.keys() {
+        visit(*attribute, direct, &mut HashSet::new(), &mut flattened);
+    }
+    flattened
 }
 
 type NodeEdgeMap = HashMap<NodeIndex, Vec<EdgeIndex>>;
@@ -2070,7 +2178,7 @@ impl NetworkBuilder {
         let virtual_storage_associated_nodes = self.node_associated_vs_nodes(&nodes)?;
         let metric_sets = self.metric_set_map()?;
 
-        Ok(ResolutionMaps {
+        let mut maps = ResolutionMaps {
             nodes,
             incoming_edges,
             outgoing_edges,
@@ -2086,7 +2194,24 @@ impl NetworkBuilder {
             domain: domain.clone(), // TODO can this clone be removed; needs tying to the lifetime of the reference in `build`.
             inter_network_transfers: inter_network_transfer_map.clone(),
             metric_sets,
-        })
+            attribute_parameters: Default::default(),
+        };
+        maps.attribute_parameters = self.attribute_parameters(&maps);
+        Ok(maps)
+    }
+
+    /// Find the parameters each node attribute is calculated from.
+    fn attribute_parameters(&self, maps: &ResolutionMaps) -> HashMap<DependentAttribute, Vec<ParameterName>> {
+        let mut direct: HashMap<DependentAttribute, Vec<AttributeDependency>> = HashMap::new();
+        for (i, node) in self.nodes.iter().enumerate() {
+            for (attribute, metric) in node.attribute_metrics(NodeIndex(i)) {
+                direct
+                    .entry(attribute)
+                    .or_default()
+                    .extend(metric.attribute_dependency(maps));
+            }
+        }
+        flatten_attribute_dependencies(&direct)
     }
 
     /// Build the network.
@@ -2408,7 +2533,7 @@ mod tests {
                 attr,
                 source: metric_err,
             } = node_err.deref()
-            && let MetricF64ResolutionError::ParameterNotFound { parameter } = metric_err
+            && let MetricF64ResolutionError::ParameterNotFound { parameter, .. } = metric_err
         {
             assert_eq!(name.to_string(), "input");
             assert_eq!(attr, "max_flow");
@@ -2487,7 +2612,7 @@ mod tests {
             .expect_err("Builder should error.");
 
         if let NetworkBuildError::ParameterCollectionBuildError(coll_err) = &build_err
-            && let ParameterCollectionBuilderError::CircularParameterReference { names } = coll_err.deref()
+            && let ParameterCollectionBuilderError::CircularParameterReference { names, .. } = coll_err.deref()
         {
             // This is fine!
             assert_eq!(names.len(), 2);

@@ -1,8 +1,8 @@
 use crate::NodeIndex;
 use crate::models::MultiNetworkTransferIndex;
 use crate::network::{
-    AggregatedNodeIndex, AggregatedStorageNodeIndex, EdgeIndex, Network, ResolutionMaps, UnresolvedEdge,
-    VirtualStorageIndex,
+    AggregatedNodeIndex, AggregatedStorageNodeIndex, AttributeDependency, DependentAttribute, EdgeIndex, Network,
+    ResolutionMaps, UnresolvedEdge, VirtualStorageIndex,
 };
 use crate::node::{NodeError, UnresolvedNode};
 use crate::parameters::{
@@ -468,8 +468,13 @@ pub enum MetricConsumerPhase {
 pub enum MetricF64ResolutionError {
     #[error("Node not found when resolving F64 metric: {node}")]
     NodeNotFound { node: UnresolvedNode },
-    #[error("Parameter not found when resolving F64 metric: {parameter}")]
-    ParameterNotFound { parameter: ParameterName },
+    #[error("Parameter not found when resolving F64 metric: {parameter}{}", attribute.as_ref().map(|a| format!(" (the {a} is calculated from it)")).unwrap_or_default())]
+    ParameterNotFound {
+        parameter: ParameterName,
+        /// The node attribute the metric reads that is calculated from the parameter, if the
+        /// metric reads the parameter through one.
+        attribute: Option<Box<str>>,
+    },
     #[error("Aggregated node not found when resolving F64 metric: {aggregated_node}")]
     AggregatedNodeNotFound { aggregated_node: UnresolvedNode },
     #[error("Aggregated storage node not found when resolving F64 metric: {aggregated_node}")]
@@ -533,6 +538,39 @@ pub enum UnresolvedMetricF64 {
 }
 
 impl UnresolvedMetricF64 {
+    /// The parameter whose 'before' value this metric reads when read in the 'before' phase, if
+    /// it reads one.
+    pub fn before_parameter(&self) -> Option<&ParameterName> {
+        match self {
+            Self::ParameterValue { name, return_value } | Self::MultiParameterValue { name, return_value, .. } => {
+                match return_value {
+                    UnresolvedParameterReturnValue::Before | UnresolvedParameterReturnValue::Both => Some(name),
+                    UnresolvedParameterReturnValue::After | UnresolvedParameterReturnValue::AfterOrElseInitial => None,
+                }
+            }
+            _ => None,
+        }
+    }
+
+    /// What this metric is calculated from when it is read in the 'before' phase, if that can
+    /// change within a time-step: the 'before' value of a parameter, or a node attribute that
+    /// can itself be calculated from parameters.
+    ///
+    /// Every metric whose resolution calls [`ResolutionMaps::require_attribute_parameters`]
+    /// returns that attribute here, so that an attribute calculated from it is too.
+    pub fn attribute_dependency(&self, maps: &ResolutionMaps) -> Option<AttributeDependency> {
+        if let Some(name) = self.before_parameter() {
+            return Some(AttributeDependency::Parameter(name.clone()));
+        }
+        let attribute = match self {
+            Self::NodeMinFlow(node) => DependentAttribute::NodeMinFlow(*maps.nodes.get(node)?),
+            Self::NodeMaxFlow(node) => DependentAttribute::NodeMaxFlow(*maps.nodes.get(node)?),
+            Self::NodeMaxVolume(node) => DependentAttribute::NodeMaxVolume(*maps.nodes.get(node)?),
+            _ => return None,
+        };
+        Some(AttributeDependency::Attribute(attribute))
+    }
+
     /// Create a new [`Self::ParameterValue`] variant with the given parameter name and a return
     /// value of [`UnresolvedParameterReturnValue::Before`].
     pub fn new_parameter_before<N: Into<ParameterName>>(name: N) -> Self {
@@ -652,6 +690,7 @@ impl UnresolvedMetricF64 {
                     .ok_or_else(|| MetricF64ResolutionError::NodeNotFound {
                         node: unresolved.clone(),
                     })?;
+                maps.require_attribute_parameters(DependentAttribute::NodeMaxVolume(*idx), unresolved, consumer_phase)?;
                 MetricF64::NodeMaxVolume(*idx)
             }
             UnresolvedMetricF64::NodeMaxFlow(unresolved) => {
@@ -661,6 +700,7 @@ impl UnresolvedMetricF64 {
                     .ok_or_else(|| MetricF64ResolutionError::NodeNotFound {
                         node: unresolved.clone(),
                     })?;
+                maps.require_attribute_parameters(DependentAttribute::NodeMaxFlow(*idx), unresolved, consumer_phase)?;
                 MetricF64::NodeMaxFlow(*idx)
             }
             UnresolvedMetricF64::NodeMinFlow(unresolved) => {
@@ -670,6 +710,7 @@ impl UnresolvedMetricF64 {
                     .ok_or_else(|| MetricF64ResolutionError::NodeNotFound {
                         node: unresolved.clone(),
                     })?;
+                maps.require_attribute_parameters(DependentAttribute::NodeMinFlow(*idx), unresolved, consumer_phase)?;
                 MetricF64::NodeMinFlow(*idx)
             }
             UnresolvedMetricF64::AggregatedNodeInFlow(unresolved) => {
@@ -738,6 +779,7 @@ impl UnresolvedMetricF64 {
                         let idx = maps.parameters_u64.get(name).ok_or_else(|| {
                             MetricF64ResolutionError::ParameterNotFound {
                                 parameter: name.clone(),
+                                attribute: None,
                             }
                         })?;
 
@@ -755,6 +797,7 @@ impl UnresolvedMetricF64 {
                         .get(name)
                         .ok_or_else(|| MetricF64ResolutionError::ParameterNotFound {
                             parameter: name.clone(),
+                            attribute: None,
                         })?;
 
                 resolve_parameter_index_multi_to_metric_f64(name, idx.clone(), key, *return_value, consumer_phase)?
