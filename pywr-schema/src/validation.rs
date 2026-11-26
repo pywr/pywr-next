@@ -426,6 +426,8 @@ pub enum VirtualNodeProblem {
         "The `Coefficients` relationship has {factors} factor(s) for {members} member(s), but needs exactly two members, with a factor each."
     )]
     CoefficientsFactorCount { factors: usize, members: usize },
+    #[error("It has a `cost_aggregation` but no `cost`, so there is no cost to aggregate.")]
+    CostAggregationWithoutCost,
     #[error("The name `{name}` is used by {count} local parameters, but each name must be unique.")]
     DuplicateLocalParameterName { name: String, count: usize },
     #[error("The local parameter `{parameter}` is invalid. {problem}")]

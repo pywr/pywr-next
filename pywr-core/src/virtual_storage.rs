@@ -852,6 +852,31 @@ mod tests {
     }
 
     #[test]
+    /// A virtual storage in which the node's factor is zero is left out, rather than adding a
+    /// cost of zero. Otherwise `Min` would be zero here, and the cost of 20 from the other
+    /// virtual storage would not stop the flow.
+    fn test_virtual_storage_node_cost_zero_factor() {
+        let mut model_builder = simple_model(1, None);
+        let network_builder = model_builder.network_builder();
+        network_builder
+            .node_builder(&"input".into())
+            .unwrap()
+            .cost_agg_func(CostAggFunc::Min)
+            .unwrap();
+        for (name, factor, cost) in [("vs1", 0.0, 50.0), ("vs2", 1.0, 20.0)] {
+            network_builder.virtual_storage_node(cost_vs_builder(
+                name,
+                &["input".into()],
+                &[factor],
+                cost,
+                VirtualStorageActivePeriod::Always,
+            ));
+        }
+
+        assert_output_flow(model_builder, |_| 0.0);
+    }
+
+    #[test]
     /// With `Sum`, the costs of every virtual storage the node belongs to add up. Each cost alone
     /// is less than the demand's benefit of 10, but together they are more.
     fn test_virtual_storage_node_cost_sum() {

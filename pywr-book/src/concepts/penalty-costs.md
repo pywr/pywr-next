@@ -25,13 +25,19 @@ has a `cost_aggregation`, which sets how each of its nodes combines the cost wit
 
 For each node:
 
-- each virtual storage's cost is multiplied by the node's factor in that virtual storage;
+- each virtual storage's cost is multiplied by the node's factor in that virtual storage, so a
+  negative factor, where flow through the node refills the virtual storage, makes the cost an
+  incentive to use the node;
+- a virtual storage in which the node's factor is zero is left out, as the node does not draw on
+  it;
 - a node without a cost of its own combines only the virtual storage costs;
 - a virtual storage outside its active period (a `Seasonal` reset) adds no cost;
 - if nothing is left to combine, the node's cost is zero.
 
 A node has one aggregation for all the virtual storage nodes it belongs to. If two virtual storage
-nodes give the same node different aggregations, the model is invalid.
+nodes give the same node different aggregations, the model is invalid. A reference without a
+`component` counts as a reference to the node's default component.
 
-Models converted from pywr v1 keep each virtual storage `cost` but have no `cost_aggregation`,
-because pywr v1 never applied these costs. Add a `cost_aggregation` to make them apply.
+A `cost_aggregation` without a `cost` is invalid. A `cost` without a `cost_aggregation` is ignored,
+with a warning when the model is built. Models converted from pywr v1 have these, because pywr v1
+never applied virtual storage costs. Add a `cost_aggregation` to make them apply.

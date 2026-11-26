@@ -935,8 +935,10 @@ impl NodeCost {
     ///
     /// Without an aggregation function this is the node's own cost. With one, the node's own
     /// cost (if it has one) is combined with the cost of each virtual storage node it belongs to,
-    /// multiplied by the node's factor in that virtual storage. Virtual storage nodes without a
-    /// cost, or outside their active period, are left out. The cost is zero if nothing is left.
+    /// multiplied by the node's factor in that virtual storage. A negative factor therefore makes
+    /// the cost an incentive, as flow through the node refills the virtual storage. Virtual
+    /// storage nodes without a cost, outside their active period, or in which the node's factor
+    /// is zero are left out. The cost is zero if nothing is left.
     fn get_cost(&self, network: &Network, timestep: &Timestep, state: &State) -> Result<f64, NodeError> {
         let mut cost = match &self.local {
             None => None,
@@ -945,6 +947,11 @@ impl NodeCost {
 
         if let Some(agg_func) = &self.agg_func {
             for (idx, factor) in &self.virtual_storage_nodes {
+                // The node does not draw on this virtual storage, so its cost does not apply.
+                if *factor == 0.0 {
+                    continue;
+                }
+
                 let vs = network
                     .get_virtual_storage_node(idx)
                     .ok_or(NodeError::VirtualStorageIndexNotFound(*idx))?;

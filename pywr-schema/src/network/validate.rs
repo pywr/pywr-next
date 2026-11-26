@@ -17,9 +17,10 @@ impl NetworkSchema {
     ///
     /// Only a virtual storage with both a `cost` and a `cost_aggregation` applies an aggregation
     /// to its nodes. Each conflict is reported against the first virtual storage that gave the
-    /// node an aggregation. References are compared by node name and component, so two
-    /// references to the same `pywr-core` node through different components are left to
-    /// `pywr-core` to report while building.
+    /// node an aggregation. References are compared by node name and component, where a
+    /// reference without a component is taken to be to the node's default one. Two references to
+    /// the same `pywr-core` node through different components, such as a `Link`'s `Inflow` and
+    /// `Outflow`, are left to the build to report.
     fn cost_aggregation_problems(&self) -> Vec<NetworkProblem> {
         let mut first_seen: HashMap<(&str, Option<String>), (&str, VirtualStorageCostAggregation)> = HashMap::new();
         let mut problems = Vec::new();
@@ -33,7 +34,10 @@ impl NetworkSchema {
             };
 
             for node in &vs.nodes {
-                let key = (node.name.as_str(), node.component.map(|c| c.to_string()));
+                let component = node
+                    .component
+                    .or_else(|| self.get_node_by_name(&node.name).and_then(|n| n.default_component()));
+                let key = (node.name.as_str(), component.map(|c| c.to_string()));
                 match first_seen.get(&key) {
                     Some(&(first, first_aggregation)) if first_aggregation != aggregation => {
                         problems.push(NetworkProblem::ConflictingCostAggregation {
@@ -1463,7 +1467,8 @@ mod tests {
     }
 
     /// Virtual storage nodes on the same nodes with different and matching cost aggregations,
-    /// and one without a cost, whose aggregation is not applied.
+    /// and one with a cost but no aggregation, whose cost is not applied. `max-licence` names
+    /// the default component of `supply1` that `sum-licence` leaves out.
     const NETWORK_WITH_COST_AGGREGATIONS: &str = r#"
     {
         "nodes": [
@@ -1483,7 +1488,7 @@ mod tests {
             {
                 "meta": { "name": "max-licence" },
                 "type": "VirtualStorage",
-                "nodes": [{ "name": "supply1" }],
+                "nodes": [{ "name": "supply1", "component": "Outflow" }],
                 "cost": { "type": "Literal", "value": 1.0 },
                 "cost_aggregation": "Max",
                 "initial_volume": { "type": "Proportional", "proportion": 1.0 }
@@ -1497,10 +1502,10 @@ mod tests {
                 "initial_volume": { "type": "Proportional", "proportion": 1.0 }
             },
             {
-                "meta": { "name": "costless-licence" },
+                "meta": { "name": "uncombined-licence" },
                 "type": "VirtualStorage",
                 "nodes": [{ "name": "supply2" }],
-                "cost_aggregation": "Min",
+                "cost": { "type": "Literal", "value": 1.0 },
                 "initial_volume": { "type": "Proportional", "proportion": 1.0 }
             }
         ],
@@ -1511,7 +1516,8 @@ mod tests {
     }
     "#;
 
-    /// Only the two virtual storage nodes giving `supply1` different aggregations conflict.
+    /// Only the two virtual storage nodes giving `supply1` different aggregations conflict, even
+    /// though only one of them names its component.
     #[test]
     fn test_validate_reports_conflicting_cost_aggregations() {
         let network = parse_network(NETWORK_WITH_COST_AGGREGATIONS);
@@ -1520,7 +1526,7 @@ mod tests {
         assert_eq!(
             problems,
             vec![NetworkProblem::ConflictingCostAggregation {
-                node: "supply1".to_string(),
+                node: "supply1[Outflow]".to_string(),
                 first: "sum-licence".to_string(),
                 first_aggregation: VirtualStorageCostAggregation::Sum,
                 second: "max-licence".to_string(),
@@ -1529,7 +1535,7 @@ mod tests {
         );
         assert_eq!(
             problems[0].to_string(),
-            "The virtual nodes `sum-licence` and `max-licence` give the node `supply1` different cost aggregations (`Sum` and `Max`), but a node can only have one."
+            "The virtual nodes `sum-licence` and `max-licence` give the node `supply1[Outflow]` different cost aggregations (`Sum` and `Max`), but a node can only have one."
         );
     }
 }
