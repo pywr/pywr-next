@@ -1720,7 +1720,8 @@ pub struct ResolutionMaps {
     pub virtual_storage_node: HashMap<UnresolvedNode, VirtualStorageIndex>,
     /// The virtual storage nodes associated with each node index. This is used to resolve the
     /// virtual storage nodes after the regular nodes have been resolved.
-    pub virtual_storage_associated_nodes: HashMap<NodeIndex, Vec<VirtualStorageIndex>>,
+    /// The virtual storage nodes each node belongs to, with the node's factor in each.
+    pub virtual_storage_associated_nodes: HashMap<NodeIndex, Vec<(VirtualStorageIndex, f64)>>,
     /// The index associated with the unresolved aggregated node names.
     pub aggregated_nodes: HashMap<UnresolvedNode, AggregatedNodeIndex>,
     /// The index associated with the unresolved aggregated storage node names.
@@ -2018,12 +2019,13 @@ impl NetworkBuilder {
     fn node_associated_vs_nodes(
         &self,
         node_indices: &HashMap<UnresolvedNode, NodeIndex>,
-    ) -> Result<HashMap<NodeIndex, Vec<VirtualStorageIndex>>, NetworkBuildError> {
-        let mut vs_associated_nodes: HashMap<NodeIndex, Vec<VirtualStorageIndex>> =
+    ) -> Result<HashMap<NodeIndex, Vec<(VirtualStorageIndex, f64)>>, NetworkBuildError> {
+        let mut vs_associated_nodes: HashMap<NodeIndex, Vec<(VirtualStorageIndex, f64)>> =
             HashMap::with_capacity(self.nodes.len());
         for (i, vs) in self.virtual_storage_nodes.iter().enumerate() {
             let vi = VirtualStorageIndex(i);
-            for node in vs.nodes() {
+            // A mismatch in the number of factors is reported when the virtual storage is built.
+            for (node, factor) in vs.nodes().iter().zip(vs.factors()) {
                 let index = node_indices
                     .get(node)
                     .ok_or_else(|| NetworkBuildError::NodeNotFoundForVirtualStorage {
@@ -2031,7 +2033,7 @@ impl NetworkBuilder {
                         virtual_storage: vs.name().clone(),
                     })?;
 
-                vs_associated_nodes.entry(*index).or_default().push(vi);
+                vs_associated_nodes.entry(*index).or_default().push((vi, *factor));
             }
         }
 

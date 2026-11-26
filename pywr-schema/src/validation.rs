@@ -3,7 +3,7 @@
 use crate::data_tables::{CsvDataTableLookup, DataTableValueType};
 use crate::edge::Edge;
 use crate::metric::ParameterReturnValue;
-use crate::nodes::{NodeAttribute, NodeComponent, NodeSlot, NodeType, VirtualNodeType};
+use crate::nodes::{NodeAttribute, NodeComponent, NodeSlot, NodeType, VirtualNodeType, VirtualStorageCostAggregation};
 use crate::parameters::ParameterPhase;
 use crate::visit::Owner;
 use jiff::civil::DateTime;
@@ -426,6 +426,8 @@ pub enum VirtualNodeProblem {
         "The `Coefficients` relationship has {factors} factor(s) for {members} member(s), but needs exactly two members, with a factor each."
     )]
     CoefficientsFactorCount { factors: usize, members: usize },
+    #[error("It has a `cost_aggregation` but no `cost`, so there is no cost to aggregate.")]
+    CostAggregationWithoutCost,
     #[error("The name `{name}` is used by {count} local parameters, but each name must be unique.")]
     DuplicateLocalParameterName { name: String, count: usize },
     #[error("The local parameter `{parameter}` is invalid. {problem}")]
@@ -711,6 +713,19 @@ pub enum NetworkProblem {
         node: String,
         node_type: NodeType,
         problem: MemberProblem,
+    },
+    /// Two virtual storage nodes that give a node different cost aggregations. A node has one
+    /// aggregation for all of the virtual storage nodes it belongs to.
+    #[error(
+        "The virtual nodes `{first}` and `{second}` give the node `{node}` different cost aggregations (`{first_aggregation}` and `{second_aggregation}`), but a node can only have one."
+    )]
+    ConflictingCostAggregation {
+        /// The node, with its component in brackets if the references give one.
+        node: String,
+        first: String,
+        first_aggregation: VirtualStorageCostAggregation,
+        second: String,
+        second_aggregation: VirtualStorageCostAggregation,
     },
     /// A metric that cannot read the node it names.
     #[error("{}", .problem.message(&format!("The {owner}"), &format!("the `{node_type}` node `{node}`")))]

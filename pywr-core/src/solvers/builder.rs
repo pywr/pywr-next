@@ -421,7 +421,7 @@ where
         timings: &mut SolverTimings,
     ) -> Result<(), SolverSolveError> {
         let start_objective_update = Instant::now();
-        self.update_edge_objectives(network, state)?;
+        self.update_edge_objectives(network, timestep, state)?;
         timings.update_objective += start_objective_update.elapsed();
 
         let start_constraint_update = Instant::now();
@@ -439,10 +439,15 @@ where
     }
 
     /// Update edge objective coefficients
-    fn update_edge_objectives(&mut self, network: &Network, state: &State) -> Result<(), SolverSolveError> {
+    fn update_edge_objectives(
+        &mut self,
+        network: &Network,
+        timestep: &Timestep,
+        state: &State,
+    ) -> Result<(), SolverSolveError> {
         self.builder.zero_obj_coefficients();
         for edge in network.edges() {
-            let obj_coef: f64 = edge.cost(network.nodes(), network, state).map_err(|source| {
+            let obj_coef: f64 = edge.cost(network.nodes(), network, timestep, state).map_err(|source| {
                 let from_node = match network.get_node(&edge.from_node_index()) {
                     Some(n) => n,
                     None => return SolverSolveError::NodeIndexNotFound(edge.from_node_index()),

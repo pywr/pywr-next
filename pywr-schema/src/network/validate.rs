@@ -1,7 +1,7 @@
 use super::NetworkSchema;
 use crate::data_tables::DataTable;
 use crate::edge::Edge;
-use crate::nodes::VirtualNode;
+use crate::nodes::{VirtualNode, VirtualStorageCostAggregation};
 use crate::parameters::{Parameter, validate_each_parameter};
 use crate::time_series::TimeSeries;
 use crate::util::duplicates;
@@ -13,6 +13,55 @@ use crate::visit::{Owner, Reference};
 use std::collections::HashMap;
 
 impl NetworkSchema {
+    /// Find the nodes that two virtual storage nodes give different cost aggregations.
+    ///
+    /// Only a virtual storage with both a `cost` and a `cost_aggregation` applies an aggregation
+    /// to its nodes. Each conflict is reported against the first virtual storage that gave the
+    /// node an aggregation. References are compared by node name and component, where a
+    /// reference without a component is taken to be to the node's default one. Two references to
+    /// the same `pywr-core` node through different components, such as a `Link`'s `Inflow` and
+    /// `Outflow`, are left to the build to report.
+    fn cost_aggregation_problems(&self) -> Vec<NetworkProblem> {
+        let mut first_seen: HashMap<(&str, Option<String>), (&str, VirtualStorageCostAggregation)> = HashMap::new();
+        let mut problems = Vec::new();
+
+        for virtual_node in self.virtual_nodes.as_deref().into_iter().flatten() {
+            let VirtualNode::VirtualStorage(vs) = virtual_node else {
+                continue;
+            };
+            let (Some(_), Some(aggregation)) = (&vs.cost, vs.cost_aggregation) else {
+                continue;
+            };
+
+            for node in &vs.nodes {
+                let component = node
+                    .component
+                    .or_else(|| self.get_node_by_name(&node.name).and_then(|n| n.default_component()));
+                let key = (node.name.as_str(), component.map(|c| c.to_string()));
+                match first_seen.get(&key) {
+                    Some(&(first, first_aggregation)) if first_aggregation != aggregation => {
+                        problems.push(NetworkProblem::ConflictingCostAggregation {
+                            node: match &key.1 {
+                                Some(component) => format!("{}[{component}]", key.0),
+                                None => key.0.to_string(),
+                            },
+                            first: first.to_string(),
+                            first_aggregation,
+                            second: vs.meta.name.clone(),
+                            second_aggregation: aggregation,
+                        });
+                    }
+                    Some(_) => {}
+                    None => {
+                        first_seen.insert(key, (vs.meta.name.as_str(), aggregation));
+                    }
+                }
+            }
+        }
+
+        problems
+    }
+
     /// Validate an edge against the network
     ///
     /// The following conditions are checked, with the first problem found being
@@ -415,6 +464,7 @@ impl NetworkSchema {
             .chain(self.virtual_node_problems())
             .chain(self.parameter_problems())
             .chain(self.metric_set_problems())
+            .chain(self.cost_aggregation_problems())
             .collect();
 
         if problems.is_empty() {
@@ -429,7 +479,7 @@ impl NetworkSchema {
 mod tests {
     use crate::network::NetworkSchema;
     use crate::network::tests::parse_network;
-    use crate::nodes::{NodeSlot, NodeType, VirtualNodeType};
+    use crate::nodes::{NodeSlot, NodeType, VirtualNodeType, VirtualStorageCostAggregation};
     use crate::validation::{DuplicateNodeName, EdgeProblem, EdgeValidationError, NetworkProblem};
 
     /// Return the problems reported by [`NetworkSchema::validate`], or panic if it succeeded.
@@ -1414,5 +1464,78 @@ mod tests {
         assert_eq!(lines.len(), 1 + count);
         assert_eq!(lines[0], "The network has 13 problem(s):");
         assert!(lines[count].contains("`missing-12`"));
+    }
+
+    /// Virtual storage nodes on the same nodes with different and matching cost aggregations,
+    /// and one with a cost but no aggregation, whose cost is not applied. `max-licence` names
+    /// the default component of `supply1` that `sum-licence` leaves out.
+    const NETWORK_WITH_COST_AGGREGATIONS: &str = r#"
+    {
+        "nodes": [
+            { "meta": { "name": "supply1" }, "type": "Input" },
+            { "meta": { "name": "supply2" }, "type": "Input" },
+            { "meta": { "name": "demand" }, "type": "Output" }
+        ],
+        "virtual_nodes": [
+            {
+                "meta": { "name": "sum-licence" },
+                "type": "VirtualStorage",
+                "nodes": [{ "name": "supply1" }, { "name": "supply2" }],
+                "cost": { "type": "Literal", "value": 1.0 },
+                "cost_aggregation": "Sum",
+                "initial_volume": { "type": "Proportional", "proportion": 1.0 }
+            },
+            {
+                "meta": { "name": "max-licence" },
+                "type": "VirtualStorage",
+                "nodes": [{ "name": "supply1", "component": "Outflow" }],
+                "cost": { "type": "Literal", "value": 1.0 },
+                "cost_aggregation": "Max",
+                "initial_volume": { "type": "Proportional", "proportion": 1.0 }
+            },
+            {
+                "meta": { "name": "another-sum-licence" },
+                "type": "VirtualStorage",
+                "nodes": [{ "name": "supply2" }],
+                "cost": { "type": "Literal", "value": 1.0 },
+                "cost_aggregation": "Sum",
+                "initial_volume": { "type": "Proportional", "proportion": 1.0 }
+            },
+            {
+                "meta": { "name": "uncombined-licence" },
+                "type": "VirtualStorage",
+                "nodes": [{ "name": "supply2" }],
+                "cost": { "type": "Literal", "value": 1.0 },
+                "initial_volume": { "type": "Proportional", "proportion": 1.0 }
+            }
+        ],
+        "edges": [
+            { "from_node": "supply1", "to_node": "demand" },
+            { "from_node": "supply2", "to_node": "demand" }
+        ]
+    }
+    "#;
+
+    /// Only the two virtual storage nodes giving `supply1` different aggregations conflict, even
+    /// though only one of them names its component.
+    #[test]
+    fn test_validate_reports_conflicting_cost_aggregations() {
+        let network = parse_network(NETWORK_WITH_COST_AGGREGATIONS);
+
+        let problems = expect_problems(&network);
+        assert_eq!(
+            problems,
+            vec![NetworkProblem::ConflictingCostAggregation {
+                node: "supply1[Outflow]".to_string(),
+                first: "sum-licence".to_string(),
+                first_aggregation: VirtualStorageCostAggregation::Sum,
+                second: "max-licence".to_string(),
+                second_aggregation: VirtualStorageCostAggregation::Max,
+            }]
+        );
+        assert_eq!(
+            problems[0].to_string(),
+            "The virtual nodes `sum-licence` and `max-licence` give the node `supply1[Outflow]` different cost aggregations (`Sum` and `Max`), but a node can only have one."
+        );
     }
 }

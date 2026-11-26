@@ -44,6 +44,11 @@ pub enum NodeError {
 pub enum NodeBuilderError {
     #[error("Index not found in resolution map.")]
     IndexNotFound,
+    #[error("The virtual storage cost aggregation is already `{existing:?}`, so it cannot be set to `{requested:?}`.")]
+    ConflictingCostAggFunc {
+        existing: CostAggFunc,
+        requested: CostAggFunc,
+    },
     #[error("Could not resolve f64 metric for `{attr}` attribute.")]
     ResolveMetricF64Error {
         attr: String,
@@ -126,9 +131,22 @@ impl NodeBuilder {
         self
     }
 
-    pub fn cost_agg_func(&mut self, cost_agg_func: CostAggFunc) -> &mut Self {
-        self.cost_agg_func = Some(cost_agg_func);
-        self
+    /// Set how the node combines its own cost with the costs of the virtual storage nodes it
+    /// belongs to. Without it, those costs are ignored.
+    ///
+    /// A node has one aggregation for all of its virtual storage nodes. Setting it again to the
+    /// same function is allowed, but setting it to a different one is an error.
+    pub fn cost_agg_func(&mut self, cost_agg_func: CostAggFunc) -> Result<&mut Self, NodeBuilderError> {
+        match self.cost_agg_func {
+            Some(existing) if existing != cost_agg_func => Err(NodeBuilderError::ConflictingCostAggFunc {
+                existing,
+                requested: cost_agg_func,
+            }),
+            _ => {
+                self.cost_agg_func = Some(cost_agg_func);
+                Ok(self)
+            }
+        }
     }
 
     pub fn min_flow(&mut self, min_flow: UnresolvedMetricF64) -> &mut Self {
@@ -162,15 +180,15 @@ impl NodeBuilder {
             .get(&self.name)
             .ok_or(NodeBuilderError::IndexNotFound)?;
 
-        let local = match &self.cost {
-            Some(cost) => cost
-                .resolve(resolution_maps, MetricConsumerPhase::Before)
-                .map_err(|source| NodeBuilderError::ResolveMetricF64Error {
-                    attr: "cost".to_string(),
-                    source,
-                })?,
-            None => 0.0.into(),
-        };
+        let local = self
+            .cost
+            .as_ref()
+            .map(|cost| cost.resolve(resolution_maps, MetricConsumerPhase::Before))
+            .transpose()
+            .map_err(|source| NodeBuilderError::ResolveMetricF64Error {
+                attr: "cost".to_string(),
+                source,
+            })?;
 
         let virtual_storage_nodes = resolution_maps
             .virtual_storage_associated_nodes
@@ -179,7 +197,7 @@ impl NodeBuilder {
             .unwrap_or_default();
 
         let cost = NodeCost {
-            local: Some(local),
+            local,
             virtual_storage_nodes,
             agg_func: self.cost_agg_func,
         };
@@ -716,21 +734,21 @@ impl Node {
         }
     }
 
-    pub fn get_outgoing_cost(&self, network: &Network, state: &State) -> Result<f64, NodeError> {
+    pub fn get_outgoing_cost(&self, network: &Network, timestep: &Timestep, state: &State) -> Result<f64, NodeError> {
         match self {
-            Self::Input(n) => n.get_cost(network, state),
-            Self::Link(n) => Ok(n.get_cost(network, state)? / 2.0),
-            Self::Output(n) => n.get_cost(network, state),
-            Self::Storage(n) => Ok(-n.get_cost(network, state)?),
+            Self::Input(n) => n.get_cost(network, timestep, state),
+            Self::Link(n) => Ok(n.get_cost(network, timestep, state)? / 2.0),
+            Self::Output(n) => n.get_cost(network, timestep, state),
+            Self::Storage(n) => Ok(-n.get_cost(network, timestep, state)?),
         }
     }
 
-    pub fn get_incoming_cost(&self, network: &Network, state: &State) -> Result<f64, NodeError> {
+    pub fn get_incoming_cost(&self, network: &Network, timestep: &Timestep, state: &State) -> Result<f64, NodeError> {
         match self {
-            Self::Input(n) => n.get_cost(network, state),
-            Self::Link(n) => Ok(n.get_cost(network, state)? / 2.0),
-            Self::Output(n) => n.get_cost(network, state),
-            Self::Storage(n) => Ok(n.get_cost(network, state)?),
+            Self::Input(n) => n.get_cost(network, timestep, state),
+            Self::Link(n) => Ok(n.get_cost(network, timestep, state)? / 2.0),
+            Self::Output(n) => n.get_cost(network, timestep, state),
+            Self::Storage(n) => Ok(n.get_cost(network, timestep, state)?),
         }
     }
 }
@@ -761,6 +779,14 @@ impl UnresolvedNode {
 
     pub fn set_sub_name(&mut self, sub_name: Option<&str>) {
         self.sub_name = sub_name.map(|s| s.to_string());
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn sub_name(&self) -> Option<&str> {
+        self.sub_name.as_deref()
     }
 }
 
@@ -899,46 +925,58 @@ impl StorageConstraints {
 #[derive(Debug, PartialEq, Default)]
 pub struct NodeCost {
     local: Option<MetricF64>,
-    virtual_storage_nodes: Vec<VirtualStorageIndex>,
+    /// The virtual storage nodes this node belongs to, each with this node's factor in it.
+    virtual_storage_nodes: Vec<(VirtualStorageIndex, f64)>,
     agg_func: Option<CostAggFunc>,
 }
 
 impl NodeCost {
-    fn get_cost(&self, network: &Network, state: &State) -> Result<f64, NodeError> {
-        // Initial local cost that has any virtual storage cost applied
+    /// The node's cost for this time-step.
+    ///
+    /// Without an aggregation function this is the node's own cost. With one, the node's own
+    /// cost (if it has one) is combined with the cost of each virtual storage node it belongs to,
+    /// multiplied by the node's factor in that virtual storage. A negative factor therefore makes
+    /// the cost an incentive, as flow through the node refills the virtual storage. Virtual
+    /// storage nodes without a cost, outside their active period, or in which the node's factor
+    /// is zero are left out. The cost is zero if nothing is left.
+    fn get_cost(&self, network: &Network, timestep: &Timestep, state: &State) -> Result<f64, NodeError> {
         let mut cost = match &self.local {
-            None => Ok(0.0),
-            Some(m) => m.get_value(network, state),
-        }?;
+            None => None,
+            Some(m) => Some(m.get_value(network, state)?),
+        };
 
         if let Some(agg_func) = &self.agg_func {
-            let vs_costs = self.virtual_storage_nodes.iter().map(|idx| {
+            for (idx, factor) in &self.virtual_storage_nodes {
+                // The node does not draw on this virtual storage, so its cost does not apply.
+                if *factor == 0.0 {
+                    continue;
+                }
+
                 let vs = network
                     .get_virtual_storage_node(idx)
                     .ok_or(NodeError::VirtualStorageIndexNotFound(*idx))?;
-                Ok::<_, NodeError>(vs.get_cost(network, state)?)
-            });
 
-            match agg_func {
-                CostAggFunc::Sum => {
-                    for vs_cost in vs_costs {
-                        cost += vs_cost?;
-                    }
+                if !vs.is_active(timestep) {
+                    continue;
                 }
-                CostAggFunc::Max => {
-                    for vs_cost in vs_costs {
-                        cost = cost.max(vs_cost?);
-                    }
-                }
-                CostAggFunc::Min => {
-                    for vs_cost in vs_costs {
-                        cost = cost.min(vs_cost?);
-                    }
-                }
-            };
+
+                let Some(vs_cost) = vs.get_cost(network, state)? else {
+                    continue;
+                };
+                let vs_cost = vs_cost * factor;
+
+                cost = Some(match cost {
+                    None => vs_cost,
+                    Some(c) => match agg_func {
+                        CostAggFunc::Sum => c + vs_cost,
+                        CostAggFunc::Max => c.max(vs_cost),
+                        CostAggFunc::Min => c.min(vs_cost),
+                    },
+                });
+            }
         }
 
-        Ok(cost)
+        Ok(cost.unwrap_or(0.0))
     }
 }
 
@@ -951,8 +989,8 @@ pub struct InputNode {
 }
 
 impl InputNode {
-    fn get_cost(&self, network: &Network, state: &State) -> Result<f64, NodeError> {
-        self.cost.get_cost(network, state)
+    fn get_cost(&self, network: &Network, timestep: &Timestep, state: &State) -> Result<f64, NodeError> {
+        self.cost.get_cost(network, timestep, state)
     }
 
     fn get_min_flow(&self, network: &Network, state: &State) -> Result<f64, MetricF64Error> {
@@ -982,8 +1020,8 @@ pub struct OutputNode {
 }
 
 impl OutputNode {
-    fn get_cost(&self, network: &Network, state: &State) -> Result<f64, NodeError> {
-        self.cost.get_cost(network, state)
+    fn get_cost(&self, network: &Network, timestep: &Timestep, state: &State) -> Result<f64, NodeError> {
+        self.cost.get_cost(network, timestep, state)
     }
 
     fn get_min_flow(&self, network: &Network, state: &State) -> Result<f64, MetricF64Error> {
@@ -1014,8 +1052,8 @@ pub struct LinkNode {
 }
 
 impl LinkNode {
-    fn get_cost(&self, network: &Network, state: &State) -> Result<f64, NodeError> {
-        self.cost.get_cost(network, state)
+    fn get_cost(&self, network: &Network, timestep: &Timestep, state: &State) -> Result<f64, NodeError> {
+        self.cost.get_cost(network, timestep, state)
     }
 
     fn get_min_flow(&self, network: &Network, state: &State) -> Result<f64, MetricF64Error> {
@@ -1166,8 +1204,8 @@ impl StorageNode {
         Ok(())
     }
 
-    fn get_cost(&self, network: &Network, state: &State) -> Result<f64, NodeError> {
-        self.cost.get_cost(network, state)
+    fn get_cost(&self, network: &Network, timestep: &Timestep, state: &State) -> Result<f64, NodeError> {
+        self.cost.get_cost(network, timestep, state)
     }
 
     pub fn get_min_volume(&self, state: &State) -> Result<f64, SimpleMetricF64Error> {

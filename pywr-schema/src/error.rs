@@ -1,7 +1,7 @@
 #[cfg(feature = "core")]
 use crate::data_tables::{TableCollectionError, TableDataRef};
 use crate::digest::ChecksumError;
-use crate::nodes::{NodeAttribute, NodeComponent, NodeSlot};
+use crate::nodes::{NodeAttribute, NodeComponent, NodeSlot, VirtualStorageCostAggregation};
 #[cfg(feature = "core")]
 use crate::time_series::LoadedTimeSeriesCollectionError;
 #[cfg(feature = "pyo3")]
@@ -87,6 +87,26 @@ pub enum SchemaError {
     RbfEpsilonEstimation,
     #[error("Inter-network transfer with name {0} not found")]
     InterNetworkTransferNotFound(String),
+    #[error(
+        "The cost aggregation `{aggregation}` cannot be given to the node `{node}`, because {} already gives it `{existing}`. Both reach the pywr-core node `{core_node}`, which can only have one.",
+        .existing_by.as_deref().map(|name| format!("the virtual storage `{name}`")).unwrap_or_else(|| "another virtual storage".to_string())
+    )]
+    ConflictingCostAggregation {
+        /// The node reference, with its component in brackets if it gives one.
+        node: String,
+        core_node: String,
+        aggregation: VirtualStorageCostAggregation,
+        existing: VirtualStorageCostAggregation,
+        /// The virtual storage that gave the existing aggregation, if it could be found.
+        existing_by: Option<String>,
+    },
+    #[cfg(feature = "core")]
+    #[error("The virtual storage cost cannot be applied to the node `{node}`.")]
+    VirtualStorageCostAggregation {
+        node: String,
+        #[source]
+        source: Box<pywr_core::node::NodeBuilderError>,
+    },
     #[error("Invalid rolling window definition on parameter {name}. Must convert to a positive integer.")]
     InvalidRollingWindow { name: String },
     #[error("Failed to load parameter {name}: {error}")]

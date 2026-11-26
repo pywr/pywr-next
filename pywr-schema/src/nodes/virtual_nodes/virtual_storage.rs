@@ -3,19 +3,21 @@ use crate::error::SchemaError;
 use crate::metric::{Metric, NodeComponentReference};
 #[cfg(feature = "core")]
 use crate::network::LoadArgs;
-#[cfg(feature = "core")]
-use crate::nodes::NodeAttribute;
 use crate::nodes::NodeMeta;
 use crate::nodes::core::StorageInitialVolume;
+#[cfg(feature = "core")]
+use crate::nodes::{NodeAttribute, VirtualNode};
 use crate::parameters::Parameter;
 use crate::v1::{ConversionData, TryFromV1, try_convert_initial_storage, try_convert_node_attr, try_convert_node_meta};
 use crate::validation::VirtualNodeProblem;
 use crate::{ConversionError, node_attribute_subset_enum};
 use jiff::civil::Date;
 #[cfg(feature = "core")]
+use log::warn;
+#[cfg(feature = "core")]
 use pywr_core::{
     metric::UnresolvedMetricF64,
-    node::UnresolvedNode,
+    node::{NodeBuilderError, UnresolvedNode},
     timestep::TimeDomain,
     virtual_storage::{VirtualStorageActivePeriod, VirtualStorageNodeBuilder},
 };
@@ -189,6 +191,53 @@ impl From<VirtualStorageResetVolume> for pywr_core::virtual_storage::VirtualStor
     }
 }
 
+/// How a node combines its own cost with the costs of the virtual storage nodes it belongs to.
+#[derive(
+    serde::Deserialize,
+    serde::Serialize,
+    Copy,
+    Clone,
+    Debug,
+    PartialEq,
+    Eq,
+    JsonSchema,
+    PywrVisitAll,
+    Display,
+    EnumDiscriminants,
+)]
+#[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
+#[strum_discriminants(name(VirtualStorageCostAggregationType))]
+pub enum VirtualStorageCostAggregation {
+    /// Add the costs together.
+    Sum,
+    /// Use the largest cost.
+    Max,
+    /// Use the smallest cost.
+    Min,
+}
+
+#[cfg(feature = "core")]
+impl From<pywr_core::node::CostAggFunc> for VirtualStorageCostAggregation {
+    fn from(val: pywr_core::node::CostAggFunc) -> VirtualStorageCostAggregation {
+        match val {
+            pywr_core::node::CostAggFunc::Sum => VirtualStorageCostAggregation::Sum,
+            pywr_core::node::CostAggFunc::Max => VirtualStorageCostAggregation::Max,
+            pywr_core::node::CostAggFunc::Min => VirtualStorageCostAggregation::Min,
+        }
+    }
+}
+
+#[cfg(feature = "core")]
+impl From<VirtualStorageCostAggregation> for pywr_core::node::CostAggFunc {
+    fn from(val: VirtualStorageCostAggregation) -> pywr_core::node::CostAggFunc {
+        match val {
+            VirtualStorageCostAggregation::Sum => pywr_core::node::CostAggFunc::Sum,
+            VirtualStorageCostAggregation::Max => pywr_core::node::CostAggFunc::Max,
+            VirtualStorageCostAggregation::Min => pywr_core::node::CostAggFunc::Min,
+        }
+    }
+}
+
 /// A virtual storage node that can be used to represent non-physical storage constraints.
 ///
 /// This is typically used to represent storage limits that are associated with licences or
@@ -215,7 +264,37 @@ impl From<VirtualStorageResetVolume> for pywr_core::virtual_storage::VirtualStor
 ///   This is the default if `reset_volume` is not specified.
 /// - `Max`: The storage is reset to the maximum volume specified in the `max_volume` field.
 ///
-// TODO write the cost documentation when linking a node to this cost is supported in the schema.
+/// The `cost` field adds a cost to the nodes in `nodes`, for example to make a licence more
+/// expensive to use as it runs low. It only applies when `cost_aggregation` is also given; without
+/// it the cost is ignored, with a warning when the model is built. A `cost_aggregation` without a
+/// `cost` is a validation problem. The `cost_aggregation` sets how each node combines its own cost with
+/// the costs of the virtual storage nodes it belongs to. The choices in
+/// [`VirtualStorageCostAggregation`] are:
+/// - `Sum`: The costs are added together.
+/// - `Max`: The largest cost is used.
+/// - `Min`: The smallest cost is used.
+///
+/// Each virtual storage's cost is multiplied by the node's factor before it is combined, so a
+/// negative factor makes the cost an incentive. A virtual storage in which the node's factor is
+/// zero is left out. A node without a cost of its own combines only the virtual storage costs. A virtual storage outside
+/// its active period (see `Seasonal` above) adds no cost. If nothing is left to combine, the
+/// node's cost is zero.
+///
+/// A node has one aggregation for all of its virtual storage nodes, so every virtual storage that
+/// gives a `cost_aggregation` for the same node must give the same one. Validation takes a
+/// reference without a `component` to be to the node's default component. Different components
+/// that reach the same `pywr-core` node, such as a `Link`'s `Inflow` and `Outflow`, are reported
+/// when the model is built.
+///
+/// # Examples
+///
+/// A licence whose cost rises as it is used. The cost is interpolated from its proportional
+/// volume: zero when full, 5.0 at half full and 20.0 when empty. With `Sum`, this cost is added
+/// to the cost of `abstraction1`:
+/// ```json
+#[doc = include_str!("doc_examples/virtual_storage_cost.json")]
+/// ```
+///
 #[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Clone, Default, Debug, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
@@ -228,6 +307,8 @@ pub struct VirtualStorageNode {
     pub max_volume: Option<Metric>,
     pub min_volume: Option<Metric>,
     pub cost: Option<Metric>,
+    /// How each node combines `cost` with its own cost. The cost is ignored without it.
+    pub cost_aggregation: Option<VirtualStorageCostAggregation>,
     pub initial_volume: StorageInitialVolume,
     pub reset: Option<VirtualStorageReset>,
     pub reset_volume: Option<VirtualStorageResetVolume>,
@@ -264,6 +345,9 @@ impl VirtualStorageNode {
         if let Some(Err(reset_problems)) = self.reset.as_ref().map(VirtualStorageReset::validate) {
             problems.extend(reset_problems);
         }
+        if self.cost_aggregation.is_some() && self.cost.is_none() {
+            problems.push(VirtualNodeProblem::CostAggregationWithoutCost);
+        }
 
         if problems.is_empty() { Ok(()) } else { Err(problems) }
     }
@@ -279,19 +363,91 @@ impl VirtualStorageNode {
         let nodes = self
             .nodes
             .iter()
-            .map(|node_ref| {
-                args.schema
-                    .get_node_by_name(&node_ref.name)
-                    .ok_or_else(|| SchemaError::NodeNotFound {
-                        name: node_ref.name.to_string(),
-                    })?
-                    .nodes_for_flow_constraints(node_ref.component)
-            })
+            .map(|node_ref| Self::reference_core_nodes(node_ref, args))
             .collect::<Result<Vec<_>, _>>()?
             .into_iter()
             .flatten()
             .collect();
         Ok(nodes)
+    }
+
+    /// The `pywr-core` nodes that one of the node references resolves to.
+    fn reference_core_nodes(
+        node_ref: &NodeComponentReference,
+        args: &LoadArgs,
+    ) -> Result<Vec<UnresolvedNode>, SchemaError> {
+        args.schema
+            .get_node_by_name(&node_ref.name)
+            .ok_or_else(|| SchemaError::NodeNotFound {
+                name: node_ref.name.to_string(),
+            })?
+            .nodes_for_flow_constraints(node_ref.component)
+    }
+
+    /// Give each `pywr-core` node of this virtual storage its cost aggregation.
+    fn apply_cost_aggregation(
+        &self,
+        network: &mut pywr_core::network::NetworkBuilder,
+        args: &LoadArgs,
+        aggregation: VirtualStorageCostAggregation,
+    ) -> Result<(), SchemaError> {
+        for node_ref in &self.nodes {
+            for core_node in Self::reference_core_nodes(node_ref, args)? {
+                let node_builder = network
+                    .node_builder(&core_node)
+                    .ok_or_else(|| SchemaError::CoreNodeNotFound {
+                        name: core_node.name().to_string(),
+                        sub_name: core_node.sub_name().map(str::to_string),
+                    })?;
+
+                if let Err(source) = node_builder.cost_agg_func(aggregation.into()) {
+                    return Err(match source {
+                        NodeBuilderError::ConflictingCostAggFunc { existing, .. } => {
+                            let existing = existing.into();
+                            SchemaError::ConflictingCostAggregation {
+                                node: match node_ref.component {
+                                    Some(component) => format!("{}[{component}]", node_ref.name),
+                                    None => node_ref.name.clone(),
+                                },
+                                core_node: core_node.to_string(),
+                                aggregation,
+                                existing,
+                                existing_by: self.find_cost_aggregation(args, &core_node, existing),
+                            }
+                        }
+                        source => SchemaError::VirtualStorageCostAggregation {
+                            node: core_node.to_string(),
+                            source: Box::new(source),
+                        },
+                    });
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// The name of another virtual storage that gives `core_node` the cost `aggregation`.
+    fn find_cost_aggregation(
+        &self,
+        args: &LoadArgs,
+        core_node: &UnresolvedNode,
+        aggregation: VirtualStorageCostAggregation,
+    ) -> Option<String> {
+        args.schema
+            .virtual_nodes
+            .iter()
+            .flatten()
+            .filter_map(|virtual_node| match virtual_node {
+                VirtualNode::VirtualStorage(vs) => Some(vs),
+                _ => None,
+            })
+            .filter(|vs| vs.meta.name != self.meta.name)
+            .filter(|vs| vs.cost.is_some() && vs.cost_aggregation == Some(aggregation))
+            .find(|vs| {
+                vs.nodes_for_flow_constraints(args)
+                    .is_ok_and(|nodes| nodes.contains(core_node))
+            })
+            .map(|vs| vs.meta.name.clone())
     }
     pub fn add_to_network(
         &self,
@@ -325,9 +481,23 @@ impl VirtualStorageNode {
             active_period,
         );
 
-        if let Some(cost) = &self.cost {
-            let value = cost.load(network, args, Some(&self.meta.name))?;
-            builder.cost(value);
+        // The cost only applies to the nodes when it has an aggregation, so the core
+        // virtual storage is not given a cost without one.
+        match (&self.cost, self.cost_aggregation) {
+            (Some(cost), Some(cost_aggregation)) => {
+                let value = cost.load(network, args, Some(&self.meta.name))?;
+                builder.cost(value);
+                self.apply_cost_aggregation(network, args, cost_aggregation)?;
+            }
+            (Some(_), None) => {
+                // Not a validation problem, as models converted from pywr v1 have these.
+                warn!(
+                    "The virtual storage `{}` has a `cost` but no `cost_aggregation`, so its cost is ignored.",
+                    self.meta.name
+                );
+            }
+            // A `cost_aggregation` without a `cost` is a validation problem.
+            (None, _) => {}
         }
 
         if let Some(min_volume) = &self.min_volume {
@@ -401,6 +571,8 @@ impl TryFromV1<VirtualStorageNodeV1> for VirtualStorageNode {
             max_volume,
             min_volume,
             cost,
+            // pywr v1 ignores virtual storage costs, so leave them off to keep its behaviour.
+            cost_aggregation: None,
             initial_volume,
             reset: None,
             reset_volume: None,
@@ -443,6 +615,8 @@ impl TryFromV1<AnnualVirtualStorageNodeV1> for VirtualStorageNode {
             max_volume,
             min_volume,
             cost,
+            // pywr v1 ignores virtual storage costs, so leave them off to keep its behaviour.
+            cost_aggregation: None,
             initial_volume,
             reset: Some(VirtualStorageReset::Annual(AnnualReset {
                 day: v1.reset_day as i8,
@@ -498,6 +672,8 @@ impl TryFromV1<MonthlyVirtualStorageNodeV1> for VirtualStorageNode {
             max_volume,
             min_volume,
             cost,
+            // pywr v1 ignores virtual storage costs, so leave them off to keep its behaviour.
+            cost_aggregation: None,
             initial_volume,
             reset: Some(VirtualStorageReset::Monthly { months }),
             reset_volume,
@@ -568,6 +744,8 @@ impl TryFromV1<RollingVirtualStorageNodeV1> for VirtualStorageNode {
             max_volume,
             min_volume,
             cost,
+            // pywr v1 ignores virtual storage costs, so leave them off to keep its behaviour.
+            cost_aggregation: None,
             initial_volume,
             reset: None,
             reset_volume: None,
@@ -617,6 +795,8 @@ impl TryFromV1<SeasonalVirtualStorageNodeV1> for VirtualStorageNode {
             max_volume,
             min_volume,
             cost,
+            // pywr v1 ignores virtual storage costs, so leave them off to keep its behaviour.
+            cost_aggregation: None,
             initial_volume,
             reset: Some(reset),
             reset_volume,

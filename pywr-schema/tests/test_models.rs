@@ -109,6 +109,8 @@ model_tests! {
     test_tbl_formats1: ("tbl-formats1.json", vec![("tbl-formats1-expected.csv", ResultsShape::Long)], vec![], vec![]),
     // IPM solvers currently do not support virtual storage nodes
     test_vs_with_piecewise_link: ("vs-with-piecewise-link.json", vec![("vs-with-piecewise-link-expected.csv", ResultsShape::Long)], vec!["ipm-simd", "ipm-ocl-f64"], vec![]),
+    // IPM solvers currently do not support virtual storage nodes
+    test_vs_cost1: ("vs-cost1.json", vec![("vs-cost1-expected.csv", ResultsShape::Long)], vec!["ipm-simd", "ipm-ocl-f64"], vec![]),
     test_vs_wtw1: ("vs-with-wtw1.json", vec![("vs-with-wtw1-expected.csv", ResultsShape::Long)], vec!["ipm-simd", "ipm-ocl-f64"], vec![]),
     test_vs_wtw2: ("vs-with-wtw2.json", vec![("vs-with-wtw2-expected.csv", ResultsShape::Long)], vec!["ipm-simd", "ipm-ocl-f64"], vec![]),
     test_vs_wtw3: ("vs-with-wtw3.json", vec![("vs-with-wtw3-expected.csv", ResultsShape::Long)], vec!["ipm-simd", "ipm-ocl-f64"], vec![]),

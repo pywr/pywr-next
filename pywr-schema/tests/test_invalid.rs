@@ -1,5 +1,5 @@
 #[cfg(feature = "core")]
-use pywr_schema::{FileSystem, ModelSchemaBuildError, NetworkSchemaBuildError};
+use pywr_schema::{FileSystem, ModelSchemaBuildError, NetworkSchemaBuildError, SchemaError};
 use pywr_schema::{ModelSchema, NetworkProblem, ScenarioProblem};
 use std::fs;
 use std::path::Path;
@@ -76,6 +76,46 @@ invalid_schema_tests! {
     // An index metric naming a node, which gives only floats. The core builder would panic on
     // this, but validation now refuses it first.
     index_metric_names_node: "index-metric-names-node.json", InvalidNodeReference,
+    // Two virtual storage nodes giving a node different cost aggregations, one naming the node's
+    // default component and the other leaving it out.
+    virtual_storage_conflicting_cost_aggregation: "virtual-storage-conflicting-cost-aggregation.json", ConflictingCostAggregation,
+    // A virtual storage with a cost aggregation but no cost to aggregate.
+    virtual_storage_cost_aggregation_without_cost: "virtual-storage-cost-aggregation-without-cost.json", InvalidVirtualNode,
+}
+
+/// Two virtual storage nodes giving a `Link`'s `Inflow` and `Outflow` different cost
+/// aggregations. Validation compares the components as written, so it passes this, but both
+/// resolve to the same `pywr-core` node, which can only have one aggregation. Building names
+/// both virtual storage nodes.
+#[cfg(feature = "core")]
+#[test]
+fn virtual_storage_cost_aggregation_same_core_node() {
+    let input_pth = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("invalid")
+        .join("virtual-storage-cost-aggregation-same-core-node.json");
+    let schema = deserialise_test_model(&input_pth);
+    schema.validate().expect("Expected validation to pass");
+
+    match build_test_model(&schema) {
+        ModelSchemaBuildError::NetworkBuildError { source } => match *source {
+            NetworkSchemaBuildError::AddVirtualNodeError { name, source } => {
+                assert_eq!(name, "max-licence");
+                assert!(
+                    matches!(*source, SchemaError::ConflictingCostAggregation { .. }),
+                    "Expected SchemaError::ConflictingCostAggregation, but got: {source:?}"
+                );
+                assert_eq!(
+                    source.to_string(),
+                    "The cost aggregation `Max` cannot be given to the node `link1[Outflow]`, because the virtual \
+                     storage `sum-licence` already gives it `Sum`. Both reach the pywr-core node `link1`, which can \
+                     only have one."
+                );
+            }
+            e => panic!("Expected NetworkSchemaBuildError::AddVirtualNodeError, but got: {e:?}"),
+        },
+        e => panic!("Expected ModelSchemaBuildError::NetworkBuildError, but got: {e:?}"),
+    }
 }
 
 /// A group of no scenarios, which `pywr-core` would build into a model that simulates nothing.

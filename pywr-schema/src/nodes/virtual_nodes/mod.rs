@@ -21,8 +21,9 @@ use std::path::{Path, PathBuf};
 use strum::IntoEnumIterator;
 use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumString, IntoStaticStr};
 pub use virtual_storage::{
-    AnnualReset, RollingWindow, RollingWindowType, SeasonalReset, VirtualStorageNode, VirtualStorageNodeAttribute,
-    VirtualStorageReset, VirtualStorageResetType, VirtualStorageResetVolume, VirtualStorageResetVolumeType,
+    AnnualReset, RollingWindow, RollingWindowType, SeasonalReset, VirtualStorageCostAggregation,
+    VirtualStorageCostAggregationType, VirtualStorageNode, VirtualStorageNodeAttribute, VirtualStorageReset,
+    VirtualStorageResetType, VirtualStorageResetVolume, VirtualStorageResetVolumeType,
 };
 
 /// Create a blank [`VirtualNode`] of the given type.
