@@ -100,6 +100,7 @@ impl BackendError {
                 Self::ModelBuilderCreationError(_)
                 | Self::ModelBuildError(_)
                 | Self::MultiNetworkModelBuilderCreationError(_)
+                | Self::NetworkReadError(_)
                 | Self::MultiNetworkModelBuildError(_),
                 _,
             ) => RunFailureStage::ModelBuild,
@@ -1024,6 +1025,22 @@ mod tests {
         let mut files = MemoryFiles::default();
         files.insert("site/network2.json", network2.to_string().into_bytes());
         files
+    }
+
+    #[test]
+    fn a_missing_network_file_fails_the_model_build() {
+        let output = tempfile::tempdir().unwrap();
+        let request = multi_network_request(output.path(), Vec::new());
+        let Err(error) = PywrBackend::new(MemoryFiles::default(), ArrowStreamSinkKind::File).initialise(request) else {
+            panic!("the model built without its network file");
+        };
+        let failure = error.into_run_failure(BackendOperation::Initialise);
+        assert!(matches!(failure.stage, RunFailureStage::ModelBuild));
+        assert!(
+            failure.causes.iter().any(|cause| cause.contains("network2.json")),
+            "{:?}",
+            failure.causes
+        );
     }
 
     /// The metadata of each metric column in an Arrow stream file, with its values in each row.
