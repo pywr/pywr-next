@@ -503,12 +503,7 @@ impl Model {
     {
         // Setup thread pool if running in parallel
         let pool = if solver_config.parallel() {
-            Some(
-                rayon::ThreadPoolBuilder::new()
-                    .num_threads(solver_config.threads())
-                    .build()
-                    .unwrap(),
-            )
+            Some(super::build_thread_pool(solver_config.threads()))
         } else {
             None
         };
@@ -558,10 +553,7 @@ impl Model {
         };
 
         // Setup thread pool
-        let pool = rayon::ThreadPoolBuilder::new()
-            .num_threads(num_threads)
-            .build()
-            .unwrap();
+        let pool = super::build_thread_pool(num_threads);
 
         loop {
             match self.step_multi_scenario(state, &pool, &mut timings.network_timings) {
