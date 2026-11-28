@@ -490,6 +490,61 @@ impl Display for NodeType {
     }
 }
 
+/// An attribute of a single node, as read by [`CoreNodeAttribute::metric`].
+#[derive(Eq, PartialEq, Debug, Copy, Clone)]
+pub enum CoreNodeAttribute {
+    Inflow,
+    Outflow,
+    MinFlow,
+    MaxFlow,
+    Volume,
+    ProportionalVolume,
+    MinVolume,
+    MaxVolume,
+    /// The cost per unit of flow, including any virtual storage costs. See [`Node::get_cost`].
+    Cost,
+}
+
+impl CoreNodeAttribute {
+    /// The metric reading this attribute of `node`, or `None` if nodes of `node_type` do not
+    /// have it. Flow bounds belong to input, output and link nodes, and volumes to storage nodes.
+    pub fn metric(&self, node: UnresolvedNode, node_type: NodeType) -> Option<UnresolvedMetricF64> {
+        let is_storage = node_type == NodeType::Storage;
+
+        let metric = match self {
+            Self::Inflow => UnresolvedMetricF64::NodeInFlow(node),
+            Self::Outflow => UnresolvedMetricF64::NodeOutFlow(node),
+            Self::Cost => UnresolvedMetricF64::NodeCost(node),
+            Self::MinFlow if !is_storage => UnresolvedMetricF64::NodeMinFlow(node),
+            Self::MaxFlow if !is_storage => UnresolvedMetricF64::NodeMaxFlow(node),
+            Self::Volume if is_storage => UnresolvedMetricF64::NodeVolume(node),
+            Self::ProportionalVolume if is_storage => UnresolvedMetricF64::NodeProportionalVolume(node),
+            Self::MinVolume if is_storage => UnresolvedMetricF64::NodeMinVolume(node),
+            Self::MaxVolume if is_storage => UnresolvedMetricF64::NodeMaxVolume(node),
+            _ => return None,
+        };
+
+        Some(metric)
+    }
+}
+
+impl Display for CoreNodeAttribute {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let name = match self {
+            Self::Inflow => "Inflow",
+            Self::Outflow => "Outflow",
+            Self::MinFlow => "MinFlow",
+            Self::MaxFlow => "MaxFlow",
+            Self::Volume => "Volume",
+            Self::ProportionalVolume => "ProportionalVolume",
+            Self::MinVolume => "MinVolume",
+            Self::MaxVolume => "MaxVolume",
+            Self::Cost => "Cost",
+        };
+        write!(f, "{name}")
+    }
+}
+
 /// Bounds for the flow of a node
 #[derive(Debug, Clone, Copy)]
 pub struct FlowBounds {

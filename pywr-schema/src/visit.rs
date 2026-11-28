@@ -853,7 +853,8 @@ mod tests {
         "metric_sets": [
             {
                 "meta": { "name": "ms1" },
-                "metrics": [{ "type": "Node", "name": "metric-set-metric" }]
+                "metrics": [{ "type": "Node", "name": "metric-set-metric" }],
+                "core_nodes": [{ "node": "metric-set-core-nodes", "attributes": ["Cost"] }]
             }
         ]
     }
@@ -878,6 +879,7 @@ mod tests {
                 "Node:index-metric",
                 "Node:metric-edge-from",
                 "Node:metric-edge-to",
+                "Node:metric-set-core-nodes",
                 "Node:metric-set-metric",
                 "Node:node-metric",
                 "Node:virtual-storage-nodes",

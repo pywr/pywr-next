@@ -1,5 +1,6 @@
 use crate::metric::{MetricConsumerPhase, MetricF64, MetricF64Error, MetricF64ResolutionError, UnresolvedMetricF64};
 use crate::network::{Network, ResolutionMaps};
+use crate::node::{CoreNodeAttribute, Node, UnresolvedNode};
 use crate::recorders::aggregator::{Aggregator, AggregatorState, PeriodValue};
 use crate::scenario::ScenarioIndex;
 use crate::state::State;
@@ -218,6 +219,8 @@ pub enum MetricSetBuilderError {
         #[source]
         source: MetricF64ResolutionError,
     },
+    #[error("No nodes are named `{name}`.")]
+    NodeFamilyNotFound { name: String },
 }
 
 /// What [`MetricSetBuilder::build`] does with a metric whose parameter does not calculate the
@@ -228,11 +231,22 @@ enum IfNotCalculated {
     Drop,
 }
 
+/// An entry of a [`MetricSetBuilder`], kept in the order it was added.
+#[derive(Debug)]
+enum MetricSetEntry {
+    Metric(UnresolvedOutputMetric, IfNotCalculated),
+    /// The attributes of every node with a name, whatever its sub-name.
+    NodeFamily {
+        name: String,
+        attributes: Vec<CoreNodeAttribute>,
+    },
+}
+
 #[derive(Debug)]
 pub struct MetricSetBuilder {
     name: String,
     aggregator: Option<Aggregator>,
-    metrics: Vec<(UnresolvedOutputMetric, IfNotCalculated)>,
+    entries: Vec<MetricSetEntry>,
 }
 
 impl MetricSetBuilder {
@@ -240,7 +254,7 @@ impl MetricSetBuilder {
         Self {
             name: name.to_string(),
             aggregator: None,
-            metrics: Vec::new(),
+            entries: Vec::new(),
         }
     }
     pub fn name(&self) -> &str {
@@ -253,27 +267,80 @@ impl MetricSetBuilder {
     }
 
     pub fn metric(&mut self, metric: UnresolvedOutputMetric) -> &mut Self {
-        self.metrics.push((metric, IfNotCalculated::Fail));
+        self.entries.push(MetricSetEntry::Metric(metric, IfNotCalculated::Fail));
         self
     }
 
     /// Add a metric that is dropped, rather than failing the build, if its parameter does not
     /// calculate the phase it asks for.
     pub fn metric_if_calculated(&mut self, metric: UnresolvedOutputMetric) -> &mut Self {
-        self.metrics.push((metric, IfNotCalculated::Drop));
+        self.entries.push(MetricSetEntry::Metric(metric, IfNotCalculated::Drop));
         self
     }
 
-    pub fn build(self, resolution_maps: &ResolutionMaps) -> Result<MetricSet, MetricSetBuilderError> {
+    /// Add the `attributes` of every node named `name`, whatever its sub-name, in the order the
+    /// nodes were added to the network.
+    ///
+    /// Each node gives the attributes its type has (see [`CoreNodeAttribute::metric`]), named by
+    /// the node's full name (e.g. `reservoir[spill]`), with the type `CoreNode` and the node's
+    /// type as the subtype. The build fails if no node has the name.
+    pub fn node_family(&mut self, name: &str, attributes: &[CoreNodeAttribute]) -> &mut Self {
+        self.entries.push(MetricSetEntry::NodeFamily {
+            name: name.to_string(),
+            attributes: attributes.to_vec(),
+        });
+        self
+    }
+
+    pub fn build(self, resolution_maps: &ResolutionMaps, nodes: &[Node]) -> Result<MetricSet, MetricSetBuilderError> {
         use MetricF64ResolutionError::ParameterNotRegisteredInCorrectPhase;
 
-        let mut metrics = Vec::with_capacity(self.metrics.len());
-        for (metric, if_not_calculated) in self.metrics {
-            let name = metric.name.clone();
-            match (metric.resolve(resolution_maps), if_not_calculated) {
-                (Ok(metric), _) => metrics.push(metric),
-                (Err(ParameterNotRegisteredInCorrectPhase { .. }), IfNotCalculated::Drop) => {}
-                (Err(source), _) => return Err(MetricSetBuilderError::ResolveMetricF64Error { name, source }),
+        let mut metrics = Vec::with_capacity(self.entries.len());
+        for entry in self.entries {
+            match entry {
+                MetricSetEntry::Metric(metric, if_not_calculated) => {
+                    let name = metric.name.clone();
+                    match (metric.resolve(resolution_maps), if_not_calculated) {
+                        (Ok(metric), _) => metrics.push(metric),
+                        (Err(ParameterNotRegisteredInCorrectPhase { .. }), IfNotCalculated::Drop) => {}
+                        (Err(source), _) => {
+                            return Err(MetricSetBuilderError::ResolveMetricF64Error { name, source });
+                        }
+                    }
+                }
+                MetricSetEntry::NodeFamily { name, attributes } => {
+                    let family: Vec<&Node> = nodes.iter().filter(|node| node.name() == name).collect();
+                    if family.is_empty() {
+                        return Err(MetricSetBuilderError::NodeFamilyNotFound { name });
+                    }
+
+                    for node in family {
+                        let (node_name, sub_name) = node.full_name();
+                        let unresolved = UnresolvedNode::new(node_name, sub_name);
+                        let output_name = unresolved.to_string();
+                        let node_type = node.node_type().to_string();
+
+                        for attribute in &attributes {
+                            let Some(metric) = attribute.metric(unresolved.clone(), node.node_type()) else {
+                                continue;
+                            };
+                            let output = UnresolvedOutputMetric::new(
+                                &output_name,
+                                &attribute.to_string(),
+                                "CoreNode",
+                                Some(&node_type),
+                                metric,
+                            );
+                            let metric = output.resolve(resolution_maps).map_err(|source| {
+                                MetricSetBuilderError::ResolveMetricF64Error {
+                                    name: output_name.clone(),
+                                    source,
+                                }
+                            })?;
+                            metrics.push(metric);
+                        }
+                    }
+                }
             }
         }
 
@@ -319,6 +386,60 @@ mod tests {
 
         let mut metric_set = MetricSetBuilder::new("metric");
         metric_set.metric(output_metric(UnresolvedMetricF64::new_parameter_after("p")));
+        assert!(build(metric_set).is_err());
+    }
+    /// A node family gives each of its nodes' attributes that their type has, in the order the
+    /// nodes were added, and fails the build if no node has its name.
+    #[test]
+    fn test_node_family() {
+        use crate::node::{CoreNodeAttribute, NodeBuilder, UnresolvedNode, UnresolvedStorageInitialVolume};
+
+        let build = |metric_set| {
+            let mut builder = NetworkBuilder::default();
+            let mut storage = NodeBuilder::storage("res");
+            storage
+                .initial_volume(UnresolvedStorageInitialVolume::Absolute(0.0))
+                .max_volume(10.0.into());
+            builder.node(storage);
+            let mut spill = NodeBuilder::link("res");
+            spill.sub_name("spill");
+            builder.node(spill);
+            builder.node(NodeBuilder::output("other"));
+            let spill_name = UnresolvedNode::new("res", Some("spill"));
+            builder.connect("res", spill_name.clone());
+            builder.connect(spill_name, "other");
+            builder.metric_set(metric_set);
+            builder.build(&default_domain(), &HashMap::new())
+        };
+
+        let mut metric_set = MetricSetBuilder::new("family");
+        metric_set.node_family(
+            "res",
+            &[
+                CoreNodeAttribute::Volume,
+                CoreNodeAttribute::MaxFlow,
+                CoreNodeAttribute::Cost,
+            ],
+        );
+        let (network, _) = build(metric_set).unwrap();
+
+        let metrics: Vec<_> = network.metric_sets()[0]
+            .metrics()
+            .iter()
+            .map(|m| (m.name(), m.attribute(), m.ty(), m.sub_type()))
+            .collect();
+        assert_eq!(
+            metrics,
+            vec![
+                ("res", "Volume", "CoreNode", Some("Storage")),
+                ("res", "Cost", "CoreNode", Some("Storage")),
+                ("res[spill]", "MaxFlow", "CoreNode", Some("Link")),
+                ("res[spill]", "Cost", "CoreNode", Some("Link")),
+            ]
+        );
+
+        let mut metric_set = MetricSetBuilder::new("missing");
+        metric_set.node_family("missing", &[CoreNodeAttribute::Inflow]);
         assert!(build(metric_set).is_err());
     }
 }
