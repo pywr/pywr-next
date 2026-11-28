@@ -1,0 +1,85 @@
+{
+  "nodes": [
+    {
+      "meta": {
+        "name": "supply2"
+      },
+      "type": "Input",
+      "max_flow": {
+        "type": "Parameter",
+        "name": "supply"
+      }
+    },
+    {
+      "meta": {
+        "name": "demand2"
+      },
+      "type": "Output",
+      "max_flow": {
+        "type": "Literal",
+        "value": 20.0
+      },
+      "cost": {
+        "type": "Literal",
+        "value": -10
+      }
+    },
+    {
+      "meta": {
+        "name": "supply3"
+      },
+      "type": "Input",
+      "max_flow": {
+        "type": "Literal",
+        "value": 100.0
+      }
+    },
+    {
+      "meta": {
+        "name": "demand3"
+      },
+      "type": "Output",
+      "max_flow": {
+        "type": "InterNetworkTransfer",
+        "name": "level"
+      },
+      "cost": {
+        "type": "Literal",
+        "value": -10
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from_node": "supply2",
+      "to_node": "demand2"
+    },
+    {
+      "from_node": "supply3",
+      "to_node": "demand3"
+    }
+  ],
+  "parameters": [
+    {
+      "meta": {
+        "name": "supply"
+      },
+      "type": "IndexedArray",
+      "phase": "Before",
+      "metrics": [
+        {
+          "type": "Literal",
+          "value": 3.0
+        },
+        {
+          "type": "Literal",
+          "value": 8.0
+        }
+      ],
+      "index_metric": {
+        "type": "InterNetworkTransfer",
+        "name": "level"
+      }
+    }
+  ]
+}

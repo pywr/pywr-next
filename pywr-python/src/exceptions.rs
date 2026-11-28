@@ -107,6 +107,7 @@ impl From<PyMultiNetworkModelBuilderError> for PyErr {
             }
             MultiNetworkModelBuilderError::NetworkNotFoundForTransfer { .. }
             | MultiNetworkModelBuilderError::ResolveMetricF64ForTransferError { .. }
+            | MultiNetworkModelBuilderError::ResolveMetricU64ForTransferError { .. }
             | MultiNetworkModelBuilderError::DuplicateTransferName { .. }
             | MultiNetworkModelBuilderError::TransferToSelf { .. } => {
                 PyErr::new::<NetworkTransferError, _>(format!("{:?}", anyhow!(error.inner)))

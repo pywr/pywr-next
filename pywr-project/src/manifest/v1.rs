@@ -2588,26 +2588,26 @@ impl MultiModelNetwork {
 
         let network = format!("{}/{}", multi_model.name, self.name);
         for transfer in &transfers {
-            if transfer.from_network == self.name {
+            if transfer.from_network() == self.name {
                 problems.push(ProjectManifestProblem::TransferFromSameNetwork {
                     network: network.clone(),
-                    transfer: transfer.name.clone(),
+                    transfer: transfer.name().to_string(),
                 });
             } else if !multi_model
                 .networks
                 .iter()
-                .any(|other| other.name == transfer.from_network)
+                .any(|other| other.name == transfer.from_network())
             {
                 problems.push(ProjectManifestProblem::TransferSourceNotFound {
                     network: network.clone(),
-                    transfer: transfer.name.clone(),
-                    from_network: transfer.from_network.clone(),
+                    transfer: transfer.name().to_string(),
+                    from_network: transfer.from_network().to_string(),
                 });
             }
         }
         add_duplicate_problems(
             &transfers,
-            |transfer| &transfer.name,
+            |transfer| transfer.name(),
             |name, count| ProjectManifestProblem::DuplicateTransfer {
                 network: network.clone(),
                 transfer: name,
@@ -3107,14 +3107,15 @@ fn canonicalize_contained(root: &Path, candidate: &Path, field: &str) -> Result<
     Ok(resolved_path)
 }
 
-fn add_duplicate_problems<T, F, P>(items: &[T], key: F, problem: P, problems: &mut Vec<ProjectManifestProblem>)
+fn add_duplicate_problems<T, K, F, P>(items: &[T], key: F, problem: P, problems: &mut Vec<ProjectManifestProblem>)
 where
-    F: Fn(&T) -> &String,
+    K: AsRef<str> + ?Sized,
+    F: Fn(&T) -> &K,
     P: Fn(String, usize) -> ProjectManifestProblem,
 {
     let mut counts = HashMap::new();
     for item in items {
-        *counts.entry(key(item).clone()).or_insert(0) += 1;
+        *counts.entry(key(item).as_ref().to_string()).or_insert(0) += 1;
     }
 
     let mut duplicates: Vec<_> = counts.into_iter().filter(|(_, count)| *count > 1).collect();
@@ -4512,6 +4513,7 @@ mod test {
 
     fn transfer(from_network: &str, node: &str, name: &str) -> MultiNetworkTransfer {
         serde_json::from_value(serde_json::json!({
+            "type": "Float",
             "from_network": from_network,
             "metric": {"type": "Node", "name": node},
             "name": name,
@@ -4641,7 +4643,7 @@ mod test {
             panic!("expected an inline network");
         };
         assert_eq!(river.nodes.len(), 2);
-        assert_eq!(schema.networks[1].transfers[0].name, "company-a");
+        assert_eq!(schema.networks[1].transfers[0].name(), "company-a");
 
         assert!(matches!(
             manifest.compose(root.path(), "joint", OPTIONS),
@@ -4719,7 +4721,7 @@ mod test {
         let root = project_with_nets();
         write_json(
             &root.path().join("links/transfers.json"),
-            serde_json::json!([{"from_network": "company", "metric": {"type": "Node", "name": "a"}, "name": "from-file"}]),
+            serde_json::json!([{"type": "Float", "from_network": "company", "metric": {"type": "Node", "name": "a"}, "name": "from-file"}]),
         );
         let mut networks = joint_networks();
         networks[1].transfers_file = Some("links/transfers.json".to_string());
@@ -4728,7 +4730,7 @@ mod test {
         let names: Vec<_> = composed.networks()[1]
             .transfers
             .iter()
-            .map(|transfer| transfer.name.as_str())
+            .map(|transfer| transfer.name())
             .collect();
         assert_eq!(names, ["company-a", "from-file"]);
 
@@ -4818,6 +4820,48 @@ mod test {
             error.to_string(),
             "The composed model reads the transfer `company-a`, but only a network of a multi-model can receive transfers."
         );
+    }
+
+    #[test]
+    fn a_transfer_read_as_an_index_must_be_an_index_transfer() {
+        let root = project_with_nets();
+        write_json(
+            &root.path().join("nets/reader.json"),
+            serde_json::json!({
+                "nodes": [{"type": "Input", "meta": {"name": "reader"},
+                           "max_flow": {"type": "Parameter", "name": "choice"}}],
+                "edges": [],
+                "parameters": [{"type": "IndexedArray", "meta": {"name": "choice"}, "phase": "Before",
+                                "metrics": [{"type": "Literal", "value": 1.0}, {"type": "Literal", "value": 2.0}],
+                                "index_metric": {"type": "InterNetworkTransfer", "name": "company-a"}}]
+            }),
+        );
+        let mut networks = joint_networks();
+        networks[1].include = vec![selection("nets", Some(vec!["c.json", "reader.json"]), false)];
+        let mut manifest = multi_model_manifest(networks);
+
+        // `transfer` declares a float transfer, which the index metric cannot read.
+        assert_eq!(
+            joint_schema_error(&manifest, root.path()),
+            "The network `river` reads the transfer `company-a` as an index, but it is declared as a float transfer. Give it `\"type\": \"Index\"` to transfer an index."
+        );
+
+        manifest.multi_models[0].networks[1].transfers = vec![
+            serde_json::from_value(serde_json::json!({
+                "type": "Index",
+                "from_network": "company",
+                "metric": {"type": "Constant", "value": 1},
+                "name": "company-a",
+            }))
+            .unwrap(),
+        ];
+        manifest
+            .compose_multi_model(root.path(), "joint", OPTIONS)
+            .unwrap()
+            .load()
+            .unwrap()
+            .into_multi_model_schema(&Default::default())
+            .unwrap();
     }
 
     #[test]

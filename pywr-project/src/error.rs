@@ -50,6 +50,10 @@ pub enum ComposeToSchemaError {
     )]
     TransferNotDeclared { network: String, transfer: String },
     #[error(
+        "The network `{network}` reads the transfer `{transfer}` as an index, but it is declared as a float transfer. Give it `\"type\": \"Index\"` to transfer an index."
+    )]
+    TransferNotAnIndex { network: String, transfer: String },
+    #[error(
         "The composed model reads the transfer `{transfer}`, but only a network of a multi-model can receive transfers."
     )]
     TransferInModel { transfer: String },

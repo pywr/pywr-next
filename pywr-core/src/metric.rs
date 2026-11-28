@@ -1,5 +1,5 @@
 use crate::NodeIndex;
-use crate::models::MultiNetworkTransferIndex;
+use crate::models::{MultiNetworkTransferIndex, MultiNetworkTransferRef};
 use crate::network::{
     AggregatedNodeIndex, AggregatedStorageNodeIndex, EdgeIndex, Network, ResolutionMaps, UnresolvedEdge,
     VirtualStorageIndex,
@@ -186,8 +186,9 @@ pub enum MetricF64 {
         indices: Vec<NodeIndex>,
         name: String,
     },
-    // TODO implement other MultiNodeXXX variants
     InterNetworkTransfer(MultiNetworkTransferIndex),
+    /// An index transfer read as a float.
+    InterNetworkTransferU64(MultiNetworkTransferIndex),
     Simple(SimpleMetricF64),
 }
 
@@ -353,6 +354,7 @@ impl MetricF64 {
                 Ok(flow)
             }
             MetricF64::InterNetworkTransfer(idx) => Ok(state.get_inter_network_transfer_value(*idx)?),
+            MetricF64::InterNetworkTransferU64(idx) => Ok(state.get_inter_network_transfer_value_u64(*idx)? as f64),
             MetricF64::Simple(s) => Ok(s.get_value(&state.get_simple_parameter_values())?),
         }
     }
@@ -820,7 +822,11 @@ impl UnresolvedMetricF64 {
                     }
                 })?;
 
-                MetricF64::InterNetworkTransfer(*idx)
+                // A float metric can read an index transfer, as it can an index parameter.
+                match idx {
+                    MultiNetworkTransferRef::F64(idx) => MetricF64::InterNetworkTransfer(*idx),
+                    MultiNetworkTransferRef::U64(idx) => MetricF64::InterNetworkTransferU64(*idx),
+                }
             }
             UnresolvedMetricF64::Constant(value) => (*value).into(),
         };
@@ -1143,7 +1149,7 @@ impl MetricU64 {
                 Ok(*value)
             }
             Self::Simple(s) => Ok(s.get_value(&state.get_simple_parameter_values())?),
-            Self::InterNetworkTransfer(_idx) => todo!("Support usize for inter-network transfers"),
+            Self::InterNetworkTransfer(idx) => Ok(state.get_inter_network_transfer_value_u64(*idx)?),
         }
     }
 }
@@ -1233,6 +1239,10 @@ pub enum MetricU64ResolutionError {
     #[error("Inter-network transfer not found when resolving U64 metric: {transfer}")]
     InterNetworkTransferNotFound { transfer: String },
     #[error(
+        "Inter-network transfer `{transfer}` is a float transfer and cannot be read as an index. Give the transfer `\"type\": \"Index\"` to transfer an index value."
+    )]
+    InterNetworkTransferNotAnIndex { transfer: String },
+    #[error(
         "Parameter not registered in the correct phase when resolving U64 metric: {parameter}, consumer phase: {consumer_phase:?}, return value: {return_value:?}"
     )]
     ParameterNotRegisteredInCorrectPhase {
@@ -1313,7 +1323,14 @@ impl UnresolvedMetricU64 {
                     }
                 })?;
 
-                MetricU64::InterNetworkTransfer(*idx)
+                match idx {
+                    MultiNetworkTransferRef::U64(idx) => MetricU64::InterNetworkTransfer(*idx),
+                    MultiNetworkTransferRef::F64(_) => {
+                        return Err(MetricU64ResolutionError::InterNetworkTransferNotAnIndex {
+                            transfer: unresolved.clone(),
+                        });
+                    }
+                }
             }
             UnresolvedMetricU64::Constant(value) => (*value).into(),
         };

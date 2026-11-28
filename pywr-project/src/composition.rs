@@ -1,6 +1,7 @@
 use crate::error::{ComposeToSchemaError, PlaceholderKind, UnresolvedPlaceholder};
 use crate::manifest::DefinitionOverrides;
 use pywr_schema::meta::{ComponentMeta, ProvenanceSource};
+use pywr_schema::metric::MetricValueType;
 use pywr_schema::model::{Metadata, MultiNetworkEntry, MultiNetworkTransfer, ScenarioDomain, TimeDomain};
 use pywr_schema::{
     ModelSchema, MultiNetworkModelSchema, NetworkMergeOptions, NetworkSchema, NetworkSchemaReadError, NetworkSchemaRef,
@@ -450,26 +451,40 @@ impl ComposedMultiModelSchemas {
 
 /// The inter-network transfers that `network` reads, each once, in the order first read.
 fn transfers_read(network: &NetworkSchema) -> Vec<String> {
-    let mut names: Vec<String> = Vec::new();
-    network.visit_references(&mut |reference| {
-        if let Reference::InterNetworkTransfer(name) = reference
-            && !names.iter().any(|other| other == name)
-        {
-            names.push(name.to_string());
-        }
-    });
-    names
+    transfer_reads(network).into_iter().map(|(name, _)| name).collect()
 }
 
-/// Check that each transfer a network reads is declared as a transfer into it.
+/// The inter-network transfers that `network` reads, each once per kind of value read, in the
+/// order first read.
+fn transfer_reads(network: &NetworkSchema) -> Vec<(String, MetricValueType)> {
+    let mut reads: Vec<(String, MetricValueType)> = Vec::new();
+    network.visit_references(&mut |reference| {
+        if let Reference::InterNetworkTransfer { name, metric } = reference
+            && !reads.iter().any(|(other, m)| other == name && *m == metric)
+        {
+            reads.push((name.to_string(), metric));
+        }
+    });
+    reads
+}
+
+/// Check that each transfer a network reads is declared as a transfer into it, and that a
+/// transfer read as an index is an index transfer.
 fn check_transfers_declared(networks: &[MultiNetworkEntry]) -> Result<(), ComposeToSchemaError> {
     for entry in networks {
         let NetworkSchemaRef::Inline(network) = &entry.network else {
             continue;
         };
-        for transfer in transfers_read(network) {
-            if !entry.transfers.iter().any(|declared| declared.name == transfer) {
+        for (transfer, metric) in transfer_reads(network) {
+            let Some(declared) = entry.transfers.iter().find(|declared| declared.name() == transfer) else {
                 return Err(ComposeToSchemaError::TransferNotDeclared {
+                    network: entry.name.clone(),
+                    transfer,
+                });
+            };
+            // An index transfer can be read as a float, but a float transfer not as an index.
+            if metric == MetricValueType::Index && declared.value_type() == MetricValueType::Float {
+                return Err(ComposeToSchemaError::TransferNotAnIndex {
                     network: entry.name.clone(),
                     transfer,
                 });
@@ -517,11 +532,11 @@ fn check_transfer_components(networks: &[MultiNetworkEntry]) -> Result<(), Compo
     };
     for entry in networks {
         for transfer in &entry.transfers {
-            let Some(source) = inline(&transfer.from_network) else {
+            let Some(source) = inline(transfer.from_network()) else {
                 continue;
             };
             let mut missing = None;
-            transfer.metric.visit_references(&mut |reference| {
+            transfer.visit_references(&mut |reference| {
                 if missing.is_some() {
                     return;
                 }
@@ -541,8 +556,8 @@ fn check_transfer_components(networks: &[MultiNetworkEntry]) -> Result<(), Compo
             if let Some(component) = missing {
                 return Err(ComposeToSchemaError::TransferComponentNotFound {
                     network: entry.name.clone(),
-                    transfer: transfer.name.clone(),
-                    from_network: transfer.from_network.clone(),
+                    transfer: transfer.name().to_string(),
+                    from_network: transfer.from_network().to_string(),
                     component,
                 });
             }

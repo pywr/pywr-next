@@ -23,6 +23,7 @@
       "network": "network2.json",
       "transfers": [
         {
+          "type": "Float",
           "from_network": "network1",
           "metric": {
             "type": "Node",

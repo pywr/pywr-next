@@ -993,6 +993,7 @@ mod tests {
                     "network": "network2.json",
                     "transfers": [
                         {
+                            "type": "Float",
                             "from_network": "network1",
                             "metric": { "type": "Node", "name": "demand1", "attribute": "Inflow" },
                             "name": "inflow"
