@@ -447,11 +447,6 @@ impl VisitReferences for Metric {
 impl VisitReferences for IndexMetric {
     fn visit_references<F: FnMut(Reference<'_>)>(&self, visitor: &mut F) {
         match self {
-            IndexMetric::Node(node_ref) => visitor(Reference::Node {
-                name: &node_ref.name,
-                attribute: node_ref.attribute,
-                metric: Some(MetricValueType::Index),
-            }),
             IndexMetric::Table(table_ref) => visitor(Reference::Table {
                 table_ref,
                 expected: DataTableValueType::Scalar,
@@ -477,7 +472,6 @@ impl VisitReferences for IndexMetric {
 
     fn visit_references_mut<F: FnMut(ReferenceMut<'_>)>(&mut self, visitor: &mut F) {
         match self {
-            IndexMetric::Node(node_ref) => visitor(ReferenceMut::Node(&mut node_ref.name)),
             IndexMetric::Table(table_ref) => visitor(ReferenceMut::Table(&mut table_ref.table)),
             IndexMetric::TimeSeries(ts_ref) => ts_ref.visit_references_mut(visitor),
             IndexMetric::Parameter(p_ref) => visitor(ReferenceMut::Parameter(&mut p_ref.name)),
@@ -847,7 +841,7 @@ mod tests {
                     { "type": "VirtualNode", "name": "virtual-node-metric" },
                     { "type": "Edge", "edge": { "from_node": "metric-edge-from", "to_node": "metric-edge-to" } }
                 ],
-                "index_metric": { "type": "Node", "name": "index-metric" }
+                "index_metric": { "type": "Constant", "value": 0 }
             }
         ],
         "metric_sets": [
@@ -875,7 +869,6 @@ mod tests {
                 "Node:aggregated-storage-nodes",
                 "Node:edge-from",
                 "Node:edge-to",
-                "Node:index-metric",
                 "Node:metric-edge-from",
                 "Node:metric-edge-to",
                 "Node:metric-set-metric",
@@ -957,7 +950,7 @@ mod tests {
                         "name": "index-metric-time-series",
                         "columns": { "type": "Scenario", "name": "time-series-columns-scenario-group" }
                     },
-                    { "type": "Node", "name": "index-metric-node" }
+                    { "type": "Constant", "value": 1 }
                 ]
             },
             {
@@ -998,7 +991,7 @@ mod tests {
     /// Every reference in [`NETWORK_WITH_REFERENCES`], sorted. Definitions are absent: the metric
     /// set `ms1` is defined but never named, and the `edges` entry contributes only its endpoints.
     /// So is `time-series-column`, which resolves in the time series' own data.
-    const EXPECTED_REFERENCES: [&str; 27] = [
+    const EXPECTED_REFERENCES: [&str; 26] = [
         "Edge:metric-edge-from->metric-edge-to",
         "LocalParameter:index-metric-local-parameter",
         "LocalParameter:node-local-parameter",
@@ -1009,7 +1002,6 @@ mod tests {
         "Node:aggregated-node-component",
         "Node:edge-from",
         "Node:edge-to",
-        "Node:index-metric-node",
         "Node:metric-edge-from",
         "Node:metric-edge-to",
         "Parameter:index-metric-parameter",
@@ -1171,7 +1163,6 @@ mod tests {
                 "parameter \"constant-scenario\": ScenarioGroup:constant-scenario-group",
                 "parameter \"constant-scenario\": Table:constant-scenario-values-table",
                 "parameter \"index-agg\": LocalParameter:index-metric-local-parameter",
-                "parameter \"index-agg\": Node:index-metric-node",
                 "parameter \"index-agg\": ScenarioGroup:time-series-columns-scenario-group",
                 "parameter \"index-agg\": Table:index-metric-table",
                 "parameter \"index-agg\": TimeSeries:index-metric-time-series",

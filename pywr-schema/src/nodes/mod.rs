@@ -57,7 +57,7 @@ mod water_treatment_works;
 mod virtual_nodes;
 
 use crate::error::{ComponentConversionError, ConversionError, SchemaError};
-use crate::metric::{Metric, MetricValueType};
+use crate::metric::Metric;
 #[cfg(feature = "core")]
 use crate::network::LoadArgs;
 use crate::parameters::{Parameter, validate_each_parameter};
@@ -636,19 +636,11 @@ impl Node {
         }
     }
 
-    /// Check that a `metric` can read this node's `attribute`, `None` being its default. A
+    /// Check that a metric can read this node's `attribute`, `None` being its default. A
     /// placeholder takes any reference.
-    pub fn validate_reference(
-        &self,
-        attribute: Option<NodeAttribute>,
-        metric: MetricValueType,
-    ) -> Result<(), NodeReferenceProblem> {
+    pub fn validate_reference(&self, attribute: Option<NodeAttribute>) -> Result<(), NodeReferenceProblem> {
         if self.is_placeholder() {
             return Ok(());
-        }
-
-        if metric == MetricValueType::Index {
-            return Err(NodeReferenceProblem::NotAnIndex);
         }
 
         let Some(attribute) = attribute else {
@@ -1434,11 +1426,10 @@ mod tests {
         }
     }
 
-    /// [`Node::validate_reference`] should refuse a node read as an index before checking the
-    /// attribute, and pass the default attribute and a placeholder.
+    /// [`Node::validate_reference`] should refuse an attribute the node does not have, and pass the
+    /// default attribute and a placeholder.
     #[test]
     fn test_validate_reference_checks_each_rule() {
-        use crate::metric::MetricValueType::{Float, Index};
         use crate::nodes::NodeAttribute::{Outflow, Volume};
         use crate::validation::NodeReferenceProblem::*;
 
@@ -1446,26 +1437,24 @@ mod tests {
         let placeholder = Node::from(NodeType::Placeholder);
 
         let cases = [
-            (&link, None, Float, Ok(())),
-            (&link, Some(Outflow), Float, Ok(())),
+            (&link, None, Ok(())),
+            (&link, Some(Outflow), Ok(())),
             (
                 &link,
                 Some(Volume),
-                Float,
                 Err(AttributeNotSupported {
                     attribute: Volume,
                     supported: link.attributes(),
                 }),
             ),
-            (&link, Some(Volume), Index, Err(NotAnIndex)),
-            (&placeholder, Some(Volume), Index, Ok(())),
+            (&placeholder, Some(Volume), Ok(())),
         ];
 
-        for (node, attribute, metric, expected) in cases {
+        for (node, attribute, expected) in cases {
             assert_eq!(
-                node.validate_reference(attribute, metric),
+                node.validate_reference(attribute),
                 expected,
-                "{} reading {attribute:?} as {metric:?}",
+                "{} reading {attribute:?}",
                 node.node_type()
             );
         }
