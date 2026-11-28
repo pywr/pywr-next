@@ -369,16 +369,16 @@ impl BuiltSolver {
             match node.node_type() {
                 NodeType::Input | NodeType::Output | NodeType::Link => {
                     if !node.is_max_flow_unconstrained().unwrap() {
-                        // Flow nodes will only respect the upper bounds
+                        // Flow nodes will only respect the upper bounds: the IPM solvers do not
+                        // enforce a node's minimum flow.
                         let ub: Vec<f64> = states
                             .iter()
-                            .map(|state| {
-                                // TODO check for non-zero lower bounds and error?
-                                match node.get_bounds(network, state).expect("Failed to get node bounds.") {
+                            .map(
+                                |state| match node.get_bounds(network, state).expect("Failed to get node bounds.") {
                                     NodeBounds::Flow(bounds) => bounds.max_flow.min(B_MAX),
                                     _ => panic!("Flow bounds expected for Input, Output and Link nodes."),
-                                }
-                            })
+                                },
+                            )
                             .collect();
                         // Apply the bounds to LP
                         self.lp.apply_row_bounds(*row_ids.next().unwrap(), ub.as_slice());

@@ -11,6 +11,10 @@ pub struct F64;
 /// Settings for the OpenCL IPM solvers.
 ///
 /// Create new settings using [`ClIpmSolverSettingsBuilder`] or use the default implementation;
+///
+/// The IPM solvers apply only each node's maximum flow. A node's minimum flow is not enforced, so
+/// a model whose minimum flows bind gives different results than with the LP solvers. Aggregated
+/// nodes, virtual storage and mutual exclusivity are not supported.
 #[derive(PartialEq, Debug)]
 pub struct ClIpmSolverSettings<P> {
     parallel: bool,

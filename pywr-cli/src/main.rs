@@ -29,10 +29,13 @@ enum Solver {
     Highs,
     #[cfg(feature = "cbc")]
     Cbc,
+    /// Interior-point solver; does not enforce minimum flows.
     #[cfg(feature = "ipm-ocl")]
     CLIPMF32,
+    /// Interior-point solver; does not enforce minimum flows.
     #[cfg(feature = "ipm-ocl")]
     CLIPMF64,
+    /// Interior-point solver; does not enforce minimum flows.
     #[cfg(feature = "ipm-simd")]
     IpmSimd,
     #[cfg(feature = "microlp")]
