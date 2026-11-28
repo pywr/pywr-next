@@ -51,7 +51,6 @@ pub enum Hdf5Error {
 pub struct HDF5Recorder {
     meta: RecorderMeta,
     filename: PathBuf,
-    // TODO this could support saving multiple metric sets in different groups
     metric_set_idx: MetricSetIndex,
 }
 
@@ -402,7 +401,6 @@ fn write_scenarios_metadata(file: &hdf5_metno::File, domain: &ScenarioDomain) ->
 pub struct HDF5RecorderBuilder {
     meta: RecorderMeta,
     filename: PathBuf,
-    // TODO this could support saving multiple metric sets in different groups
     metric_set: String,
 }
 

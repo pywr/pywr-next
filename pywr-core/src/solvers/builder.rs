@@ -559,7 +559,7 @@ where
                 // Only update pairs with a row index (i.e. not fixed)
                 if let Some(row_idx) = row_idx {
                     // Modify the constraint matrix coefficients for the nodes
-                    // TODO error handling?
+                    // The node indices come from the network itself, so they are always found.
                     let nodes = network.nodes();
                     for node0_idx in node_pair.node0_indices() {
                         let node0 = nodes.get(**node0_idx).expect("Node index not found!");
@@ -785,12 +785,9 @@ where
                 let incoming_edges = node.get_incoming_edges().unwrap();
                 let outgoing_edges = node.get_outgoing_edges().unwrap();
 
-                // TODO use Display for the error message
-                if incoming_edges.is_empty() {
-                    panic!("Node {:?} contains no incoming edges 💥", node.full_name())
-                }
-                if outgoing_edges.is_empty() {
-                    panic!("Node {:?} contains no outgoing edges 💥", node.full_name())
+                // `NodeBuilder` rejects a link node without incoming or outgoing edges.
+                if incoming_edges.is_empty() || outgoing_edges.is_empty() {
+                    unreachable!("Link node `{}` has no incoming or outgoing edges.", node.name())
                 }
 
                 for edge in incoming_edges {
@@ -1000,7 +997,7 @@ where
 
                     let mut row = RowBuilder::default();
 
-                    // TODO error handling?
+                    // The node indices come from the network itself, so they are always found.
                     let nodes = network.nodes();
 
                     let f0 = node_pair.node0_factor();
@@ -1057,7 +1054,7 @@ where
             let mut row: RowBuilder<I> = RowBuilder::default();
 
             for node_indices in agg_node.iter_nodes() {
-                // TODO error handling?
+                // The node indices come from the network itself, so they are always found.
                 for node_idx in node_indices {
                     let node = network.nodes().get(**node_idx).expect("Node index not found!");
                     self.add_node(node, 1.0, &mut row);

@@ -29,10 +29,13 @@ enum Solver {
     Highs,
     #[cfg(feature = "cbc")]
     Cbc,
+    /// Interior-point solver; does not enforce minimum flows.
     #[cfg(feature = "ipm-ocl")]
     CLIPMF32,
+    /// Interior-point solver; does not enforce minimum flows.
     #[cfg(feature = "ipm-ocl")]
     CLIPMF64,
+    /// Interior-point solver; does not enforce minimum flows.
     #[cfg(feature = "ipm-simd")]
     IpmSimd,
     #[cfg(feature = "microlp")]
@@ -82,8 +85,8 @@ enum Commands {
     Convert {
         /// Path to Pywr v1.x JSON.
         input: PathBuf,
-        /// Path to output Pywr v2 JSON.
-        // TODO support printing to stdout?
+        /// Path to output Pywr v2 JSON, or `-` to print it to stdout. Must be a directory if
+        /// `input` is.
         output: PathBuf,
         /// Stop if there is an error converting the model.
         #[arg(short, long, default_value_t = false)]
@@ -323,7 +326,7 @@ fn convert(in_path: &Path, out_path: &Path, stop_on_error: bool, network_only: b
         }
     } else {
         if out_path.is_dir() {
-            bail!("Output path must be a file when input path is a file");
+            bail!("Output path must be a file, or `-` for stdout, when input path is a file");
         }
 
         v1_to_v2(in_path, out_path, stop_on_error, network_only)?;
@@ -345,11 +348,9 @@ fn v1_to_v2(in_path: &Path, out_path: &Path, stop_on_error: bool, network_only: 
 
         handle_conversion_errors(&errors, stop_on_error)?;
 
-        std::fs::write(
-            out_path,
-            serde_json::to_string_pretty(&schema_v2).with_context(|| "Failed serialise Pywr v2 network".to_string())?,
-        )
-        .with_context(|| format!("Failed to write file: {out_path:?}",))?;
+        let json =
+            serde_json::to_string_pretty(&schema_v2).with_context(|| "Failed serialise Pywr v2 network".to_string())?;
+        write_output(out_path, &json)?;
     } else {
         // Load the v1 schema
         let schema: pywr_v1_schema::PywrModel = serde_json::from_str(data.as_str())
@@ -359,14 +360,22 @@ fn v1_to_v2(in_path: &Path, out_path: &Path, stop_on_error: bool, network_only: 
 
         handle_conversion_errors(&errors, stop_on_error)?;
 
-        std::fs::write(
-            out_path,
-            serde_json::to_string_pretty(&schema_v2).with_context(|| "Failed serialise Pywr v2 model".to_string())?,
-        )
-        .with_context(|| format!("Failed to write file: {out_path:?}",))?;
+        let json =
+            serde_json::to_string_pretty(&schema_v2).with_context(|| "Failed serialise Pywr v2 model".to_string())?;
+        write_output(out_path, &json)?;
     }
 
     Ok(())
+}
+
+/// Write `json` to `out_path`, or to stdout if `out_path` is `-`.
+fn write_output(out_path: &Path, json: &str) -> Result<()> {
+    if out_path == Path::new("-") {
+        println!("{json}");
+        Ok(())
+    } else {
+        std::fs::write(out_path, json).with_context(|| format!("Failed to write file: {out_path:?}",))
+    }
 }
 
 fn handle_conversion_errors(errors: &[ComponentConversionError], stop_on_error: bool) -> Result<()> {

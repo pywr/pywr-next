@@ -295,6 +295,9 @@ Feature flags (defaults for this crate when used directly):
 For schema validation and manipulation without the simulation engine, use `default-features = false`.
 Solver availability in applications depends on their enabled features and exposed interfaces; OpenCL also requires
 a suitable runtime and device.
+The IPM solvers (`ipm-ocl` and `ipm-simd`) apply only each node's maximum flow: they do not enforce a minimum flow,
+so a model whose minimum flows bind gives different results with them than with the LP solvers. They also do not
+support aggregated nodes, virtual storage or mutual exclusivity.
 
 ### Pywr-cli
 

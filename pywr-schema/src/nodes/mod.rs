@@ -1107,10 +1107,26 @@ impl TryFromV1<Box<CoreNodeV1>> for NodeOrVirtualNode {
                 VirtualNode::VirtualStorage(n.try_into_v2(parent_node, conversion_data)?).into()
             }
             CoreNodeV1::PiecewiseLink(n) => Node::PiecewiseLink(n.try_into_v2(parent_node, conversion_data)?).into(),
-            CoreNodeV1::MultiSplitLink(_) => todo!(),
+            CoreNodeV1::MultiSplitLink(n) => {
+                return Err(Box::new(ComponentConversionError::Node {
+                    name: n.meta.name,
+                    attr: "".to_string(),
+                    error: ConversionError::UnsupportedFeature {
+                        feature: "MultiSplitLink nodes cannot be converted; rebuild them from Link nodes with an Aggregated node to set the split factors.".to_string(),
+                    },
+                }));
+            }
             CoreNodeV1::BreakLink(n) => Node::Link(n.try_into_v2(parent_node, conversion_data)?).into(),
             CoreNodeV1::Delay(n) => Node::Delay(n.try_into()?).into(),
-            CoreNodeV1::RiverSplit(_) => todo!("Conversion of RiverSplit nodes"),
+            CoreNodeV1::RiverSplit(n) => {
+                return Err(Box::new(ComponentConversionError::Node {
+                    name: n.meta.name,
+                    attr: "".to_string(),
+                    error: ConversionError::UnsupportedFeature {
+                        feature: "RiverSplit nodes cannot be converted; consider a RiverSplitWithGauge node without an `mrf` instead.".to_string(),
+                    },
+                }));
+            }
             CoreNodeV1::MonthlyVirtualStorage(n) => {
                 VirtualNode::VirtualStorage(n.try_into_v2(parent_node, conversion_data)?).into()
             }

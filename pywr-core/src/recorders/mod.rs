@@ -8,7 +8,6 @@ mod hdf;
 mod memory;
 mod metric_set;
 mod parquet;
-mod py;
 mod snapshot;
 
 use crate::metric::{
@@ -776,11 +775,8 @@ mod tests {
 
         let model = model_builder.build().unwrap();
 
-        // Test all solvers
+        // Test all solvers. The recorder keeps its array in its internal state and does not return
+        // it, so this checks only that it records without error.
         run_all_solvers(&model, &[], &[], &[]);
-
-        // TODO fix this with respect to the trait.
-        // let array = rec.data_view2().unwrap();
-        // assert_almost_eq!(array[[0, 0]], 10.0);
     }
 }

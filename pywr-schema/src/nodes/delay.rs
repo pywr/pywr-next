@@ -182,7 +182,8 @@ impl TryFrom<DelayNodeV1> for DelayNode {
     fn try_from(v1: DelayNodeV1) -> Result<Self, Self::Error> {
         let meta: NodeMeta = try_convert_node_meta(v1.meta)?;
 
-        // TODO convert days & timesteps to a usize as we don;t support non-daily timesteps at the moment
+        // The v2 delay is a number of time-steps; v1 `days` are taken as time-steps, which is the
+        // same for the daily time-step v1 models use.
         let delay = match v1.days {
             Some(days) => days,
             None => match v1.timesteps {

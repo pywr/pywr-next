@@ -48,9 +48,12 @@ impl PythonAggFunc {
     }
 }
 
+/// Settings for the [`AggFunc::AnyNonZero`] aggregation function.
 #[derive(Deserialize, Serialize, Debug, Default, Clone, JsonSchema, PywrVisitAll)]
 #[serde(deny_unknown_fields)]
 pub struct AnyNonZero {
+    /// Values with an absolute value at or below this are counted as zero. Defaults to
+    /// [`AnyNonZero::DEFAULT_TOLERANCE`].
     pub tolerance: Option<f64>,
 }
 
@@ -67,24 +70,31 @@ impl AnyNonZero {
     }
 }
 
-// TODO complete these
 /// Aggregation functions for float values.
 ///
-/// This enum defines the possible aggregation functions that can be applied to index metrics.
-/// They are mapped to the corresponding functions in the `pywr_core::parameters::AggFunc` enum
+/// This enum defines the possible aggregation functions that can be applied to float metrics.
+/// They are mapped to the corresponding functions in the `pywr_core::agg_funcs::AggFuncF64` enum
 /// when used in the core library.
 #[derive(Deserialize, Serialize, Debug, Clone, JsonSchema, PywrVisitAll, Display, EnumDiscriminants)]
 #[serde(tag = "type", deny_unknown_fields)]
 #[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
 #[strum_discriminants(name(AggFuncType))]
 pub enum AggFunc {
+    /// Sum of all values.
     Sum,
+    /// Maximum value among all values.
     Max,
+    /// Minimum value among all values.
     Min,
+    /// Product of all values.
     Product,
+    /// Mean of all values. Over time, each value is weighted by the length of its time-step.
     Mean,
+    /// The number of values that are not exactly zero.
     CountNonZero,
+    /// Returns 1 if any value is non-zero, within a tolerance, otherwise 0.
     AnyNonZero(AnyNonZero),
+    /// A function implemented in Python, called with the list of values.
     Python(PythonAggFunc),
 }
 
@@ -130,11 +140,10 @@ impl From<AggFuncV1> for AggFunc {
     }
 }
 
-// TODO complete these
 /// Aggregation functions for index (integer) values.
 ///
 /// This enum defines the possible aggregation functions that can be applied to index metrics.
-/// They are mapped to the corresponding functions in the `pywr_core::parameters::AggIndexFunc` enum
+/// They are mapped to the corresponding functions in the `pywr_core::agg_funcs::AggFuncU64` enum
 /// when used in the core library.
 #[derive(Deserialize, Serialize, Debug, Clone, JsonSchema, PywrVisitAll, Display, EnumDiscriminants)]
 #[serde(tag = "type", deny_unknown_fields)]
@@ -153,6 +162,7 @@ pub enum IndexAggFunc {
     Any,
     /// Returns 1 if all values are non-zero, otherwise 0.
     All,
+    /// A function implemented in Python, called with the list of values.
     Python(PythonAggFunc),
 }
 

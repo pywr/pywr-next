@@ -238,8 +238,8 @@ impl LossLinkNode {
         args: &LoadArgs,
     ) -> Result<(), SchemaError> {
         let mut net_node = pywr_core::node::NodeBuilder::link(self.net_sub_name());
-        // TODO make the loss node configurable (i.e. it could be a link if a network wanted to use the loss)
-        // The above would need to support slots in the connections.
+        // The loss goes to an output node. Making it a link, so a network could use the loss,
+        // would need a slot for it in the node's connections.
 
         if let Some(cost) = &self.net_cost {
             let value = cost.load(network, args, Some(&self.meta.name))?;
