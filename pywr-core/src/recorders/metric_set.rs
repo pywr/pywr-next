@@ -104,6 +104,8 @@ impl MetricSetState {
 pub enum MetricSetSaveError {
     #[error("Metric error.")]
     MetricF64Error(#[from] MetricF64Error),
+    #[error("Metric set `{name}` has an aggregator, but its state was set up without one.")]
+    AggregationStateMissing { name: String },
 }
 
 /// A set of metrics with an optional aggregator
@@ -155,11 +157,11 @@ impl MetricSet {
         if let Some(aggregator) = &self.aggregator {
             // Apply aggregation if required
 
-            // TODO: make this a `PywrError`.
-            let aggregation_states = internal_state
-                .aggregation_states
-                .as_mut()
-                .expect("Aggregation state expected for metric set with aggregator!");
+            let aggregation_states = internal_state.aggregation_states.as_mut().ok_or_else(|| {
+                MetricSetSaveError::AggregationStateMissing {
+                    name: self.name.clone(),
+                }
+            })?;
 
             // Collect any aggregated values. This will remain empty if the aggregator yields
             // no values. However, if there are values we will expect the same number of aggregated

@@ -335,9 +335,9 @@ impl Solver for CbcSolver {
         self.template.change_row_upper(self.builder.row_upper());
 
         if !self.builder.coefficients_to_update().is_empty() {
+            // Waiting for support in CBC's C API: https://github.com/coin-or/Cbc/pull/656
+            // Once it lands: self.cbc.modify_coefficient(*row, *column, *coefficient)
             return Err(SolverSolveError::MissingSolverFeatures);
-            // TODO waiting for support in CBC's C API: https://github.com/coin-or/Cbc/pull/656
-            // self.cbc.modify_coefficient(*row, *column, *coefficient)
         }
 
         timings.update_constraints += now.elapsed();

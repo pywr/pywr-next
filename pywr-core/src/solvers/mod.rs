@@ -195,7 +195,9 @@ pub enum SolverSolveError {
     NodeIndexNotFound(NodeIndex),
     #[error("Aggregated node index not found: {0}")]
     AggregatedNodeIndexNotFound(AggregatedNodeIndex),
-    #[error("missing solver features")]
+    #[error(
+        "The solver cannot change constraint coefficients during a run, which aggregated nodes with dynamic factors need. Use a different solver, such as `clp` or `highs`."
+    )]
     MissingSolverFeatures,
     #[error("Network state error.")]
     NetworkStateError(#[from] crate::state::NetworkStateError),
