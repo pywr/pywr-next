@@ -759,8 +759,6 @@ impl Network {
             .zip(solvers)
             .try_for_each(
                 |((((scenario_index, current_state), p_internal_states), ms_internal_states), solver)| {
-                    // TODO clear the current parameter values state (i.e. set them all to zero).
-
                     let start_p_calc = Instant::now();
                     self.before(
                         timestep,
@@ -823,8 +821,6 @@ impl Network {
             .zip(solvers)
             .map(
                 |((((scenario_index, current_state), p_internal_state), ms_internal_state), solver)| {
-                    // TODO clear the current parameter values state (i.e. set them all to zero).
-
                     let start_p_calc = Instant::now();
                     self.before(timestep, scenario_index, current_state, p_internal_state, None)
                         .unwrap();
@@ -883,8 +879,6 @@ impl Network {
             .zip(&mut state.states)
             .zip(&mut state.parameter_internal_states)
             .map(|((scenario_index, current_state), p_internal_states)| {
-                // TODO clear the current parameter values state (i.e. set them all to zero).
-
                 let start_p_calc = Instant::now();
                 self.before(timestep, scenario_index, current_state, p_internal_states, None)
                     .unwrap();
@@ -986,7 +980,6 @@ impl Network {
         timings: Option<&mut ComponentTimings>,
     ) -> Result<(), NetworkStepError> {
         state.set_calculation_phase(CalculationPhase::Before);
-        // TODO reset parameter state to zero
 
         // First we update the simple parameters
         self.parameters
@@ -2083,7 +2076,7 @@ impl NetworkBuilder {
             aggregated_nodes,
             aggregated_storage_nodes,
             edges,
-            domain: domain.clone(), // TODO can this clone be removed; needs tying to the lifetime of the reference in `build`.
+            domain: domain.clone(),
             inter_network_transfers: inter_network_transfer_map.clone(),
             metric_sets,
         })

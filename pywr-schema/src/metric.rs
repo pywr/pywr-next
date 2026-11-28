@@ -921,8 +921,8 @@ impl TryFromV1<ParameterValueV1> for IndexMetric {
         conversion_data: &mut ConversionData,
     ) -> Result<Self, Self::Error> {
         let p = match v1 {
-            // There was no such thing as s constant index in Pywr v1
-            // TODO this could print a warning and do a cast to usize instead.
+            // There was no such thing as a constant index in Pywr v1. A whole, non-negative float
+            // is converted; anything else is an error rather than a silent rounding.
             ParameterValueV1::Constant(value) => {
                 // Check if the value is not a whole non-negative number
                 if value.fract() != 0.0 || value < 0.0 {

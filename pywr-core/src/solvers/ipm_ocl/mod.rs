@@ -498,8 +498,7 @@ impl SolverBuilder {
                 let incoming_edges = node.get_incoming_edges().unwrap();
                 let outgoing_edges = node.get_outgoing_edges().unwrap();
 
-                // TODO check for length >= 1
-
+                // Link nodes always have incoming and outgoing edges; `NodeBuilder` rejects them otherwise.
                 for edge in incoming_edges {
                     let column = self.col_for_edge(edge);
                     row.add_element(column, 1.0);

@@ -598,7 +598,7 @@ impl TryFromV1<RbfProfileParameterV1> for RbfProfileParameter {
             meta,
             points,
             function,
-            variable: None, // TODO convert variable settings
+            variable: None, // v1 variable settings are not converted; see the migration guide.
         };
 
         Ok(p)

@@ -2090,9 +2090,23 @@ mod core_tests {
             ]);
         }
 
-        // TODO this could assert a specific type of error
         let builder = schema.create_model_builder(&FileSystem, None, None).unwrap();
-        assert!(builder.build().is_err());
+        let Err(error) = builder.build() else {
+            panic!("a parameter cycle should fail to build");
+        };
+        let pywr_core::models::ModelBuilderError::NetworkBuildError(
+            pywr_core::network::NetworkBuildError::ParameterCollectionBuildError(coll_err),
+        ) = &error
+        else {
+            panic!("expected a parameter collection error: {error:?}");
+        };
+        assert!(
+            matches!(
+                coll_err.as_ref(),
+                pywr_core::parameters::ParameterCollectionBuilderError::CircularParameterReference { .. }
+            ),
+            "expected a circular reference error: {error:?}"
+        );
     }
 
     /// Test that a model loads if the aggregated parameter is defined before its dependencies.
@@ -2147,8 +2161,8 @@ mod core_tests {
                 }),
             ]);
         }
-        // TODO this could assert a specific type of error
-        let _ = schema.create_model_builder(&FileSystem, None, None).unwrap();
+        let builder = schema.create_model_builder(&FileSystem, None, None).unwrap();
+        builder.build().unwrap();
     }
 
     /// Test the multi1 model

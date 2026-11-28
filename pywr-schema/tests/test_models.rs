@@ -244,7 +244,7 @@ fn convert_model(v1_path: &Path, v2_path: &Path) {
     let (v2, errors) = ModelSchema::from_v1(v1);
     println!("Conversion errors: {errors:?}",);
 
-    // TODO Table conversion is not yet supported, so ignore those errors for now
+    // v1 tables are not converted, so their errors are expected.
     let non_table_errors: Vec<_> = errors
         .iter()
         .filter(|error| !matches!(error, ComponentConversionError::Table { .. }))

@@ -586,7 +586,7 @@ impl NetworkSchema {
             });
         }
 
-        // TODO convert v1 tables!
+        // v1 tables are not converted; each one is reported as an error above.
         let tables = None;
         let outputs = None;
         let metric_sets = None;

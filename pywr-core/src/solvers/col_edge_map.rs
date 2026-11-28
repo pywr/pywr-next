@@ -71,8 +71,7 @@ where
     /// Add a new column to the map
     pub fn add_simple_edge(&mut self, idx: EdgeIndex) {
         if self.edge_to_col.contains_key(&idx) {
-            // TODO maybe this should be an error?
-            // panic!("Cannot add the same edge index twice.");
+            // The edge may already have a column, from an earlier call to `add_equal_edges`.
             return;
         }
         // Next column id;
