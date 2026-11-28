@@ -311,20 +311,6 @@ impl NodeAttrReference {
         node.create_metric(network, self.attribute)
     }
 
-    /// Load a node reference into an [`UnresolvedMetricU64`].
-    #[cfg(feature = "core")]
-    pub fn load_u64(&self, args: &LoadArgs) -> Result<UnresolvedMetricU64, SchemaError> {
-        // This is the associated node in the schema
-        let _node = args
-            .schema
-            .get_node_by_name(&self.name)
-            .ok_or_else(|| SchemaError::NodeNotFound {
-                name: self.name.clone(),
-            })?;
-
-        todo!("Support usize attributes on nodes.")
-    }
-
     /// Return the attribute of the node. If the attribute is not specified then the default
     /// attribute of the node is returned. Note that this does not check if the attribute is
     /// valid for the node.
@@ -395,24 +381,6 @@ impl VirtualNodeAttrReference {
                 })?;
 
         node.create_metric(self.attribute)
-    }
-
-    /// Load a node reference into an [`UnresolvedMetricU64`].
-    #[cfg(feature = "core")]
-    pub fn load_u64(
-        &self,
-        _network: &mut pywr_core::network::Network,
-        args: &LoadArgs,
-    ) -> Result<UnresolvedMetricU64, SchemaError> {
-        // This is the associated node in the schema
-        let _node =
-            args.schema
-                .get_virtual_node_by_name(&self.name)
-                .ok_or_else(|| SchemaError::VirtualNodeNotFound {
-                    name: self.name.clone(),
-                })?;
-
-        todo!("Support usize attributes on nodes.")
     }
 
     /// Return the attribute of the node. If the attribute is not specified then the default
@@ -830,18 +798,12 @@ impl EdgeReference {
 #[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
 #[strum_discriminants(name(IndexMetricType))]
 pub enum IndexMetric {
-    Constant {
-        value: u64,
-    },
+    Constant { value: u64 },
     Table(TableDataRef),
-    /// An attribute of a node.
-    Node(NodeAttrReference),
     TimeSeries(TimeSeriesReference),
     Parameter(ParameterReference),
     LocalParameter(LocalParameterReference),
-    InterNetworkTransfer {
-        name: String,
-    },
+    InterNetworkTransfer { name: String },
 }
 
 /// The type of value a metric gives: a float for a [`Metric`], an index for an [`IndexMetric`].
@@ -872,7 +834,6 @@ impl IndexMetric {
         parent: Option<&str>,
     ) -> Result<UnresolvedMetricU64, SchemaError> {
         match self {
-            Self::Node(node_ref) => node_ref.load_u64(args),
             // Global parameter with no parent
             Self::Parameter(parameter_ref) => Ok(parameter_ref.load_u64()),
             // Local parameter loaded from parent's namespace
@@ -991,5 +952,14 @@ mod test {
         let v1 = ParameterValueV1::Constant(-1.0);
         let result = IndexMetric::try_from_v1(v1, None, &mut Default::default());
         assert_eq!(result, Err(ConversionError::FloatToIndex {}));
+    }
+    /// Nodes give only float values, so an index metric cannot name one.
+    #[test]
+    fn test_index_metric_rejects_node() {
+        let result: Result<IndexMetric, _> = serde_json::from_value(serde_json::json!({
+            "type": "Node",
+            "name": "demand1",
+        }));
+        assert!(result.is_err());
     }
 }

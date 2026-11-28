@@ -173,8 +173,6 @@ pub enum NodeReferenceProblem {
         /// The attributes nodes of this type do have.
         supported: Vec<NodeAttribute>,
     },
-    /// An index metric naming a node, which gives only float values.
-    NotAnIndex,
 }
 
 impl NodeReferenceProblem {
@@ -186,7 +184,6 @@ impl NodeReferenceProblem {
                 "{owner} reads the attribute `{attribute}` of {node}, but nodes of its type do not have it. {}",
                 attribute_list_message(supported)
             ),
-            Self::NotAnIndex => format!("{owner} uses {node} as an index, but nodes give only float values."),
         }
     }
 }

@@ -139,12 +139,12 @@ impl NetworkSchema {
                 Reference::Node {
                     name,
                     attribute,
-                    metric: Some(metric),
+                    metric: Some(_),
                 } => {
                     let Some(node) = self.get_node_by_name(name) else {
                         return;
                     };
-                    let Err(problem) = node.validate_reference(attribute, metric) else {
+                    let Err(problem) = node.validate_reference(attribute) else {
                         return;
                     };
 
@@ -944,20 +944,12 @@ mod tests {
                     { "type": "Node", "name": "placeholder", "attribute": "Volume" },
                     { "type": "Node", "name": "missing", "attribute": "Volume" }
                 ]
-            },
-            {
-                "meta": { "name": "indexed" },
-                "type": "IndexedArray",
-                "phase": "Before",
-                "metrics": [{ "type": "Literal", "value": 1.0 }],
-                "index_metric": { "type": "Node", "name": "link" }
             }
         ]
     }
     "#;
 
-    /// Every metric reading an attribute its node does not have, and every index metric naming a
-    /// node, is reported, in the order listed.
+    /// Every metric reading an attribute its node does not have is reported, in the order listed.
     #[test]
     fn test_validate_reports_all_invalid_node_references() {
         let network = parse_network(NETWORK_WITH_INVALID_NODE_REFERENCES);
@@ -970,7 +962,6 @@ mod tests {
                 "The node `supply` reads the attribute `Inflow` of the `Storage` node `store`, but nodes of its type do not have it. Their attributes are: `Volume`, `ProportionalVolume`, `MaxVolume`.",
                 "The parameter `total` reads the attribute `Volume` of the `Link` node `link`, but nodes of its type do not have it. Their attributes are: `Inflow`, `Outflow`.",
                 "The parameter `total` reads the attribute `Inflow` of the `VirtualStorage` virtual node `licence`, but nodes of its type do not have it. Their attributes are: `Volume`, `ProportionalVolume`.",
-                "The parameter `indexed` uses the `Link` node `link` as an index, but nodes give only float values.",
             ]
         );
     }

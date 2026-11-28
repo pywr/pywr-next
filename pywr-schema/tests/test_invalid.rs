@@ -73,9 +73,6 @@ invalid_schema_tests! {
     // A monthly profile reading its values from a table of scalars. The core builder would refuse
     // this too, when it asks the table for an array, but validation now refuses it first.
     profile_reads_scalar_table: "profile-reads-scalar-table.json", InvalidTableReference,
-    // An index metric naming a node, which gives only floats. The core builder would panic on
-    // this, but validation now refuses it first.
-    index_metric_names_node: "index-metric-names-node.json", InvalidNodeReference,
     // Two virtual storage nodes giving a node different cost aggregations, one naming the node's
     // default component and the other leaving it out.
     virtual_storage_conflicting_cost_aggregation: "virtual-storage-conflicting-cost-aggregation.json", ConflictingCostAggregation,
