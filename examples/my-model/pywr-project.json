@@ -146,6 +146,7 @@
           },
           "transfers": [
             {
+              "type": "Float",
               "from_network": "company",
               "metric": {
                 "type": "Node",

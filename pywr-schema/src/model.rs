@@ -4,7 +4,7 @@ use crate::data_tables::LoadedTableCollection;
 use crate::error::ComponentConversionError;
 #[cfg(feature = "core")]
 use crate::error::SchemaError;
-use crate::metric::Metric;
+use crate::metric::{IndexMetric, Metric, MetricValueType};
 use crate::network::NetworkSchemaReadError;
 #[cfg(feature = "core")]
 use crate::network::{LoadArgs, NetworkSchemaBuildError};
@@ -889,14 +889,90 @@ impl ModelSchema {
     }
 }
 
+/// A transfer of a float value from another network.
 #[skip_serializing_none]
 #[derive(serde::Deserialize, serde::Serialize, Clone, JsonSchema)]
 #[serde(deny_unknown_fields)]
-pub struct MultiNetworkTransfer {
-    pub from_network: String,
-    pub metric: Metric,
+pub struct FloatTransfer {
+    /// The name of the transfer, which the receiving network reads it by.
     pub name: String,
+    /// The network the value comes from.
+    pub from_network: String,
+    /// The metric in `from_network` that gives the value.
+    pub metric: Metric,
+    /// The value to use on the first time-step, before `from_network` has given a value.
     pub initial_value: Option<f64>,
+}
+
+/// A transfer of an index value from another network.
+#[skip_serializing_none]
+#[derive(serde::Deserialize, serde::Serialize, Clone, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct IndexTransfer {
+    /// The name of the transfer, which the receiving network reads it by.
+    pub name: String,
+    /// The network the value comes from.
+    pub from_network: String,
+    /// The index metric in `from_network` that gives the value.
+    pub metric: IndexMetric,
+    /// The value to use on the first time-step, before `from_network` has given a value.
+    pub initial_value: Option<u64>,
+}
+
+/// A value passed into a network from another network of a multi-network model.
+///
+/// The `type` says whether the transfer carries a float or an index. An index transfer can be
+/// read by both a float metric and an index metric; a float transfer only by a float metric.
+#[derive(serde::Deserialize, serde::Serialize, Clone, JsonSchema, Display, EnumDiscriminants)]
+#[serde(tag = "type", deny_unknown_fields)]
+#[strum_discriminants(derive(Display, IntoStaticStr, EnumString, EnumIter))]
+#[strum_discriminants(name(MultiNetworkTransferType))]
+pub enum MultiNetworkTransfer {
+    Float(FloatTransfer),
+    Index(IndexTransfer),
+}
+
+impl MultiNetworkTransfer {
+    /// The name of the transfer, which the receiving network reads it by.
+    pub fn name(&self) -> &str {
+        match self {
+            Self::Float(t) => &t.name,
+            Self::Index(t) => &t.name,
+        }
+    }
+
+    /// The network the value comes from.
+    pub fn from_network(&self) -> &str {
+        match self {
+            Self::Float(t) => &t.from_network,
+            Self::Index(t) => &t.from_network,
+        }
+    }
+
+    /// Whether the transfer carries a float or an index.
+    pub fn value_type(&self) -> MetricValueType {
+        match self {
+            Self::Float(_) => MetricValueType::Float,
+            Self::Index(_) => MetricValueType::Index,
+        }
+    }
+}
+
+/// Visits the references of the transfer's metric, which resolve in `from_network`.
+impl VisitReferences for MultiNetworkTransfer {
+    fn visit_references<F: FnMut(Reference<'_>)>(&self, visitor: &mut F) {
+        match self {
+            Self::Float(t) => t.metric.visit_references(visitor),
+            Self::Index(t) => t.metric.visit_references(visitor),
+        }
+    }
+
+    fn visit_references_mut<F: FnMut(ReferenceMut<'_>)>(&mut self, visitor: &mut F) {
+        match self {
+            Self::Float(t) => t.metric.visit_references_mut(visitor),
+            Self::Index(t) => t.metric.visit_references_mut(visitor),
+        }
+    }
 }
 
 #[derive(serde::Deserialize, serde::Serialize, Clone, JsonSchema)]
@@ -1188,10 +1264,10 @@ impl MultiNetworkModelSchema {
             let mut t_builders = Vec::with_capacity(network_entry.transfers.len());
             for transfer in &network_entry.transfers {
                 // Load the metric from the "from" network
-                let from_network_idx = *network_builder_map.get(&transfer.from_network).ok_or_else(|| {
+                let from_network_idx = *network_builder_map.get(transfer.from_network()).ok_or_else(|| {
                     MultiNetworkModelSchemaBuildError::AddTransferError {
-                        name: transfer.name.clone(),
-                        source: Box::new(SchemaError::NetworkNotFound(transfer.from_network.clone())),
+                        name: transfer.name().to_string(),
+                        source: Box::new(SchemaError::NetworkNotFound(transfer.from_network().to_string())),
                     }
                 })?;
                 let from_network = &mut network_entry_builders[from_network_idx];
@@ -1208,18 +1284,21 @@ impl MultiNetworkModelSchema {
                     inter_network_transfers: &[],
                 };
 
-                let from_metric = transfer.metric.load(from_network, &args, None).map_err(|source| {
-                    MultiNetworkModelSchemaBuildError::AddTransferError {
-                        name: transfer.name.clone(),
-                        source: Box::new(source),
-                    }
-                })?;
+                let add_transfer_error = |source| MultiNetworkModelSchemaBuildError::AddTransferError {
+                    name: transfer.name().to_string(),
+                    source: Box::new(source),
+                };
 
-                let mut transfer_builder =
-                    MultiNetworkTransferBuilder::new(&transfer.name, &transfer.from_network, from_metric);
-                if let Some(iv) = transfer.initial_value {
-                    transfer_builder.initial_value(iv);
-                }
+                let transfer_builder = match transfer {
+                    MultiNetworkTransfer::Float(t) => {
+                        let from_metric = t.metric.load(from_network, &args, None).map_err(add_transfer_error)?;
+                        MultiNetworkTransferBuilder::new_f64(&t.name, &t.from_network, from_metric, t.initial_value)
+                    }
+                    MultiNetworkTransfer::Index(t) => {
+                        let from_metric = t.metric.load(from_network, &args, None).map_err(add_transfer_error)?;
+                        MultiNetworkTransferBuilder::new_u64(&t.name, &t.from_network, from_metric, t.initial_value)
+                    }
+                };
 
                 t_builders.push(transfer_builder);
             }
@@ -2216,5 +2295,106 @@ mod core_tests {
         let model = builder.build().unwrap();
 
         model.run(&ClpSolverSettings::default()).unwrap();
+    }
+
+    /// Test the multi4 model, which passes an index from network1 to network2.
+    #[test]
+    fn test_multi4_index_transfer() {
+        let mut model_fn = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        model_fn.push("tests/multi4/model.json");
+
+        let schema = MultiNetworkModelSchema::from_path(model_fn.as_path()).unwrap();
+        let mut builder = schema
+            .create_model_builder(&FileSystem, model_fn.parent(), None)
+            .unwrap();
+
+        let network_2 = builder
+            .entry_builder("network2")
+            .expect("network 2 not found")
+            .network_builder();
+
+        // The transfer is the initial value (0) on the first time-step, and then 1 because
+        // network1's demand exceeds its threshold.
+        let mut expected_supply = [8.0; 365];
+        expected_supply[0] = 3.0;
+        let expected_supply: Array2<f64> = Array1::from(expected_supply.to_vec()).insert_axis(Axis(1));
+        // Read as an index, the transfer chooses the supply.
+        network_2.recorder(Box::new(AssertionF64RecorderBuilder::new(
+            "assert-demand2",
+            UnresolvedMetricF64::NodeInFlow("demand2".into()),
+            expected_supply,
+        )));
+
+        let mut expected_level = [1.0; 365];
+        expected_level[0] = 0.0;
+        let expected_level: Array2<f64> = Array1::from(expected_level.to_vec()).insert_axis(Axis(1));
+        // Read as a float, the transfer is the maximum flow.
+        network_2.recorder(Box::new(AssertionF64RecorderBuilder::new(
+            "assert-demand3",
+            UnresolvedMetricF64::NodeInFlow("demand3".into()),
+            expected_level,
+        )));
+
+        let model = builder.build().unwrap();
+
+        model.run(&ClpSolverSettings::default()).unwrap();
+    }
+
+    /// A float transfer cannot be read by an index metric.
+    #[test]
+    fn test_float_transfer_read_as_index() {
+        let mut model_fn = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        model_fn.push("tests/multi4/model.json");
+
+        let mut schema = MultiNetworkModelSchema::from_path(model_fn.as_path()).unwrap();
+        // Declare the transfer as a float, which network2 still reads as an index.
+        schema.networks[1].transfers[0] = serde_json::from_value(serde_json::json!({
+            "type": "Float",
+            "from_network": "network1",
+            "metric": {"type": "Parameter", "name": "high-demand"},
+            "name": "level",
+        }))
+        .unwrap();
+
+        let builder = schema
+            .create_model_builder(&FileSystem, model_fn.parent(), None)
+            .unwrap();
+
+        let error = match builder.build() {
+            Ok(_) => panic!("a float transfer read as an index should fail to build"),
+            Err(error) => error,
+        };
+        // Collect the whole chain of errors, as the mismatch is reported by the innermost one.
+        let mut message = error.to_string();
+        let mut source = std::error::Error::source(&error);
+        while let Some(inner) = source {
+            message.push_str(&format!(": {inner}"));
+            source = inner.source();
+        }
+        assert!(message.contains("cannot be read as an index"), "{message}");
+    }
+
+    /// A transfer without a `type` is rejected.
+    #[test]
+    fn test_transfer_type_required() {
+        let result: Result<super::MultiNetworkTransfer, _> = serde_json::from_value(serde_json::json!({
+            "from_network": "network1",
+            "metric": {"type": "Node", "name": "demand1"},
+            "name": "inflow",
+        }));
+        assert!(result.is_err());
+    }
+
+    /// An index transfer's initial value must be a non-negative integer.
+    #[test]
+    fn test_index_transfer_initial_value() {
+        let result: Result<super::MultiNetworkTransfer, _> = serde_json::from_value(serde_json::json!({
+            "type": "Index",
+            "from_network": "network1",
+            "metric": {"type": "Parameter", "name": "high-demand"},
+            "name": "level",
+            "initial_value": 0.5,
+        }));
+        assert!(result.is_err());
     }
 }

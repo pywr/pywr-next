@@ -20,6 +20,7 @@ definitions with `multi_models`.
         "network": { "type": "Network", "name": "neighbour::neighbour" },
         "transfers": [
           {
+            "type": "Float",
             "from_network": "company",
             "metric": { "type": "Node", "name": "link1" },
             "name": "company-link1-flow",
@@ -95,6 +96,27 @@ receiving network uses the value through a metric of type `InterNetworkTransfer`
 {{#include ../../../examples/neighbour/supply/base.json}}
 ```
 [//]: # (@formatter:on)
+
+Every transfer has a `type` of `Float` or `Index`, which says what kind of value it carries:
+
+| `type`  | `metric`                                                  | `initial_value`        | Read by                                                       |
+|---------|-----------------------------------------------------------|------------------------|---------------------------------------------------------------|
+| `Float` | A float metric, such as a node's flow or a parameter.     | A number.              | A float metric of type `InterNetworkTransfer`.                |
+| `Index` | An index metric, such as an index parameter or constant.  | A non-negative integer. | A float or an index metric of type `InterNetworkTransfer`.   |
+
+An index transfer can be read as a float, just as an index parameter can, but a float transfer cannot be read
+as an index: reading one through an index metric is an error. To pass a control state, such as a drought
+level, from one network to another, give the transfer `"type": "Index"` and read an index parameter:
+
+```json
+{
+  "type": "Index",
+  "from_network": "company",
+  "metric": { "type": "Parameter", "name": "drought-level" },
+  "name": "company-drought-level",
+  "initial_value": 0
+}
+```
 
 `initial_value` is the value used in the first time step, before the source network has been solved. Each
 transfer must come from another network of the same multi-model, and transfers into one network must have

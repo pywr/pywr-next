@@ -1,0 +1,62 @@
+{
+  "nodes": [
+    {
+      "meta": {
+        "name": "supply1"
+      },
+      "type": "Input",
+      "max_flow": {
+        "type": "Literal",
+        "value": 15.0
+      }
+    },
+    {
+      "meta": {
+        "name": "demand1"
+      },
+      "type": "Output",
+      "max_flow": {
+        "type": "Parameter",
+        "name": "demand"
+      },
+      "cost": {
+        "type": "Literal",
+        "value": -10
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from_node": "supply1",
+      "to_node": "demand1"
+    }
+  ],
+  "parameters": [
+    {
+      "meta": {
+        "name": "demand"
+      },
+      "type": "Constant",
+      "value": {
+        "type": "Literal",
+        "value": 10.0
+      }
+    },
+    {
+      "meta": {
+        "name": "high-demand"
+      },
+      "type": "Threshold",
+      "phase": "Before",
+      "metric": {
+        "type": "Parameter",
+        "name": "demand"
+      },
+      "threshold": {
+        "type": "Literal",
+        "value": 5.0
+      },
+      "predicate": "GT"
+    }
+  ]
+}

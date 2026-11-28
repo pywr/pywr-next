@@ -3,7 +3,7 @@ mod storage;
 
 use crate::edge::Edge;
 use crate::metric::{CalculationPhase, SimpleMetricF64Error};
-use crate::models::MultiNetworkTransferIndex;
+use crate::models::{MultiNetworkTransferCounts, MultiNetworkTransferIndex};
 use crate::network::{EdgeIndex, Network, NodeIndex, VirtualStorageIndex};
 use crate::node::Node;
 use crate::parameters::{
@@ -793,6 +793,7 @@ pub struct State {
     parameters_general_after: ParameterValues,
 
     inter_network_values: Vec<f64>,
+    inter_network_values_u64: Vec<u64>,
     // The current phase of the calculation
     current_phase: CalculationPhase,
 }
@@ -1148,6 +1149,27 @@ impl State {
         }
     }
 
+    pub fn get_inter_network_transfer_value_u64(&self, idx: MultiNetworkTransferIndex) -> Result<u64, StateError> {
+        match self.inter_network_values_u64.get(*idx.deref()) {
+            Some(s) => Ok(*s),
+            None => Err(StateError::MultiNetworkTransferIndexNotFound(idx)),
+        }
+    }
+
+    pub fn set_inter_network_transfer_value_u64(
+        &mut self,
+        idx: MultiNetworkTransferIndex,
+        value: u64,
+    ) -> Result<(), StateError> {
+        match self.inter_network_values_u64.get_mut(*idx.deref()) {
+            Some(s) => {
+                *s = value;
+                Ok(())
+            }
+            None => Err(StateError::MultiNetworkTransferIndexNotFound(idx)),
+        }
+    }
+
     /// Complete a timestep after all the flow has been added.
     ///
     /// This final step ensures, once all the flows have been updated, that:
@@ -1189,7 +1211,7 @@ pub struct StateBuilder {
     initial_virtual_storage_states: Option<Vec<VirtualStorageState>>,
     num_parameters: Option<ParameterCollectionStateSize>,
     num_derived_metrics: Option<usize>,
-    num_inter_network_values: Option<usize>,
+    num_inter_network_values: MultiNetworkTransferCounts,
 }
 
 impl StateBuilder {
@@ -1206,7 +1228,7 @@ impl StateBuilder {
             initial_virtual_storage_states: None,
             num_parameters: None,
             num_derived_metrics: None,
-            num_inter_network_values: None,
+            num_inter_network_values: MultiNetworkTransferCounts::default(),
         }
     }
 
@@ -1228,9 +1250,9 @@ impl StateBuilder {
         self
     }
 
-    /// Add the number of inter-network transfer values to the builder.
-    pub fn with_inter_network_transfers(mut self, num_inter_network_values: usize) -> Self {
-        self.num_inter_network_values = Some(num_inter_network_values);
+    /// Add the number of float and index inter-network transfer values to the builder.
+    pub fn with_inter_network_transfers(mut self, num_inter_network_values: MultiNetworkTransferCounts) -> Self {
+        self.num_inter_network_values = num_inter_network_values;
         self
     }
 
@@ -1270,7 +1292,8 @@ impl StateBuilder {
             parameters_simple,
             parameters_general_before,
             parameters_general_after,
-            inter_network_values: vec![0.0; self.num_inter_network_values.unwrap_or(0)],
+            inter_network_values: vec![0.0; self.num_inter_network_values.f64],
+            inter_network_values_u64: vec![0; self.num_inter_network_values.u64],
             current_phase: CalculationPhase::Before,
         }
     }

@@ -1,4 +1,4 @@
-use crate::models::{ModelDomain, RunMetadata};
+use crate::models::{ModelDomain, MultiNetworkTransferCounts, RunMetadata};
 use crate::network::{
     Network, NetworkBuildError, NetworkBuilder, NetworkFinaliseError, NetworkRecorderSaveError,
     NetworkRecorderSetupError, NetworkResult, NetworkSetupError, NetworkSolverSetupError, NetworkState,
@@ -241,7 +241,7 @@ impl Model {
 
         let state = self
             .network
-            .setup_network(timesteps, scenario_indices, 0)
+            .setup_network(timesteps, scenario_indices, MultiNetworkTransferCounts::default())
             .map_err(|source| ModelSetupError::NetworkSetupError(Box::new(source)))?;
 
         let recorder_state = self
@@ -270,7 +270,7 @@ impl Model {
 
         let state = self
             .network
-            .setup_network(timesteps, scenario_indices, 0)
+            .setup_network(timesteps, scenario_indices, MultiNetworkTransferCounts::default())
             .map_err(|source| ModelSetupError::NetworkSetupError(Box::new(source)))?;
         let recorder_state = self
             .network

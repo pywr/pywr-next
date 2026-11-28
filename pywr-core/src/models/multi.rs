@@ -1,4 +1,7 @@
-use crate::metric::{MetricConsumerPhase, MetricF64, MetricF64Error, MetricF64ResolutionError, UnresolvedMetricF64};
+use crate::metric::{
+    MetricConsumerPhase, MetricF64, MetricF64Error, MetricF64ResolutionError, MetricU64, MetricU64Error,
+    MetricU64ResolutionError, UnresolvedMetricF64, UnresolvedMetricU64,
+};
 use crate::models::{ModelDomain, RunMetadata};
 use crate::network::{
     Network, NetworkBuildError, NetworkBuilder, NetworkFinaliseError, NetworkRecorderSaveError,
@@ -61,14 +64,55 @@ impl Display for MultiNetworkTransferIndex {
     }
 }
 
+/// A reference to an inter-network transfer in the receiving network.
+///
+/// Float and index transfers are stored separately, so each kind has its own sequence of
+/// [`MultiNetworkTransferIndex`] values.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum MultiNetworkTransferRef {
+    F64(MultiNetworkTransferIndex),
+    U64(MultiNetworkTransferIndex),
+}
+
+/// The number of float and index transfers into a network.
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
+pub struct MultiNetworkTransferCounts {
+    pub f64: usize,
+    pub u64: usize,
+}
+
+/// The metric a transfer reads from the other network, with its optional first time-step value.
+enum MultiNetworkTransferSource {
+    F64 {
+        metric: MetricF64,
+        initial_value: Option<f64>,
+    },
+    U64 {
+        metric: MetricU64,
+        initial_value: Option<u64>,
+    },
+}
+
 /// A special parameter that retrieves a value from a metric in another model.
 struct MultiNetworkTransfer {
     /// The network to get the value from.
     from_model_idx: OtherNetworkIndex,
-    /// The metric to get the value from.
-    from_metric: MetricF64,
-    /// Optional initial value to use on the first time-step
-    initial_value: Option<f64>,
+    /// The metric to get the value from, and where the value is stored in the receiving network.
+    source: MultiNetworkTransferSource,
+    /// The index of the value in the receiving network's float or index transfer values.
+    index: MultiNetworkTransferIndex,
+}
+
+/// The unresolved metric a transfer reads from the other network.
+enum UnresolvedTransferSource {
+    F64 {
+        metric: UnresolvedMetricF64,
+        initial_value: Option<f64>,
+    },
+    U64 {
+        metric: UnresolvedMetricU64,
+        initial_value: Option<u64>,
+    },
 }
 
 pub struct MultiNetworkTransferBuilder {
@@ -76,25 +120,35 @@ pub struct MultiNetworkTransferBuilder {
     name: String,
     /// Name of the network to get the value from.
     from_model: String,
-    /// Metric to get the value from.
-    from_metric: UnresolvedMetricF64,
-    /// Optional initial value to use on the first time-step
-    initial_value: Option<f64>,
+    /// Metric to get the value from, and the optional initial value.
+    source: UnresolvedTransferSource,
 }
 
 impl MultiNetworkTransferBuilder {
-    pub fn new(name: &str, from_model: &str, from_metric: UnresolvedMetricF64) -> Self {
+    /// Create a transfer of a float value. `initial_value` is used on the first time-step instead
+    /// of the other network's value, if it is given.
+    pub fn new_f64(name: &str, from_model: &str, from_metric: UnresolvedMetricF64, initial_value: Option<f64>) -> Self {
         Self {
             name: name.to_string(),
             from_model: from_model.to_string(),
-            from_metric,
-            initial_value: None,
+            source: UnresolvedTransferSource::F64 {
+                metric: from_metric,
+                initial_value,
+            },
         }
     }
 
-    pub fn initial_value(&mut self, initial_value: f64) -> &mut Self {
-        self.initial_value = Some(initial_value);
-        self
+    /// Create a transfer of an index value. `initial_value` is used on the first time-step instead
+    /// of the other network's value, if it is given.
+    pub fn new_u64(name: &str, from_model: &str, from_metric: UnresolvedMetricU64, initial_value: Option<u64>) -> Self {
+        Self {
+            name: name.to_string(),
+            from_model: from_model.to_string(),
+            source: UnresolvedTransferSource::U64 {
+                metric: from_metric,
+                initial_value,
+            },
+        }
     }
 }
 
@@ -102,6 +156,7 @@ struct MultiNetworkEntry {
     name: String,
     network: Network,
     transfers: Vec<MultiNetworkTransfer>,
+    transfer_counts: MultiNetworkTransferCounts,
 }
 
 pub struct MultiNetworkEntryBuilder {
@@ -390,7 +445,7 @@ impl MultiNetworkModel {
         for entry in &self.networks {
             let state = entry
                 .network
-                .setup_network(timesteps, scenario_indices, entry.transfers.len())
+                .setup_network(timesteps, scenario_indices, entry.transfer_counts)
                 .map_err(|source| MultiNetworkModelSetupError::NetworkSetupError {
                     network: entry.name.clone(),
                     source: Box::new(source),
@@ -440,7 +495,7 @@ impl MultiNetworkModel {
         for entry in &self.networks {
             let state = entry
                 .network
-                .setup_network(timesteps, scenario_indices, entry.transfers.len())
+                .setup_network(timesteps, scenario_indices, entry.transfer_counts)
                 .map_err(|source| MultiNetworkModelSetupError::NetworkSetupError {
                     network: entry.name.clone(),
                     source: Box::new(source),
@@ -866,6 +921,12 @@ pub enum MultiNetworkModelBuilderError {
         #[source]
         source: MetricF64ResolutionError,
     },
+    #[error("Could not resolve index metric for transfer `{name}` attribute.")]
+    ResolveMetricU64ForTransferError {
+        name: String,
+        #[source]
+        source: MetricU64ResolutionError,
+    },
     #[error("Duplicate network name `{name}` found.")]
     DuplicateNetworkName { name: String },
     #[error("Duplicate transfer name `{transfer}` found in network `{network}`.")]
@@ -914,8 +975,19 @@ impl MultiNetworkModelBuilder {
             let name = entry_builder.name;
             // Build a map of transfer names to their indices for this network
             let mut transfers_map = HashMap::with_capacity(entry_builder.transfers.len());
-            for (i, t) in entry_builder.transfers.iter().enumerate() {
-                let idx = MultiNetworkTransferIndex(i);
+            let mut counts = MultiNetworkTransferCounts::default();
+            for t in entry_builder.transfers.iter() {
+                // Float and index transfers are numbered separately, as they are stored separately.
+                let idx = match t.source {
+                    UnresolvedTransferSource::F64 { .. } => {
+                        counts.f64 += 1;
+                        MultiNetworkTransferRef::F64(MultiNetworkTransferIndex(counts.f64 - 1))
+                    }
+                    UnresolvedTransferSource::U64 { .. } => {
+                        counts.u64 += 1;
+                        MultiNetworkTransferRef::U64(MultiNetworkTransferIndex(counts.u64 - 1))
+                    }
+                };
                 let transfer_name = t.name.clone();
                 if transfers_map.contains_key(&transfer_name) {
                     return Err(MultiNetworkModelBuilderError::DuplicateTransferName {
@@ -937,7 +1009,7 @@ impl MultiNetworkModelBuilder {
                     })?;
             network.set_name(name.clone());
 
-            networks.push((name.clone(), network, entry_builder.transfers));
+            networks.push((name.clone(), network, entry_builder.transfers, counts));
             resolution_maps.push(resolution_map);
 
             if network_map.contains_key(&name) {
@@ -948,7 +1020,8 @@ impl MultiNetworkModelBuilder {
         }
 
         let mut entries = Vec::with_capacity(networks.len());
-        for (name, network, unresolved_transfers) in networks {
+        for (name, network, unresolved_transfers, transfer_counts) in networks {
+            let mut counts = MultiNetworkTransferCounts::default();
             let transfers = unresolved_transfers
                 .iter()
                 .map(|t| {
@@ -962,15 +1035,36 @@ impl MultiNetworkModelBuilder {
                     let r_map = &resolution_maps[idx];
 
                     // The consumer phase is after the "from" model has been stepped, so we resolve the metric in the "after" phase.
-                    let metric = t
-                        .from_metric
-                        .resolve(r_map, MetricConsumerPhase::After)
-                        .map_err(
-                            |source| MultiNetworkModelBuilderError::ResolveMetricF64ForTransferError {
-                                name: t.name.clone(),
-                                source,
-                            },
-                        )?;
+                    let (source, index) = match &t.source {
+                        UnresolvedTransferSource::F64 { metric, initial_value } => {
+                            let metric = metric.resolve(r_map, MetricConsumerPhase::After).map_err(|source| {
+                                MultiNetworkModelBuilderError::ResolveMetricF64ForTransferError {
+                                    name: t.name.clone(),
+                                    source,
+                                }
+                            })?;
+                            counts.f64 += 1;
+                            let source = MultiNetworkTransferSource::F64 {
+                                metric,
+                                initial_value: *initial_value,
+                            };
+                            (source, MultiNetworkTransferIndex(counts.f64 - 1))
+                        }
+                        UnresolvedTransferSource::U64 { metric, initial_value } => {
+                            let metric = metric.resolve(r_map, MetricConsumerPhase::After).map_err(|source| {
+                                MultiNetworkModelBuilderError::ResolveMetricU64ForTransferError {
+                                    name: t.name.clone(),
+                                    source,
+                                }
+                            })?;
+                            counts.u64 += 1;
+                            let source = MultiNetworkTransferSource::U64 {
+                                metric,
+                                initial_value: *initial_value,
+                            };
+                            (source, MultiNetworkTransferIndex(counts.u64 - 1))
+                        }
+                    };
 
                     let from_model_idx = OtherNetworkIndex::from_indices(idx, entries.len()).ok_or_else(|| {
                         MultiNetworkModelBuilderError::TransferToSelf {
@@ -981,8 +1075,8 @@ impl MultiNetworkModelBuilder {
 
                     Ok(MultiNetworkTransfer {
                         from_model_idx,
-                        from_metric: metric,
-                        initial_value: t.initial_value,
+                        source,
+                        index,
                     })
                 })
                 .collect::<Result<Vec<_>, MultiNetworkModelBuilderError>>()?;
@@ -992,6 +1086,7 @@ impl MultiNetworkModelBuilder {
                     name,
                     network,
                     transfers,
+                    transfer_counts,
                 }
             })
         }
@@ -1011,6 +1106,12 @@ pub enum InterNetworkTransferError {
         other_network: String,
         #[source]
         source: MetricF64Error,
+    },
+    #[error("Error retrieving index value to transfer to other network `{other_network}`.")]
+    RetrievingIndexTransferValue {
+        other_network: String,
+        #[source]
+        source: MetricU64Error,
     },
     #[error("Error setting transfer in receiving network `{other_network}`.")]
     SettingTransferValue {
@@ -1035,7 +1136,7 @@ fn compute_inter_network_transfers(
     after_states: &[NetworkState],
 ) -> Result<(), InterNetworkTransferError> {
     // Iterate through all of the inter-model transfers
-    for (idx, transfer) in inter_network_transfers.iter().enumerate() {
+    for transfer in inter_network_transfers {
         // Determine which model and state we are getting the value from
         let (other_network, other_model_state) = match transfer.from_model_idx {
             OtherNetworkIndex::Before(i) => {
@@ -1044,27 +1145,45 @@ fn compute_inter_network_transfers(
             }
             OtherNetworkIndex::After(i) => (&after_models[i.get() - 1], &after_states[i.get() - 1]),
         };
+        let other_state = other_model_state.state(scenario_index);
 
-        let value = match timestep.is_first().then_some(transfer.initial_value).flatten() {
-            // Use the initial value if it is given and it is the first time-step.
-            Some(initial_value) => initial_value,
-            // Otherwise, get the value from the other model's state/metric
-            None => transfer
-                .from_metric
-                .get_value(&other_network.network, other_model_state.state(scenario_index))
-                .map_err(|source| InterNetworkTransferError::RetrievingTransferValue {
-                    other_network: other_network.name.clone(),
-                    source,
-                })?,
+        let result = match &transfer.source {
+            MultiNetworkTransferSource::F64 { metric, initial_value } => {
+                // Use the initial value if it is given and it is the first time-step; otherwise
+                // get the value from the other model's state/metric.
+                let value = match timestep.is_first().then_some(*initial_value).flatten() {
+                    Some(initial_value) => initial_value,
+                    None => metric
+                        .get_value(&other_network.network, other_state)
+                        .map_err(|source| InterNetworkTransferError::RetrievingTransferValue {
+                            other_network: other_network.name.clone(),
+                            source,
+                        })?,
+                };
+                state
+                    .state_mut(scenario_index)
+                    .set_inter_network_transfer_value(transfer.index, value)
+            }
+            MultiNetworkTransferSource::U64 { metric, initial_value } => {
+                let value = match timestep.is_first().then_some(*initial_value).flatten() {
+                    Some(initial_value) => initial_value,
+                    None => metric
+                        .get_value(&other_network.network, other_state)
+                        .map_err(|source| InterNetworkTransferError::RetrievingIndexTransferValue {
+                            other_network: other_network.name.clone(),
+                            source,
+                        })?,
+                };
+                state
+                    .state_mut(scenario_index)
+                    .set_inter_network_transfer_value_u64(transfer.index, value)
+            }
         };
 
-        state
-            .state_mut(scenario_index)
-            .set_inter_network_transfer_value(MultiNetworkTransferIndex(idx), value)
-            .map_err(|source| InterNetworkTransferError::SettingTransferValue {
-                other_network: other_network.name.clone(),
-                source,
-            })?;
+        result.map_err(|source| InterNetworkTransferError::SettingTransferValue {
+            other_network: other_network.name.clone(),
+            source,
+        })?;
     }
 
     Ok(())

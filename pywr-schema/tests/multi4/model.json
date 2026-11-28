@@ -1,0 +1,38 @@
+{
+  "metadata": {
+    "title": "Multi-model 4",
+    "description": "A multi-model that passes an index from network1 to network2, where it is read as an index and as a float.",
+    "minimum_version": "0.1"
+  },
+  "time": {
+    "start": "2015-01-01",
+    "end": "2015-12-31",
+    "timestep": {
+      "type": "Days",
+      "days": 1
+    }
+  },
+  "networks": [
+    {
+      "name": "network1",
+      "network": "network1.json",
+      "transfers": []
+    },
+    {
+      "name": "network2",
+      "network": "network2.json",
+      "transfers": [
+        {
+          "type": "Index",
+          "from_network": "network1",
+          "metric": {
+            "type": "Parameter",
+            "name": "high-demand"
+          },
+          "name": "level",
+          "initial_value": 0
+        }
+      ]
+    }
+  ]
+}

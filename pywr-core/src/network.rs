@@ -5,7 +5,7 @@ use crate::aggregated_storage_node::{
 use crate::clock::Instant;
 use crate::edge::Edge;
 use crate::metric::CalculationPhase;
-use crate::models::{ModelDomain, MultiNetworkTransferIndex, RunMetadata};
+use crate::models::{ModelDomain, MultiNetworkTransferCounts, MultiNetworkTransferRef, RunMetadata};
 use crate::node::{Node, NodeBuilder, NodeBuilderError, NodeError, UnresolvedNode};
 use crate::parameters::{
     GeneralParameterIndex, GeneralParameterType, ParameterCollection, ParameterCollectionBuilder,
@@ -572,7 +572,7 @@ impl Network {
         &self,
         timesteps: &[Timestep],
         scenario_indices: &[ScenarioIndex],
-        num_inter_network_transfers: usize,
+        num_inter_network_transfers: MultiNetworkTransferCounts,
     ) -> Result<NetworkState, NetworkSetupError> {
         let mut states: Vec<State> = Vec::with_capacity(scenario_indices.len());
         let mut parameter_internal_states: Vec<ParameterStates> = Vec::with_capacity(scenario_indices.len());
@@ -1731,7 +1731,7 @@ pub struct ResolutionMaps {
     /// The model domain
     pub domain: ModelDomain,
     /// Inter-network transfer indices
-    pub inter_network_transfers: HashMap<String, MultiNetworkTransferIndex>,
+    pub inter_network_transfers: HashMap<String, MultiNetworkTransferRef>,
     /// The index associated wit heach metric set
     pub metric_sets: HashMap<String, MetricSetIndex>,
 }
@@ -2059,7 +2059,7 @@ impl NetworkBuilder {
     fn build_resolution_map(
         &self,
         domain: &ModelDomain,
-        inter_network_transfer_map: &HashMap<String, MultiNetworkTransferIndex>,
+        inter_network_transfer_map: &HashMap<String, MultiNetworkTransferRef>,
     ) -> Result<ResolutionMaps, NetworkBuildError> {
         let nodes = self.node_index_map()?;
         let edges = self.edge_index_map()?;
@@ -2093,7 +2093,7 @@ impl NetworkBuilder {
     pub fn build(
         self,
         domain: &ModelDomain,
-        inter_network_transfer_map: &HashMap<String, MultiNetworkTransferIndex>,
+        inter_network_transfer_map: &HashMap<String, MultiNetworkTransferRef>,
     ) -> Result<(Network, ResolutionMaps), NetworkBuildError> {
         // Resolution map
         let mut resolution_map = self.build_resolution_map(domain, inter_network_transfer_map)?;
@@ -2592,7 +2592,9 @@ mod tests {
         let scenarios = domain.scenarios().indices();
         let scenario = &scenarios[0];
         let timesteps = domain.time().timesteps();
-        let mut network_state = network.setup_network(timesteps, scenarios, 0).unwrap();
+        let mut network_state = network
+            .setup_network(timesteps, scenarios, MultiNetworkTransferCounts::default())
+            .unwrap();
         assert_eq!(events.lock().unwrap().as_slice(), ["lifecycle-general:setup"]);
         assert_eq!(
             network_state
@@ -2685,7 +2687,9 @@ mod tests {
         };
         let scenarios = domain.scenarios().indices();
         let timesteps = domain.time().timesteps();
-        let mut network_state = network.setup_network(timesteps, scenarios, 0).unwrap();
+        let mut network_state = network
+            .setup_network(timesteps, scenarios, MultiNetworkTransferCounts::default())
+            .unwrap();
         let NetworkState {
             states,
             parameter_internal_states,

@@ -324,7 +324,8 @@ pub enum Reference<'a> {
     /// Resolved in the model's `scenarios.groups`, not in the network.
     ScenarioGroup(&'a str),
     /// Resolved in the transfers into the network in a multi-network model, not in the network.
-    InterNetworkTransfer(&'a str),
+    /// `metric` is the kind of value read: only an index transfer can be read as an index.
+    InterNetworkTransfer { name: &'a str, metric: MetricValueType },
 }
 
 /// The mutable form of [`Reference`], with variants corresponding one-for-one; a node, virtual
@@ -421,7 +422,10 @@ impl VisitReferences for Metric {
                 metric: MetricValueType::Float,
                 return_value: p_ref.return_value.unwrap_or_default(),
             }),
-            Metric::InterNetworkTransfer { name } => visitor(Reference::InterNetworkTransfer(name)),
+            Metric::InterNetworkTransfer { name } => visitor(Reference::InterNetworkTransfer {
+                name,
+                metric: MetricValueType::Float,
+            }),
             Metric::Literal { .. } => {}
         }
     }
@@ -470,7 +474,10 @@ impl VisitReferences for IndexMetric {
                 metric: MetricValueType::Index,
                 return_value: p_ref.return_value.unwrap_or_default(),
             }),
-            IndexMetric::InterNetworkTransfer { name } => visitor(Reference::InterNetworkTransfer(name)),
+            IndexMetric::InterNetworkTransfer { name } => visitor(Reference::InterNetworkTransfer {
+                name,
+                metric: MetricValueType::Index,
+            }),
             IndexMetric::Constant { .. } => {}
         }
     }
@@ -1046,7 +1053,7 @@ mod tests {
             Reference::TimeSeries(name) => format!("TimeSeries:{name}"),
             Reference::MetricSet(name) => format!("MetricSet:{name}"),
             Reference::ScenarioGroup(name) => format!("ScenarioGroup:{name}"),
-            Reference::InterNetworkTransfer(name) => format!("InterNetworkTransfer:{name}"),
+            Reference::InterNetworkTransfer { name, .. } => format!("InterNetworkTransfer:{name}"),
         }
     }
 

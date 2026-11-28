@@ -7,7 +7,7 @@ pub use multi::{
     InterNetworkTransferError, MultiNetworkEntryBuilder, MultiNetworkModel, MultiNetworkModelBuilder,
     MultiNetworkModelBuilderError, MultiNetworkModelFinaliseError, MultiNetworkModelResult, MultiNetworkModelRunError,
     MultiNetworkModelSetupError, MultiNetworkModelState, MultiNetworkModelStepError, MultiNetworkModelTimings,
-    MultiNetworkTransferBuilder, MultiNetworkTransferIndex,
+    MultiNetworkTransferBuilder, MultiNetworkTransferCounts, MultiNetworkTransferIndex, MultiNetworkTransferRef,
 };
 pub use pywr_output_metadata::RunMetadata;
 pub use simple::{
