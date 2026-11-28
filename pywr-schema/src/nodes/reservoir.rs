@@ -125,6 +125,11 @@ node_attribute_subset_enum! {
         /// The proportional reservoir proportional volume (0-1).
         ProportionalVolume,
         MaxVolume,
+        /// The value of the `min_volume` metric. Defaults to 0 if `min_volume` is not defined.
+        MinVolume,
+        /// The cost per unit of net increase in the reservoir's volume, including the costs of
+        /// any virtual storage nodes.
+        Cost,
         /// The flow through the compensation link when `compensation` is provided.
         Compensation,
         /// The rainfall flow when the `rainfall` field is provided.
@@ -140,6 +145,8 @@ impl From<StorageNodeAttribute> for ReservoirNodeAttribute {
             StorageNodeAttribute::Volume => ReservoirNodeAttribute::Volume,
             StorageNodeAttribute::ProportionalVolume => ReservoirNodeAttribute::ProportionalVolume,
             StorageNodeAttribute::MaxVolume => ReservoirNodeAttribute::MaxVolume,
+            StorageNodeAttribute::MinVolume => ReservoirNodeAttribute::MinVolume,
+            StorageNodeAttribute::Cost => ReservoirNodeAttribute::Cost,
         }
     }
 }
@@ -794,6 +801,12 @@ impl ReservoirNode {
                     ),
                     ReservoirNodeAttribute::MaxVolume => {
                         UnresolvedMetricF64::NodeMaxVolume(UnresolvedNode::new(self.meta().name.as_str(), None))
+                    }
+                    ReservoirNodeAttribute::MinVolume => {
+                        UnresolvedMetricF64::NodeMinVolume(UnresolvedNode::new(self.meta().name.as_str(), None))
+                    }
+                    ReservoirNodeAttribute::Cost => {
+                        UnresolvedMetricF64::NodeCost(UnresolvedNode::new(self.meta().name.as_str(), None))
                     }
                 };
 

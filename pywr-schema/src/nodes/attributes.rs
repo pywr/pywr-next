@@ -13,6 +13,8 @@ pub enum NodeAttribute {
     Outflow,
     Volume,
     MaxVolume,
+    /// The minimum volume constraint.
+    MinVolume,
     ProportionalVolume,
     Loss,
     Deficit,
@@ -29,6 +31,20 @@ pub enum NodeAttribute {
     Evaporation,
     /// The abstracted flow
     Abstraction,
+    /// The cost per unit of flow, or per unit of net increase in volume for a storage. This
+    /// includes the costs of any virtual storage nodes with a `cost_aggregation` that the node
+    /// belongs to.
+    Cost,
+}
+
+/// The error for an `attribute` of node `name` that reads the optional `field`, which is not set.
+#[cfg(feature = "core")]
+pub(crate) fn field_not_set(attribute: impl Into<NodeAttribute>, name: &str, field: &str) -> crate::SchemaError {
+    crate::SchemaError::NodeAttributeNotEnabled {
+        attr: attribute.into(),
+        name: name.to_string(),
+        requires: format!("Requires `{field}` to be set."),
+    }
 }
 
 /// Macro to generate a subset enum of `NodeAttribute` with conversion implementations.

@@ -1,0 +1,269 @@
+{
+  "metadata": {
+    "title": "Node cost attributes",
+    "description": "Test of the Cost attribute of nodes, which is the cost of the node's main flow or storage excluding the costs of any soft constraints.",
+    "minimum_version": "0.1"
+  },
+  "time": {
+    "start": "2015-01-01",
+    "end": "2015-01-03",
+    "timestep": {
+      "type": "Days",
+      "days": 1
+    }
+  },
+  "network": {
+    "nodes": [
+      {
+        "meta": {
+          "name": "input1"
+        },
+        "type": "Input",
+        "max_flow": {
+          "type": "Literal",
+          "value": 10.0
+        },
+        "cost": {
+          "type": "Literal",
+          "value": 1.0
+        }
+      },
+      {
+        "meta": {
+          "name": "link1"
+        },
+        "type": "Link",
+        "cost": {
+          "type": "Literal",
+          "value": 2.0
+        }
+      },
+      {
+        "meta": {
+          "name": "wtw1"
+        },
+        "type": "WaterTreatmentWorks",
+        "cost": {
+          "type": "Literal",
+          "value": 5.0
+        },
+        "soft_min_flow": {
+          "type": "Literal",
+          "value": 1.0
+        },
+        "soft_min_flow_cost": {
+          "type": "Literal",
+          "value": -7.0
+        }
+      },
+      {
+        "meta": {
+          "name": "link2"
+        },
+        "type": "Link",
+        "cost": {
+          "type": "Literal",
+          "value": 4.0
+        },
+        "soft_max": {
+          "cost": {
+            "type": "Literal",
+            "value": 50.0
+          },
+          "flow": {
+            "type": "Literal",
+            "value": 3.0
+          }
+        }
+      },
+      {
+        "meta": {
+          "name": "demand1"
+        },
+        "type": "Demand",
+        "max_flow": {
+          "type": "Literal",
+          "value": 8.0
+        },
+        "cost": {
+          "type": "Literal",
+          "value": -10.0
+        }
+      },
+      {
+        "meta": {
+          "name": "catchment1"
+        },
+        "type": "Catchment",
+        "flow": {
+          "type": "Literal",
+          "value": 1.0
+        },
+        "cost": {
+          "type": "Literal",
+          "value": 0.5
+        }
+      },
+      {
+        "meta": {
+          "name": "storage1"
+        },
+        "type": "Storage",
+        "max_volume": {
+          "type": "Literal",
+          "value": 100.0
+        },
+        "cost": {
+          "type": "Literal",
+          "value": -3.0
+        },
+        "initial_volume": {
+          "type": "Proportional",
+          "proportion": 0.5
+        }
+      },
+      {
+        "meta": {
+          "name": "reservoir1"
+        },
+        "type": "Reservoir",
+        "max_volume": {
+          "type": "Literal",
+          "value": 100.0
+        },
+        "cost": {
+          "type": "Literal",
+          "value": -2.0
+        },
+        "initial_volume": {
+          "type": "Proportional",
+          "proportion": 0.5
+        }
+      },
+      {
+        "meta": {
+          "name": "output1"
+        },
+        "type": "Output",
+        "max_flow": {
+          "type": "Literal",
+          "value": 5.0
+        },
+        "cost": {
+          "type": "Literal",
+          "value": -1.0
+        }
+      },
+      {
+        "meta": {
+          "name": "output2"
+        },
+        "type": "Output"
+      }
+    ],
+    "edges": [
+      {
+        "from_node": "input1",
+        "to_node": "link1"
+      },
+      {
+        "from_node": "link1",
+        "to_node": "wtw1"
+      },
+      {
+        "from_node": "wtw1",
+        "to_node": "link2"
+      },
+      {
+        "from_node": "link2",
+        "to_node": "demand1"
+      },
+      {
+        "from_node": "catchment1",
+        "to_node": "output1"
+      },
+      {
+        "from_node": "storage1",
+        "to_node": "output1"
+      },
+      {
+        "from_node": "reservoir1",
+        "to_node": "output1"
+      },
+      {
+        "from_node": "input1",
+        "to_node": "output2"
+      }
+    ],
+    "metric_sets": [
+      {
+        "meta": {
+          "name": "costs"
+        },
+        "metrics": [
+          {
+            "type": "Node",
+            "name": "input1",
+            "attribute": "Cost"
+          },
+          {
+            "type": "Node",
+            "name": "link1",
+            "attribute": "Cost"
+          },
+          {
+            "type": "Node",
+            "name": "wtw1",
+            "attribute": "Cost"
+          },
+          {
+            "type": "Node",
+            "name": "link2",
+            "attribute": "Cost"
+          },
+          {
+            "type": "Node",
+            "name": "demand1",
+            "attribute": "Cost"
+          },
+          {
+            "type": "Node",
+            "name": "catchment1",
+            "attribute": "Cost"
+          },
+          {
+            "type": "Node",
+            "name": "storage1",
+            "attribute": "Cost"
+          },
+          {
+            "type": "Node",
+            "name": "reservoir1",
+            "attribute": "Cost"
+          },
+          {
+            "type": "Node",
+            "name": "output1",
+            "attribute": "Cost"
+          },
+          {
+            "type": "Node",
+            "name": "output2",
+            "attribute": "Cost"
+          }
+        ]
+      }
+    ],
+    "outputs": [
+      {
+        "meta": {
+          "name": "costs"
+        },
+        "type": "CSV",
+        "format": "Long",
+        "filename": "cost-attributes1-expected.csv",
+        "metric_set": "costs"
+      }
+    ]
+  }
+}

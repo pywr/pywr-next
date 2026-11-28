@@ -123,6 +123,8 @@ pub enum ParameterValueSource<T> {
 pub enum MetricF64Error {
     #[error("Node index not found: {0}")]
     NodeIndexNotFound(NodeIndex),
+    #[error("The metric needs the current time-step, but no time-step has started.")]
+    TimestepNotStarted,
     #[error("Virtual storage node index not found: {0}")]
     VirtualStorageIndexNotFound(VirtualStorageIndex),
     #[error("Error getting node max flow.")]
@@ -131,6 +133,10 @@ pub enum MetricF64Error {
     NodeGetMinFlowError(#[source] Box<NodeError>),
     #[error("Error getting node max volume.")]
     NodeGetMaxVolumeError(#[source] Box<NodeError>),
+    #[error("Error getting node min volume.")]
+    NodeGetMinVolumeError(#[source] Box<NodeError>),
+    #[error("Error getting node cost.")]
+    NodeGetCostError(#[source] Box<NodeError>),
     #[error("Aggregated node index not found: {0}")]
     AggregatedNodeIndexNotFound(AggregatedNodeIndex),
     #[error("Aggregated storage node index not found: {0}")]
@@ -156,10 +162,16 @@ pub enum MetricF64 {
     NodeVolume(NodeIndex),
     NodeProportionalVolume(NodeIndex),
     NodeMaxVolume(NodeIndex),
+    NodeMinVolume(NodeIndex),
+    NodeCost(NodeIndex),
     AggregatedNodeInFlow(AggregatedNodeIndex),
     AggregatedNodeOutFlow(AggregatedNodeIndex),
+    AggregatedNodeMaxFlow(AggregatedNodeIndex),
+    AggregatedNodeMinFlow(AggregatedNodeIndex),
     AggregatedStorageNodeVolume(AggregatedStorageNodeIndex),
     AggregatedStorageNodeProportionalVolume(AggregatedStorageNodeIndex),
+    AggregatedStorageNodeMaxVolume(AggregatedStorageNodeIndex),
+    AggregatedStorageNodeMinVolume(AggregatedStorageNodeIndex),
     EdgeFlow(EdgeIndex),
     MultiEdgeFlow {
         indices: Vec<EdgeIndex>,
@@ -178,6 +190,8 @@ pub enum MetricF64 {
     VirtualStorageVolume(VirtualStorageIndex),
     VirtualStorageProportionalVolume(VirtualStorageIndex),
     VirtualStorageMaxVolume(VirtualStorageIndex),
+    VirtualStorageMinVolume(VirtualStorageIndex),
+    VirtualStorageCost(VirtualStorageIndex),
     MultiNodeInFlow {
         indices: Vec<NodeIndex>,
         name: String,
@@ -221,6 +235,52 @@ impl MetricF64 {
                 .ok_or(MetricF64Error::NodeIndexNotFound(*idx))?
                 .get_max_volume(state)
                 .map_err(|e| MetricF64Error::NodeGetMaxVolumeError(Box::new(e)))?),
+            MetricF64::NodeMinVolume(idx) => Ok(network
+                .get_node(idx)
+                .ok_or(MetricF64Error::NodeIndexNotFound(*idx))?
+                .get_min_volume(state)
+                .map_err(|e| MetricF64Error::NodeGetMinVolumeError(Box::new(e)))?),
+            MetricF64::NodeCost(idx) => Ok(network
+                .get_node(idx)
+                .ok_or(MetricF64Error::NodeIndexNotFound(*idx))?
+                .get_cost(
+                    network,
+                    state.get_timestep().ok_or(MetricF64Error::TimestepNotStarted)?,
+                    state,
+                )
+                .map_err(|e| MetricF64Error::NodeGetCostError(Box::new(e)))?),
+            MetricF64::AggregatedNodeMaxFlow(idx) => network
+                .get_aggregated_node(idx)
+                .ok_or(MetricF64Error::AggregatedNodeIndexNotFound(*idx))?
+                .get_max_flow(network, state),
+            MetricF64::AggregatedNodeMinFlow(idx) => network
+                .get_aggregated_node(idx)
+                .ok_or(MetricF64Error::AggregatedNodeIndexNotFound(*idx))?
+                .get_min_flow(network, state),
+            MetricF64::AggregatedStorageNodeMaxVolume(idx) => network
+                .get_aggregated_storage_node(*idx)
+                .ok_or(MetricF64Error::AggregatedStorageNodeIndexNotFound(*idx))?
+                .iter_nodes()
+                .map(|idx| {
+                    network
+                        .get_node(idx)
+                        .ok_or(MetricF64Error::NodeIndexNotFound(*idx))?
+                        .get_max_volume(state)
+                        .map_err(|e| MetricF64Error::NodeGetMaxVolumeError(Box::new(e)))
+                })
+                .sum(),
+            MetricF64::AggregatedStorageNodeMinVolume(idx) => network
+                .get_aggregated_storage_node(*idx)
+                .ok_or(MetricF64Error::AggregatedStorageNodeIndexNotFound(*idx))?
+                .iter_nodes()
+                .map(|idx| {
+                    network
+                        .get_node(idx)
+                        .ok_or(MetricF64Error::NodeIndexNotFound(*idx))?
+                        .get_min_volume(state)
+                        .map_err(|e| MetricF64Error::NodeGetMinVolumeError(Box::new(e)))
+                })
+                .sum(),
             MetricF64::AggregatedNodeInFlow(idx) => {
                 let node = network
                     .get_aggregated_node(idx)
@@ -298,6 +358,16 @@ impl MetricF64 {
                 .get_virtual_storage_node(idx)
                 .ok_or(MetricF64Error::VirtualStorageIndexNotFound(*idx))?
                 .get_max_volume(state)?),
+            MetricF64::VirtualStorageMinVolume(idx) => Ok(network
+                .get_virtual_storage_node(idx)
+                .ok_or(MetricF64Error::VirtualStorageIndexNotFound(*idx))?
+                .get_min_volume(state)?),
+            // A virtual storage node without a cost costs nothing.
+            MetricF64::VirtualStorageCost(idx) => Ok(network
+                .get_virtual_storage_node(idx)
+                .ok_or(MetricF64Error::VirtualStorageIndexNotFound(*idx))?
+                .get_cost(network, state)?
+                .unwrap_or(0.0)),
             MetricF64::AggregatedStorageNodeVolume(idx) => {
                 let node = network
                     .get_aggregated_storage_node(*idx)
@@ -502,12 +572,20 @@ pub enum UnresolvedMetricF64 {
     NodeVolume(UnresolvedNode),
     NodeProportionalVolume(UnresolvedNode),
     NodeMaxVolume(UnresolvedNode),
+    NodeMinVolume(UnresolvedNode),
+    /// The cost of a node per unit of flow, including any virtual storage costs. See
+    /// [`crate::node::Node::get_cost`].
+    NodeCost(UnresolvedNode),
     NodeMaxFlow(UnresolvedNode),
     NodeMinFlow(UnresolvedNode),
     AggregatedNodeInFlow(UnresolvedNode),
     AggregatedNodeOutFlow(UnresolvedNode),
+    AggregatedNodeMaxFlow(UnresolvedNode),
+    AggregatedNodeMinFlow(UnresolvedNode),
     AggregatedStorageNodeVolume(UnresolvedNode),
     AggregatedStorageNodeProportionalVolume(UnresolvedNode),
+    AggregatedStorageNodeMaxVolume(UnresolvedNode),
+    AggregatedStorageNodeMinVolume(UnresolvedNode),
     EdgeFlow(UnresolvedEdge),
     MultiEdgeFlow {
         edges: Vec<UnresolvedEdge>,
@@ -524,6 +602,9 @@ pub enum UnresolvedMetricF64 {
     },
     VirtualStorageVolume(UnresolvedNode),
     VirtualStorageProportionalVolume(UnresolvedNode),
+    VirtualStorageMaxVolume(UnresolvedNode),
+    VirtualStorageMinVolume(UnresolvedNode),
+    VirtualStorageCost(UnresolvedNode),
     MultiNodeInFlow {
         nodes: Vec<UnresolvedNode>,
         name: String,
@@ -565,7 +646,30 @@ impl UnresolvedMetricF64 {
         let attribute = match self {
             Self::NodeMinFlow(node) => DependentAttribute::NodeMinFlow(*maps.nodes.get(node)?),
             Self::NodeMaxFlow(node) => DependentAttribute::NodeMaxFlow(*maps.nodes.get(node)?),
+            Self::NodeMinVolume(node) => DependentAttribute::NodeMinVolume(*maps.nodes.get(node)?),
             Self::NodeMaxVolume(node) => DependentAttribute::NodeMaxVolume(*maps.nodes.get(node)?),
+            Self::NodeCost(node) => DependentAttribute::NodeCost(*maps.nodes.get(node)?),
+            Self::AggregatedNodeMinFlow(node) => {
+                DependentAttribute::AggregatedNodeMinFlow(*maps.aggregated_nodes.get(node)?)
+            }
+            Self::AggregatedNodeMaxFlow(node) => {
+                DependentAttribute::AggregatedNodeMaxFlow(*maps.aggregated_nodes.get(node)?)
+            }
+            Self::AggregatedStorageNodeMinVolume(node) => {
+                DependentAttribute::AggregatedStorageNodeMinVolume(*maps.aggregated_storage_nodes.get(node)?)
+            }
+            Self::AggregatedStorageNodeMaxVolume(node) => {
+                DependentAttribute::AggregatedStorageNodeMaxVolume(*maps.aggregated_storage_nodes.get(node)?)
+            }
+            Self::VirtualStorageMinVolume(node) => {
+                DependentAttribute::VirtualStorageMinVolume(*maps.virtual_storage_node.get(node)?)
+            }
+            Self::VirtualStorageMaxVolume(node) => {
+                DependentAttribute::VirtualStorageMaxVolume(*maps.virtual_storage_node.get(node)?)
+            }
+            Self::VirtualStorageCost(node) => {
+                DependentAttribute::VirtualStorageCost(*maps.virtual_storage_node.get(node)?)
+            }
             _ => return None,
         };
         Some(AttributeDependency::Attribute(attribute))
@@ -713,6 +817,78 @@ impl UnresolvedMetricF64 {
                 maps.require_attribute_parameters(DependentAttribute::NodeMinFlow(*idx), unresolved, consumer_phase)?;
                 MetricF64::NodeMinFlow(*idx)
             }
+            UnresolvedMetricF64::NodeMinVolume(unresolved) => {
+                let idx = maps
+                    .nodes
+                    .get(unresolved)
+                    .ok_or_else(|| MetricF64ResolutionError::NodeNotFound {
+                        node: unresolved.clone(),
+                    })?;
+                maps.require_attribute_parameters(DependentAttribute::NodeMinVolume(*idx), unresolved, consumer_phase)?;
+                MetricF64::NodeMinVolume(*idx)
+            }
+            UnresolvedMetricF64::NodeCost(unresolved) => {
+                let idx = maps
+                    .nodes
+                    .get(unresolved)
+                    .ok_or_else(|| MetricF64ResolutionError::NodeNotFound {
+                        node: unresolved.clone(),
+                    })?;
+                maps.require_attribute_parameters(DependentAttribute::NodeCost(*idx), unresolved, consumer_phase)?;
+                MetricF64::NodeCost(*idx)
+            }
+            UnresolvedMetricF64::AggregatedNodeMaxFlow(unresolved) => {
+                let idx = maps.aggregated_nodes.get(unresolved).ok_or_else(|| {
+                    MetricF64ResolutionError::AggregatedNodeNotFound {
+                        aggregated_node: unresolved.clone(),
+                    }
+                })?;
+                maps.require_attribute_parameters(
+                    DependentAttribute::AggregatedNodeMaxFlow(*idx),
+                    unresolved,
+                    consumer_phase,
+                )?;
+                MetricF64::AggregatedNodeMaxFlow(*idx)
+            }
+            UnresolvedMetricF64::AggregatedNodeMinFlow(unresolved) => {
+                let idx = maps.aggregated_nodes.get(unresolved).ok_or_else(|| {
+                    MetricF64ResolutionError::AggregatedNodeNotFound {
+                        aggregated_node: unresolved.clone(),
+                    }
+                })?;
+                maps.require_attribute_parameters(
+                    DependentAttribute::AggregatedNodeMinFlow(*idx),
+                    unresolved,
+                    consumer_phase,
+                )?;
+                MetricF64::AggregatedNodeMinFlow(*idx)
+            }
+            UnresolvedMetricF64::AggregatedStorageNodeMaxVolume(unresolved) => {
+                let idx = maps.aggregated_storage_nodes.get(unresolved).ok_or_else(|| {
+                    MetricF64ResolutionError::AggregatedStorageNodeNotFound {
+                        aggregated_node: unresolved.clone(),
+                    }
+                })?;
+                maps.require_attribute_parameters(
+                    DependentAttribute::AggregatedStorageNodeMaxVolume(*idx),
+                    unresolved,
+                    consumer_phase,
+                )?;
+                MetricF64::AggregatedStorageNodeMaxVolume(*idx)
+            }
+            UnresolvedMetricF64::AggregatedStorageNodeMinVolume(unresolved) => {
+                let idx = maps.aggregated_storage_nodes.get(unresolved).ok_or_else(|| {
+                    MetricF64ResolutionError::AggregatedStorageNodeNotFound {
+                        aggregated_node: unresolved.clone(),
+                    }
+                })?;
+                maps.require_attribute_parameters(
+                    DependentAttribute::AggregatedStorageNodeMinVolume(*idx),
+                    unresolved,
+                    consumer_phase,
+                )?;
+                MetricF64::AggregatedStorageNodeMinVolume(*idx)
+            }
             UnresolvedMetricF64::AggregatedNodeInFlow(unresolved) => {
                 let idx = maps.aggregated_nodes.get(unresolved).ok_or_else(|| {
                     MetricF64ResolutionError::AggregatedNodeNotFound {
@@ -819,6 +995,48 @@ impl UnresolvedMetricF64 {
                 })?;
 
                 MetricF64::VirtualStorageProportionalVolume(*idx)
+            }
+            UnresolvedMetricF64::VirtualStorageMaxVolume(unresolved) => {
+                let idx = maps.virtual_storage_node.get(unresolved).ok_or_else(|| {
+                    MetricF64ResolutionError::VirtualStorageNodeNotFound {
+                        node: unresolved.clone(),
+                    }
+                })?;
+
+                maps.require_attribute_parameters(
+                    DependentAttribute::VirtualStorageMaxVolume(*idx),
+                    unresolved,
+                    consumer_phase,
+                )?;
+                MetricF64::VirtualStorageMaxVolume(*idx)
+            }
+            UnresolvedMetricF64::VirtualStorageMinVolume(unresolved) => {
+                let idx = maps.virtual_storage_node.get(unresolved).ok_or_else(|| {
+                    MetricF64ResolutionError::VirtualStorageNodeNotFound {
+                        node: unresolved.clone(),
+                    }
+                })?;
+
+                maps.require_attribute_parameters(
+                    DependentAttribute::VirtualStorageMinVolume(*idx),
+                    unresolved,
+                    consumer_phase,
+                )?;
+                MetricF64::VirtualStorageMinVolume(*idx)
+            }
+            UnresolvedMetricF64::VirtualStorageCost(unresolved) => {
+                let idx = maps.virtual_storage_node.get(unresolved).ok_or_else(|| {
+                    MetricF64ResolutionError::VirtualStorageNodeNotFound {
+                        node: unresolved.clone(),
+                    }
+                })?;
+
+                maps.require_attribute_parameters(
+                    DependentAttribute::VirtualStorageCost(*idx),
+                    unresolved,
+                    consumer_phase,
+                )?;
+                MetricF64::VirtualStorageCost(*idx)
             }
             UnresolvedMetricF64::MultiNodeInFlow { name, nodes: indices } => {
                 let resolved = indices

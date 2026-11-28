@@ -8,7 +8,7 @@ use crate::validation::{InitialVolumeProblem, NodeProblem};
 use crate::{
     error::SchemaError,
     network::LoadArgs,
-    nodes::{NodeAttribute, NodeComponent, NodeSlot},
+    nodes::{NodeAttribute, NodeComponent, NodeSlot, attributes::field_not_set},
 };
 use crate::{mermaid, node_attribute_subset_enum, node_component_subset_enum};
 use log::warn;
@@ -32,6 +32,13 @@ use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumString, IntoStaticS
 node_attribute_subset_enum! {
     pub enum InputNodeAttribute {
         Outflow,
+        /// The value of the `max_flow` metric. Requires `max_flow` to be defined.
+        MaxFlow,
+        /// The value of the `min_flow` metric. Defaults to 0 if `min_flow` is not defined.
+        MinFlow,
+        /// The cost per unit of flow, including the costs of any virtual storage nodes with a
+        /// `cost_aggregation`.
+        Cost,
     }
 }
 
@@ -79,6 +86,13 @@ impl InputNode {
 
     pub fn default_component(&self) -> InputNodeComponent {
         Self::DEFAULT_COMPONENT
+    }
+
+    /// The attributes this node has; `MaxFlow` requires `max_flow` to be set.
+    pub fn available_attributes(&self) -> Vec<InputNodeAttribute> {
+        InputNodeAttribute::iter()
+            .filter(|attr| !matches!(attr, InputNodeAttribute::MaxFlow) || self.max_flow.is_some())
+            .collect()
     }
 }
 
@@ -152,6 +166,14 @@ impl InputNode {
 
         let metric = match attr {
             InputNodeAttribute::Outflow => UnresolvedMetricF64::NodeOutFlow(name),
+            InputNodeAttribute::MaxFlow => {
+                if self.max_flow.is_none() {
+                    return Err(field_not_set(attr, &self.meta.name, "max_flow"));
+                }
+                UnresolvedMetricF64::NodeMaxFlow(name)
+            }
+            InputNodeAttribute::MinFlow => UnresolvedMetricF64::NodeMinFlow(name),
+            InputNodeAttribute::Cost => UnresolvedMetricF64::NodeCost(name),
         };
 
         Ok(metric)
@@ -197,6 +219,15 @@ node_attribute_subset_enum! {
     pub enum LinkNodeAttribute {
         Inflow,
         Outflow,
+        /// The value of the `max_flow` metric. Requires `max_flow` to be defined.
+        MaxFlow,
+        /// The value of the `min_flow` metric. Defaults to 0 if `min_flow` is not defined.
+        MinFlow,
+        /// The cost per unit of flow of the node that carries `cost`, excluding any soft
+        /// constraint costs, and including the costs of any virtual storage nodes with a
+        /// `cost_aggregation`. This is
+        /// `[name].soft_max` when only `soft_max` is given, and `[name]` otherwise.
+        Cost,
     }
 }
 
@@ -309,6 +340,13 @@ impl LinkNode {
     pub fn default_component(&self) -> LinkNodeComponent {
         Self::DEFAULT_COMPONENT
     }
+
+    /// The attributes this node has; `MaxFlow` requires `max_flow` to be set.
+    pub fn available_attributes(&self) -> Vec<LinkNodeAttribute> {
+        LinkNodeAttribute::iter()
+            .filter(|attr| !matches!(attr, LinkNodeAttribute::MaxFlow) || self.max_flow.is_some())
+            .collect()
+    }
 }
 
 #[cfg(feature = "core")]
@@ -349,6 +387,19 @@ impl LinkNode {
             connectors.push(self.soft_max_node_sub_name());
         }
         Ok(connectors)
+    }
+
+    /// The node that carries `cost`. With only `soft_max`, `[name]` carries `soft_max.cost`
+    /// and `[name].soft_max` carries `cost`.
+    fn cost_node_name(&self) -> UnresolvedNode {
+        match (&self.soft_min, &self.soft_max) {
+            (None, Some(_)) => self.soft_max_node_sub_name(),
+            _ => UnresolvedNode::new(&self.meta.name, None),
+        }
+    }
+
+    fn has_soft_constraints(&self) -> bool {
+        self.soft_min.is_some() || self.soft_max.is_some()
     }
 
     fn aggregated_node_sub_name(&self) -> UnresolvedNode {
@@ -587,15 +638,19 @@ impl LinkNode {
         // combine the flow through the nodes
         let nodes = match (&self.soft_min, &self.soft_max) {
             (Some(_), None) => {
-                vec![link_node, self.soft_min_node_sub_name()]
+                vec![link_node.clone(), self.soft_min_node_sub_name()]
             }
             (None, Some(_)) => {
-                vec![link_node, self.soft_max_node_sub_name()]
+                vec![link_node.clone(), self.soft_max_node_sub_name()]
             }
             (Some(_), Some(_)) => {
-                vec![link_node, self.soft_min_node_sub_name(), self.soft_max_node_sub_name()]
+                vec![
+                    link_node.clone(),
+                    self.soft_min_node_sub_name(),
+                    self.soft_max_node_sub_name(),
+                ]
             }
-            (None, None) => vec![link_node],
+            (None, None) => vec![link_node.clone()],
         };
 
         let metric = match attr {
@@ -607,6 +662,25 @@ impl LinkNode {
                 nodes,
                 name: self.meta.name.to_string(),
             },
+            // With soft constraints the hard bounds are on the aggregated node.
+            LinkNodeAttribute::MaxFlow => {
+                if self.max_flow.is_none() {
+                    return Err(field_not_set(attr, &self.meta.name, "max_flow"));
+                }
+                if self.has_soft_constraints() {
+                    UnresolvedMetricF64::AggregatedNodeMaxFlow(self.aggregated_node_sub_name())
+                } else {
+                    UnresolvedMetricF64::NodeMaxFlow(link_node)
+                }
+            }
+            LinkNodeAttribute::MinFlow => {
+                if self.has_soft_constraints() {
+                    UnresolvedMetricF64::AggregatedNodeMinFlow(self.aggregated_node_sub_name())
+                } else {
+                    UnresolvedMetricF64::NodeMinFlow(link_node)
+                }
+            }
+            LinkNodeAttribute::Cost => UnresolvedMetricF64::NodeCost(self.cost_node_name()),
         };
 
         Ok(metric)
@@ -681,6 +755,9 @@ node_attribute_subset_enum! {
         MaxFlow,
         /// The value of the `min_flow` metric. Defaults to 0 if `min_flow` is not defined.
         MinFlow,
+        /// The cost per unit of flow, including the costs of any virtual storage nodes with a
+        /// `cost_aggregation`.
+        Cost,
     }
 }
 
@@ -732,6 +809,7 @@ impl OutputNode {
             match attr {
                 OutputNodeAttribute::Inflow => attributes.push(attr),
                 OutputNodeAttribute::MinFlow => attributes.push(attr),
+                OutputNodeAttribute::Cost => attributes.push(attr),
                 OutputNodeAttribute::MaxFlow => {
                     if self.max_flow.is_some() {
                         attributes.push(attr);
@@ -799,6 +877,7 @@ impl OutputNode {
                 UnresolvedMetricF64::NodeMaxFlow(name)
             }
             OutputNodeAttribute::MinFlow => UnresolvedMetricF64::NodeMinFlow(name),
+            OutputNodeAttribute::Cost => UnresolvedMetricF64::NodeCost(name),
         };
 
         Ok(metric)
@@ -931,6 +1010,11 @@ node_attribute_subset_enum! {
         Volume,
         ProportionalVolume,
         MaxVolume,
+        /// The value of the `min_volume` metric. Defaults to 0 if `min_volume` is not defined.
+        MinVolume,
+        /// The cost per unit of net increase in volume, including the costs of any virtual
+        /// storage nodes.
+        Cost,
     }
 }
 
@@ -1048,6 +1132,8 @@ impl StorageNode {
         let metric = match attr {
             StorageNodeAttribute::Volume => UnresolvedMetricF64::NodeVolume(name),
             StorageNodeAttribute::MaxVolume => UnresolvedMetricF64::NodeMaxVolume(name),
+            StorageNodeAttribute::MinVolume => UnresolvedMetricF64::NodeMinVolume(name),
+            StorageNodeAttribute::Cost => UnresolvedMetricF64::NodeCost(name),
             StorageNodeAttribute::ProportionalVolume => UnresolvedMetricF64::NodeProportionalVolume(name),
         };
 
@@ -1118,6 +1204,9 @@ impl TryFromV1<ReservoirNodeV1> for StorageNode {
 node_attribute_subset_enum! {
     pub enum CatchmentNodeAttribute {
         Outflow,
+        /// The cost per unit of flow, including the costs of any virtual storage nodes with a
+        /// `cost_aggregation`.
+        Cost,
 
     }
 }
@@ -1227,6 +1316,7 @@ impl CatchmentNode {
 
         let metric = match attr {
             CatchmentNodeAttribute::Outflow => UnresolvedMetricF64::NodeOutFlow(name),
+            CatchmentNodeAttribute::Cost => UnresolvedMetricF64::NodeCost(name),
         };
 
         Ok(metric)

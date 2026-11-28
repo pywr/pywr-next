@@ -795,6 +795,8 @@ pub struct State {
     inter_network_values: Vec<f64>,
     // The current phase of the calculation
     current_phase: CalculationPhase,
+    // The time-step being calculated, once the first has started
+    timestep: Option<Timestep>,
 }
 
 impl State {
@@ -804,6 +806,17 @@ impl State {
 
     pub fn set_calculation_phase(&mut self, phase: CalculationPhase) {
         self.current_phase = phase;
+    }
+
+    /// The time-step being calculated, or `None` before the first time-step starts.
+    pub fn get_timestep(&self) -> Option<&Timestep> {
+        self.timestep.as_ref()
+    }
+
+    /// Set the time-step being calculated. [`crate::network::Network`] sets it at the start of
+    /// each time-step.
+    pub fn set_timestep(&mut self, timestep: Timestep) {
+        self.timestep = Some(timestep);
     }
 
     /// Get a reference to the network state.
@@ -1272,6 +1285,7 @@ impl StateBuilder {
             parameters_general_after,
             inter_network_values: vec![0.0; self.num_inter_network_values.unwrap_or(0)],
             current_phase: CalculationPhase::Before,
+            timestep: None,
         }
     }
 }

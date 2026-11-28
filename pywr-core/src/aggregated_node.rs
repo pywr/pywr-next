@@ -5,7 +5,7 @@ use crate::metric::{
     ConstantMetricF64Error, MetricConsumerPhase, MetricF64, MetricF64Error, MetricF64ResolutionError,
     UnresolvedMetricF64,
 };
-use crate::network::{AggregatedNodeIndex, Network, ResolutionMaps};
+use crate::network::{AggregatedNodeIndex, DependentAttribute, Network, ResolutionMaps};
 use crate::node::{FlowConstraints, NodeMeta, UnresolvedNode};
 use crate::state::{ConstParameterValues, State};
 use std::fmt::Debug;
@@ -587,6 +587,21 @@ impl AggregatedNodeBuilder {
     #[must_use]
     pub fn name(&self) -> &UnresolvedNode {
         &self.name
+    }
+
+    /// The metrics this aggregated node's attributes are calculated from, as the aggregated node at `index`.
+    #[must_use]
+    pub(crate) fn attribute_metrics(
+        &self,
+        index: AggregatedNodeIndex,
+    ) -> Vec<(DependentAttribute, &UnresolvedMetricF64)> {
+        [
+            (DependentAttribute::AggregatedNodeMinFlow(index), &self.min_flow),
+            (DependentAttribute::AggregatedNodeMaxFlow(index), &self.max_flow),
+        ]
+        .into_iter()
+        .filter_map(|(attribute, metric)| Some((attribute, metric.as_ref()?)))
+        .collect()
     }
 
     pub fn sub_name(&mut self, sub_name: &str) -> &mut Self {

@@ -6,7 +6,7 @@ use crate::parameters::Parameter;
 use crate::{
     error::SchemaError,
     network::LoadArgs,
-    nodes::{NodeAttribute, NodeComponent, NodeSlot},
+    nodes::{NodeAttribute, NodeComponent, NodeSlot, attributes::field_not_set},
 };
 use crate::{mermaid, node_attribute_subset_enum, node_component_subset_enum};
 #[cfg(feature = "core")]
@@ -22,6 +22,13 @@ node_attribute_subset_enum! {
         Inflow,
         Outflow,
         Loss,
+        /// The value of the `max_flow` metric on the net flow. Requires `max_flow` to be defined.
+        MaxFlow,
+        /// The value of the `min_flow` metric on the net flow. Defaults to 0 if `min_flow` is not defined.
+        MinFlow,
+        /// The cost per unit of net flow, excluding the soft minimum flow cost, and including the
+        /// costs of any virtual storage nodes.
+        Cost,
     }
 }
 
@@ -84,6 +91,13 @@ impl WaterTreatmentWorksNode {
 
     pub fn default_component(&self) -> WaterTreatmentWorksNodeComponent {
         Self::DEFAULT_COMPONENT
+    }
+
+    /// The attributes this node has; `MaxFlow` requires `max_flow` to be set.
+    pub fn available_attributes(&self) -> Vec<WaterTreatmentWorksNodeAttribute> {
+        WaterTreatmentWorksNodeAttribute::iter()
+            .filter(|attr| !matches!(attr, WaterTreatmentWorksNodeAttribute::MaxFlow) || self.max_flow.is_some())
+            .collect()
     }
 
     pub(crate) fn built_components(&self) -> impl Iterator<Item = WaterTreatmentWorksNodeComponent> + '_ {
@@ -264,6 +278,14 @@ impl WaterTreatmentWorksNode {
                 true => UnresolvedMetricF64::NodeInFlow(self.loss_sub_name()),
                 false => 0.0.into(),
             },
+            WaterTreatmentWorksNodeAttribute::MaxFlow => {
+                if self.max_flow.is_none() {
+                    return Err(field_not_set(attr, &self.meta.name, "max_flow"));
+                }
+                UnresolvedMetricF64::NodeMaxFlow(self.net_sub_name())
+            }
+            WaterTreatmentWorksNodeAttribute::MinFlow => UnresolvedMetricF64::NodeMinFlow(self.net_sub_name()),
+            WaterTreatmentWorksNodeAttribute::Cost => UnresolvedMetricF64::NodeCost(self.net_sub_name()),
         };
 
         Ok(metric)

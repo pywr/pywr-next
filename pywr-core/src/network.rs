@@ -986,6 +986,7 @@ impl Network {
         timings: Option<&mut ComponentTimings>,
     ) -> Result<(), NetworkStepError> {
         state.set_calculation_phase(CalculationPhase::Before);
+        state.set_timestep(*timestep);
         // TODO reset parameter state to zero
 
         // First we update the simple parameters
@@ -1607,7 +1608,7 @@ impl Display for EdgeIndex {
     }
 }
 
-#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Debug)]
+#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug)]
 pub struct AggregatedNodeIndex(usize);
 
 impl Deref for AggregatedNodeIndex {
@@ -1624,7 +1625,7 @@ impl Display for AggregatedNodeIndex {
     }
 }
 
-#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Debug)]
+#[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug)]
 pub struct AggregatedStorageNodeIndex(usize);
 
 impl Deref for AggregatedStorageNodeIndex {
@@ -1795,11 +1796,23 @@ impl ResolutionMaps {
 }
 
 /// An attribute of a node that can be calculated from the 'before' values of parameters.
+///
+/// A virtual storage node's cost is a dependent attribute even where it can't be read, since a
+/// node's cost can be calculated from it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum DependentAttribute {
     NodeMinFlow(NodeIndex),
     NodeMaxFlow(NodeIndex),
+    NodeMinVolume(NodeIndex),
     NodeMaxVolume(NodeIndex),
+    NodeCost(NodeIndex),
+    AggregatedNodeMinFlow(AggregatedNodeIndex),
+    AggregatedNodeMaxFlow(AggregatedNodeIndex),
+    AggregatedStorageNodeMinVolume(AggregatedStorageNodeIndex),
+    AggregatedStorageNodeMaxVolume(AggregatedStorageNodeIndex),
+    VirtualStorageMinVolume(VirtualStorageIndex),
+    VirtualStorageMaxVolume(VirtualStorageIndex),
+    VirtualStorageCost(VirtualStorageIndex),
 }
 
 impl DependentAttribute {
@@ -1808,7 +1821,16 @@ impl DependentAttribute {
         let (attribute, kind) = match self {
             Self::NodeMinFlow(_) => ("MinFlow", "node"),
             Self::NodeMaxFlow(_) => ("MaxFlow", "node"),
+            Self::NodeMinVolume(_) => ("MinVolume", "node"),
             Self::NodeMaxVolume(_) => ("MaxVolume", "node"),
+            Self::NodeCost(_) => ("Cost", "node"),
+            Self::AggregatedNodeMinFlow(_) => ("MinFlow", "aggregated node"),
+            Self::AggregatedNodeMaxFlow(_) => ("MaxFlow", "aggregated node"),
+            Self::AggregatedStorageNodeMinVolume(_) => ("MinVolume", "aggregated storage node"),
+            Self::AggregatedStorageNodeMaxVolume(_) => ("MaxVolume", "aggregated storage node"),
+            Self::VirtualStorageMinVolume(_) => ("MinVolume", "virtual storage node"),
+            Self::VirtualStorageMaxVolume(_) => ("MaxVolume", "virtual storage node"),
+            Self::VirtualStorageCost(_) => ("Cost", "virtual storage node"),
         };
         format!("{attribute} of {kind} `{node}`")
     }
@@ -2203,12 +2225,59 @@ impl NetworkBuilder {
     /// Find the parameters each node attribute is calculated from.
     fn attribute_parameters(&self, maps: &ResolutionMaps) -> HashMap<DependentAttribute, Vec<ParameterName>> {
         let mut direct: HashMap<DependentAttribute, Vec<AttributeDependency>> = HashMap::new();
+        let mut add = |attribute: DependentAttribute, dependency: Option<AttributeDependency>| {
+            direct.entry(attribute).or_default().extend(dependency);
+        };
         for (i, node) in self.nodes.iter().enumerate() {
             for (attribute, metric) in node.attribute_metrics(NodeIndex(i)) {
-                direct
-                    .entry(attribute)
-                    .or_default()
-                    .extend(metric.attribute_dependency(maps));
+                add(attribute, metric.attribute_dependency(maps));
+            }
+        }
+        for (i, node) in self.aggregated_nodes.iter().enumerate() {
+            for (attribute, metric) in node.attribute_metrics(AggregatedNodeIndex(i)) {
+                add(attribute, metric.attribute_dependency(maps));
+            }
+        }
+        // An aggregated storage node's volume bounds are the sums of its members'.
+        for (i, node) in self.aggregated_storage_nodes.iter().enumerate() {
+            let index = AggregatedStorageNodeIndex(i);
+            for member in node.nodes().iter().filter_map(|name| maps.nodes.get(name)) {
+                add(
+                    DependentAttribute::AggregatedStorageNodeMinVolume(index),
+                    Some(AttributeDependency::Attribute(DependentAttribute::NodeMinVolume(
+                        *member,
+                    ))),
+                );
+                add(
+                    DependentAttribute::AggregatedStorageNodeMaxVolume(index),
+                    Some(AttributeDependency::Attribute(DependentAttribute::NodeMaxVolume(
+                        *member,
+                    ))),
+                );
+            }
+        }
+        for (i, node) in self.virtual_storage_nodes.iter().enumerate() {
+            for (attribute, metric) in node.attribute_metrics(VirtualStorageIndex(i)) {
+                add(attribute, metric.attribute_dependency(maps));
+            }
+        }
+        // A node with a cost aggregation includes in its cost the cost of each virtual storage
+        // node it belongs to with a non-zero factor.
+        for (node, vs_nodes) in &maps.virtual_storage_associated_nodes {
+            if !self
+                .nodes
+                .get(**node)
+                .is_some_and(|n| n.applies_virtual_storage_costs())
+            {
+                continue;
+            }
+            for (vs, _) in vs_nodes.iter().filter(|(_, factor)| *factor != 0.0) {
+                add(
+                    DependentAttribute::NodeCost(*node),
+                    Some(AttributeDependency::Attribute(DependentAttribute::VirtualStorageCost(
+                        *vs,
+                    ))),
+                );
             }
         }
         flatten_attribute_dependencies(&direct)

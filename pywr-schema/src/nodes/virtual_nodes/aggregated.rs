@@ -2,6 +2,8 @@ use crate::error::ComponentConversionError;
 use crate::metric::{Metric, NodeComponentReference};
 use crate::node_attribute_subset_enum;
 use crate::nodes::NodeMeta;
+#[cfg(feature = "core")]
+use crate::nodes::attributes::field_not_set;
 use crate::parameters::Parameter;
 use crate::v1::{ConversionData, TryFromV1, try_convert_node_attr, try_convert_node_meta, try_convert_parameter_attr};
 use crate::validation::VirtualNodeProblem;
@@ -17,6 +19,7 @@ use pywr_schema_macros::PywrVisitAll;
 use pywr_schema_macros::skip_serializing_none;
 use pywr_v1_schema::nodes::{AggregatedNode as AggregatedNodeV1, AggregatedStorageNode as AggregatedStorageNodeV1};
 use schemars::JsonSchema;
+use strum::IntoEnumIterator;
 use strum_macros::{Display, EnumDiscriminants, EnumIter, EnumString, IntoStaticStr};
 
 /// Defines the relationship between nodes in an `AggregatedNode`.
@@ -68,6 +71,8 @@ node_attribute_subset_enum! {
     pub enum AggregatedNodeAttribute {
         Inflow,
         Outflow,
+        MinFlow,
+        MaxFlow,
     }
 }
 
@@ -123,6 +128,13 @@ impl AggregatedNode {
 
     pub fn default_attribute(&self) -> AggregatedNodeAttribute {
         Self::DEFAULT_ATTRIBUTE
+    }
+
+    /// The attributes this node offers; `MaxFlow` requires `max_flow` to be set.
+    pub fn available_attributes(&self) -> Vec<AggregatedNodeAttribute> {
+        AggregatedNodeAttribute::iter()
+            .filter(|attr| !matches!(attr, AggregatedNodeAttribute::MaxFlow) || self.max_flow.is_some())
+            .collect()
     }
 
     /// Check that the relationship has as many factors as core requires for the members.
@@ -249,6 +261,13 @@ impl AggregatedNode {
         let metric = match attr {
             AggregatedNodeAttribute::Outflow => UnresolvedMetricF64::AggregatedNodeOutFlow(name),
             AggregatedNodeAttribute::Inflow => UnresolvedMetricF64::AggregatedNodeInFlow(name),
+            AggregatedNodeAttribute::MinFlow => UnresolvedMetricF64::AggregatedNodeMinFlow(name),
+            AggregatedNodeAttribute::MaxFlow => {
+                if self.max_flow.is_none() {
+                    return Err(field_not_set(attr, &self.meta.name, "max_flow"));
+                }
+                UnresolvedMetricF64::AggregatedNodeMaxFlow(name)
+            }
         };
 
         Ok(metric)
@@ -306,6 +325,8 @@ node_attribute_subset_enum! {
     pub enum AggregatedStorageNodeAttribute {
         Volume,
         ProportionalVolume,
+        MaxVolume,
+        MinVolume,
     }
 }
 
@@ -395,6 +416,8 @@ impl AggregatedStorageNode {
             AggregatedStorageNodeAttribute::ProportionalVolume => {
                 UnresolvedMetricF64::AggregatedStorageNodeProportionalVolume(name)
             }
+            AggregatedStorageNodeAttribute::MaxVolume => UnresolvedMetricF64::AggregatedStorageNodeMaxVolume(name),
+            AggregatedStorageNodeAttribute::MinVolume => UnresolvedMetricF64::AggregatedStorageNodeMinVolume(name),
         };
 
         Ok(metric)

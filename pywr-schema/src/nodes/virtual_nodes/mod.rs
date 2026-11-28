@@ -104,9 +104,9 @@ impl VirtualNode {
     /// Returns the attributes that this node has.
     pub fn attributes(&self) -> Vec<NodeAttribute> {
         match self {
-            VirtualNode::Aggregated(_) => AggregatedNodeAttribute::iter().map(Into::into).collect(),
+            VirtualNode::Aggregated(n) => n.available_attributes().into_iter().map(Into::into).collect(),
             VirtualNode::AggregatedStorage(_) => AggregatedStorageNodeAttribute::iter().map(Into::into).collect(),
-            VirtualNode::VirtualStorage(_) => VirtualStorageNodeAttribute::iter().map(Into::into).collect(),
+            VirtualNode::VirtualStorage(n) => n.available_attributes().into_iter().map(Into::into).collect(),
             VirtualNode::Placeholder(_) => Vec::new(),
         }
     }
