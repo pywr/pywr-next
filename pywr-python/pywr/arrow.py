@@ -3,13 +3,192 @@
 from __future__ import annotations
 
 import json
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass, fields
 from dataclasses import field as dataclass_field
-from typing import Any
+from typing import Any, ClassVar
 
 import pyarrow as pa
 
 METRIC_EXTENSION_NAME = "org.pywr.metric"
+
+
+class _MetricSourceBase:
+    """Shared (de)serialization of the metric source kinds.
+
+    Each kind is written as a JSON object with a ``type`` key naming it, followed by its
+    fields. Fields that may be ``None`` may also be left out.
+    """
+
+    __slots__ = ()
+    type: ClassVar[str]
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "type": self.type,
+            **{f.name: getattr(self, f.name) for f in fields(self)},
+        }
+
+    @classmethod
+    def _from_dict(cls, value: dict[str, Any]):
+        known = {f.name: f for f in fields(cls)}
+        unknown = [key for key in value if key != "type" and key not in known]
+        if unknown:
+            raise ValueError(
+                f"Pywr {cls.type} metric source has unknown field(s): {', '.join(unknown)}"
+            )
+        kwargs = {}
+        for name, field in known.items():
+            optional = "None" in str(field.type)
+            item = value.get(name)
+            if item is None and not optional:
+                raise ValueError(
+                    f"Pywr {cls.type} metric source is missing required field {name!r}"
+                )
+            if item is not None and not isinstance(item, str):
+                raise TypeError(
+                    f"Pywr {cls.type} metric source field {name!r} must be a string"
+                )
+            kwargs[name] = item
+        return cls(**kwargs)
+
+    @property
+    def label(self) -> str:
+        """The single-string label Pywr gives this source, as in a CSV output."""
+        return self.name  # type: ignore[attr-defined]
+
+
+def _with_slot(node: str, slot: str | None) -> str:
+    return node if slot is None else f"{node}[{slot}]"
+
+
+@dataclass(frozen=True, slots=True)
+class NodeSource(_MetricSourceBase):
+    """A node of the schema."""
+
+    type: ClassVar[str] = "Node"
+    name: str
+    node_type: str
+
+
+@dataclass(frozen=True, slots=True)
+class VirtualNodeSource(_MetricSourceBase):
+    """A virtual node of the schema."""
+
+    type: ClassVar[str] = "VirtualNode"
+    name: str
+    node_type: str
+
+
+@dataclass(frozen=True, slots=True)
+class CoreNodeSource(_MetricSourceBase):
+    """A node of the solver's network, built by the schema node ``node``.
+
+    ``sub_name`` distinguishes it from the other core nodes that node builds. These names
+    are internal to Pywr and may change between versions.
+    """
+
+    type: ClassVar[str] = "CoreNode"
+    node: str
+    node_type: str
+    sub_name: str | None = None
+
+    @property
+    def label(self) -> str:
+        return _with_slot(self.node, self.sub_name)
+
+
+@dataclass(frozen=True, slots=True)
+class EdgeSource(_MetricSourceBase):
+    """An edge between two nodes, with the slots it connects, if any."""
+
+    type: ClassVar[str] = "Edge"
+    from_node: str
+    to_node: str
+    from_slot: str | None = None
+    to_slot: str | None = None
+
+    @property
+    def label(self) -> str:
+        return f"{_with_slot(self.from_node, self.from_slot)}->{_with_slot(self.to_node, self.to_slot)}"
+
+
+@dataclass(frozen=True, slots=True)
+class ParameterSource(_MetricSourceBase):
+    """A parameter; ``parent`` is the node a local parameter belongs to."""
+
+    type: ClassVar[str] = "Parameter"
+    name: str
+    parameter_type: str
+    parent: str | None = None
+
+    @property
+    def label(self) -> str:
+        return self.name if self.parent is None else f"{self.parent}.{self.name}"
+
+
+@dataclass(frozen=True, slots=True)
+class TableSource(_MetricSourceBase):
+    """A table."""
+
+    type: ClassVar[str] = "Table"
+    name: str
+
+
+@dataclass(frozen=True, slots=True)
+class TimeSeriesSource(_MetricSourceBase):
+    """A time series."""
+
+    type: ClassVar[str] = "TimeSeries"
+    name: str
+
+
+@dataclass(frozen=True, slots=True)
+class InterNetworkTransferSource(_MetricSourceBase):
+    """A transfer from another network."""
+
+    type: ClassVar[str] = "InterNetworkTransfer"
+    name: str
+
+
+MetricSource = (
+    NodeSource
+    | VirtualNodeSource
+    | CoreNodeSource
+    | EdgeSource
+    | ParameterSource
+    | TableSource
+    | TimeSeriesSource
+    | InterNetworkTransferSource
+)
+"""What a metric reads from; one class per kind of source."""
+
+_METRIC_SOURCE_KINDS: dict[str, type[_MetricSourceBase]] = {
+    kind.type: kind
+    for kind in (
+        NodeSource,
+        VirtualNodeSource,
+        CoreNodeSource,
+        EdgeSource,
+        ParameterSource,
+        TableSource,
+        TimeSeriesSource,
+        InterNetworkTransferSource,
+    )
+}
+
+
+def metric_source_from_dict(value: dict[str, Any]) -> MetricSource:
+    """Read a metric source from its JSON object, choosing the class by its ``type``."""
+    if not isinstance(value, dict):
+        raise TypeError("Pywr metric source must be a JSON object")
+    kind = value.get("type")
+    if not isinstance(kind, str):
+        raise TypeError("Pywr metric source must have a string 'type'")
+    try:
+        cls = _METRIC_SOURCE_KINDS[kind]
+    except KeyError:
+        raise ValueError(f"Unknown Pywr metric source type {kind!r}") from None
+    return cls._from_dict(value)
 
 
 @dataclass(frozen=True, slots=True)
@@ -17,44 +196,44 @@ class MetricColumnMetadata:
     """Identity metadata attached to a Pywr Arrow metric column."""
 
     metric_set: str
-    name: str
+    source: MetricSource
     attribute: str
-    type: str
-    sub_type: str | None = None
     network: str | None = None
     """The metric's network in a multi-network model; ``None`` for a single network."""
 
     @classmethod
     def from_dict(cls, value: dict[str, Any]) -> MetricColumnMetadata:
-        required_fields = (
-            "metric_set",
-            "name",
-            "attribute",
-            "type",
-        )
+        required_fields = ("metric_set", "source", "attribute")
         missing = [field for field in required_fields if field not in value]
         if missing:
             raise ValueError(
                 f"Pywr metric metadata is missing required field(s): {', '.join(missing)}"
             )
 
-        for field in ["metric_set", "name", "attribute", "type"]:
+        for field in ["metric_set", "attribute"]:
             if not isinstance(value[field], str):
                 raise TypeError(
                     f"Pywr metric metadata field {field!r} must be a string"
                 )
 
-        for field in ("sub_type", "network"):
-            if value.get(field) is not None and not isinstance(value[field], str):
-                raise TypeError(
-                    f"Pywr metric metadata field {field!r} must be a string or null"
-                )
+        if value.get("network") is not None and not isinstance(value["network"], str):
+            raise TypeError(
+                "Pywr metric metadata field 'network' must be a string or null"
+            )
         return cls(
-            **{
-                field: value.get(field)
-                for field in (*required_fields, "sub_type", "network")
-            }
+            metric_set=value["metric_set"],
+            source=metric_source_from_dict(value["source"]),
+            attribute=value["attribute"],
+            network=value.get("network"),
         )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "metric_set": self.metric_set,
+            "source": self.source.to_dict(),
+            "attribute": self.attribute,
+            **({"network": self.network} if self.network is not None else {}),
+        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -252,10 +431,9 @@ class MetricColumnExtensionType(pa.ExtensionType):
         return self._metadata
 
     def __arrow_ext_serialize__(self) -> bytes:
-        metadata = asdict(self._metadata)
-        if metadata["network"] is None:
-            del metadata["network"]
-        return json.dumps(metadata, separators=(",", ":")).encode("utf-8")
+        return json.dumps(self._metadata.to_dict(), separators=(",", ":")).encode(
+            "utf-8"
+        )
 
     @classmethod
     def __arrow_ext_deserialize__(
@@ -291,7 +469,7 @@ def register_metric_extension_type() -> None:
     try:
         pa.register_extension_type(
             MetricColumnExtensionType(
-                MetricColumnMetadata("", "", "", ""),
+                MetricColumnMetadata("", NodeSource("", ""), ""),
                 1,
             )
         )

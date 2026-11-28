@@ -41,7 +41,9 @@ pub use metric_set::{
 use ndarray::Array2;
 use ndarray::prelude::*;
 pub use parquet::{ParquetOutput, ParquetOutputBuilder, ParquetOutputError};
-pub use pywr_output_metadata::{MetricColumnExtension, MetricColumnMetadata, RUN_METADATA_KEY, RunMetadata};
+pub use pywr_output_metadata::{
+    MetricColumnExtension, MetricColumnMetadata, MetricSource, RUN_METADATA_KEY, RunMetadata,
+};
 pub use snapshot::{
     Snapshot, SnapshotBuffer, SnapshotData, SnapshotMeta, SnapshotMetricSetItem, SnapshotMetricSetMeta,
     SnapshotRecorder, SnapshotRecorderBuilder,

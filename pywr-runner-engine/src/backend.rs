@@ -1131,7 +1131,7 @@ mod tests {
             );
             let (_, values) = columns
                 .iter()
-                .find(|(metadata, _)| metadata.name == node)
+                .find(|(metadata, _)| metadata.source.label() == node)
                 .unwrap_or_else(|| panic!("no column for `{node}` in {columns:?}"));
             assert_eq!(values, &[expected, expected]);
         }

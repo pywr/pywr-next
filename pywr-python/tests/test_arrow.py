@@ -6,9 +6,13 @@ import pyarrow.parquet as pq
 import pytest
 from pywr import (
     METRIC_EXTENSION_NAME,
+    CoreNodeSource,
+    EdgeSource,
     MetricColumnExtensionType,
     MetricColumnMetadata,
     ModelSchema,
+    NodeSource,
+    ParameterSource,
     ProjectRunMetadata,
     RunMetadata,
     ScenarioGroupMetadata,
@@ -17,6 +21,7 @@ from pywr import (
     get_run_metadata,
     get_scenario_groups,
     get_scenarios,
+    metric_source_from_dict,
     register_metric_extension_type,
     scenario_to_pandas,
 )
@@ -25,10 +30,8 @@ from pywr import (
 def test_metric_extension_metadata_round_trips_through_ipc_stream():
     metadata = MetricColumnMetadata(
         metric_set="outputs",
-        name="reservoir",
+        source=NodeSource(name="reservoir", node_type="Storage"),
         attribute="volume",
-        type="node",
-        sub_type="storage",
     )
     extension = MetricColumnExtensionType(metadata, 2)
     field = pa.field(
@@ -89,7 +92,7 @@ def test_metric_extension_metadata_round_trips_through_ipc_stream():
 
 
 def test_metric_extension_serialization_and_validation():
-    metadata = MetricColumnMetadata("nodes", "demand", "outflow", "node")
+    metadata = MetricColumnMetadata("nodes", NodeSource("demand", "Output"), "outflow")
     extension = MetricColumnExtensionType(metadata, 2)
 
     assert (
@@ -108,11 +111,13 @@ def test_metric_extension_serialization_and_validation():
 
 
 def test_metric_extension_records_a_network_only_when_it_has_one():
-    single = MetricColumnMetadata("nodes", "demand", "outflow", "node")
+    single = MetricColumnMetadata("nodes", NodeSource("demand", "Output"), "outflow")
     serialized = MetricColumnExtensionType(single, 2).__arrow_ext_serialize__()
     assert "network" not in json.loads(serialized)
 
-    multi = MetricColumnMetadata("nodes", "demand", "outflow", "node", network="supply")
+    multi = MetricColumnMetadata(
+        "nodes", NodeSource("demand", "Output"), "outflow", network="supply"
+    )
     extension = MetricColumnExtensionType(multi, 2)
     serialized = extension.__arrow_ext_serialize__()
     assert json.loads(serialized)["network"] == "supply"
@@ -127,9 +132,8 @@ def test_metric_extension_records_a_network_only_when_it_has_one():
         MetricColumnMetadata.from_dict(
             {
                 "metric_set": "nodes",
-                "name": "demand",
+                "source": {"type": "Node", "name": "demand", "node_type": "Output"},
                 "attribute": "outflow",
-                "type": "node",
                 "network": 1,
             }
         )
@@ -228,6 +232,11 @@ def test_parquet_output_reads_as_the_arrow_stream_table(tmp_path: Path):
 
     assert parquet_table.schema.equals(stream_table.schema, check_metadata=True)
     assert isinstance(parquet_table.schema.field(2).type, MetricColumnExtensionType)
+    assert parquet_table.schema.field(2).type.metadata == MetricColumnMetadata(
+        metric_set="nodes",
+        source=NodeSource(name="demand", node_type="Output"),
+        attribute="Inflow",
+    )
     assert parquet_table.equals(stream_table)
     assert get_scenarios(parquet_table.schema) == get_scenarios(stream_table.schema)
     assert get_scenario_groups(parquet_table.schema) == [
@@ -266,3 +275,44 @@ def test_run_metadata_is_read_when_present():
 
     with pytest.raises(TypeError):
         get_run_metadata(pa.schema([], metadata={b"PYWR_RUN": b"[]"}))
+
+
+def test_metric_sources_round_trip_and_label():
+    sources = [
+        (NodeSource("demand", "Output"), "demand"),
+        (CoreNodeSource("res", "Link", sub_name="spill"), "res[spill]"),
+        (CoreNodeSource("res", "Storage"), "res"),
+        (EdgeSource("a", "b", from_slot="x"), "a[x]->b"),
+        (ParameterSource("control", "Constant", parent="res"), "res.control"),
+    ]
+    for source, label in sources:
+        assert metric_source_from_dict(source.to_dict()) == source
+        assert source.label == label
+
+    # The Rust writer emits every field, with null for an unset optional one.
+    assert metric_source_from_dict(
+        {
+            "type": "CoreNode",
+            "node": "res",
+            "sub_name": None,
+            "node_type": "Storage",
+        }
+    ) == CoreNodeSource("res", "Storage")
+    assert EdgeSource("a", "b").to_dict() == {
+        "type": "Edge",
+        "from_node": "a",
+        "to_node": "b",
+        "from_slot": None,
+        "to_slot": None,
+    }
+
+    with pytest.raises(ValueError, match="Unknown"):
+        metric_source_from_dict({"type": "Widget", "name": "w"})
+    with pytest.raises(ValueError, match="missing required"):
+        metric_source_from_dict({"type": "Node", "name": "demand"})
+    with pytest.raises(ValueError, match="unknown field"):
+        metric_source_from_dict(
+            {"type": "Node", "name": "demand", "node_type": "Output", "extra": "x"}
+        )
+    with pytest.raises(TypeError, match="must be a string"):
+        metric_source_from_dict({"type": "Table", "name": 1})

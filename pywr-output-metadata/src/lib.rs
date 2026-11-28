@@ -45,15 +45,115 @@ pub const RUN_METADATA_KEY: &str = "PYWR_RUN";
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub struct MetricColumnMetadata {
     pub metric_set: String,
-    pub name: String,
+    /// What the metric reads from, such as a node or a parameter.
+    pub source: MetricSource,
+    /// The attribute of the source the metric reads, such as `Volume`.
     pub attribute: String,
-    #[serde(rename = "type")]
-    pub ty: String,
-    pub sub_type: Option<String>,
     /// The network the metric belongs to, in a multi-network model; absent for a model with
     /// a single network.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub network: Option<String>,
+}
+
+/// What a metric reads from, identified in the terms of the model's schema.
+///
+/// Serialized with a `type` tag naming the variant, for example
+/// `{"type": "CoreNode", "node": "res", "sub_name": "spill", "node_type": "Link"}`.
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(tag = "type", deny_unknown_fields)]
+pub enum MetricSource {
+    /// A node of the schema.
+    Node { name: String, node_type: String },
+    /// A virtual node of the schema.
+    VirtualNode { name: String, node_type: String },
+    /// A node of the solver's network, built by the schema node `node`. Its `sub_name`
+    /// distinguishes it from the other core nodes that node builds; these names are internal and
+    /// may change between versions.
+    CoreNode {
+        node: String,
+        sub_name: Option<String>,
+        node_type: String,
+    },
+    /// An edge between two nodes, with the slots it connects, if any.
+    Edge {
+        from_node: String,
+        from_slot: Option<String>,
+        to_node: String,
+        to_slot: Option<String>,
+    },
+    /// A parameter; `parent` is the node a local parameter belongs to.
+    Parameter {
+        name: String,
+        parent: Option<String>,
+        parameter_type: String,
+    },
+    /// A table.
+    Table { name: String },
+    /// A time series.
+    TimeSeries { name: String },
+    /// A transfer from another network.
+    InterNetworkTransfer { name: String },
+}
+
+impl MetricSource {
+    /// The name of the variant, as written in the `type` tag.
+    pub fn kind(&self) -> &'static str {
+        match self {
+            Self::Node { .. } => "Node",
+            Self::VirtualNode { .. } => "VirtualNode",
+            Self::CoreNode { .. } => "CoreNode",
+            Self::Edge { .. } => "Edge",
+            Self::Parameter { .. } => "Parameter",
+            Self::Table { .. } => "Table",
+            Self::TimeSeries { .. } => "TimeSeries",
+            Self::InterNetworkTransfer { .. } => "InterNetworkTransfer",
+        }
+    }
+
+    /// The type of node or parameter, if the source has one.
+    pub fn sub_kind(&self) -> Option<&str> {
+        match self {
+            Self::Node { node_type, .. } | Self::VirtualNode { node_type, .. } | Self::CoreNode { node_type, .. } => {
+                Some(node_type)
+            }
+            Self::Parameter { parameter_type, .. } => Some(parameter_type),
+            Self::Edge { .. } | Self::Table { .. } | Self::TimeSeries { .. } | Self::InterNetworkTransfer { .. } => {
+                None
+            }
+        }
+    }
+
+    /// A single-string label for outputs that cannot hold the structure, such as a CSV column.
+    ///
+    /// Core nodes are written `node[sub_name]`, edges `from[slot]->to[slot]` and local parameters
+    /// `parent.name`.
+    pub fn label(&self) -> String {
+        fn with_slot(node: &str, slot: &Option<String>) -> String {
+            match slot {
+                Some(slot) => format!("{node}[{slot}]"),
+                None => node.to_string(),
+            }
+        }
+
+        match self {
+            Self::Node { name, .. }
+            | Self::VirtualNode { name, .. }
+            | Self::Table { name }
+            | Self::TimeSeries { name }
+            | Self::InterNetworkTransfer { name } => name.clone(),
+            Self::CoreNode { node, sub_name, .. } => with_slot(node, sub_name),
+            Self::Edge {
+                from_node,
+                from_slot,
+                to_node,
+                to_slot,
+            } => format!("{}->{}", with_slot(from_node, from_slot), with_slot(to_node, to_slot)),
+            Self::Parameter { name, parent, .. } => match parent {
+                Some(parent) => format!("{parent}.{name}"),
+                None => name.clone(),
+            },
+        }
+    }
 }
 
 /// One simulated scenario, as stored under [`SCENARIOS_KEY`].
@@ -111,18 +211,55 @@ mod tests {
     use super::*;
 
     #[test]
-    fn metric_column_metadata_uses_type_key() {
+    fn metric_column_metadata_tags_its_source() {
         let metadata = MetricColumnMetadata {
             metric_set: "outputs".to_string(),
-            name: "reservoir".to_string(),
-            attribute: "volume".to_string(),
-            ty: "node".to_string(),
-            sub_type: Some("storage".to_string()),
+            source: MetricSource::CoreNode {
+                node: "res".to_string(),
+                sub_name: Some("spill".to_string()),
+                node_type: "Link".to_string(),
+            },
+            attribute: "Inflow".to_string(),
             network: None,
         };
         let json = serde_json::to_value(&metadata).unwrap();
-        assert_eq!(json["type"], "node");
+        assert_eq!(
+            json,
+            serde_json::json!({
+                "metric_set": "outputs",
+                "source": {"type": "CoreNode", "node": "res", "sub_name": "spill", "node_type": "Link"},
+                "attribute": "Inflow",
+            })
+        );
         assert_eq!(serde_json::from_value::<MetricColumnMetadata>(json).unwrap(), metadata);
+    }
+
+    #[test]
+    fn metric_source_labels() {
+        let edge = MetricSource::Edge {
+            from_node: "a".to_string(),
+            from_slot: Some("x".to_string()),
+            to_node: "b".to_string(),
+            to_slot: None,
+        };
+        assert_eq!(edge.label(), "a[x]->b");
+        assert_eq!(edge.kind(), "Edge");
+        assert_eq!(edge.sub_kind(), None);
+
+        let local = MetricSource::Parameter {
+            name: "control".to_string(),
+            parent: Some("res".to_string()),
+            parameter_type: "Constant".to_string(),
+        };
+        assert_eq!(local.label(), "res.control");
+        assert_eq!(local.sub_kind(), Some("Constant"));
+
+        let core = MetricSource::CoreNode {
+            node: "res".to_string(),
+            sub_name: None,
+            node_type: "Storage".to_string(),
+        };
+        assert_eq!(core.label(), "res");
     }
 
     #[test]
@@ -148,10 +285,11 @@ mod tests {
     fn metric_column_metadata_names_its_network_only_in_a_multi_network_model() {
         let mut metadata = MetricColumnMetadata {
             metric_set: "outputs".to_string(),
-            name: "reservoir".to_string(),
+            source: MetricSource::Node {
+                name: "reservoir".to_string(),
+                node_type: "Storage".to_string(),
+            },
             attribute: "volume".to_string(),
-            ty: "node".to_string(),
-            sub_type: None,
             network: None,
         };
         let json = serde_json::to_value(&metadata).unwrap();
