@@ -112,8 +112,8 @@
       {
         "meta": {"name": "all"},
         "filters": {
-          "all_nodes": true,
-          "all_virtual_nodes": true,
+          "all_nodes": "Default",
+          "all_virtual_nodes": "Default",
           "all_parameters": true,
           "all_edges": false
         }

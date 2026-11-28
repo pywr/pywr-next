@@ -1381,9 +1381,9 @@ mod tests {
                     { "meta": { "name": "shared" }, "type": "Placeholder" }
                 ],
                 "metric_sets": [
-                    { "meta": { "name": "ms" }, "filters": { "all_nodes": true } },
-                    { "meta": { "name": "ms" }, "filters": { "all_virtual_nodes": true } },
-                    { "meta": { "name": "shared" }, "filters": { "all_nodes": true } }
+                    { "meta": { "name": "ms" }, "filters": { "all_nodes": "Default" } },
+                    { "meta": { "name": "ms" }, "filters": { "all_virtual_nodes": "Default" } },
+                    { "meta": { "name": "shared" }, "filters": { "all_nodes": "Default" } }
                 ]
             }
             "#,
