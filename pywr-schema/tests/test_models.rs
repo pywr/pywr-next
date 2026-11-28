@@ -76,6 +76,7 @@ model_tests! {
     test_loss_link1: ("loss_link1.json", vec![("loss_link1-expected.csv", ResultsShape::Long)], vec!["ipm-simd", "ipm-ocl-f64"], vec![]),
     test_loss_link2: ("loss_link2.json", vec![("loss_link2-expected.csv", ResultsShape::Long)], vec!["ipm-simd", "ipm-ocl-f64"], vec![]),
     test_muskingum: ("muskingum1.json", vec![("muskingum1-expected.csv", ResultsShape::Long)], vec!["cbc", "ipm-simd", "ipm-ocl-f64"], vec![]),
+    test_node_attribute_order1: ("node-attribute-order1.json", vec![("node-attribute-order1-expected.csv", ResultsShape::Long)], vec![], vec![]),
     // TODO this asserted internal flows in the previous test
     test_piecewise_link1: ("piecewise_link1.json", vec![("piecewise-link1-nodes.csv", ResultsShape::Long), ("piecewise-link1-edges.csv", ResultsShape::Long)], vec![], vec![]),
     // TODO not sure why this is failing in IPM solvers (https://github.com/pywr/pywr-next/issues/293)
@@ -172,6 +173,49 @@ fn test_input_files_in_memory() {
         let expected = [(tests_dir.join(expected), ResultsShape::Long)];
         run_test_model(&schema, &files, data_dir, &expected, &[], &[]);
     }
+}
+
+/// A parameter that sets a node's maximum flow and also reads it can't be calculated in order, so
+/// building the model fails rather than reading the previous time-step's maximum flow, and the
+/// error names the node attribute the parameter reads.
+#[cfg(feature = "core")]
+#[test]
+fn test_parameter_reading_the_node_attribute_it_sets() {
+    let tests_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests");
+    let mut schema = deserialise_test_model(&tests_dir.join("node-attribute-order1.json"));
+    let mut data = serde_json::to_value(&schema).unwrap();
+    let parameters = data["network"]["parameters"].as_array_mut().unwrap();
+    let max_flow = parameters
+        .iter_mut()
+        .find(|p| p["meta"]["name"] == "demand-max-flow")
+        .unwrap();
+    max_flow["metrics"]
+        .as_array_mut()
+        .unwrap()
+        .push(serde_json::json!({"type": "Node", "name": "demand", "attribute": "MaxFlow"}));
+    schema = serde_json::from_value(data).unwrap();
+    schema.network.outputs = None;
+
+    let error = schema
+        .create_model_builder(&FileSystem, Some(&tests_dir), None)
+        .unwrap()
+        .build()
+        .err()
+        .expect("the model should not build");
+    let mut messages = Vec::new();
+    let mut source: Option<&dyn std::error::Error> = Some(&error);
+    while let Some(e) = source {
+        messages.push(e.to_string());
+        source = e.source();
+    }
+    // The error names the node attribute the reference goes through.
+    assert!(
+        messages.iter().any(|m| m.starts_with("Circular")
+            && m.contains(
+                "`demand-max-flow` reads the MaxFlow of node `demand`, which is calculated from `demand-max-flow`"
+            )),
+        "{messages:#?}"
+    );
 }
 
 fn deserialise_test_model(model_path: &Path) -> ModelSchema {

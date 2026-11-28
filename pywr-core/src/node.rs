@@ -2,7 +2,7 @@ use crate::metric::{
     ConstantMetricF64Error, MetricConsumerPhase, MetricF64, MetricF64Error, MetricF64ResolutionError, SimpleMetricF64,
     SimpleMetricF64Error, UnresolvedMetricF64,
 };
-use crate::network::{EdgeIndex, Network, NodeIndex, ResolutionMaps, VirtualStorageIndex};
+use crate::network::{DependentAttribute, EdgeIndex, Network, NodeIndex, ResolutionMaps, VirtualStorageIndex};
 use crate::state::{ConstParameterValues, NetworkStateError, NodeState, SimpleParameterValues, State, StateError};
 use crate::timestep::Timestep;
 use std::fmt::{Display, Formatter};
@@ -91,6 +91,19 @@ impl NodeBuilder {
     pub fn name(&self) -> &UnresolvedNode {
         &self.name
     }
+
+    /// The metrics this node's attributes are calculated from, as the node at `index`.
+    pub(crate) fn attribute_metrics(&self, index: NodeIndex) -> Vec<(DependentAttribute, &UnresolvedMetricF64)> {
+        [
+            (DependentAttribute::NodeMinFlow(index), &self.min_flow),
+            (DependentAttribute::NodeMaxFlow(index), &self.max_flow),
+            (DependentAttribute::NodeMaxVolume(index), &self.max_volume),
+        ]
+        .into_iter()
+        .filter_map(|(attribute, metric)| Some((attribute, metric.as_ref()?)))
+        .collect()
+    }
+
     pub fn input<N: Into<UnresolvedNode>>(name: N) -> Self {
         Self::new(name, NodeType::Input)
     }
