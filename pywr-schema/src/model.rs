@@ -1250,6 +1250,36 @@ impl MultiNetworkModelSchema {
 #[cfg(test)]
 mod tests {
     use super::{ModelSchema, MultiNetworkModelSchema, ScenarioDomain};
+
+    /// Converting a v1 component that has no v2 equivalent reports an error rather than panicking.
+    #[test]
+    fn test_v1_unsupported_components_are_errors() {
+        let v1 = r#"{
+            "metadata": {"title": "Unsupported", "minimum_version": "0.1"},
+            "timestepper": {"start": "2015-01-01", "end": "2015-12-31", "timestep": 1},
+            "nodes": [
+                {"name": "supply", "type": "input"},
+                {"name": "split", "type": "riversplit", "factors": [1.0, 1.0], "slot_names": ["a", "b"]},
+                {"name": "demand", "type": "output"}
+            ],
+            "edges": [["supply", "split"], ["split", "demand", "a"]],
+            "parameters": {
+                "year": {"type": "currentyearthreshold", "threshold": 2016},
+                "day": {"type": "currentordinaldaythreshold", "threshold": 100}
+            }
+        }"#;
+
+        let (_, errors) = ModelSchema::from_v1_str(v1).unwrap();
+        let messages: Vec<String> = errors.iter().map(|e| e.to_string()).collect();
+        for name in ["split", "year", "day"] {
+            assert!(
+                messages
+                    .iter()
+                    .any(|m| m.contains(&format!("`{name}`")) && m.contains("cannot be converted")),
+                "no conversion error for `{name}`: {messages:?}"
+            );
+        }
+    }
     #[cfg(feature = "core")]
     use crate::FileSystem;
     use crate::edge::Edge;

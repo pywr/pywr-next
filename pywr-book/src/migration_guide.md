@@ -92,6 +92,20 @@ The conversion process does not automatically migrate v1 tables, recorders or ot
 metric sets and outputs manually, and update custom Python parameters for the v2 interface. Check that input time series
 contain timestamps at the model's resolution: v2 does not automatically resample, aggregate, interpolate or fill missing
 values. Compare the migrated model's results against those of the v1 model before using them.
+
+Optimisation settings are dropped without an error: a v1 parameter's `is_variable`, and its bounds, are not converted,
+so add the v2 `variable` settings to any parameter that should be optimised.
+
+Some v1 components have no v2 equivalent. Each is reported as a component conversion error with an
+`UnsupportedFeature` inner error, and is missing from the converted model:
+
+| v1 component                          | Suggested replacement                                                     |
+|---------------------------------------|---------------------------------------------------------------------------|
+| `MultiSplitLink` node                 | Link nodes with an Aggregated node to set the split factors.              |
+| `RiverSplit` node                     | A `RiverSplitWithGauge` node without an `mrf`.                            |
+| `CurrentYearThresholdParameter`       | A Python parameter.                                                       |
+| `CurrentOrdinalDayThresholdParameter` | A Python parameter.                                                       |
+| `ScenarioWrapperParameter`            | A time series with a column per scenario, or a Python parameter.          |
 Such manual changes can be applied using, for example, a `patch_model` function.
 This function will make arbitrary changes to the model definition.
 The example, below updates the metadata of the model to modify the description.

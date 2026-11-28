@@ -890,8 +890,24 @@ impl TryFromV1<ParameterV1> for ParameterOrTimeSeriesRef {
                 CoreParameter::MultipleThresholdParameterIndex(p) => {
                     Parameter::MultiThreshold(p.try_into_v2(parent_node, conversion_data)?).into()
                 }
-                CoreParameter::CurrentYearThreshold(_) => todo!(),
-                CoreParameter::CurrentOrdinalDayThreshold(_) => todo!(),
+                CoreParameter::CurrentYearThreshold(p) => {
+                    return Err(Box::new(ComponentConversionError::Parameter {
+                        name: p.meta.and_then(|m| m.name).unwrap_or("unnamed".to_string()),
+                        attr: "".to_string(),
+                        error: ConversionError::UnsupportedFeature {
+                            feature: "CurrentYearThresholdParameter cannot be converted; Pywr v2 has no equivalent, but a Python parameter can reproduce it.".to_string(),
+                        },
+                    }));
+                }
+                CoreParameter::CurrentOrdinalDayThreshold(p) => {
+                    return Err(Box::new(ComponentConversionError::Parameter {
+                        name: p.meta.and_then(|m| m.name).unwrap_or("unnamed".to_string()),
+                        attr: "".to_string(),
+                        error: ConversionError::UnsupportedFeature {
+                            feature: "CurrentOrdinalDayThresholdParameter cannot be converted; Pywr v2 has no equivalent, but a Python parameter can reproduce it.".to_string(),
+                        },
+                    }));
+                }
                 CoreParameter::TablesArray(p) => {
                     Parameter::TablesArray(p.try_into_v2(parent_node, conversion_data)?).into()
                 }
@@ -943,7 +959,15 @@ impl TryFromV1<ParameterV1> for ParameterOrTimeSeriesRef {
                 CoreParameter::RollingMeanFlowNode(p) => {
                     Parameter::Rolling(p.try_into_v2(parent_node, conversion_data)?).into()
                 }
-                CoreParameter::ScenarioWrapper(_) => todo!("Implement ScenarioWrapperParameter"),
+                CoreParameter::ScenarioWrapper(p) => {
+                    return Err(Box::new(ComponentConversionError::Parameter {
+                        name: p.meta.and_then(|m| m.name).unwrap_or("unnamed".to_string()),
+                        attr: "".to_string(),
+                        error: ConversionError::UnsupportedFeature {
+                            feature: "ScenarioWrapperParameter cannot be converted; use a time series with a column per scenario, or a Python parameter, instead.".to_string(),
+                        },
+                    }));
+                }
                 CoreParameter::Flow(p) => {
                     return Err(Box::new(ComponentConversionError::Parameter {
                         name: p.meta.and_then(|m| m.name).unwrap_or("unnamed".to_string()),
